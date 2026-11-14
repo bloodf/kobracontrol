@@ -37,7 +37,7 @@ class StoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "settings.json")
             settings.Store(path).update({"spoolman_url": "box:7912"})
-            self.assertEqual(settings.Store(path).effective()["spoolman_url"], "box:7912")
+            self.assertEqual(settings.Store(path).effective()["spoolman_url"], "http://box:7912")
             self.assertEqual([n for n in os.listdir(d)], ["settings.json"])
             with open(path, "w") as f:
                 f.write("{broken")
@@ -58,6 +58,17 @@ class StoreTests(unittest.TestCase):
         st.update({"host": "a"})
         st.update({"host": "a", "bogus": 1})
         self.assertEqual(len(box), 1)
+
+    def test_spoolman_url_must_be_http_or_https(self):
+        st = settings.Store()
+        for bad in ("file:///etc/passwd#", "ftp://box", "http://", "gopher://x"):
+            self.assertEqual(st.update({"spoolman_url": bad})["spoolman_url"], "", bad)
+        self.assertEqual(st.update({"spoolman_url": " Box:7912/ "})["spoolman_url"], "http://box:7912")
+        self.assertEqual(st.update({"spoolman_url": "https://box"})["spoolman_url"], "https://box")
+        self.assertEqual(st.update({"spoolman_url": "ftp://box"})["spoolman_url"], "https://box")   # bad update ignored
+        self.assertEqual(st.update({"spoolman_url": ""})["spoolman_url"], "")
+        bad = settings.Store(load=lambda: '{"spoolman_url": "file:///etc/passwd"}')
+        self.assertEqual(bad.effective()["spoolman_url"], "")
 
     def test_printer_label(self):
         self.assertEqual(settings.printer_label("  a   b "), "a b")

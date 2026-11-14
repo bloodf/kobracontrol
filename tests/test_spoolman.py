@@ -17,8 +17,8 @@ def spool(sid, material="PLA", colour="FF0000", location="", vendor="Generic", *
 
 
 class FakeSpoolmanServer:
-    def __init__(self, spools=(), fail=None):
-        self.spools, self.calls, self.fail = list(spools), [], fail
+    def __init__(self, spools=(), fail=None, redirect=None, body=None):
+        self.spools, self.calls, self.fail, self.redirect, self.body = list(spools), [], fail, redirect, body
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -29,12 +29,17 @@ class FakeSpoolmanServer:
                 n = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(n)) if n else None
                 outer.calls.append((self.command, self.path, body))
+                if outer.redirect:
+                    self.send_response(302)
+                    self.send_header("Location", outer.redirect)
+                    self.end_headers()
+                    return
                 if outer.fail:
                     self.send_response(outer.fail)
                     self.end_headers()
                     return
                 out = outer.spools if self.path.startswith("/api/v1/spool?") else {"status": "healthy"}
-                data = json.dumps(out).encode()
+                data = outer.body if outer.body is not None else json.dumps(out).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
@@ -84,6 +89,44 @@ class ClientTests(unittest.TestCase):
     def test_ids_are_integers(self):
         with self.assertRaises(ValueError):
             sm.Spoolman(self.srv.url).use_weight("1; drop", 1)
+
+
+class UrlSafetyTests(unittest.TestCase):
+    def test_only_http_and_https_with_a_host(self):
+        for bad in ("file:///etc/passwd#", "file:///etc/passwd", "ftp://box/x", "http://", "https:///x", "gopher://box",
+                    "http://box:99999", "javascript:alert(1)", "data:text/plain,x"):
+            with self.assertRaises(sm.SpoolmanError, msg=bad):
+                sm.Spoolman(bad)
+            self.assertIsNone(sm.clean_url(bad, strict=False), bad)
+        self.assertEqual(sm.clean_url("HTTPS://Box:7912/spool/"), "https://box:7912/spool")
+        self.assertEqual(sm.clean_url("box:7912"), "http://box:7912")
+        self.assertEqual(sm.clean_url(""), "")
+        self.assertEqual(sm.Spoolman("").url, "")
+
+    def test_opener_has_no_file_or_ftp_handler(self):
+        names = {type(h).__name__ for h in sm._opener().handlers}
+        self.assertFalse(names & {"FileHandler", "FTPHandler", "DataHandler"})
+
+    def test_a_redirect_to_another_host_is_refused(self):
+        target = FakeSpoolmanServer([spool(1)])
+        src = FakeSpoolmanServer(redirect=target.url + "/api/v1/health")
+        for s in (target, src):
+            self.addCleanup(s.close)
+        with self.assertRaisesRegex(sm.SpoolmanError, "HTTP 302"):
+            sm.Spoolman(src.url).connect()
+        self.assertEqual(target.calls, [])
+
+    def test_a_redirect_to_a_file_url_is_refused(self):
+        src = FakeSpoolmanServer(redirect="file:///etc/passwd")
+        self.addCleanup(src.close)
+        with self.assertRaises(sm.SpoolmanError):
+            sm.Spoolman(src.url).connect()
+
+    def test_an_oversized_body_is_refused(self):
+        src = FakeSpoolmanServer(body=b"[" + b"0," * (sm.MAX_BODY // 2 + 10) + b"0]")
+        self.addCleanup(src.close)
+        with self.assertRaisesRegex(sm.SpoolmanError, "too large"):
+            sm.Spoolman(src.url).spools()
 
 
 class MatchTests(unittest.TestCase):

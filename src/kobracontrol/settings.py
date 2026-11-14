@@ -5,6 +5,8 @@ import json
 import os
 import threading
 
+import spoolman
+
 DEFAULT_PRINTER_NAME = "Anycubic Kobra X"
 UI_LANGUAGES = ("auto", "en", "pt-BR")   # "auto": OrcaSlicer's language, then the system's
 DEFAULTS = {
@@ -34,6 +36,8 @@ def _clean(key, value):
         return value if value in UI_LANGUAGES else None
     if type(value) is not type(default):
         return None
+    if key == "spoolman_url":
+        return spoolman.clean_url(value, strict=False)
     if key == "printer_name":
         return printer_label(value)
     return value.strip() if isinstance(value, str) else value

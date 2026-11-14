@@ -14,20 +14,61 @@ import urllib.request
 
 MAX_SLOTS = 32                  # slot numbers above this in a location are not ours
 LOCATION_MAX = 64
-_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # LAN only: never via a proxy
+MAX_BODY = 8 * 1024 * 1024      # a Spoolman answer larger than this is refused
 
 
 class SpoolmanError(RuntimeError):
     pass
 
 
+def clean_url(url, strict=True):
+    """One spelling of a Spoolman address: "box:7912" -> "http://box:7912", scheme and host lower-cased, no
+    trailing slash. Only http and https with a host are accepted; "" stays "". Anything else raises SpoolmanError
+    (strict) or returns None."""
+    text = str(url or "").strip().rstrip("/")
+    if not text:
+        return ""
+    if "://" not in text and not re.match(r"[^:/]+:\d+(/|$)", text):
+        text = "http://" + text if ":" not in text else text   # "file:x", "javascript:x" keep their scheme and fail below
+    elif "://" not in text:
+        text = "http://" + text
+    try:
+        parts = urllib.parse.urlsplit(text)
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        host, port = None, None
+    if not host or parts.scheme.lower() not in ("http", "https"):
+        if strict:
+            raise SpoolmanError("the Spoolman address must be an http:// or https:// URL with a host")
+        return None
+    netloc = ("[%s]" % host if ":" in host else host) + (":%d" % port if port else "")
+    return "%s://%s%s" % (parts.scheme.lower(), netloc, parts.path.rstrip("/"))
+
+
+class _SameHost(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to http(s) on the same host and port: Spoolman has no reason to send us elsewhere."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        old, new = urllib.parse.urlsplit(req.full_url), urllib.parse.urlsplit(newurl)
+        if new.scheme not in ("http", "https") or new.netloc.lower() != old.netloc.lower():
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener():
+    """HTTP and HTTPS only (no file:, ftp:, data:), never via a proxy (LAN only), same-host redirects only."""
+    opener = urllib.request.OpenerDirector()
+    for handler in (urllib.request.ProxyHandler({}), urllib.request.HTTPHandler(), urllib.request.HTTPSHandler(),
+                    _SameHost(), urllib.request.HTTPDefaultErrorHandler(), urllib.request.HTTPErrorProcessor()):
+        opener.add_handler(handler)
+    return opener
+
+
 class Spoolman:
     def __init__(self, url="", timeout=5.0, opener=None):
-        self.url = (url or "").strip().rstrip("/")
-        if self.url and "://" not in self.url:
-            self.url = "http://" + self.url
+        self.url = clean_url(url)
         self.timeout = timeout
-        self._open = (opener or _NO_PROXY).open
+        self._open = (opener or _opener()).open
 
     def connect(self):
         if not self.url:
@@ -42,12 +83,14 @@ class Spoolman:
                                      headers={"Content-Type": "application/json", "Accept": "application/json"})
         try:
             with self._open(req, timeout=self.timeout) as resp:
-                raw = resp.read(32 * 1024 * 1024)
+                raw = resp.read(MAX_BODY + 1)
         except urllib.error.HTTPError as e:
             e.close()
             raise SpoolmanError("Spoolman said HTTP %d" % e.code) from None
         except (OSError, ValueError) as e:
             raise SpoolmanError("can't reach Spoolman at %s (%s)" % (self.url, getattr(e, "reason", e))) from None
+        if len(raw) > MAX_BODY:
+            raise SpoolmanError("Spoolman's answer is too large")
         try:
             return json.loads(raw.decode("utf-8")) if raw else None
         except ValueError:
