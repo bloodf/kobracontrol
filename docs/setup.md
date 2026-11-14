@@ -2,8 +2,10 @@
 
 Four things have to be in place before OrcaSlicer prints to a Kobra X through kobracontrol: LAN mode
 on the printer, the client certificate, the "Use printer agents" preference and a printer preset.
-kobracontrol is in development and not released, so these steps have not been confirmed on a real
-printer yet.
+kobracontrol is in development and not released. The connection, status, files, camera stream and
+printing were checked on a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer. These setup steps,
+and everything inside OrcaSlicer (Device tab, Print dialog, permissions dialog), have not been
+confirmed on a real printer yet.
 
 kobracontrol targets stock OrcaSlicer 2.5 or newer. It does not need a patched build such as
 [OrcaSlicer-KX](https://gitea.it-drui.de/viewit/OrcaSlicer-KX).
@@ -57,6 +59,9 @@ Keep any other preset you use for the printer as it is.
    connection and firmware version.
 2. Open the Device tab: status, temperatures and ACE slots should appear.
 3. In Orca's Print dialog, sync the ACE slots, map each filament to a slot and send the print.
+4. Expect a long preparation phase after the print starts: the printer heats, levels and cycles
+   through the ACE slots before the first layer (about 11 minutes in one test, for a 5 minute
+   print). It is not hung.
 
 ## Troubleshooting
 

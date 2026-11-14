@@ -15,6 +15,10 @@ const props = defineProps<{ unit: AceUnit; label: string }>();
 const TEMP = { min: 30, max: 80 }, MINUTES = { min: 10, max: 1440 };
 const drying = computed(() => props.unit.drying.status !== 0);
 const d = computed(() => props.unit.drying);
+// Box-level readings are the fallback when the drying report has none. drying.duration is not shown: the printer
+// reports a constant (86400) while drying, so it says nothing about the real total.
+const humidity = computed(() => d.value.humidity ?? props.unit.humidity ?? null);
+const inside = computed(() => d.value.current_temp ?? props.unit.temp ?? null);
 const temp = ref<number | null>(null);
 const minutes = ref<number | null>(null);
 const asNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -45,15 +49,16 @@ const stop = () => run({ key: `dry:${props.unit.id}`, label: t('act.dryStop', { 
     <div v-if="drying" class="au-dry" role="status" data-test="drying">
       <div class="kc-row"><Icon name="icon/dry" /><strong>{{ t('dry.running', { temp: fmt.number(d.target_temp) }) }}</strong>
         <span class="kc-num">{{ d.remain_time ? t('dry.left', { time: fmt.duration(d.remain_time * 60) }) : '—' }}</span></div>
-      <div v-if="d.humidity != null || d.current_temp != null" class="oui-meta">
-        <template v-if="d.current_temp != null">{{ t('dry.now', { temp: fmt.number(d.current_temp, 1) }) }}</template>
-        <template v-if="d.humidity != null && d.current_temp != null"> · </template>
-        <template v-if="d.humidity != null">{{ t('dry.humidity', { value: fmt.number(d.humidity) }) }}</template></div>
+      <div v-if="humidity != null || inside != null" class="oui-meta">
+        <template v-if="inside != null">{{ t('dry.now', { temp: fmt.number(inside, 1) }) }}</template>
+        <template v-if="humidity != null && inside != null"> · </template>
+        <template v-if="humidity != null">{{ t('dry.humidity', { value: fmt.number(humidity) }) }}</template></div>
       <Button severity="secondary" outlined size="small" :label="t('dry.stop')" :aria-label="t('dry.stopLabel', { ace: label })" :disabled="!!controlsOff"
               :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-stop:${unit.id}`" :data-dry-stop="unit.id" @click="stop" />
     </div>
     <div v-else class="au-dry">
-      <div class="kc-row"><Icon name="icon/dry" /><strong>{{ t('dry.title') }}</strong></div>
+      <div class="kc-row"><Icon name="icon/dry" /><strong>{{ t('dry.title') }}</strong>
+        <span v-if="humidity != null" class="oui-meta" data-test="unit-humidity">{{ t('dry.humidity', { value: fmt.number(humidity) }) }}</span></div>
       <div class="kc-row">
         <label :for="`dry-t-${unit.id}`">{{ t('dry.temp') }}</label>
         <InputNumber :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true"

@@ -56,10 +56,8 @@ def run(ip, slicer=None, http_port=18910, mqtt_port=9883, out=print):
         step("mqtt", printer.connect)
         try:
             state.connected = True
-            if step("info/query", printer.query_info) is None:
-                raise StepFailed("info/query: no answer from the printer")
-            if step("multiColorBox/getInfo", printer.query_multi_color_box) is None:
-                raise StepFailed("multiColorBox/getInfo: no answer from the printer")
+            step("info/query", lambda: kobra.check_reply(printer.query_info(), "info/query"))
+            step("multiColorBox/getInfo", lambda: kobra.check_reply(printer.query_multi_color_box(), "multiColorBox/getInfo"))
             out(summary(state.view(), creds))
         finally:
             printer.close()

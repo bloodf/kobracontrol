@@ -70,7 +70,7 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(p, kobra.print_file_payload("a.gcode", 100, mapping, {"auto_leveling": True,
                                                                               "vibration_compensation": False,
                                                                               "skip_parts": []}))
-        self.assertEqual(p["filepath"], "/a.gcode")
+        self.assertEqual(p["filepath"], "/")
         self.assertEqual(p["task_settings"]["auto_leveling"], 1)
         self.assertEqual(p["task_settings"]["vibration_compensation"], 0)
 

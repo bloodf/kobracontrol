@@ -4,23 +4,54 @@ KX-Bridge (both GPL-3.0); where they disagree, a comment says which behaviour is
 `fetch_credentials(ip)` -> Credentials; `Printer(creds, ssl_context=certs.context(...))` talks MQTT;
 `Printer.upload(...)` + `Printer.start_print(print_file_payload(...))` print a file; `State` folds reports.
 
+Request/reply contract (observed on firmware 2.0.2.8; the captures in tests/kobra_captures.py are ground truth):
+  - The printer acknowledges every request at once on `.../<deviceId>/response` with our msgid and empty
+    fields (code 0, data null). That only means "received": it never settles a request. `Printer.last_ack`
+    holds the last ack of one of our requests; acks are not passed to on_report.
+  - The answer comes later on `<type>/report` with a msgid the PRINTER made, code 200, state "done" or
+    "success", and action = the request's action (info/query answers with action "report"; see
+    REPLY_ACTIONS). The topic is shared with other clients, so `request()` settles on the first report of
+    that type and action that arrives after it published, whoever triggered it; concurrent identical
+    requests share one answer. A report carrying the request's own msgid (older firmware) always settles
+    that request, whatever its action.
+  - `request()` returns that report dict; on timeout `None` when not even the ack came (not received), or
+    an ack marker `{"ack": True, "type", "action", "msgid", "data": None}` (`is_ack_only()`) when only the
+    ack came (received, no result reported: e.g. print/query on an idle printer). A dropped session -> None.
+  - `succeeded(reply)`: a real report that is not state "failed" and whose code, if present, is 0 or 200.
+    `check_reply(reply, what)` returns the reply or raises KobraError(code="no_answer"),
+    NoResult(code="no_result") or KobraError(code=<the printer's code>).
+
 State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KEYS):
   connected        bool, set by the owner through `State.connected`
-  state            "offline|idle|printing|paused|finished|cancelled|error|busy" (normalised: see normalise())
-  preparing        bool, True while a print runs a preparation phase (heating, levelling, wiping, ...);
-                   state is then "printing" and progress keeps its last value
+  state            "offline|idle|printing|paused|finished|cancelled|error|busy" (normalised: see normalise()).
+                   "error" also when the printer ended the task itself (print/report stoped with a code
+                   other than 0/200, e.g. 10111 "abnormal end of task"); stoped with code 200 is "cancelled".
+                   An unknown state during a job (a start report or an info project is active) is "printing".
+  preparing        bool, True while a print runs a preparation phase (heating, levelling, wiping, ACE
+                   feeding, any unknown phase of a running job); state is then "printing" and progress,
+                   layers, elapsed and remaining keep their last values (the printer reports 0 meanwhile)
   kobra_state      raw printer state ("free", "printing", "pause", "stoped", ...; "" before any report)
   printer_name, model, firmware                       str ("" when unknown; model from the constructor
                                                       unless info/report carries model/modelName)
   filename         str, current job ("" when idle or after a terminal state)
-  progress         number 0-100 as reported (pre-print phases keep the previous value)
+  progress         number 0-100 as reported; never decreases within a job (reset when a new job reports
+                   "checking", and by a terminal state); preparation phases keep the previous value
   layer, total_layers, elapsed_s, remaining_s         numbers (printer reports minutes; converted to s)
   task_id          str ("" unknown; pass it to pause/resume/stop and print/update helpers)
   nozzle_temp, nozzle_target, bed_temp, bed_target    numbers, deg C
+  aux_fan_pct      number 0-100 (info aux_fan_speed_pct)
+  phase_unit, phase_channel  ints (1-based ACE unit and slot) from the last job print/report, during the
+                   ace_filament_unfeeding/feeding and nozzle_purging slot checks; None when it carried none
+  layer/total_layers of a finished job stay shown (e.g. 50/50) until the next job reports "checking";
+                   a cancel or abnormal end clears them
+  features         {"<name>_support": bool} as info/report announces it ({} before)
+  last_project     the printer's last job as info/report gives it (filename, state, task_id, progress,
+                   curr_layer, total_layers, print_time, supplies_usage, ...), raw dict or None
   fan_pct          number 0-100; light_on bool; light_brightness number; speed_mode number (printer's code)
   multi_color_box  raw list from multiColorBox/report (ACE units and slots); head_tools_model raw value
   box_set_failed   bool, the last multiColorBox/report was state "failed" (e.g. a refused slot setInfo)
-  files            [{"filename", "size", "timestamp"}] newest first (file/report listLocal, code 200)
+  files            [{"filename", "size", "timestamp"}] newest first (file/report listLocal, code 200);
+                   timestamp in SECONDS (the printer reports milliseconds)
   file_details     raw dict of the last file/report file_details (thumbnail, objects_skip_parts, ...)
   upload_url       info urls.fileUploadurl ("" until announced); camera_url urls.rtspUrl, always the latest
   camera_urls      every info url except fileUploadurl; camera_active bool (video/report, unconfirmed)
@@ -63,7 +94,11 @@ BOUNDARY = "------------------------a3a050b927d92a4c"
 # their own, so it is ignored: passing it through makes print progress jump (KX-Bridge issue #102).
 PRE_PRINT = {"preheating", "auto_leveling", "checking", "updated", "init", "hotbed_heating", "nozzle_heating",
              "nozzle_cooling", "nozzle_cooling_off", "hotbed_cooling_off", "nozzle_purging", "nozzle_wiping",
-             "frequency_sweeping", "z_offset_calibrating", "extfilbox_filament_feeding"}
+             "frequency_sweeping", "z_offset_calibrating", "extfilbox_filament_feeding",
+             "ace_filament_feeding", "ace_filament_unfeeding"}  # last two: live capture, fw 2.0.2.8
+# print/report actions that describe the job. Others (live: getSliceParam, answering another client every
+# ~10 s with state "done") must not touch the print state or its numbers.
+PRINT_JOB_ACTIONS = {"start", "pause", "resume", "stop", "finish", "query", "", None}
 PRINTING = PRE_PRINT | {"printing", "resuming", "resumed", "stopping"}
 PAUSED = {"pausing", "paused", "pause"}
 TERMINAL = {"finished", "stoped", "canceled"}
@@ -77,6 +112,60 @@ class KobraError(Exception):
 
 class Cancelled(KobraError):
     pass
+
+
+class NoResult(KobraError):
+    """The printer acknowledged the request but reported no result before the timeout."""
+
+    def __init__(self, message):
+        super().__init__(message, code="no_result")
+
+
+# Reply action when it is not the request's own (captured: info/query -> info/report action "report").
+REPLY_ACTIONS = {("info", "query"): "report"}
+START_WATCH = 5.0  # seconds start_print watches for the printer ending a fresh task by itself
+_DEFAULT = object()
+
+
+def _start_outcome(payload):
+    """True: the print runs (a start report in a preparation phase past "checking", e.g. hotbed_heating);
+    False: it ended (start/stop report stoped or failed); None: not decided by this report (checking,
+    printing and anything else: a wrong filepath also reports both before ending). Other actions (another
+    client's refused pause or update) say nothing about our start."""
+    if not isinstance(payload, dict):
+        return None
+    state = payload.get("state")
+    if state in ("stoped", "failed") and payload.get("action") in ("start", "stop"):
+        return False
+    if payload.get("action") == "start" and state in PRE_PRINT and state != "checking":
+        return True
+    return None
+
+
+def is_ack_only(reply):
+    return isinstance(reply, dict) and reply.get("ack") is True
+
+
+def succeeded(reply):
+    """One rule for every command reply: a real report, not state "failed", code absent or 0 or 200.
+    (Kobralink took only code 0 as success; the real printer answers 200.)"""
+    if not isinstance(reply, dict) or is_ack_only(reply):
+        return False
+    return reply.get("state") != "failed" and reply.get("code") in (None, 0, 200)
+
+
+def check_reply(reply, what):
+    """`reply` when it succeeded, else the KobraError a caller can show (what: "the pause", ...)."""
+    if reply is None:
+        raise KobraError("the printer did not answer %s" % what, code="no_answer")
+    if is_ack_only(reply):
+        raise NoResult("the printer received %s but reported no result" % what)
+    if not succeeded(reply):
+        code = reply.get("code")
+        detail = _str(reply.get("msg")) or json.dumps(reply.get("data"))
+        raise KobraError("the printer refused %s (code %s): %s" % (what, "?" if code is None else code, detail),
+                         code=code)
+    return reply
 
 
 @dataclass(frozen=True)
@@ -179,9 +268,11 @@ def _round(x):
 
 # printer ------------------------------------------------------------------------------------------
 class _Pending:
-    def __init__(self, msgid, report_key, action):
-        self.msgid, self.report_key, self.action = msgid, report_key, action
+    def __init__(self, msgid, report_key, reply_action, accept=None):
+        """accept(payload) -> bool replaces the action match (used to watch a print start)."""
+        self.msgid, self.report_key, self.reply_action, self.accept = msgid, report_key, reply_action, accept
         self.event, self.reply = threading.Event(), None
+        self.sent = self.acked = self.dropped = False
 
 
 class Printer:
@@ -194,7 +285,8 @@ class Printer:
         self._client = None
         self._lock = threading.Lock()
         self._connect_lock = threading.Lock()
-        self._by_id, self._by_report, self._watchers = {}, {}, []
+        self._pending = []
+        self.last_ack = None
 
     @property
     def connected(self):
@@ -254,17 +346,15 @@ class Printer:
 
     def _fail_pending(self):
         with self._lock:
-            pending = list(self._by_id.values()) + list(self._watchers)
+            pending = list(self._pending)
         for p in pending:
+            p.dropped = True
             self._resolve(p, None)
 
     def _resolve(self, p, payload):
         with self._lock:
-            if p in self._watchers:
-                self._watchers.remove(p)
-            self._by_id.pop(p.msgid, None)
-            if self._by_report.get(p.report_key) is p:
-                del self._by_report[p.report_key]
+            if p in self._pending:
+                self._pending.remove(p)
             if not p.event.is_set():
                 p.reply = payload
                 p.event.set()
@@ -282,17 +372,20 @@ class Printer:
             return
         suffix = "/".join(topic.split("/")[-2:])
         msgid = payload.get("msgid")
+        if topic.endswith("/response"):  # "received" ack: never an answer, never a report
+            with self._lock:
+                mine = [p for p in self._pending if msgid and p.msgid == msgid]
+                for p in mine:
+                    p.acked = True
+                    self.last_ack = payload
+            return
         with self._lock:
-            by_report, by_id = self._by_report.get(suffix), self._by_id.get(msgid) if msgid else None
-        if by_report and (not msgid or by_report.msgid == msgid or
-                          (by_report.action and by_report.action == payload.get("action"))):
-            self._resolve(by_report, payload)
-        if by_id and (not by_id.action or suffix == by_id.report_key):
-            self._resolve(by_id, payload)
-        with self._lock:
-            watchers = [w for w in self._watchers if w.report_key == suffix and w.action == payload.get("action")]
-        for w in watchers:
-            self._resolve(w, payload)
+            waiting = [p for p in self._pending if p.sent and p.report_key == suffix]
+        own = [p for p in waiting if msgid and p.msgid == msgid]
+        action = payload.get("action")
+        for p in own or [p for p in waiting if (p.accept(payload) if p.accept else
+                                               p.reply_action is None or p.reply_action == action)]:
+            self._resolve(p, payload)
         self._emit(self.on_report, suffix, payload)
 
     def _publish(self, kind, type_, action, data, msgid=None):
@@ -307,34 +400,30 @@ class Printer:
         except mqtt.MqttError:
             return False
 
-    def request(self, type_, action, data=None, timeout=5, match_action=False):
-        """Publish and wait for the reply (matched by msgid or by `<type>/report`); None on timeout."""
+    def request(self, type_, action, data=None, timeout=5, reply_action=_DEFAULT, accept=None):
+        """Publish and wait for the `<type>/report` answer (see the module docstring for the contract).
+        reply_action: the report action that answers (default: REPLY_ACTIONS or the request's action);
+        None accepts any action of that type. accept(report) -> bool: an extra test on top of the action
+        (an answer that names its subject, e.g. fileDetails' data.filename, must name ours)."""
         if not self.connected:
             return None
-        p = _Pending(str(uuid.uuid4()), type_ + "/report", action if match_action else None)
+        if reply_action is _DEFAULT:
+            reply_action = REPLY_ACTIONS.get((type_, action), action)
+        def matches(report):
+            return ((reply_action is None or report.get("action") == reply_action)
+                    and (accept is None or accept(report)))
+        p = _Pending(str(uuid.uuid4()), type_ + "/report", reply_action, accept=matches)
         with self._lock:
-            self._by_id[p.msgid] = p
-            self._by_report.setdefault(p.report_key, p)
+            self._pending.append(p)
         try:
+            p.sent = True  # set before publishing: the answer can arrive before publish() returns
             if self._publish("slicer", type_, action, data, p.msgid):
                 p.event.wait(max(timeout, 0.001))
         finally:
             self._resolve(p, None)
+        if p.reply is None and p.acked and not p.dropped:
+            return {"ack": True, "type": type_, "action": action, "msgid": p.msgid, "data": None}
         return p.reply
-
-    def await_report(self, suffix, action, send, timeout):
-        """Call send() and wait for the next `suffix` report carrying `action`, whatever its msgid.
-        The file/* commands answer this way: the real result arrives later as a file/report with the
-        same action (KX-Bridge and Kobralink both wait for it so)."""
-        w = _Pending(None, suffix, action)
-        with self._lock:
-            self._watchers.append(w)
-        try:
-            if send():
-                w.event.wait(max(timeout, 0.001))
-        finally:
-            self._resolve(w, None)
-        return w.reply
 
     def send(self, type_, action, data=None):
         return self._publish("slicer", type_, action, data)
@@ -396,9 +485,9 @@ class Printer:
         return bool(sent) and all(sent)
 
     def move_axis(self, axis, move_type, distance=0):
-        timeout = 30 if move_type == 2 else 5
-        return self.request("axis", "move", {"axis": axis, "move_type": move_type, "distance": distance},
-                            timeout, match_action=True)
+        # homing answers when done (41 s on a real Kobra X); a jog answers when done too: 5 s + 1 s per 5 mm
+        timeout = 90 if move_type == 2 else 5 + abs(_num(distance)) / 5
+        return self.request("axis", "move", {"axis": axis, "move_type": move_type, "distance": distance}, timeout)
 
     def disable_steppers(self):
         return self.send("axis", "turnOff")
@@ -424,53 +513,62 @@ class Printer:
     def skip_objects(self, names):
         return self.request("skip", "start", {"objects_skip_parts": list(names)})
 
+    # page_size 200 as KX-Bridge (tested against a real printer); Kobralink sends 1000.
+    LIST_DATA = {"page_num": 1, "page_size": 200, "path": "/"}
+
     def list_local_files(self):
-        # page_size 200 as KX-Bridge (tested against a real printer); Kobralink sends 1000.
-        return self.send("file", "listLocal", {"page_num": 1, "page_size": 200, "path": "/"})
+        return self.send("file", "listLocal", self.LIST_DATA)
 
     def delete_local_files(self, filenames):
-        return self.send("file", "deleteBatch", {"root": "local", "files": [{"path": "/", "filename": f} for f in filenames]})
+        return self.send("file", "deleteBatch", _delete_data(filenames))
 
     def request_file_details(self, filename):
         return self.send("file", "fileDetails", {"root": "local", "filename": filename})
 
     def list_files(self, timeout=15):
-        """[{"filename", "size", "timestamp"}] of the printer's local storage, newest first."""
-        reply = self.await_report("file/report", "listLocal", self.list_local_files, timeout)
-        if reply is None:
-            raise KobraError("the printer sent no file list")
-        if reply.get("code") != 200:
-            raise KobraError("the printer refused the file list (code %s)" % reply.get("code"), code=reply.get("code"))
+        """[{"filename", "size", "timestamp" (seconds)}] of the printer's local storage, newest first."""
+        reply = check_reply(self.request("file", "listLocal", self.LIST_DATA, timeout), "the file list")
         return _file_records(_dict(reply.get("data")).get("records"))
 
     def delete_files(self, filenames, timeout=8):
         filenames = list(filenames)
         if not filenames:
             raise KobraError("no file to delete")
-        reply = self.await_report("file/report", "deleteBatch", lambda: self.delete_local_files(filenames), timeout)
-        if reply is None:
-            raise KobraError("the printer did not answer the delete request")
-        if reply.get("state") != "success" and reply.get("code") != 200:
-            raise KobraError("the printer refused the delete (code %s): %s" % (reply.get("code"), _str(reply.get("msg"))),
-                             code=reply.get("code"))
-        return reply
+        return check_reply(self.request("file", "deleteBatch", _delete_data(filenames), timeout), "the delete")
 
     def file_details(self, filename, timeout=5):
-        """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, svg_image)."""
-        reply = self.await_report("file/report", "fileDetails", lambda: self.request_file_details(filename), timeout)
-        if reply is None or reply.get("state") == "failed":
-            raise KobraError("no details for %s from the printer" % filename,
-                             code=reply.get("code") if reply else None)
-        return _dict(_dict(reply.get("data")).get("file_details"))
+        """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, estimated_time_s, ...)."""
+        def ours(report):  # other clients poll fileDetails for their files on the shared topic
+            named = _str(_dict(report.get("data")).get("filename")).lstrip("/")
+            return named == filename.lstrip("/") or (not named and not succeeded(report))  # a refusal names none
+        reply = self.request("file", "fileDetails", {"root": "local", "filename": filename}, timeout, accept=ours)
+        return _dict(_dict(check_reply(reply, "the details of %s" % filename).get("data")).get("file_details"))
 
     def start_print(self, payload, timeout=15):
-        reply = self.request("print", "start", payload, timeout)
-        if reply is None:
-            raise KobraError("the printer gave no answer to print/start")
-        code = reply.get("code")
-        if reply.get("state") == "failed" or (code is not None and code != 0):
-            detail = reply.get("msg") or json.dumps(reply.get("data"))
-            raise KobraError("the printer refused the print (code %s): %s" % ("?" if code is None else code, detail),
+        """Send print/start; return the first print/report action "start" once the print is known to run.
+
+        Raises KobraError with the printer's code when refused, NoResult when only acknowledged (not
+        success), KobraError(code="no_answer") when not even that. A start report alone is no proof: with a
+        file it cannot find, firmware 2.0.2.8 reports start/checking and start/printing, then ends the task
+        itself (stop/stoped code 10111 "abnormal end of task") within a second. So after the first start
+        report this watches print/report for up to START_WATCH seconds: a stoped/failed report raises with
+        its code and msg; a start report in a later phase (heating, levelling, ...) ends the watch early."""
+        watch = _Pending(None, "print/report", None, accept=lambda report: _start_outcome(report) is not None)
+        watch.sent = True
+        with self._lock:
+            self._pending.append(watch)
+        try:
+            reply = check_reply(self.request("print", "start", payload, timeout), "the print")
+            if not _start_outcome(reply):
+                watch.event.wait(START_WATCH)
+        finally:
+            self._resolve(watch, None)
+        end = reply if _start_outcome(reply) is not None else watch.reply
+        if isinstance(end, dict) and end.get("state") in ("stoped", "failed"):
+            code = end.get("code")
+            if end.get("state") == "stoped" and code in (None, 0, 200):
+                raise Cancelled("the print was stopped right after it started")
+            raise KobraError("the printer ended the print at once (code %s): %s" % (code, _str(end.get("msg"))),
                              code=code)
         return reply
 
@@ -520,8 +618,11 @@ class Printer:
         if status != 200:
             raise KobraError("the printer refused the upload: HTTP %d" % status)
         result = _loads(body)
-        if result is None:
+        if not isinstance(result, dict):
             raise KobraError("unexpected upload answer: %r" % body[:200])
+        if result.get("code") != 200:  # real answer: {"code": 200, "data": {"gcode": name}, "message": "success"}
+            raise KobraError("the printer refused the upload (code %s): %s"
+                             % (result.get("code"), _str(result.get("message"))), code=result.get("code"))
         return result
 
     def _upload_headers(self, file_size, body_size):
@@ -550,11 +651,15 @@ class Printer:
 
 
 def print_file_payload(filename, size, mapping, task=None):
-    """print/start data for a file already on the printer (Kobralink printPrinterFile).
+    """print/start data for a file already on the printer.
+
+    filepath is the FOLDER holding the file ("/"), as in file/deleteBatch's {path, filename}: firmware 2.0.2.8
+    joins it with filename, so Kobralink's printPrinterFile form ("/<filename>") made it look for
+    /<name>/<name>, find nothing and end the task with code 10111.
     mapping: ams_box_mapping entries; task: {"auto_leveling", "vibration_compensation", "skip_parts"}."""
     task = task or {}
     return {
-        "taskid": "-1", "url": "", "filename": filename, "md5": "", "filepath": "/" + filename,
+        "taskid": "-1", "url": "", "filename": filename, "md5": "", "filepath": "/",
         "filetype": 1, "project_type": 1, "filesize": size,
         "ams_settings": {"use_ams": bool(mapping), "ams_box_mapping": list(mapping)},
         "task_settings": {
@@ -575,7 +680,8 @@ VIEW_KEYS = ("connected", "state", "preparing", "box_set_failed", "camera_url_re
              "layer", "total_layers", "elapsed_s", "remaining_s", "task_id", "nozzle_temp", "nozzle_target",
              "bed_temp", "bed_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
              "head_tools_model", "files", "file_details", "upload_url", "camera_url", "camera_urls",
-             "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job")
+             "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job", "aux_fan_pct",
+             "features", "last_project", "phase_unit", "phase_channel")
 
 
 def normalise(kobra_state):
@@ -597,8 +703,18 @@ def normalise(kobra_state):
     return "printing" if kobra_state in PRINTING else "busy"
 
 
+def _delete_data(filenames):
+    return {"root": "local", "files": [{"path": "/", "filename": f} for f in filenames]}
+
+
+def _seconds(ts):
+    """listLocal timestamps are milliseconds on firmware 2.0.2.8; seconds are kept as they are."""
+    ts = _num(ts)
+    return ts / 1000 if ts > 1e11 else ts
+
+
 def _file_records(records):
-    files = [{"filename": _str(r.get("filename")), "size": _num(r.get("size")), "timestamp": _num(r.get("timestamp"))}
+    files = [{"filename": _str(r.get("filename")), "size": _num(r.get("size")), "timestamp": _seconds(r.get("timestamp"))}
              for r in (records if isinstance(records, list) else []) if isinstance(r, dict) and not r.get("is_dir")]
     return sorted(files, key=lambda f: -f["timestamp"])
 
@@ -625,6 +741,7 @@ class State:
 
     def __init__(self, model=""):
         self.connected = False
+        self._in_job = self._error_end = False
         self._lock = threading.Lock()
         self._v = {
             "kobra_state": "", "printer_name": "", "model": model, "firmware": "", "filename": "", "progress": 0,
@@ -633,15 +750,36 @@ class State:
             "light_brightness": 80, "speed_mode": 0, "multi_color_box": [], "head_tools_model": None, "files": [],
             "file_details": {}, "upload_url": "", "camera_url": "", "camera_urls": {}, "camera_active": False,
             "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0,
-            "box_set_failed": False, "camera_url_rev": 0, "last_job": None}
+            "box_set_failed": False, "camera_url_rev": 0, "last_job": None,
+            "aux_fan_pct": 0, "features": {}, "last_project": None, "phase_unit": None, "phase_channel": None}
 
     def view(self):
         with self._lock:
             out = copy.deepcopy(self._v)
         out["connected"] = bool(self.connected)
-        out["state"] = normalise(out["kobra_state"]) if self.connected else "offline"
-        out["preparing"] = out["state"] == "printing" and out["kobra_state"] in PRE_PRINT
+        state = normalise(out["kobra_state"]) if out["kobra_state"] else "busy"  # unknown until a first report
+        if state == "busy" and self._in_job:
+            state = "printing"
+        elif state == "cancelled" and self._error_end:
+            state = "error"
+        out["state"] = state if self.connected else "offline"
+        out["preparing"] = out["state"] == "printing" and self._preparing(out["kobra_state"])
         return out
+
+    def _preparing(self, kobra_state):
+        return kobra_state in PRE_PRINT or (self._in_job and normalise(kobra_state) == "busy")
+
+    def _set_state(self, st, in_job):
+        """Record a job state; in_job: whether a job is known to run (start report, info project)."""
+        self._v["kobra_state"] = st
+        was = self._in_job
+        self._in_job = in_job and st not in TERMINAL and st != "free"
+        if self._in_job and not was:  # a job begins (by any route): nothing of the last one carries over
+            self._v.update(progress=0, layer=0, total_layers=0, elapsed_s=0, remaining_s=0)
+        elif st == "free":  # idle: a cancel's or a finished job's progress is not shown any more
+            self._v["progress"] = 0
+        if st != "stoped":
+            self._error_end = False
 
     def apply(self, suffix, payload):
         if not isinstance(payload, dict):
@@ -674,33 +812,49 @@ class State:
 
     def _print_fields(self, d, kobra_state):
         v = self._v
-        if "progress" in d and kobra_state not in PRE_PRINT:
-            v["progress"] = _num(d["progress"])
-        for key, field, scale in (("print_time", "elapsed_s", 60), ("remain_time", "remaining_s", 60),
-                                  ("curr_layer", "layer", 1), ("total_layers", "total_layers", 1)):
-            if key in d:
-                v[field] = _num(d[key]) * scale
+        if not self._preparing(kobra_state):  # preparation phases report their own numbers, often 0
+            if "progress" in d and (kobra_state in TERMINAL or _num(d["progress"]) >= v["progress"]):
+                # never back within a job: after the last layer fw 2.0.2.8 sends start/printing progress 0
+                v["progress"] = _num(d["progress"])
+            for key, field, scale in (("print_time", "elapsed_s", 60), ("remain_time", "remaining_s", 60),
+                                      ("curr_layer", "layer", 1), ("total_layers", "total_layers", 1)):
+                if key in d:
+                    v[field] = _num(d[key]) * scale
         if "taskid" in d:
             v["task_id"] = str(d["taskid"])
 
     def _on_print(self, p, d):
         v, st = self._v, _str(p.get("state"))
+        settings = _dict(d.get("settings"))
+        if "print_speed_mode" in settings:
+            v["speed_mode"] = _num(settings["print_speed_mode"])
+        # Not job news: other actions (getSliceParam), and a refused command of any client ("failed": apply()
+        # already put it in last_error) which leaves the job as it was.
+        if p.get("action") not in PRINT_JOB_ACTIONS or st == "failed":
+            return
+        if st == "checking":  # a new job starts: its progress and layers start from 0 (monotonic from here)
+            v.update(progress=0, layer=0, total_layers=0)
+        v["phase_unit"] = d.get("unit_no") if isinstance(d.get("unit_no"), int) else None
+        v["phase_channel"] = d.get("channel_no") if isinstance(d.get("channel_no"), int) else None
         if st:
-            v["kobra_state"] = st
+            self._set_state(st, p.get("action") == "start" or self._in_job)
+            if st == "stoped" and p.get("code") not in (None, 0, 200):
+                self._error_end = True
+                v["last_error"] = {"report": "print/report", "action": _str(p.get("action")),
+                                   "code": p.get("code"), "msg": _str(p.get("msg"))}
         if st in ("pause", "paused"):
             if p.get("msg"):
                 v["pause_reason"] = {"code": _num(p.get("code")), "msg": _str(p.get("msg"))}
         elif st in ("resuming", "resumed", "printing") or st in TERMINAL:
             v["pause_reason"] = None
         if st in TERMINAL:
-            v.update(filename="", progress=0, elapsed_s=0, remaining_s=0, layer=0, total_layers=0)
+            v.update(filename="", progress=0, elapsed_s=0, remaining_s=0)
+            if st != "finished":  # a finished job keeps its layers (50/50) until the next job's "checking"
+                v.update(layer=0, total_layers=0)
             d = {k: d[k] for k in ("progress", "taskid") if k in d}
         elif "filename" in d:
-            v["filename"] = _str(d["filename"])
+            v["filename"] = _str(d["filename"]).rsplit("/", 1)[-1]  # print/report sends "/<name>"
         self._print_fields(d, st)
-        settings = _dict(d.get("settings"))
-        if "print_speed_mode" in settings:
-            v["speed_mode"] = _num(settings["print_speed_mode"])
 
     def _on_info(self, p, d):
         v, project = self._v, _dict(d.get("project"))
@@ -710,11 +864,12 @@ class State:
                 v[field] = d[key]
         st = _str(project.get("state")) or _str(d.get("state"))
         if st:
-            v["kobra_state"] = st
+            self._set_state(st, bool(project))
         if st in TERMINAL:
             # KX-Bridge still adopts project.filename here; Kobralink (followed) does not, so a finished
             # job does not reappear as the current file. Neither project has a test for it.
-            v.update(layer=0, total_layers=0)
+            if st != "finished":
+                v.update(layer=0, total_layers=0)
             project = {k: x for k, x in project.items() if k not in ("filename", "curr_layer", "total_layers")}
         elif "filename" in project:
             v["filename"] = _str(project["filename"])
@@ -728,7 +883,12 @@ class State:
             if v["camera_url"] and camera != v["camera_url"]:
                 v["camera_url_rev"] += 1
             v["camera_url"] = camera
-        for key, field in (("fan_speed_pct", "fan_pct"), ("print_speed_mode", "speed_mode")):
+        if isinstance(d.get("features"), dict):
+            v["features"] = d["features"]
+        if "last_project" in d:
+            v["last_project"] = d["last_project"] if isinstance(d["last_project"], dict) else None
+        for key, field in (("fan_speed_pct", "fan_pct"), ("print_speed_mode", "speed_mode"),
+                           ("aux_fan_speed_pct", "aux_fan_pct")):
             if key in d:
                 v[field] = _num(d[key])
         storage = _dict(d.get("storage"))
@@ -790,7 +950,13 @@ class State:
         if p.get("state") != "failed" and p.get("action") in ("startCapture", "stopCapture"):
             self._v["camera_active"] = p["action"] == "startCapture"
 
-    _HANDLERS = {"print/report": _on_print, "info/report": _on_info, "tempature/report": _on_temp,
+    def _on_status(self, p, d):
+        # workReport busy|free: the device is busy (moving, homing) or free. Only while no job runs: during a
+        # job the job's own state says more.
+        if p.get("action") == "workReport" and p.get("state") in ("busy", "free") and not self._in_job:
+            self._set_state(p["state"], False)
+
+    _HANDLERS = {"status/report": _on_status, "print/report": _on_print, "info/report": _on_info, "tempature/report": _on_temp,
                  "multiColorBox/report": _on_box, "light/report": _on_light, "fan/report": _on_fan,
                  "file/report": _on_file, "skip/report": _on_skip, "buried/report": _on_buried,
                  "video/report": _on_video}

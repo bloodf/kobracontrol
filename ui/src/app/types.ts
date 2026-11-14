@@ -1,9 +1,9 @@
 export interface Slot {
   global_index: number; box_id: number; box_pos: number; index: number; status: number; type: string; color: number[];
-  rfid: number | null; sku: string | null; activity: string; tray: number; usable: boolean; spool_id: number | null;
+  rfid: number | null; sku: string | null; percent?: number | null; weight?: number | null; brand?: string; material_name?: string; activity: string; tray: number; usable: boolean; spool_id: number | null;
 }
 export interface Drying { status: number; target_temp: number; duration: number; remain_time: number; humidity: number | null; current_temp: number | null }
-export interface AceUnit { id: number; auto_feed: boolean; drying: Drying }
+export interface AceUnit { id: number; auto_feed: boolean; humidity?: number | null; temp?: number | null; status?: number; model_id?: number; drying: Drying }
 export interface Can { pause: boolean; resume: boolean; stop: boolean; move: boolean; heat: boolean; feed: boolean; print: boolean }
 export interface Status {
   connected: boolean; state: string; preparing: boolean; kobra_state: string; printer_name: string; model: string; firmware: string;
@@ -11,7 +11,7 @@ export interface Status {
   nozzle_temp: number; nozzle_target: number; bed_temp: number; bed_target: number; fan_pct: number; light_on: boolean; speed_mode: number;
   storage: { total?: number; used?: number };
   skipped_objects: string[]; pause_reason: { code?: number; msg?: string } | null; last_error: { msg?: string; code?: number } | null;
-  box_set_failed: boolean; updated_at: number;
+  phase_unit?: number | null; phase_channel?: number | null; box_set_failed: boolean; updated_at: number;
   mode: 'toolhead' | 'ace_direct' | 'ace_hub'; slots: Slot[]; loaded_slot: number; ace_units: AceUnit[]; can: Can;
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string }

@@ -54,3 +54,15 @@ test('errors stay until dismissed; E-stop may be pressed again while waiting', a
   assert.ok(err, 'error kept'); tr.dismiss(err.id);
   assert.ok(!tr.notices.some(n => n.kind === 'error'));
 });
+
+test('{confirmed: false} shows the "sent, waiting" text, not success; {confirmed: true} and other answers show success', async () => {
+  const { tr, sends } = setup();
+  const a = tr.run({ key: 'a', label: 'A', cmd: 'a', okText: 'done', sentText: 'sent' });
+  sends[0].resolve({ confirmed: false }); await a;
+  assert.deepEqual(tr.notices.map(n => [n.kind, n.text]), [['info', 'sent']]);
+  const b = tr.run({ key: 'b', label: 'B', cmd: 'b', okText: 'done', sentText: 'sent' });
+  sends[1].resolve({ confirmed: true }); await b;
+  const c = tr.run({ key: 'c', label: 'C', cmd: 'c', okText: 'done', sentText: 'sent' });
+  sends[2].resolve(true); await c;
+  assert.deepEqual(tr.notices.map(n => [n.kind, n.text]), [['info', 'sent'], ['success', 'done'], ['success', 'done']]);
+});

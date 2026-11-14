@@ -15,6 +15,8 @@ export interface RunOptions {
   cmd: string;
   args?: Record<string, unknown>;
   okText?: string;
+  /** Shown instead of okText when the plugin answers {confirmed: false}: the command was sent, the printer has not reported yet. */
+  sentText?: string;
   timeoutMs?: number;
   /** E-stop: a second press is allowed while the first is still unanswered. */
   allowRepeat?: boolean;
@@ -83,7 +85,9 @@ export class Tracker {
         return { ok: false, reason: 'timeout' };
       }
       done();
-      if (o.okText) this.notify('success', o.okText, o.key);
+      const unconfirmed = (first.r as { confirmed?: unknown } | null)?.confirmed === false;
+      if (unconfirmed && o.sentText) this.notify('info', o.sentText, o.key);
+      else if (o.okText) this.notify('success', o.okText, o.key);
       return { ok: true, result: first.r as T };
     } catch (e) {
       if (timedOut) return { ok: false, reason: 'timeout' };

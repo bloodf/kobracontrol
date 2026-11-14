@@ -46,6 +46,11 @@ FILAMENT_FAMILIES = {
 # "busy" (an unknown printer state) is RUNNING, so OrcaSlicer never starts a print on a busy printer.
 GCODE_STATE = {"idle": "IDLE", "printing": "RUNNING", "busy": "RUNNING", "paused": "PAUSE", "finished": "FINISH",
                "cancelled": "FAILED", "error": "FAILED", "offline": "IDLE"}
+# Kobra job phase (print/report action start, live capture fw 2.0.2.8) -> Bambu stage id, shown by the Device
+# tab as text (DM:178-260 get_stage_string). Phases with no matching text (checking, cooling, z offset
+# calibration) stay 0, "Printing".
+STAGES = {"auto_leveling": 1, "hotbed_heating": 2, "frequency_sweeping": 3, "nozzle_heating": 7,
+          "nozzle_purging": 14, "nozzle_wiping": 14, "ace_filament_unfeeding": 22, "ace_filament_feeding": 24}
 PRINT_STAGE = {"printing": 1, "paused": 2, "finished": 3, "error": 4}   # MRA:2146-2158
 
 
@@ -63,7 +68,7 @@ def _hex(color):
 def ams_block(slots, filament_id=None):
     """The `ams` object DevFilaSystemParser::ParseV1_0 reads (MRA:608-701 build_ams_payload): one unit per
     `box_pos` ("info" 0002 = AMS lite, as MRA), trays by slot `index`; bits as upper-case hex strings."""
-    units, ams_bits, tray_bits = {}, 0, 0
+    units, ams_bits, tray_bits, remain = {}, 0, 0, False
     for slot in sorted(slots, key=lambda s: (s["box_pos"], s["index"])):
         pos, index = slot["box_pos"], slot["index"]
         if index > 3:
@@ -77,11 +82,16 @@ def ams_block(slots, filament_id=None):
             tray.update(tray_type=material, tray_color=_hex(slot["color"]),
                         tray_info_idx=(filament_id(preset) if filament_id and preset else None) or "")
             tray["cols"], tray["ctype"] = [tray["tray_color"]], 1
+            # DevFilaSystem.cpp:783-789: "remain" is the spool's percent left, -1 unknown (ACE consumables_percent)
+            percent = slot.get("percent")
+            tray["remain"] = int(max(0, min(100, percent))) if isinstance(percent, (int, float)) else -1
+            remain = remain or tray["remain"] >= 0
         else:   # MRA:681-686: an empty slot
             tray.update(tray_info_idx="", tray_type="", tray_color="00000000", tray_slot_placeholder="1")
         units.setdefault(pos, []).append(tray)
     return {"ams": [{"id": str(pos), "info": "0002", "tray": trays} for pos, trays in sorted(units.items())],
-            "ams_exist_bits": "%X" % ams_bits, "tray_exist_bits": "%X" % tray_bits}
+            "ams_exist_bits": "%X" % ams_bits, "tray_exist_bits": "%X" % tray_bits,
+            "calibrate_remain_flag": remain}   # DevFilaSystem.cpp:450: the Device tab shows "remain" only when set
 
 
 def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None):
@@ -89,18 +99,24 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
     filament_id(preset name) -> the filament_id of that system preset, or None. `mode` is kept for callers
     that want it in logs; trays are already numbered by box_pos (ace.tray_id)."""
     state = view.get("state", "offline")
+    stage = STAGES.get(view.get("kobra_state"), 0) if state in ("printing", "paused") else None
     storage = bool(view.get("connected"))   # the Kobra X always has its internal storage while it answers
     p = {
         "command": "push_status", "msg": 0, "support_mqtt_alive": True,           # MRA:2134-2136
         # A print still in its preparation phase (heating, levelling, ...) is PREPARE, which DM:2549-2556
         # is_in_printing_status() counts as printing, so OrcaSlicer still refuses a new print.
-        "gcode_state": "PREPARE" if view.get("preparing") else GCODE_STATE.get(state, "RUNNING"),
+        # A filament change mid-print (layer > 0) is still RUNNING.
+        "gcode_state": "PREPARE" if view.get("preparing") and not view.get("layer") else GCODE_STATE.get(state, "RUNNING"),
         "mc_print_stage": PRINT_STAGE.get(state, 0),
+        # DM:3712-3727: stg (the stage list; empty means no stage text) and stg_cur (the current stage)
+        "stg": [stage] if stage is not None else [], "stg_cur": stage or 0,
         "mc_print_error_code": 0, "print_error": 0,   # MRA:2160-2164: numeric HMS codes only; 0 = no dialog
         # The print dialog refuses LAN printing without storage: DevStorage::ParseV1_0 reads "sdcard", then
         # DM parse_home_flag (DM:1195) reads bits 8-9 of home_flag; both must say present (MRA:2167-2184).
         "sdcard": storage, "home_flag": (HAS_SDCARD_NORMAL if storage else 0) << 8,
-        "support_send_to_sd": True, "support_bed_leveling": 1,                     # MRA:2190-2194, DM:3251
+        "support_send_to_sd": True,                                                # MRA:2190, DM:3251
+        # MRA:2191-2194; the printer's info/report features say whether it can level (no guess when absent)
+        "support_bed_leveling": 0 if (view.get("features") or {}).get("auto_leveling_support") is False else 1,
         "nozzle_temp_range": [0, nozzle_max], "bed_temp_range": [0, bed_max],      # MRA:2187, DM:3213
         "nozzle_temper": view.get("nozzle_temp", 0), "nozzle_target_temper": view.get("nozzle_target", 0),
         "bed_temper": view.get("bed_temp", 0), "bed_target_temper": view.get("bed_target", 0),

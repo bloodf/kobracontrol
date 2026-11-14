@@ -100,6 +100,13 @@ test('preparation phases read as printing with the phase named; pause says why',
   assert(!q('[data-test="stop"]').disabled, 'stop allowed');
   await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'nozzle_heating', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
   eq(statusText(), 'Printing · heating the nozzle', 'phase follows');
+  await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'ace_filament_unfeeding', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
+  eq(statusText(), 'Printing · retracting filament', 'mid-print ACE phase named');
+  assert(!q('[data-test="stop"]').disabled, 'stop stays allowed through every phase');
+  await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'ace_filament_feeding', phase_unit: 1, phase_channel: 2, can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
+  eq(statusText(), 'Printing · feeding filament · ACE 1 · Slot 2', 'the slot being worked on is named');
+  await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'nozzle_heating', phase_unit: null, phase_channel: null, can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
+  eq(statusText(), 'Printing · heating the nozzle', 'no slot when the report carries none');
 `);
 
 test('buttons follow status.can and a disabled action says why', `
@@ -194,6 +201,27 @@ test('heat is refused by the page when the printer does not allow it', `
   assert(text(q('#temp-why-nozzle')).includes('doesn’t allow heating'), 'says why: ' + text(q('#temp-why-nozzle')));
 `);
 
+test('confirmed:false shows "sent, waiting"; confirmed:true shows success; a second home while one runs shows the error', `
+  await ready(PRINTING());
+  await click(q('[data-test="pause"]'));
+  await reply(last('cmd', 'pause'), {confirmed: false});
+  assert(text(q('.notices')).includes('Pause sent; waiting for the printer'), 'waiting text: ' + text(q('.notices')));
+  assert(!qa('.p-message-success').length, 'not shown as success');
+  await post({type: 'status', data: PRINTING({state: 'paused', can: {pause: false, resume: true, stop: true, move: true, heat: true, feed: true, print: false}})});
+  await click(q('[data-test="resume"]'));
+  await reply(last('cmd', 'resume'), {confirmed: true});
+  assert(text(q('.notices')).includes('Resume sent.') && qa('.p-message-success').length === 1, 'confirmed: plain success: ' + text(q('.notices')));
+  await click(q('[data-move="x+"]'));
+  await reply(last('cmd', 'move'), {confirmed: false});
+  assert(text(q('.notices')).includes('Move sent; waiting'), 'move waits');
+  await click(q('[data-home="z"]')); await yes();
+  await reply(last('cmd', 'home'), {confirmed: false});
+  assert(text(q('.notices')).includes('Home sent; waiting'), 'home waits');
+  await click(q('[data-home="xy"]')); await yes();
+  await fail(last('cmd', 'home'), 'home is already running; try again when it ends');
+  assert(alerts().includes('home is already running'), 'error persists: ' + alerts());
+`);
+
 test('motion: moves, step choice, home and motors off ask where they must', `
   await ready(VIEW());
   await click(q('[data-move="x+"]'));
@@ -281,6 +309,18 @@ test('ACE card: units, slots, loaded slot, empty slot, activity', `
   assert(text(q('[data-slot="4"]')).includes('ABS'), 'material');
   assert(q('[data-feed="1"]').disabled && text(q('[data-slot="1"]')).includes('No filament in this slot'), 'feed refused on an empty slot, with the reason');
   assert(!/toolhead|\\bT[1-4]\\b/i.test(text(byTest('ace-card'))), 'no U1 wording');
+`);
+
+test('slot reports: brand, material name, percent and weight from the printer; box humidity when not drying', `
+  await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 4 ? {...s, brand: 'Acme', material_name: 'ABS Pro', percent: 40, weight: 400} : s)),
+    ace_units: [{id: 0, auto_feed: false, humidity: 32, temp: 45, drying: DRY0}]}));
+  const t = text(q('[data-slot="4"]'));
+  assert(t.includes('Acme ABS Pro') && t.includes('40%') && t.includes('400 g'), 'slot details: ' + t);
+  assert(text(byTest('unit-humidity')).includes('32'), 'box humidity: ' + text(q('[data-unit="0"]')));
+  await post({type: 'status', data: VIEW({ace_units: [{id: 0, auto_feed: true, humidity: 30, temp: 44, drying: {status: 1, target_temp: 50, duration: 86400, remain_time: 901, humidity: null, current_temp: null}}]})});
+  const d = text(byTest('drying'));
+  assert(d.includes('15 h 1 min left') && d.includes('Humidity 30 %') && d.includes('44'), 'drying uses box readings and remain_time minutes: ' + d);
+  assert(!d.includes('86400') && !d.includes('24 h'), 'the constant duration is never shown');
 `);
 
 test('toolhead-only printer: only the print head group, no unit controls', `

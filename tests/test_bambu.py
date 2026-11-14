@@ -66,6 +66,20 @@ class PushStatus(unittest.TestCase):
                                   ("failed", "FAILED"), ("mystery", "RUNNING")):
             self.assertEqual(self.push(view(kobra_state=kobra_state))["gcode_state"], want, kobra_state)
 
+    def test_job_phases_become_device_tab_stages(self):
+        """DM:3712-3727 reads stg/stg_cur; get_stage_string (DM:178-260) names them."""
+        for phase, stage in (("hotbed_heating", 2), ("nozzle_heating", 7), ("auto_leveling", 1),
+                             ("frequency_sweeping", 3), ("ace_filament_feeding", 24), ("ace_filament_unfeeding", 22),
+                             ("nozzle_purging", 14), ("nozzle_wiping", 14), ("nozzle_cooling", 0), ("printing", 0),
+                             ("z_offset_calibrating", 0)):
+            p = self.push(view(kobra_state=phase))
+            self.assertEqual((p["stg_cur"], p["stg"]), (stage, [stage]), phase)
+        self.assertEqual(self.push()["stg"], [])   # idle: no stage list, so no stage text
+
+    def test_filament_change_mid_print_stays_running(self):
+        p = self.push(view(kobra_state="ace_filament_feeding", preparing=True, layer=40))
+        self.assertEqual((p["gcode_state"], p["stg_cur"]), ("RUNNING", 24))
+
     def test_preparing_is_prepare(self):
         self.assertEqual(self.push(view(kobra_state="auto_leveling", preparing=True))["gcode_state"], "PREPARE")
 
@@ -107,8 +121,22 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(ams["ams_exist_bits"], "3")
         self.assertEqual(ams["tray_exist_bits"], "1B")       # trays 0, 1, 3 and 4 (ACE 1 slot 0)
 
+    def test_remaining_percent(self):   # DevFilaSystem.cpp:783-789 tray "remain"; :450 calibrate_remain_flag
+        box = {"id": 0, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 2, 3], "consumables_percent": 37},
+                                  {"index": 1, "status": 5, "type": "PLA", "color": [1, 2, 3]}]}
+        ams = self.push(boxes=[box])["ams"]
+        self.assertEqual([t.get("remain") for t in ams["ams"][0]["tray"]], [37, -1])
+        self.assertIs(ams["calibrate_remain_flag"], True)
+        self.assertIs(self.push(boxes=[ACE1])["ams"]["calibrate_remain_flag"], False)
+
+    def test_bed_leveling_follows_features(self):
+        self.assertEqual(self.push(view(features={"auto_leveling_support": False}))["support_bed_leveling"], 0)
+        self.assertEqual(self.push(view(features={"auto_leveling_support": True}))["support_bed_leveling"], 1)
+        self.assertEqual(self.push()["support_bed_leveling"], 1)   # not reported: no guess against it
+
     def test_no_boxes_no_ams(self):
-        self.assertEqual(self.push()["ams"], {"ams": [], "ams_exist_bits": "0", "tray_exist_bits": "0"})
+        self.assertEqual(self.push()["ams"], {"ams": [], "ams_exist_bits": "0", "tray_exist_bits": "0",
+                                              "calibrate_remain_flag": False})
 
     def test_hub_mode_head_is_ams_zero(self):
         head = {"id": -1, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 1, 1]}]}

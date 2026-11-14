@@ -578,5 +578,87 @@ class SetSlotPayload(unittest.TestCase):
                 ace.set_info_payload(0, 0, "PLA", c)
 
 
+# ---- real Kobra X report (firmware 2.0.2.8, one ACE, direct mode) -----------
+
+def real_slot(i, color):
+    return {"brand_name": "public", "color": list(color), "color_group": [list(color) + [255]],
+            "consumables_percent": 100, "edit_status": 1, "icon_type": 0, "index": i,
+            "material_name": "", "sku": "", "status": 5, "type": "PLA", "weight": 1000}
+
+
+REAL = {"head_tools_model": 0, "multi_color_box": [{
+    "auto_feed": 1, "drying_status": {"duration": 86400, "remain_time": 901, "status": 1, "target_temp": 45},
+    "humidity": 32, "id": 0, "loaded_slot": -1, "model_id": 40002,
+    "slots": [real_slot(0, (225, 6, 0)), real_slot(1, (124, 77, 58)), real_slot(2, (212, 185, 150)), real_slot(3, (101, 137, 70))],
+    "status": 1, "temp": 45}]}
+
+
+class RealReport(unittest.TestCase):
+    def setUp(self):
+        self.boxes = REAL["multi_color_box"]
+        self.before = copy.deepcopy(REAL)
+
+    def test_mode_slots(self):
+        mode = ace.detect_filament_mode(self.boxes, REAL["head_tools_model"])
+        self.assertEqual(mode, "ace_direct")
+        slots, loaded = ace.aggregate_slots(self.boxes, mode)
+        self.assertEqual(loaded, -1)
+        self.assertTrue(all(ace.slot_usable_for_print(s, mode) for s in slots))
+        self.assertEqual(len(slots), 4)
+        s = slots[0]
+        self.assertEqual((s["percent"], s["weight"], s["brand"], s["material_name"]), (100, 1000, "", ""))
+        self.assertEqual(s["color"], [225, 6, 0])
+        self.assertEqual(REAL, self.before)
+
+    def test_slot_fields_absent_and_brand(self):
+        b = box(0, [{"index": 0, "status": 5, "type": "PLA", "brand_name": "eSun", "material_name": "PLA+"}, slot(1)])
+        a, c = ace.aggregate_slots([b], "ace_direct")[0]
+        self.assertEqual((a["brand"], a["material_name"]), ("eSun", "PLA+"))
+        self.assertEqual((c["percent"], c["weight"], c["brand"], c["material_name"]), (None, None, "", ""))
+        self.assertEqual(ace.aggregate_slots([box(0, [{"index": 0, "brand_name": "Public"}])], "ace_direct")[0][0]["brand"], "")
+
+    def test_unit_keys(self):
+        units, drying = ace.aggregate_ace_units(self.boxes, [])
+        u = units[0]
+        self.assertEqual((u["id"], u["auto_feed"], u["humidity"], u["temp"], u["status"], u["model_id"]), (0, True, 32.0, 45.0, 1, 40002))
+        self.assertEqual((u["drying"]["humidity"], u["drying"]["current_temp"]), (32.0, 45.0))
+        self.assertEqual((drying["status"], drying["target_temp"], drying["remain_time"]), (1, 45, 901))
+        self.assertEqual(REAL, self.before)
+
+    def test_unit_keys_absent(self):
+        u = ace.aggregate_ace_units([box(0, [])], [])[0][0]
+        self.assertEqual((u["humidity"], u["temp"], u["status"], u["model_id"]), (None, None, None, None))
+
+    def test_drying_state(self):
+        r = ace.aggregate_drying_state({}, self.boxes, None)
+        self.assertEqual((r["status"], r["target_temp"], r["remain_time"], r["humidity"], r["current_temp"]), (1, 45, 901, 32.0, 45.0))
+        # remain_time is minutes (measured 898 -> 896 over 126 s): never rescaled
+        self.assertEqual(r["remain_time"], 901)
+        # duration 86400 is read as seconds -> 1440 min; it is not the elapsed total, UI must show remain_time
+        self.assertEqual(r["duration"], 1440)
+
+    def test_box_level_temp_humidity_helpers(self):
+        self.assertEqual(ace.current_temp_from(self.boxes[0]), 45.0)
+        self.assertEqual(ace.humidity_from(self.boxes[0]), 32.0)
+
+
+class SetDryPayload(unittest.TestCase):
+    def test_start(self):
+        self.assertEqual(ace.set_dry_payload([0], 45, 240),
+                         {"multi_color_box": [{"id": 0, "drying_status": {"status": 1, "target_temp": 45, "duration": 240, "remain_time": 240}}]})
+
+    def test_stop_and_multi(self):
+        self.assertEqual(ace.set_dry_payload([0, 1]), {"multi_color_box": [
+            {"id": 0, "drying_status": {"status": 0}}, {"id": 1, "drying_status": {"status": 0}}]})
+
+    def test_validation(self):
+        for t, d in ((29, 240), (81, 240), (45, 9), (45, 1441), ("45", 240), (45, True)):
+            with self.assertRaises(ValueError):
+                ace.set_dry_payload([0], t, d)
+        for ids in ([], [4], [-1], ["0"]):
+            with self.assertRaises(ValueError):
+                ace.set_dry_payload(ids, 45, 240)
+
+
 if __name__ == "__main__":
     unittest.main()

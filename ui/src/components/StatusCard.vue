@@ -17,7 +17,9 @@ const stateText = computed(() => {
   const d = st.value;
   if (!d) return t('status.noStatus');
   const name = tMaybe(`status.state.${d.state}`, d.state);
-  const detail = d.preparing ? tMaybe(`phase.${d.kobra_state}`, d.kobra_state)
+  // While the printer works on one slot (feeding, retracting, purging) it says which one: ACE 1 · Slot 2.
+  const where = d.preparing && d.phase_unit && d.phase_channel ? ` · ${t('ace.unit', { n: d.phase_unit })} · ${t('slot.name', { n: d.phase_channel })}` : '';
+  const detail = d.preparing ? tMaybe(`phase.${d.kobra_state}`, d.kobra_state) + where
     : d.state === 'error' ? d.last_error?.msg ?? '' : d.state === 'paused' ? d.pause_reason?.msg ?? '' : '';
   return detail ? `${name} · ${detail}` : name;
 });
@@ -35,12 +37,12 @@ function why(kind: Kind): string {
 const pauseWhy = computed(() => why('pause'));
 const resumeWhy = computed(() => why('resume'));
 const stopWhy = computed(() => why('stop'));
-const pause = () => run({ key: 'pause', label: t('act.pause'), cmd: 'pause', okText: t('ok.pause'), timeoutMs: 15000 });
-const resume = () => run({ key: 'resume', label: t('act.resume'), cmd: 'resume', okText: t('ok.resume'), timeoutMs: 15000 });
+const pause = () => run({ key: 'pause', label: t('act.pause'), cmd: 'pause', okText: t('ok.pause'), sentText: t('sent.pause'), timeoutMs: 15000 });
+const resume = () => run({ key: 'resume', label: t('act.resume'), cmd: 'resume', okText: t('ok.resume'), sentText: t('sent.resume'), timeoutMs: 15000 });
 async function stop() {
   if (!await ask({ title: t('confirm.stop.title'), text: t('confirm.stop.text', { printer: printerName.value }),
     yes: t('confirm.stop.yes'), no: t('confirm.stop.no'), danger: true })) return;
-  await run({ key: 'stop', label: t('act.stop'), cmd: 'stop', okText: t('ok.stop'), timeoutMs: 15000 });
+  await run({ key: 'stop', label: t('act.stop'), cmd: 'stop', okText: t('ok.stop'), sentText: t('sent.stop'), timeoutMs: 15000 });
 }
 
 // ---------------------------------------------------------------- temperatures

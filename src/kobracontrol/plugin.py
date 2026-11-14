@@ -782,7 +782,11 @@ class KobraAgent(pa.PrinterAgentBase):
         return camera_url_for(view, self.host, log, self._camera_refused)   # only a stream on the printer itself
 
     def get_camera_stream_mode(self):
-        return pa.CameraStreamMode.RTSP if self._camera_url() else pa.CameraStreamMode.None_
+        """By the URL's scheme: the Kobra X (firmware 2.0.2.8) reports http://<ip>:18088/live/<token>. OrcaSlicer
+        plays http, https and rtsp alike through its ffmpeg backend (MediaPlayCtrl.cpp:402, wxMediaCtrl3.cpp:358-383)."""
+        scheme = self._camera_url().split("://", 1)[0].lower()
+        return {"http": pa.CameraStreamMode.HTTP, "https": pa.CameraStreamMode.HTTPS,
+                "rtsp": pa.CameraStreamMode.RTSP}.get(scheme, pa.CameraStreamMode.None_)
 
     def get_camera_url(self):
         return self._camera_url()   # a getter never sends anything; the stream starts in command_start_camera

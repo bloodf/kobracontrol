@@ -1,7 +1,10 @@
 """Printer-side work for the printer agent and the Kobra Control tab, kept free of the `orca` module.
 
 One `connection.Connection` (MQTT session + `kobra.State`) per printer address, shared by the agent and the
-tab. Threads, all the plugin's own: each connection's loop; one command worker (page commands run in order);
+tab. (The printer does not require this: two MQTT sessions were observed side by side on firmware 2.0.2.8. One
+connection keeps one state and one stream of reports. Reports are shared by every client of the printer, so a
+report caused by another client's command can reach us; nothing here takes one as the answer to our command.)
+Threads, all the plugin's own: each connection's loop; one command worker (page commands run in order);
 one monitor (status and camera for the page, only while it holds a lease); one tracker (filament use and
 Spoolman follow-up for every connected printer). Pause and stop run at once on their own short-lived thread.
 
@@ -28,7 +31,7 @@ import kobra
 import settings
 import spoolman as sm
 import usage
-from jobs import CONNECT_WAIT, JobsMixin, plate_source, remote_name  # noqa: F401  (re-exported for callers)
+from jobs import CONNECT_WAIT, JobsMixin, plate_source, remote_name, supported_task  # noqa: F401  (re-exported for callers)
 from files import FilesMixin
 from stockview import StockMixin
 from usage import UsageMixin
@@ -36,7 +39,7 @@ from usage import UsageMixin
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
-BOUNDED = ("stock", "usage", "usage_ack", "find_certificate")   # own thread, at most one of each in flight
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
@@ -512,24 +515,30 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _task_id(self):
         return self._conn().view()["task_id"] or "-1"
 
-    def _answer(self, reply, what):
-        if reply is None:
-            raise kobra.KobraError("the printer did not answer %s" % what)
-        if reply.get("state") == "failed":
-            raise kobra.KobraError("the printer refused %s (code %s): %s" % (what, reply.get("code"), reply.get("msg") or ""))
-        return True
+    def _answer(self, reply, what, in_progress_ok=False):
+        """{"confirmed": True} when the printer reported success; KobraError with its code and msg when it
+        reported failure, or when not even the "received" ack came. Received without a result in time is
+        {"confirmed": False} when in_progress_ok (pause, stop, homing: the next status shows what happened),
+        otherwise kobra.NoResult."""
+        try:
+            kobra.check_reply(reply, what)
+        except kobra.NoResult:
+            if in_progress_ok:
+                return {"confirmed": False}
+            raise
+        return {"confirmed": True}
 
     def cmd_pause(self):
         self._allowed("pause", "pausing")
-        return self._answer(self._printer().pause_print(self._task_id()), "pause")
+        return self._answer(self._printer().pause_print(self._task_id()), "the pause", True)
 
     def cmd_resume(self):
         self._allowed("resume", "resuming")
-        return self._answer(self._printer().resume_print(self._task_id()), "resume")
+        return self._answer(self._printer().resume_print(self._task_id()), "the resume", True)   # reply action not captured
 
     def cmd_stop(self):
         self._allowed("stop", "stopping")
-        return self._answer(self._printer().stop_print(self._task_id()), "stop")
+        return self._answer(self._printer().stop_print(self._task_id()), "the stop", True)
 
     def cmd_set_temp(self, nozzle=None, bed=None):
         data = self._allowed("heat", "heating")
@@ -574,19 +583,13 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             raise ValueError("no distance given")
         distance = max(-MOVE_MAX, min(MOVE_MAX, distance))   # one move is never longer than MOVE_MAX
         self._allowed("move", "moving")
-        reply = self._printer().move_axis(AXIS[axis], 1 if distance > 0 else 0, abs(distance))
-        if reply and reply.get("state") == "failed":
-            self._answer(reply, "the move")
-        return True
+        return self._answer(self._printer().move_axis(AXIS[axis], 1 if distance > 0 else 0, abs(distance)), "the move", True)
 
     def cmd_home(self, axes="xyz"):
         if axes not in HOME:
             raise ValueError("home xyz, xy or z")
         self._allowed("move", "homing")
-        reply = self._printer().move_axis(HOME[axes], 2, 0)
-        if reply and reply.get("state") == "failed":
-            self._answer(reply, "homing")
-        return True
+        return self._answer(self._printer().move_axis(HOME[axes], 2, 0), "homing", True)   # ~37 s; state "busy"
 
     def cmd_motors_off(self):
         self._allowed("move", "turning the motors off")
@@ -667,8 +670,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         data = self._allowed("heat", "drying")
         temp = int(max(DRY_TEMP[0], min(DRY_TEMP[1], float(temp))))
         minutes = int(max(DRY_MINUTES[0], min(DRY_MINUTES[1], float(minutes))))
-        drying = {"status": 1, "target_temp": temp, "duration": minutes, "remain_time": minutes}
-        return self._sent(self._printer().set_dry(self._aces(data, aces), drying))
+        payload = ace.set_dry_payload(self._aces(data, aces), temp, minutes)   # minutes, as the printer counts
+        return self._sent(self._printer().set_dry([b["id"] for b in payload["multi_color_box"]],
+                                                  payload["multi_color_box"][0]["drying_status"]))
 
     def cmd_dry_stop(self, aces):
         data = self._data()
@@ -677,8 +681,10 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     # files (files.FilesMixin: cmd_files, cmd_file_details, cmd_file_print, cmd_file_delete) ----------------
 
     def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False):
-        with self._conn().start_lock:   # the idle check and print/start of one job at a time (agent jobs too)
-            return super().cmd_file_print(name, auto_leveling, vibration_compensation)
+        conn = self._conn()
+        task = supported_task(conn.view(), {"auto_leveling": auto_leveling, "vibration_compensation": vibration_compensation})
+        with conn.start_lock:   # the idle check and print/start of one job at a time (agent jobs too)
+            return super().cmd_file_print(name, bool(task["auto_leveling"]), bool(task["vibration_compensation"]))
 
     def _view(self):
         """status.data of the printer this thread works for (FilesMixin reads its slots and mode)."""

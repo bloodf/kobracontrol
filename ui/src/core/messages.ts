@@ -132,6 +132,11 @@ export const en = {
   'confirm.ack.text': 'Mark the use of {grams} g on {slot} ({file}) as checked? This only records your check here; nothing is sent to Spoolman.',
   'confirm.ack.yes': 'Mark as checked',
 
+  'sent.pause': 'Pause sent; waiting for the printer. The next status shows what happened.',
+  'sent.resume': 'Resume sent; waiting for the printer. The next status shows what happened.',
+  'sent.stop': 'Stop sent; waiting for the printer. The next status shows what happened.',
+  'sent.move': 'Move sent; waiting for the printer. The next status shows what happened.',
+  'sent.home': 'Home sent; waiting for the printer. The next status shows what happened.',
   'ok.pause': 'Pause sent.',
   'ok.resume': 'Resume sent.',
   'ok.stop': 'Stop sent.',
@@ -221,6 +226,8 @@ export const en = {
   'phase.frequency_sweeping': 'vibration calibration',
   'phase.z_offset_calibrating': 'calibrating the Z offset',
   'phase.extfilbox_filament_feeding': 'feeding filament',
+  'phase.ace_filament_feeding': 'feeding filament',
+  'phase.ace_filament_unfeeding': 'retracting filament',
 
   'temps.title': 'Temperatures',
   'temps.nozzle': 'Nozzle',
@@ -567,6 +574,11 @@ export const ptBR: Record<MessageKey, string> = {
   'confirm.ack.text': 'Marcar como conferido o consumo de {grams} g em {slot} ({file})? Isso só registra sua conferência aqui; nada é enviado ao Spoolman.',
   'confirm.ack.yes': 'Marcar como conferido',
 
+  'sent.pause': 'Pausa enviada; aguardando a impressora. O próximo status mostra o que aconteceu.',
+  'sent.resume': 'Retomada enviada; aguardando a impressora. O próximo status mostra o que aconteceu.',
+  'sent.stop': 'Parada enviada; aguardando a impressora. O próximo status mostra o que aconteceu.',
+  'sent.move': 'Movimento enviado; aguardando a impressora. O próximo status mostra o que aconteceu.',
+  'sent.home': 'Origem enviada; aguardando a impressora. O próximo status mostra o que aconteceu.',
   'ok.pause': 'Pausa enviada.',
   'ok.resume': 'Retomada enviada.',
   'ok.stop': 'Parada enviada.',
@@ -656,6 +668,8 @@ export const ptBR: Record<MessageKey, string> = {
   'phase.frequency_sweeping': 'calibrando vibração',
   'phase.z_offset_calibrating': 'calibrando o offset Z',
   'phase.extfilbox_filament_feeding': 'alimentando filamento',
+  'phase.ace_filament_feeding': 'alimentando filamento',
+  'phase.ace_filament_unfeeding': 'recolhendo filamento',
 
   'temps.title': 'Temperaturas',
   'temps.nozzle': 'Bico',

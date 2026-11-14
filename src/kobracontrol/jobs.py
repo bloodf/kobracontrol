@@ -20,7 +20,7 @@ SLICE_INFO_MAX = 8 * 1024 * 1024 # Metadata/slice_info.config read only up to th
 def remote_name(name):
     """A printer file name from a job name: safe characters only, ending in .gcode."""
     base = str(name or "")
-    base = re.sub(r"\.(gcode|3mf)$", "", base, flags=re.I)
+    base = re.sub(r"(\.(gcode|3mf))+$", "", base, flags=re.I)   # PrintJob sends "<name>.gcode.3mf"
     base = re.sub(r"[^\w .()+-]", "_", base).strip(" .") or "kobracontrol"
     return base[:120] + ".gcode"
 
@@ -87,6 +87,18 @@ def _plate_weights(z, plate):
     return {}
 
 
+def supported_task(view, task):
+    """The print options, with the ones info/report `features` marks unsupported turned off. A printer that
+    has not reported its features yet keeps the user's choice."""
+    features = view.get("features") or {}
+    task = dict(task or {})
+    for option, feature in (("auto_leveling", "auto_leveling_support"),
+                            ("vibration_compensation", "vibration_compensation_support")):
+        if features.get(feature) is False:
+            task[option] = False
+    return task
+
+
 class JobsMixin:
     def ready(self, host, timeout=CONNECT_WAIT):
         """The connected Connection for `host`, waiting up to timeout; KobraError when it does not connect."""
@@ -132,7 +144,9 @@ class JobsMixin:
         stage and stage("start")
         with conn.start_lock:   # the idle check and print/start of one job at a time (tab file prints too)
             mapping, used = self._job_mapping(conn, tray_ids, filaments)   # the slots may have changed meanwhile
-            conn.printer.start_print(kobra.print_file_payload(filename, size, mapping, task or {}))
+            task = supported_task(conn.view(), task)
+            # raises when the printer ends the task right after starting it (kobra.start_print watches)
+            conn.printer.start_print(kobra.print_file_payload(filename, size, mapping, task))
         self._remember(host, filename, used, weights)
         return filename
 

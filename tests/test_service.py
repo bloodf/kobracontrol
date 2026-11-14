@@ -13,6 +13,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
+import ace  # noqa: E402
 import connection  # noqa: E402
 import jobs  # noqa: E402
 import kobra  # noqa: E402
@@ -75,8 +76,10 @@ class FakeSpoolman:
     def set_location(self, sid, loc):
         FakeSpoolman.locations[sid] = loc
 
+    used = []
+
     def use_weight(self, sid, grams):
-        pass
+        FakeSpoolman.used.append((sid, grams))
 
 
 class Base(unittest.TestCase):
@@ -115,7 +118,13 @@ class Base(unittest.TestCase):
         return {(r["msg"]["type"], r["msg"]["action"]) for r in self.fake.requests if isinstance(r["msg"], dict)}
 
     def set_state(self, state):
-        self.fake.report("print/report", {"type": "print", "action": "update", "state": state,
+        info = self.fake.replies.get(("info", "query"))
+        if isinstance(info, dict) and isinstance(info.get("data"), dict):   # the 5 s info poll must agree
+            info["data"] = {**info["data"], "project": {"state": state, "taskid": "42", "filename": "a.gcode"}}
+        query = self.fake.replies.get(("print", "query"))
+        if isinstance(query, dict):   # so is the print/query poll made while printing
+            query["state"] = state
+        self.fake.report("print/report", {"type": "print", "action": "start", "state": state,
                                           "data": {"taskid": "42", "filename": "a.gcode", "progress": 10}})
         wait(lambda: self.conn.view()["kobra_state"] == state)
 
@@ -282,10 +291,10 @@ class PrintingCommands(Base):
 
     def test_pause_and_stop_carry_task_id(self):
         self.fake.reply("print", "pause", {}, state="paused")
-        self.assertTrue(self.run_cmd("pause")["result"])
+        self.assertEqual(self.run_cmd("pause")["result"], {"confirmed": True})
         self.assertEqual(self.sent("print", "pause")[0]["data"], {"taskid": "42"})
         self.fake.reply("print", "stop", {}, state="stoped")
-        self.assertTrue(self.run_cmd("stop")["result"])
+        self.assertEqual(self.run_cmd("stop")["result"], {"confirmed": True})
 
     def test_temperature_while_printing_uses_print_update(self):
         self.run_cmd("set_temp", nozzle=215.4)
@@ -299,7 +308,7 @@ class PrintingCommands(Base):
         self.assertEqual(wait(lambda: self.sent("print", "update"))[0]["data"]["settings"], {"print_speed_mode": 3})
 
     def test_objects_of_the_running_file(self):
-        self.fake.reply("file", "fileDetails", {"file_details": {"objects_skip_parts": ["A", {"name": "B"}, 7]}})
+        self.fake.reply("file", "fileDetails", {"root": "local", "filename": "/a.gcode", "file_details": {"objects_skip_parts": ["A", {"name": "B"}, 7]}})
         self.fake.report("skip/report", {"type": "skip", "action": "update", "state": "success",
                                          "data": {"objects_skip_parts": ["A"]}})
         wait(lambda: self.conn.view()["skipped_objects"])
@@ -309,7 +318,7 @@ class PrintingCommands(Base):
         self.assertEqual(asked["filename"], "a.gcode")
 
     def test_skip_checks_names_against_the_running_file(self):
-        self.fake.reply("file", "fileDetails", {"file_details": {"objects_skip_parts": ["A", "B"]}})
+        self.fake.reply("file", "fileDetails", {"root": "local", "filename": "/a.gcode", "file_details": {"objects_skip_parts": ["A", "B"]}})
         self.fake.reply("skip", "start", {})
         self.assertIn("not in a.gcode: Z", self.run_cmd("skip_objects", names=["B", "Z"])["error"])
         self.assertFalse(self.sent("skip", "start"))
@@ -317,7 +326,11 @@ class PrintingCommands(Base):
         self.assertEqual(self.sent("skip", "start")[0]["data"], {"objects_skip_parts": ["B"]})
 
     def test_objects_without_an_answer(self):
-        self.assertIn("no details", self.run_cmd("objects", timeout=15)["error"])
+        self.set_state("printing")   # the scripted info poll answers "free" otherwise
+        self.fake.send_ack = False
+        self.assertIn("did not answer the details of a.gcode", self.run_cmd("objects", timeout=15)["error"])
+        self.fake.send_ack = True   # received, no report: told apart from "did not answer"
+        self.assertIn("received the details of a.gcode but reported no result", self.run_cmd("objects", timeout=15)["error"])
 
     def test_print_job_refused(self):
         path = make_3mf(self.tmp)
@@ -343,7 +356,7 @@ def make_3mf(folder, plate=1, weights=((1, "3.5"), (2, "1.25"))):
 class Jobs(Base):
     def setUp(self):
         super().setUp()
-        self.fake.reply("print", "start", {}, code=0)
+        self.fake.print_start = "ok"
         self.tempdir = tempfile.mkdtemp()
         self.addCleanup(setattr, tempfile, "tempdir", tempfile.tempdir)
         tempfile.tempdir = self.tempdir
@@ -419,9 +432,9 @@ class Files(Base):
     def test_list_details_delete_print(self):
         records = [{"filename": "a.gcode", "size": 10, "timestamp": 2}, {"filename": "b.gcode", "size": 5, "timestamp": 1}]
         self.fake.reply("file", "listLocal", {"records": records}, code=200)
-        self.fake.reply("file", "fileDetails", {"file_details": {"thumbnail": "iVBORw0KGgo=", "objects_skip_parts": ["A"]}})
+        self.fake.reply("file", "fileDetails", {"root": "local", "filename": "/a.gcode", "file_details": {"thumbnail": "iVBORw0KGgo=", "objects_skip_parts": ["A"]}})
         self.fake.reply("file", "deleteBatch", {}, code=200)
-        self.fake.reply("print", "start", {}, code=0)
+        self.fake.print_start = "ok"
         self.assertEqual([r["name"] for r in self.run_cmd("files")["result"]["files"]], ["a.gcode", "b.gcode"])
         details = self.run_cmd("file_details", name="a.gcode")["result"]
         self.assertTrue(details["thumbnail"].startswith("data:image/png;base64,"))
@@ -563,7 +576,7 @@ class SliceInfoCap(Base):
     """L2: zip members are read only after their declared size is checked."""
 
     def test_huge_slice_info_is_ignored(self):
-        self.fake.reply("print", "start", {}, code=0)
+        self.fake.print_start = "ok"
         path = os.path.join(self.tmp, "big.3mf")
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("Metadata/plate_1.gcode", GCODE)
@@ -654,7 +667,7 @@ class NothingSent(Base):
 
 class PrintStartLock(Base):
     def test_check_and_start_are_serialised(self):   # L6
-        self.fake.reply("print", "start", {}, code=0)
+        self.fake.print_start = "ok"
         result = {}
         with self.conn.start_lock:
             t = threading.Thread(target=lambda: result.setdefault("r", self._job()), daemon=True)
@@ -740,3 +753,230 @@ class DeniedExplained(unittest.TestCase):
         wait(lambda: calls)
         conn.retry()
         wait(lambda: len(calls) >= 2, 1.0)   # not after the 2 s backoff
+
+
+class Features(Base):
+    """Print options the printer says it does not support (info/report features) are never sent as on."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake.print_start = "ok"
+        self.conn.state._v["features"] = {"auto_leveling_support": False, "vibration_compensation_support": True}
+
+    def test_print_job_drops_unsupported_options(self):
+        self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000"}],
+                           {"auto_leveling": True, "vibration_compensation": True})
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["auto_leveling"], task["vibration_compensation"]), (0, 1))
+
+    def test_file_print_drops_unsupported_options(self):
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "a.gcode", "size": 1, "timestamp": 1}]}, code=200)
+        self.run_cmd("file_print", name="a.gcode", auto_leveling=True, vibration_compensation=True)
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["auto_leveling"], task["vibration_compensation"]), (0, 1))
+
+    def test_slots_carry_percent(self):
+        box = dict(ACE0, slots=[dict(ACE0["slots"][0], consumables_percent=42)] + ACE0["slots"][1:])
+        self.fake.report("multiColorBox/report", {"type": "multiColorBox", "action": "update", "state": "success",
+                                                  "data": {"multi_color_box": [box]}})
+        wait(lambda: self.svc._data(self.conn)["slots"][0]["percent"] == 42)
+
+
+class ReplyOutcomes(Base):
+    """The printer acks every request on <deviceId>/response and answers later on <type>/report (fw 2.0.2.8).
+    Three outcomes are told apart: success, the printer's failure (code and msg), received but no result."""
+
+    def setUp(self):
+        super().setUp()
+        self.set_state("printing")
+
+    def test_success(self):
+        self.fake.reply("print", "pause", {})
+        self.assertEqual(self.run_cmd("pause")["result"], {"confirmed": True})
+
+    def test_failure_carries_code_and_msg(self):
+        self.fake.reply("print", "pause", None, state="failed", code=10500, msg="cannot pause now")
+        error = self.run_cmd("pause")["error"]
+        self.assertIn("10500", error)
+        self.assertIn("cannot pause now", error)
+
+    def test_urgent_received_without_result_is_not_an_error(self):
+        self.fake.ack_only = True
+        for cmd in ("pause", "stop"):
+            self.assertEqual(self.run_cmd(cmd, timeout=20)["result"], {"confirmed": False}, cmd)
+
+    def test_no_ack_at_all_is_an_error(self):
+        self.fake.send_ack = False
+        self.fake.ack_only = True
+        self.assertIn("did not answer", self.run_cmd("pause", timeout=20)["error"])
+
+    def test_skip_received_without_result_is_an_error(self):
+        self.fake.reply("file", "fileDetails", {"root": "local", "filename": "/a.gcode", "file_details": {"objects_skip_parts": ["A"]}})
+        self.fake.reply("skip", "start", {})
+        self.run_cmd("objects")
+        self.fake.ack_only = True
+        self.assertIn("reported no result", self.run_cmd("skip_objects", names=["A"], timeout=20)["error"])
+
+    def test_another_clients_report_is_not_our_answer(self):
+        """A pause report triggered by someone else before ours was sent must not count as our success."""
+        self.fake.report("print/report", {"type": "print", "action": "pause", "state": "done", "code": 200,
+                                          "data": {"taskid": "42"}})
+        time.sleep(0.2)
+        self.set_state("printing")
+        self.fake.reply("print", "pause", None, state="failed", code=1, msg="refused")
+        self.assertIn("refused", self.run_cmd("pause")["error"])
+
+
+class HomingInProgress(Base):
+    def test_home_acknowledged_without_result_is_in_progress(self):
+        self.fake.ack_only = True
+        printer = self.conn.printer   # the real 90 s homing wait, shortened for the test
+        printer.move_axis = lambda axis, move_type, distance=0: printer.request(
+            "axis", "move", {"axis": axis, "move_type": move_type, "distance": distance}, 1)
+        self.assertEqual(self.run_cmd("home", axes="xyz")["result"], {"confirmed": False})
+
+    def test_busy_blocks_move_heat_and_print(self):
+        # Homing as the printer reports it: info state "busy" with no project (a print/report state during a
+        # job is a job phase, not "busy").
+        self.fake.report("info/report", {"type": "info", "action": "report", "state": "done", "code": 200,
+                                         "data": {"state": "busy", "project": None}})
+        wait(lambda: self.conn.view()["state"] == "busy")
+        can = self.svc._data(self.conn)["can"]
+        self.assertEqual((can["move"], can["heat"], can["print"]), (False, False, False))
+        self.assertIn("busy", self.run_cmd("move", axis="x", distance=1)["error"])
+
+
+class AbnormalEnd(Base):
+    """Real fw 2.0.2.8: print/start answered "done", then print/report stop/stoped code 10111 ~1 s later."""
+
+    def script_abnormal_end(self):
+        self.fake.print_start = "abnormal"   # start/checking, start/printing, stop/stoped code 10111
+
+    def test_print_ending_right_after_start_fails_the_job(self):
+        self.script_abnormal_end()
+        with self.assertRaisesRegex(kobra.KobraError, r"ended the print at once \(code 10111\): abnormal end of task"):
+            self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000"}])
+
+    def test_tab_file_print_fails_too(self):
+        self.script_abnormal_end()
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "a.gcode", "size": 1, "timestamp": 1}]})
+        self.assertIn("abnormal end of task", self.run_cmd("file_print", name="a.gcode", timeout=15)["error"])
+
+    def test_normal_start_succeeds(self):
+        self.fake.print_start = "ok"
+        self.assertEqual(self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0],
+                                            [{"colour": "#FF0000"}]), "cube.gcode")
+
+
+def job_report(test, state, code=200, filename="/cube.gcode"):
+    """A print/report as firmware 2.0.2.8 sends during our job (action "start", taskid "-1")."""
+    test.fake.report("print/report", {"type": "print", "action": "start", "state": state, "code": code,
+                                      "data": {"taskid": "-1", "filename": filename, "progress": 50}})
+
+
+class LiveJob(Base):
+    """The finished live print (reports-print.jsonl): states, usage booking, busy info reports."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake.print_start = "ok"
+        FakeSpoolman.used, FakeSpoolman.locations = [], {7: "Anycubic Kobra X S1"}
+        self.svc.cmd_spools = lambda: None
+        self.svc.bindings = {0: 7}
+
+    def print_cube(self):
+        self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0, 1],
+                           [{"colour": "#FF0000", "type": "PLA"}, {"colour": "#0000FF", "type": "PETG"}])
+
+    def test_finished_books_usage_once(self):
+        self.print_cube()
+        job_report(self, "printing")
+        wait(lambda: self.conn.view()["state"] == "printing")
+        time.sleep(1.2)   # the tracker sees the job printing
+        job_report(self, "finished")
+        wait(lambda: FakeSpoolman.used, 10)
+        self.assertEqual(FakeSpoolman.used, [(7, 3.5)])   # slot 0 is bound; slot 1 is not, so not booked
+
+    def test_cancelled_books_nothing(self):
+        self.print_cube()
+        job_report(self, "printing")
+        time.sleep(1.2)
+        job_report(self, "stoped")
+        time.sleep(2)
+        self.assertEqual(FakeSpoolman.used, [])
+
+    def test_busy_info_during_a_job_still_allows_pause_and_stop(self):
+        self.fake.report("info/report", {"type": "info", "action": "report", "state": "done", "code": 200,
+                                         "data": {"state": "busy", "project": {"state": "ace_filament_feeding",
+                                                                               "taskid": "-1", "filename": "cube.gcode"}}})
+        wait(lambda: self.conn.view()["kobra_state"] == "ace_filament_feeding")
+        can = self.svc._data(self.conn)["can"]
+        self.assertTrue(can["stop"])
+        self.assertFalse(can["move"] or can["print"])
+
+    def test_busy_without_a_job_blocks_everything(self):   # homing: info busy, project null
+        self.fake.report("info/report", {"type": "info", "action": "report", "state": "done", "code": 200,
+                                         "data": {"state": "busy", "project": None}})
+        wait(lambda: self.conn.view()["state"] == "busy")
+        self.assertFalse(any(self.svc._data(self.conn)["can"].values()))
+
+
+class ForeignFileDetails(Base):
+    """Kobralink polls file/fileDetails for other files; those reports reach us on the shared topic."""
+
+    def test_details_of_another_file_are_not_ours(self):
+        self.set_state("printing")
+
+        def details(msg):
+            self.fake.report("file/report", {"type": "file", "action": "fileDetails", "state": "done", "code": 200,
+                                             "data": {"root": "local", "filename": "/other.gcode",
+                                                      "file_details": {"objects_skip_parts": ["FOREIGN"]}}})
+            time.sleep(0.1)
+            return {"type": "file", "action": "fileDetails", "state": "done", "code": 200,
+                    "data": {"root": "local", "filename": "/a.gcode", "file_details": {"objects_skip_parts": ["A"]}}}
+        self.fake.replies[("file", "fileDetails")] = details
+        self.assertEqual(self.run_cmd("objects")["result"]["objects"], ["A"])
+
+
+class RemoteName(unittest.TestCase):
+    def test_suffixes(self):   # PrintJob appends ".gcode.3mf" to the project name for LAN prints
+        for name, want in (("cube.gcode.3mf", "cube.gcode"), ("cube.3mf", "cube.gcode"), ("cube.GCODE", "cube.gcode"),
+                           ("cube", "cube.gcode"), ("", "kobracontrol.gcode")):
+            self.assertEqual(jobs.remote_name(name), want, name)
+
+
+class ReviewTwo(Base):
+    def short_requests(self):
+        printer = self.conn.printer   # the real waits (5 s jog, 90 s homing), shortened for the test
+        real = printer.request
+        printer.request = lambda type_, action, data=None, timeout=5, **kw: real(type_, action, data, 1, **kw)
+
+    def test_move_received_without_result_is_in_progress(self):   # M4
+        self.fake.ack_only = True
+        self.short_requests()
+        self.assertEqual(self.run_cmd("move", axis="z", distance=50)["result"], {"confirmed": False})
+
+    def test_resume_received_without_result_is_in_progress(self):   # L2
+        self.set_state("paused")
+        self.fake.ack_only = True
+        self.short_requests()
+        self.assertEqual(self.run_cmd("resume")["result"], {"confirmed": False})
+
+    def test_home_does_not_hold_the_worker(self):   # M5
+        self.fake.ack_only = True
+        gate = threading.Event()
+        printer = self.conn.printer
+        printer.move_axis = lambda *a, **k: gate.wait(10) and None
+        self.svc.submit("h", "home", {"axes": "xyz"})
+        started = time.monotonic()
+        self.assertTrue(self.run_cmd("set_light", on=True)["result"])
+        self.assertLess(time.monotonic() - started, 3)
+        self.svc.submit("h2", "home", {"axes": "z"})
+        reply = wait(lambda: next((m for m in self.published if m.get("id") == "h2"), None))
+        self.assertIn("already running", reply["error"])
+        gate.set()
+
+    def test_dry_start_payload_from_ace_builder(self):   # L7: one builder, clamped first
+        self.run_cmd("dry_start", aces=[0], temp=99.6, minutes=5)
+        data = wait(lambda: self.sent("multiColorBox", "setDry"))[0]["data"]
+        self.assertEqual(data, ace.set_dry_payload([0], 80, 10))

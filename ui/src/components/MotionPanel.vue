@@ -19,14 +19,15 @@ const moveWhy = computed(() => controlsOff.value || (s.status && !s.status.can.m
 async function move(axis: Axis, sign: 1 | -1) {
   const distance = sign * step.value;
   const label = t('act.move');
-  await run({ key: `move:${axis}`, label, cmd: 'move', args: { axis, distance }, okText: t('ok.move', { axis: axis.toUpperCase(), distance: fmt.number(distance, 1) }) });
+  await run({ key: `move:${axis}`, label, cmd: 'move', args: { axis, distance }, okText: t('ok.move', { axis: axis.toUpperCase(), distance: fmt.number(distance, 1) }),
+    sentText: t('sent.move') });
 }
 const HOME: Record<string, string> = { xy: 'home.xy', z: 'home.z', xyz: 'home.all' };
 async function home(axes: 'xy' | 'z' | 'xyz') {
   const what = t(HOME[axes] as 'home.xy');
   if (!await ask({ title: t('confirm.home.title', { what }), text: t('confirm.home.text', { what, printer: printerName.value }),
     yes: t('confirm.home.yes', { what }), no: t('common.goBack') })) return;
-  await run({ key: 'home', label: t('act.home'), cmd: 'home', args: { axes }, okText: t('ok.home', { what }) });
+  await run({ key: 'home', label: t('act.home'), cmd: 'home', args: { axes }, okText: t('ok.home', { what }), sentText: t('sent.home') });
 }
 async function motorsOff() {
   if (!await ask({ title: t('confirm.motors.title'), text: t('confirm.motors.text', { printer: printerName.value }),

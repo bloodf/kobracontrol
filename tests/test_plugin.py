@@ -40,7 +40,7 @@ class Base(unittest.TestCase):
                                   "urls": {"fileUploadurl": f.upload_url, "rtspUrl": "rtsp://127.0.0.1:1/live"}})
         f.reply("print", "query", {"taskid": "9"}, state=self.state)
         f.reply("multiColorBox", "getInfo", {"multi_color_box": [ACE0]})
-        f.reply("print", "start", {}, code=0)
+        f.print_start = "ok"
         self.tmp = tempfile.mkdtemp()
         plugin._storage_dir, plugin._store = self.tmp, None
         self.published = []
@@ -187,6 +187,17 @@ class Agent(Base):
         params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
         self.assertEqual(self.agent.start_local_print(params, None, lambda: True), plugin.ERR_CANCELED)
         self.assertEqual(self.fake.uploads, [])
+
+    def test_camera_mode_follows_url_scheme(self):   # the real Kobra X: http://<ip>:18088/live/<token>
+        self.connect()
+        for url, mode in (("http://127.0.0.1:18088/live/tok", pa.CameraStreamMode.HTTP),
+                          ("https://127.0.0.1/live", pa.CameraStreamMode.HTTPS),
+                          ("rtsp://127.0.0.1/live", pa.CameraStreamMode.RTSP),
+                          ("ftp://127.0.0.1/x", pa.CameraStreamMode.None_)):
+            self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                             "data": {"urls": {"rtspUrl": url}}})
+            wait(lambda: plugin._service.view_for(self.fake.host)["camera_url"] == url)
+            self.assertEqual(self.agent.get_camera_stream_mode(), mode, url)
 
     def test_foreign_camera_host_is_not_handed_to_orca(self):   # M2
         self.connect()

@@ -29,6 +29,10 @@ Slot dict (`aggregate_slots`):
                         missing/short -> [255, 255, 255]
     rfid          int | None
     sku           str | None
+    percent       int | None   consumables_percent (spool remaining), None if absent
+    weight        int | None   grams, None if absent
+    brand         str   brand_name; the firmware's "public" means no brand -> ""
+    material_name str   "" when absent
     activity      str   "" (see `slot_activity_map`: loading/unloading/loaded)
 
 global_index rule:
@@ -96,6 +100,11 @@ def detect_filament_mode(boxes, head_tools_model=-1):
     return "toolhead"
 
 
+def _brand(name):
+    name = "" if name is None else str(name)
+    return "" if name.strip().lower() == "public" else name
+
+
 def _to_slot(raw, global_index, box_id, box_pos):
     c = raw.get("color")
     c = list(c) if isinstance(c, (list, tuple)) and len(c) >= 3 else _WHITE
@@ -110,6 +119,10 @@ def _to_slot(raw, global_index, box_id, box_pos):
         "color": [_num(c[0], 0), _num(c[1], 0), _num(c[2], 0)],
         "rfid": None if rfid is None else _num(rfid, 0),
         "sku": None if sku is None else str(sku),
+        "percent": None if raw.get("consumables_percent") is None else _num(raw["consumables_percent"], None),
+        "weight": None if raw.get("weight") is None else _num(raw["weight"], None),
+        "brand": _brand(raw.get("brand_name")),
+        "material_name": str(raw.get("material_name") or ""),
         "activity": "",
     }
 
@@ -406,19 +419,21 @@ def minutes_from(src, key, default=0):
 def _to_drying(box, src):
     humidity = humidity_from(src)
     temp = current_temp_from(src)
+    # Real report: box-level `humidity` and `temp` are siblings of drying_status.
     return {
         "status": _num(src.get("status"), 0),
         "target_temp": _num(src.get("target_temp"), 0),
         "duration": _minutes(src.get("duration")),
         "remain_time": _minutes(src.get("remain_time")),
-        "humidity": humidity if humidity is not None else _first_float(box, ["humidity"]),
-        "current_temp": temp if temp is not None else _first_float(box, ["current_temp"]),
+        "humidity": humidity if humidity is not None else humidity_from(box),
+        "current_temp": temp if temp is not None else current_temp_from(box),
     }
 
 
 def aggregate_ace_units(boxes, previous):
-    """Return (units, primary_drying). unit = {id, auto_feed, drying}; only ids
-    0..3. `previous` (last units) supplies values the report omits."""
+    """Return (units, primary_drying). unit = {id, auto_feed, humidity, temp,
+    status, model_id, drying}; humidity/temp/status/model_id are the box-level
+    report fields (None when absent); only ids 0..3. `previous` (last units) supplies values the report omits."""
     units = []
     for box in boxes:
         uid = _box_id(box)
@@ -436,12 +451,31 @@ def aggregate_ace_units(boxes, previous):
             drying = _to_drying(box, raw)
         else:
             drying = dict(prev["drying"] if prev else EMPTY_DRYING)
-        units.append({"id": uid, "auto_feed": auto_feed, "drying": drying})
+        units.append({
+            "id": uid,
+            "auto_feed": auto_feed,
+            "humidity": humidity_from(box),
+            "temp": current_temp_from(box),
+            "status": None if box.get("status") is None else _num(box["status"], None),
+            "model_id": None if box.get("model_id") is None else _num(box["model_id"], None),
+            "drying": drying,
+        })
     units.sort(key=lambda u: u["id"])
     primary = next((u for u in units if u["drying"]["status"] != 0), units[0] if units else None)
     return units, dict(primary["drying"] if primary else EMPTY_DRYING)
 
 
+# Dryer units, evidence (all minutes unless noted):
+#  - Real Kobra X report (fw 2.0.2.8): remain_time 898 -> 896 over 126 s, so
+#    remain_time counts MINUTES. duration stayed 86400 for the whole run, so it
+#    is seconds (24 h) or a constant; it is NOT a reliable total. UI: show
+#    remain_time (and target_temp); never duration or an "elapsed" derived
+#    from it. `minutes_from` still maps duration > 1440 to seconds -> minutes.
+#  - setDry request: Kobralink printer-bridge.ts aceDry (1246) and
+#    mqtt-client.ts setDry (410), schema control.ts:63-68 (duration 10..1440,
+#    default 240, temp 30..80), and KX-Bridge bridge_endpoints.py
+#    handle_api_ace_dry (1480-1556, same clamps) both send duration and
+#    remain_time in MINUTES, remain_time = duration. See `set_dry_payload`.
 def aggregate_drying_state(data, boxes, current=None):
     """Port of KX-Bridge _update_ace_drying_state: the dashboard's single
     "ace_drying" dict, with a "units" list. `current` is the previous state
@@ -657,3 +691,26 @@ def parse_multicolor_report(payload):
         "boxes": [dict(b) for b in (data.get("multi_color_box") or [])],
         "head_tools_model": None if model is None else _num(model, None),
     }
+
+
+def set_dry_payload(ace_ids, target_temp=None, duration_minutes=None):
+    """`multiColorBox/setDry` data. Start: pass target_temp (30..80 C) and
+    duration_minutes (10..1440); each box gets drying_status
+    {status 1, target_temp, duration, remain_time == duration}, all in
+    MINUTES, exactly as Kobralink and KX-Bridge send. Stop: omit both ->
+    {status: 0}. Out-of-range values raise ValueError (Kobralink rejects;
+    KX-Bridge clamps)."""
+    def _int(v):
+        return isinstance(v, int) and not isinstance(v, bool)
+    if not ace_ids or not all(_int(i) and 0 <= i <= 3 for i in ace_ids):
+        raise ValueError("ace_ids must be a non-empty list of ints 0-3")
+    if target_temp is None and duration_minutes is None:
+        status = {"status": 0}
+    else:
+        if not (_int(target_temp) and 30 <= target_temp <= 80):
+            raise ValueError("target_temp must be an int 30-80")
+        if not (_int(duration_minutes) and 10 <= duration_minutes <= 1440):
+            raise ValueError("duration_minutes must be an int 10-1440")
+        status = {"status": 1, "target_temp": target_temp, "duration": duration_minutes,
+                  "remain_time": duration_minutes}
+    return {"multi_color_box": [{"id": i, "drying_status": dict(status)} for i in ace_ids]}

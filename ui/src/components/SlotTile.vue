@@ -26,7 +26,9 @@ const stateText = computed(() => {
   return ready.value ? t('slot.ready') : t('slot.empty');
 });
 const linked = computed(() => (props.slot.spool_id != null ? s.spools.find(x => x.id === props.slot.spool_id) ?? null : null));
-const fraction = computed(() => (!ready.value ? 0 : linked.value ? spoolFraction(linked.value.remaining, linked.value.initial) ?? 1 : 1));
+// The level comes from the linked Spoolman spool, else from what the printer reports for the slot (percent), else full.
+const reported = computed(() => (typeof props.slot.percent === 'number' ? Math.max(0, Math.min(100, props.slot.percent)) : null));
+const fraction = computed(() => (!ready.value ? 0 : linked.value ? spoolFraction(linked.value.remaining, linked.value.initial) ?? 1 : reported.value !== null ? reported.value / 100 : 1));
 const pct = computed(() => (linked.value ? (() => { const f = spoolFraction(linked.value.remaining, linked.value.initial); return f === null ? null : Math.round(f * 100); })() : null));
 
 const editWhy = computed(() => controlsOff.value || (s.status && !s.status.can.feed ? t('reason.noFeed') : ''));
@@ -68,7 +70,7 @@ async function saveEdit() {
         <div class="sl-name">
           <strong :id="`sl-${key}`">{{ t('slot.name', { n: slot.index + 1 }) }}</strong>
           <div class="sl-state" data-test="slot-state">{{ stateText }}</div>
-          <div class="sl-mat"><template v-if="ready"><span class="kc-sw" :style="{ background: colour || 'transparent' }" /> {{ slot.type || t('slot.noType') }}</template><template v-else>&nbsp;</template></div>
+          <div class="sl-mat"><template v-if="ready"><span class="kc-sw" :style="{ background: colour || 'transparent' }" /> {{ [slot.brand, slot.material_name || slot.type].filter(Boolean).join(' ') || t('slot.noType') }}</template><template v-else>&nbsp;</template></div>
         </div>
       </div>
       <div class="sl-level">
@@ -76,6 +78,10 @@ async function saveEdit() {
           <div class="kc-num"><strong :class="{ 'kc-warn': linked.low }">{{ fmt.grams(linked.remaining) }}</strong>
             <span v-if="pct !== null" class="oui-muted"> · {{ pct }}%</span></div>
           <LevelBar :pct="pct" :paint="colour || '#888'" :level="linked.low ? 'low' : ''" />
+        </template>
+        <template v-else-if="ready && reported !== null">
+          <div class="kc-num"><strong>{{ reported }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></div>
+          <LevelBar :pct="reported" :paint="colour || '#888'" />
         </template>
         <p v-else-if="!ready && !controlsOff" class="kc-why">{{ t('reason.slotEmpty') }}</p>
       </div>

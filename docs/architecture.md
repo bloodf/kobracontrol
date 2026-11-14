@@ -40,7 +40,8 @@ Only `plugin.py` imports `orca`, so everything else is tested without OrcaSlicer
 MQTT credentials from the printer (`kobra.fetch_credentials`; kept in memory only, never written to
 disk), connects, subscribes and feeds every report into one `kobra.State`. The printer agent and the
 tab are two consumers of that one connection and one state. The scripts use it too: the plugin
-never opens a second MQTT session to a printer. When the connection drops the service reconnects
+never opens a second MQTT session to a printer. This is the plugin's own choice; on firmware 2.0.2.8
+the printer accepted a second client (Kobralink) at the same time. When the connection drops the service reconnects
 with a growing delay (2 s doubling to 60 s, reset only after a session has lasted 30 s), recovering
 the credentials again each time.
 
@@ -87,9 +88,10 @@ is always empty, because it carries the upload token. Plus:
 | key | value |
 |---|---|
 | `mode` | `toolhead`, `ace_direct` or `ace_hub` (`ace.detect_filament_mode`) |
-| `slots` | `ace.aggregate_slots` slots, each with `activity` filled, plus `tray` (`ace.tray_id`), `usable` (`ace.slot_usable_for_print`) and `spool_id` (bound Spoolman spool or `null`) |
+| `slots` | `ace.aggregate_slots` slots (including `percent`, `weight`, `brand` and `material_name`), each with `activity` filled, plus `tray` (`ace.tray_id`), `usable` (`ace.slot_usable_for_print`) and `spool_id` (bound Spoolman spool or `null`) |
 | `loaded_slot` | `global_index` of the loaded slot, or -1 |
-| `ace_units` | `ace.aggregate_ace_units` units: `{id, auto_feed, drying}` |
+| `ace_units` | `ace.aggregate_ace_units` units: `{id, auto_feed, humidity, temp, status, model_id, drying}`; `drying.remain_time` is in minutes |
+| `features`, `aux_fan_pct`, `phase_unit`, `phase_channel` | from `kobra.State.view()`: the `*_support` flags, the auxiliary fan percentage, and the ACE unit and slot (1-based) of the current slot check during a job, or `null` |
 | `can` | `{pause, resume, stop, move, heat, feed, print}` booleans: what the printer state allows now |
 
 ### Commands
@@ -135,6 +137,13 @@ Replies:
 | `find_certificate` | `{found, source}` |
 | `spools` | `{spools, bindings}` |
 | `stock` | the stock list plus `available` and `reason` (`null`, `absent`, `stale`, `waiting`, `unsupported`); rows carry `bound_slot` |
+
+A command ends in one of three ways, from the printer's reply (`Service._answer`): confirmed
+(`{confirmed: true}`, the printer reported success); a printer-reported failure or no answer at all
+(an error carrying the printer's code and message, or `no_answer`); received but no result in time
+(`no_result` error, or `{confirmed: false}` for `pause`, `stop` and `home`, where the next status
+shows what happened). Homing waits for the printer's answer, which comes when it has finished, up to
+90 s.
 
 `stop` and `pause` run on their own short-lived thread so they never wait behind another command.
 A command the printer state does not allow is refused by the service with a plain error, whatever

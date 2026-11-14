@@ -15,9 +15,21 @@ HTTP knobs: `info_redirect` (URL: /info answers 302 to it), `info_answer` (dict 
 MQTT knobs: `connack_code` (None = check username/password, else forced CONNACK code), `connack_delay`
   (seconds before CONNACK, to stretch a handshake), `suback_code`
   (0), `answer_pings` (True), `chunk_size` (None, or int: outgoing packets are dribbled in chunks so the
-  client sees split reads). Scripted replies: `reply(type, action, data=None, state="success", code=None,
-  **fields)` or `replies[(type, action)] = callable(request_msg) -> dict | None` (the reply is published on
-  `<type>/report` with the request's msgid). Spontaneous traffic: `report(suffix, payload)` (dict or bytes,
+  client sees split reads).
+Answers behave like real firmware 2.0.2.8 by default: every request is acknowledged at once on
+  `<deviceId>/response` with `{"type": "", "action": "", "state": "", "code": 0, "msg": "", "data": null,
+  "timestamp": 0, "msgid": <the request's>}`; a scripted reply then goes to `<type>/report` with a FRESH
+  msgid. Scripted replies: `reply(type, action, data=None, state="done", code=200, **fields)` (action in
+  the report = the request's, except info/query -> "report"; code=None leaves it out) or
+  `replies[(type, action)] = callable(request_msg) -> dict | None` (published as returned, plus a fresh
+  msgid unless it sets "msgid"). Knobs: `send_ack` (True), `ack_only` (False: True sends the ack and never
+  the scripted reply), `echo_msgid` (False: True = legacy firmware, the report carries the request's msgid
+  unless the reply sets one). `print_start` (None): "ok", "abnormal" or "quiet" answers print/start with
+  the real firmware sequence instead of a scripted reply: ok = start/checking, start/printing,
+  start/hotbed_heating; abnormal (what a wrong filepath gives) = start/checking, start/printing,
+  stop/stopping, stop/stoped code 10111 "abnormal end of task"; quiet = start/checking, start/printing.
+  Uploads answer {"code": 200, "data": {"gcode": <filename>}, "message": "success"} unless
+  `upload_answer` is set. Spontaneous traffic: `report(suffix, payload)` (dict or bytes,
   e.g. "print/report"), `publish_raw(topic, payload_bytes)`. `drop_clients()` closes every connection.
   Recorded: `requests` (list of {"topic", "raw", "msg"}; msg is the parsed JSON or None), `client_ids`,
   `subscriptions`, `disconnects` (DISCONNECT packets seen), `pings`. `wait_request(type, action)` blocks
@@ -36,6 +48,7 @@ import subprocess
 import threading
 import time
 import urllib.parse
+import uuid
 from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -166,9 +179,11 @@ class FakeKobra:
         self.device_id, self.mode_id, self.model = "dev" + os.urandom(4).hex(), "20030", "Anycubic Kobra X"
         self.upload_token = os.urandom(8).hex()
         self.info_answer = self.ctrl_answer = self.info_redirect = None
-        self.upload_answer = {"code": 200, "message": "success"}
+        self.upload_answer = None
+        self.print_start = None
         self.connack_code, self.suback_code, self.answer_pings, self.chunk_size = None, 0, True, None
         self.connack_delay = 0.0
+        self.send_ack, self.ack_only, self.echo_msgid = True, False, False
         self.replies, self.requests, self.uploads, self.ctrl_calls = {}, [], [], []
         self.client_ids, self.subscriptions, self.disconnects, self.pings = [], [], 0, 0
         self._sessions, self._cond = [], threading.Condition()
@@ -240,14 +255,39 @@ class FakeKobra:
         with self._cond:
             self.requests.append({"topic": topic, "raw": raw, "msg": msg})
             self._cond.notify_all()
-        if isinstance(msg, dict):
-            reply = self.replies.get((msg.get("type"), msg.get("action")))
-            out = reply(msg) if callable(reply) else reply
-            if out is not None:
-                self.report("%s/report" % msg["type"], {**out, "msgid": out.get("msgid", msg.get("msgid"))})
+        if not isinstance(msg, dict):
+            return
+        if self.send_ack:
+            self.report("response", {"type": "", "action": "", "state": "", "code": 0, "msg": "", "data": None,
+                                     "timestamp": 0, "msgid": msg.get("msgid")})
+        if (msg.get("type"), msg.get("action")) == ("print", "start") and self.print_start:
+            threading.Thread(target=self._print_sequence, args=(msg,), daemon=True, name="kobracontrol-fake-print").start()
+            return
+        reply = self.replies.get((msg.get("type"), msg.get("action")))
+        out = reply(msg) if callable(reply) else reply
+        if out is not None and not self.ack_only:
+            msgid = out["msgid"] if "msgid" in out else (msg.get("msgid") if self.echo_msgid else str(uuid.uuid4()))
+            self.report("%s/report" % msg["type"], {**out, "msgid": msgid})
 
-    def reply(self, type_, action, data=None, state="success", code=None, **fields):
-        body = {"type": type_, "action": action, "state": state, "data": data, **fields}
+    PRINT_SEQUENCES = {
+        "ok": [("start", "checking", 200, "done"), ("start", "printing", 200, "done"),
+               ("start", "hotbed_heating", 200, "done")],
+        "abnormal": [("start", "checking", 200, "done"), ("start", "printing", 200, "done"),
+                     ("stop", "stopping", 200, "done"), ("stop", "stoped", 10111, "abnormal end of task")],
+        "quiet": [("start", "checking", 200, "done"), ("start", "printing", 200, "done")],
+    }
+
+    def _print_sequence(self, msg):
+        name = "/" + str((msg.get("data") or {}).get("filename", ""))
+        for action, state, code, text in self.PRINT_SEQUENCES[self.print_start]:
+            time.sleep(0.05)
+            self.report("print/report", {"type": "print", "action": action, "state": state, "code": code, "msg": text,
+                                         "msgid": str(uuid.uuid4()),
+                                         "data": {"filename": name, "file_root_path": name, "progress": 0, "taskid": "-1"}})
+
+    def reply(self, type_, action, data=None, state="done", code=200, **fields):
+        reported = "report" if (type_, action) == ("info", "query") else action
+        body = {"type": type_, "action": reported, "state": state, "data": data, "msg": "done", **fields}
         if code is not None:
             body["code"] = code
         self.replies[(type_, action)] = body
@@ -319,7 +359,9 @@ class FakeKobra:
             fields[name] = content[:-2]
         self.uploads.append({"filename": fields.get("filename", b"").decode(), "data": fields.get("gcode"),
                              "headers": dict(headers)})
-        return 200, self.upload_answer
+        if self.upload_answer is not None:
+            return 200, self.upload_answer
+        return 200, {"code": 200, "data": {"gcode": self.uploads[-1]["filename"]}, "message": "success"}
 
     def _handler(self):
         fake = self
