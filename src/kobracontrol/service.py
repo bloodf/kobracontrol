@@ -48,9 +48,11 @@ LIMITS = {"nozzle_max": NOZZLE_MAX, "bed_max": BED_MAX}
 IDLE = ("idle", "finished", "cancelled")
 MOVE_MAX = 50.0                 # mm per jog: the largest step the page offers; anything larger is clamped
 AXIS = {"x": 1, "y": 2, "z": 3}
-# axis/move codes as Kobralink (macro.service.ts): move_type 1 = +, 0 = -, distance > 0; home move_type 2 with
-# axis 4 = all, 2 = X/Y, 3 = Z. KX-Bridge's web UI uses 5/4/3 for home: unverified on a real printer.
-HOME = {"xyz": 4, "xy": 2, "z": 3}
+# Jog as Kobralink and KX-Bridge's client: axis 1/2/3, move_type 1 = +, 0 = -, distance > 0.
+# Home is move_type 2 with axis 5 = X, Y and Z, 4 = X and Y, 3 = Z: KX-Bridge fixed "Home All" to 5 after a
+# report from a real printer (its CHANGELOG 0.9.1-beta14, Issue #4). Kobralink sends 4 for "all", which by that
+# report homes X and Y only. Still to be watched once on our own printer.
+HOME = {"xyz": 5, "xy": 4, "z": 3}
 STOCK_UNSUPPORTED_S = 30.0      # Spooler active but no stock list for us this long: "unsupported"
 FEED_ACK_DELAY = 2.0            # Kobralink: feedFilament type 3 two seconds after feed_status 10/11
 DRY_TEMP, DRY_MINUTES = (30, 80), (10, 24 * 60)   # ace.sanitize_ace_dry_presets bounds

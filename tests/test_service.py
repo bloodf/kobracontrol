@@ -206,6 +206,15 @@ class IdleCommands(Base):
         self.assertEqual(self.sent("axis", "move")[1]["data"], {"axis": 3, "move_type": 2, "distance": 0})
         self.assertIn("no distance", self.run_cmd("move", axis="x", distance=0)["error"])
 
+    def test_home_codes_follow_kx_bridge_issue_4(self):
+        """KX-Bridge CHANGELOG 0.9.1-beta14 (its Issue #4, found on a real printer): axis 5 homes X, Y and Z,
+        axis 4 homes X and Y. Kobralink's 4 for "all" would leave Z unhomed."""
+        self.fake.reply("axis", "move", {})
+        for axes, code in (("xyz", 5), ("xy", 4), ("z", 3)):
+            before = len(self.sent("axis", "move"))
+            self.assertTrue(self.run_cmd("home", axes=axes)["result"])
+            self.assertEqual(self.sent("axis", "move")[before]["data"], {"axis": code, "move_type": 2, "distance": 0})
+
     def test_move_is_clamped_to_50_mm(self):   # L5: whatever the page sends
         self.fake.reply("axis", "move", {})
         self.assertTrue(self.run_cmd("move", axis="z", distance=-120)["result"])
