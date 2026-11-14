@@ -1,3 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/kobracontrol-hero-dark.png">
+    <img src="assets/readme/kobracontrol-hero-light.png" alt="kobracontrol: Anycubic Kobra X control for OrcaSlicer" width="800">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/bloodf/kobracontrol/actions/workflows/ci.yml"><img src="https://github.com/bloodf/kobracontrol/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/bloodf/kobracontrol/releases/latest"><img src="https://img.shields.io/github/v/release/bloodf/kobracontrol" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/bloodf/kobracontrol" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/OrcaSlicer-2.5%2B-informational" alt="OrcaSlicer 2.5+">
+</p>
+
 # kobracontrol
 
 kobracontrol is an OrcaSlicer 2.5 plugin for the Anycubic Kobra X. It talks to the printer directly
@@ -6,6 +20,16 @@ dialogs and its Device tab work with the Kobra X. It also adds a Kobra Control t
 camera, ACE card, file list and Spoolman.
 
 Everything stays on your local network. The plugin needs no extra Python packages and no cloud.
+
+<p align="center">
+  <img src="assets/features/feature-direct-lan.svg" width="72" alt="Direct LAN printing">
+  <img src="assets/features/feature-device-tab.svg" width="72" alt="Device tab">
+  <img src="assets/features/feature-ace-slots.svg" width="72" alt="ACE slots and drying">
+  <img src="assets/features/feature-camera.svg" width="72" alt="Camera">
+  <img src="assets/features/feature-files.svg" width="72" alt="Files">
+  <img src="assets/features/feature-spoolman.svg" width="72" alt="Spoolman">
+  <img src="assets/features/feature-secure.svg" width="72" alt="Secure local connection">
+</p>
 
 > **Status: in development, not released.** The plugin's service layer was run against a real Kobra X
 > (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing,
@@ -20,7 +44,46 @@ cycling through the ACE slots) before the first layer. In one test that took abo
 
 kobracontrol is an independent project. It is not made or supported by Anycubic.
 
+<!-- related-plugins:start -->
+## Explore the other plugins
+
+Complete your OrcaSlicer workflow: arrange, price, manage filament and print. Each plugin works on its own; installed together they share data where it helps.
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5bae3da1-7fcc-4cbd-ae25-53678e392d54"><img src="docs/related-plugins/orca_organizer-icon.png" width="40" height="40" alt="Organizer"></a>
+      <h3><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5bae3da1-7fcc-4cbd-ae25-53678e392d54">Organizer</a></h3>
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5bae3da1-7fcc-4cbd-ae25-53678e392d54"><img src="docs/related-plugins/orca_organizer-preview.jpg" width="280" alt="Organizer: preview"></a>
+      <p>Arrange objects by their real outline and fill a build plate with more copies, from a tab next to Prepare.</p>
+      <p><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5bae3da1-7fcc-4cbd-ae25-53678e392d54">Install from Orca Cloud →</a><br><a href="https://github.com/bloodf/orca_organizer">Source on GitHub →</a></p>
+    </td>
+    <td width="33%" valign="top">
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5f807b01-bfb8-4ad4-a77d-e85e337e4c7f"><img src="docs/related-plugins/orca_print_calculator-icon.png" width="40" height="40" alt="Orca Print Calculator"></a>
+      <h3><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5f807b01-bfb8-4ad4-a77d-e85e337e4c7f">Orca Print Calculator</a></h3>
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5f807b01-bfb8-4ad4-a77d-e85e337e4c7f"><img src="docs/related-plugins/orca_print_calculator-preview.png" width="280" alt="Orca Print Calculator: preview"></a>
+      <p>Price every build plate: Spoolman filament cost, energy, labor, fees and a suggested selling price.</p>
+      <p><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5f807b01-bfb8-4ad4-a77d-e85e337e4c7f">Install from Orca Cloud →</a><br><a href="https://github.com/bloodf/orca_print_calculator">Source on GitHub →</a></p>
+    </td>
+    <td width="33%" valign="top">
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5c523246-d53c-44bc-a129-fe2470da6368"><img src="docs/related-plugins/spooler-icon.png" width="40" height="40" alt="Spooler"></a>
+      <h3><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5c523246-d53c-44bc-a129-fe2470da6368">Spooler</a></h3>
+      <a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5c523246-d53c-44bc-a129-fe2470da6368"><img src="docs/related-plugins/spooler-preview.png" width="280" alt="Spooler: preview"></a>
+      <p>Your Spoolman spools and filament presets in OrcaSlicer: what is left on each spool, plate checks and live printer slots.</p>
+      <p><a href="https://cloud.orcaslicer.com/app/plugins/shared-plugins/5c523246-d53c-44bc-a129-fe2470da6368">Install from Orca Cloud →</a><br><a href="https://github.com/bloodf/spooler">Source on GitHub →</a></p>
+    </td>
+  </tr>
+</table>
+
+Illustrative project artwork. [Credits and licenses](docs/related-plugins/README.md).
+<!-- related-plugins:end -->
+
 ## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/how-it-works-dark.png">
+  <img src="assets/diagrams/how-it-works-light.png" alt="OrcaSlicer sends to kobracontrol, which talks to the Kobra X, Spoolman and Spooler">
+</picture>
 
 kobracontrol connects to the printer over HTTP on port 18910 and MQTT over mutual TLS on port 9883.
 The printer must have LAN mode enabled. The printer only accepts the TLS client certificate that
@@ -59,6 +122,11 @@ printer restarts.
 - **Find Anycubic certificate:** finds the client certificate and reports the result.
 
 ### Works with Spooler
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/kobracontrol-works-with-spooler-dark.png">
+  <img src="assets/diagrams/kobracontrol-works-with-spooler-light.png" alt="kobracontrol works with Spooler, and on its own" width="800">
+</picture>
 
 [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament
 profiles. With Spooler installed, kobracontrol shows Spooler's stock on the Dashboard. The plugin

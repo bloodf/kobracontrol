@@ -33,8 +33,8 @@ Kobra Control connects OrcaSlicer 2.5+ directly to the Anycubic Kobra X, a multi
 printer agent, so OrcaSlicer's own Print and Send dialogs and its Device tab work with the
 printer: status, temperatures, pause, resume, stop, light, fan, speed, the filament slots,
 camera. It also adds a "Kobra Control" tab with a dashboard, ACE slots (feed, retract,
-drying), camera, files, and Spoolman spool tracking. Setup finds a certificate in the
-user's own Anycubic Slicer Next installation. Audience: hobbyist and prosumer makers who
+drying), camera, files, and Spoolman spool tracking. The TLS client certificate is bundled,
+so it connects out of the box. Audience: hobbyist and prosumer makers who
 self-host tools. Personality: precise, calm, direct, "it just works". Not corporate, not
 toy-like.
 
@@ -79,8 +79,11 @@ DELIVERABLES (each as its own image, exact sizes, transparent background unless 
    "Direct LAN printing · ACE slots · Camera · Files · Spoolman"; right an empty rounded
    16:10 frame, thin border, labelled nothing (a screenshot goes there).
 5. Feature icons, seven 96x96 tiles (rounded square, tinted palette background, no text),
-   one SVG each, consistent: direct LAN printing, Device tab, ACE slots and drying,
-   camera, files, Spoolman, certificate setup.
+   one SVG each, consistent. In this order, saved to these files:
+   direct LAN printing (`assets/features/feature-direct-lan.svg`), Device tab
+   (`feature-device-tab.svg`), ACE slots and drying (`feature-ace-slots.svg`), camera
+   (`feature-camera.svg`), files (`feature-files.svg`), Spoolman (`feature-spoolman.svg`),
+   secure local connection (`feature-secure.svg`).
 6. How it works diagram, 1600x900, live text, light and dark. Boxes and arrows, left to
    right: "OrcaSlicer 2.5" -> "kobracontrol" -> "Kobra X". On the side, "Spoolman" and
    "Spooler (optional)" linked to "kobracontrol". Arrow labels exactly: "print & status",
@@ -101,7 +104,7 @@ DELIVERABLES (each as its own image, exact sizes, transparent background unless 
 9. Install steps, four cards 800x500, live text, same template: big step number in the
    primary colour, title, one line, empty rounded screenshot frame (bottom 60%):
    1 "Install" / "File > Plugins > Install local plugin, then Activate."
-   2 "Find the certificate" / "Press Find certificate in the Kobra Control tab."
+   2 "Turn on agents" / "Preferences > Developer > Experimental > Use printer agents."
    3 "Pick the agent" / "Set Printer Agent to kobracontrol in your printer preset."
    4 "Print" / "Press Print in OrcaSlicer."
 10. Social images: (a) wide 1200x675, (b) square 1080x1080, (c) vertical 1080x1350 with the
