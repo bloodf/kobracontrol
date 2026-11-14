@@ -1,9 +1,8 @@
 name: CI
 
+# Manual trigger only: the suite drives the built page in headless Chrome on three operating systems.
+# Run it from the Actions tab or with `gh workflow run CI`.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
