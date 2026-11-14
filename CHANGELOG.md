@@ -16,8 +16,10 @@ Nothing is released yet. The plugin is in development.
 - A "Kobra Control" tab with Dashboard (status and controls, camera, ACE card, Spoolman, Spooler
   stock), Files and Settings pages.
 - ACE card: slots with colour and material, feed, retract, auto-feed and drying.
-- Certificate setup: finds the client certificate in the user's own Anycubic Slicer Next
-  installation, or in a file the user picks, and keeps a copy in the plugin's storage folder.
+- The Anycubic Slicer client certificate (a shared identity, the same in every Anycubic Slicer Next
+  install) is bundled with the plugin and the wheel, so the plugin connects without a setup step.
+  "Find certificate" still finds the copy in the user's own Anycubic Slicer Next install, or a file
+  the user picks, and that saved copy overrides the bundled one.
 - Plugins > Run scripts "Check Kobra X connection" and "Find Anycubic certificate".
 - Spoolman and Spooler integration, shared with the sibling plugin u1control.
 - `docs/brand-images-prompt.md`, a prompt for the logo and image set, and a placeholder icon.

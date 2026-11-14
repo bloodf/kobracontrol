@@ -288,5 +288,19 @@ class NoOpensslTests(Tmp):
         self.assertTrue(certs.default_locations("linux", {"HOME": "/home/u"}))
 
 
+class BundledTests(unittest.TestCase):
+    def test_bundled_cert_ships_and_loads(self):
+        """The AnycubicSlicer certificate committed next to certs.py is present and the pair loads."""
+        shipped = certs.bundled()
+        self.assertIsNotNone(shipped, "bundled Anycubic certificate missing from the package")
+        cert_path, key_path = shipped
+        self.assertTrue(certs._is_anycubic(open(cert_path, encoding="ascii").read()))
+        certs.context(cert_path, key_path)   # raises on a mismatched pair
+
+    def test_bundled_is_none_without_files(self):
+        with mock.patch.object(certs, "paths", return_value=("/no/such.pem", "/no/such_key.pem")):
+            self.assertIsNone(certs.bundled())
+
+
 if __name__ == "__main__":
     unittest.main()

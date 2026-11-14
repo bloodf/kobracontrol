@@ -210,6 +210,17 @@ def paths(folder):
     return os.path.join(folder, CERT_FILE), os.path.join(folder, KEY_FILE)
 
 
+def bundled():
+    """The AnycubicSlicer certificate and key shipped next to this module (committed into the repo and
+    carried in the wheel), or None when absent. This is Anycubic's shared client identity, the same for
+    every Anycubic Slicer Next install; it is not the user's own secret. Used as a fallback so the plugin
+    works without the local Find certificate step."""
+    cert_path, key_path = paths(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        return cert_path, key_path
+    return None
+
+
 def _write_private(path, text):
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)

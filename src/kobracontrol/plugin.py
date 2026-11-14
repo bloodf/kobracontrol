@@ -254,6 +254,8 @@ def certificate_state():
         certs.load(cert_dir())
         return {"found": True, "source": "saved"}
     except certs.CertError:
+        if certs.bundled():
+            return {"found": True, "source": "bundled"}
         return {"found": False}
 
 

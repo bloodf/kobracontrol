@@ -73,6 +73,11 @@ def wheel_files(project):
         text = relative_imports(text) if name != "_assets" else text
         ast.parse(text, name + ".py")   # syntax check only
         files["kobracontrol/%s.py" % name] = text.encode("utf-8")
+    # Anycubic's shared client certificate, bundled so the plugin needs no local extraction step
+    for pem in ("anycubic_slicer.pem", "anycubic_slicer_key.pem"):
+        src = SRC / pem
+        if src.is_file():
+            files["kobracontrol/" + pem] = src.read_bytes()
     return files
 
 

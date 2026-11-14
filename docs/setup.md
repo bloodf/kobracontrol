@@ -27,17 +27,18 @@ Prepare, Preview and Device.
 The plugin talks to the printer on the local network and needs LAN mode enabled on the Kobra X.
 Put the computer and the printer on the same network and note the printer's IP address.
 
-## 3. Find the certificate
+## 3. Certificate (bundled)
 
 The printer accepts only the TLS client certificate that Anycubic Slicer Next carries. kobracontrol
-does not ship it.
+bundles this certificate, so there is nothing to do here: the plugin connects out of the box.
 
-1. Install Anycubic Slicer Next if it is not installed.
-2. Open the **Kobra Control** tab. With no certificate, the page shows one task: finding it.
-3. Press **Find certificate**. The plugin looks in your Anycubic Slicer Next installation. If it
-   finds nothing, pick the file yourself.
-4. The plugin keeps a copy in its storage folder. Plugins > Run > **Find Anycubic certificate** does
-   the same from the menu.
+If a future firmware stops accepting the bundled certificate, you can replace it with the one from
+your own Anycubic Slicer Next install:
+
+1. Install Anycubic Slicer Next.
+2. Open the **Kobra Control** tab and press **Find certificate**, or run Plugins > **Find Anycubic
+   certificate**. The plugin saves the found copy in its storage folder and uses it instead of the
+   bundled one.
 
 ## 4. Turn on printer agents in OrcaSlicer
 
@@ -68,7 +69,7 @@ Keep any other preset you use for the printer as it is.
 | Symptom | Cause and fix |
 |---|---|
 | Nothing connects, the printer does not answer on port 18910 or 9883 | LAN mode is off. Turn it on at the printer. |
-| The page asks for the certificate again, or the check reports no certificate | Anycubic Slicer Next is not installed, or the plugin could not find it. Install it, or pick the certificate file with **Find certificate**. |
+| The check reports the certificate is rejected by the printer | The bundled certificate no longer matches this firmware. Install Anycubic Slicer Next and press **Find certificate** to use your own copy (see section 3). |
 | The preset has no `kobracontrol` Printer Agent, or Print and Device tab do not use the plugin | **Use printer agents** is off. Turn it on under Preferences > Developer > Experimental Features and restart OrcaSlicer. |
 | Connection check fails with a timeout or connection refused | The address in the preset is wrong, or the printer is on another network. Use the printer's current IP. |
 

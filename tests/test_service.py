@@ -13,7 +13,10 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
+from unittest import mock  # noqa: E402
+
 import ace  # noqa: E402
+import certs  # noqa: E402
 import connection  # noqa: E402
 import jobs  # noqa: E402
 import kobra  # noqa: E402
@@ -180,7 +183,8 @@ class Connect(Base):
 
 
 class NoCert(unittest.TestCase):
-    def test_no_certificate_flag(self):
+    @mock.patch.object(certs, "bundled", return_value=None)   # no saved and no bundled certificate
+    def test_no_certificate_flag(self, _bundled):
         with FakeKobra() as fake:
             published = []
             svc = service.Service(published.append, lambda m: None, cert_dir=tempfile.mkdtemp(),

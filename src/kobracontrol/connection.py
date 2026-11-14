@@ -28,15 +28,20 @@ class NoCertificate(kobra.KobraError):
 
 
 def tls_from(cert_dir):
-    """The default `tls` factory: an ssl.SSLContext from the certificate saved in cert_dir."""
+    """The default `tls` factory: an ssl.SSLContext from the certificate saved in cert_dir, or the
+    one bundled with the plugin when none has been saved."""
     def load():
-        if not cert_dir:
-            raise NoCertificate("no storage folder for the Anycubic Slicer certificate")
-        try:
-            certs.load(cert_dir)
-            return certs.context(*certs.paths(cert_dir))
-        except certs.CertError as e:
-            raise NoCertificate("%s: run Find Anycubic certificate (needs Anycubic Slicer Next installed)" % e) from None
+        if cert_dir:
+            try:
+                certs.load(cert_dir)
+                return certs.context(*certs.paths(cert_dir))
+            except certs.CertError:
+                pass
+        shipped = certs.bundled()
+        if shipped:
+            return certs.context(*shipped)
+        raise NoCertificate("no Anycubic Slicer certificate: run Find Anycubic certificate "
+                            "(needs Anycubic Slicer Next installed)")
     return load
 
 

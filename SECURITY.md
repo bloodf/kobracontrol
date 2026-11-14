@@ -20,12 +20,15 @@ and kobracontrol cannot add any:
 - **Printer:** HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set.
   Addresses the printer reports about itself are ignored, redirects are refused, and the camera is
   streamed only from the printer's own address.
-- **Client certificate:** the printer accepts only the certificate that Anycubic Slicer Next
-  carries. kobracontrol never ships it. It finds the certificate and its private key in your own
-  Anycubic Slicer Next installation, or in a file you pick, and keeps a copy in the `tls` folder of
-  the plugin's storage folder. On macOS and Linux the copy is readable only by you (mode 0600). On
-  Windows it is protected only by the permissions of your user profile. While searching, candidate
-  keys are written to a private temporary folder and removed afterwards. The key is never sent to
+- **Client certificate:** the printer accepts only the certificate (`CN=AnycubicSlicer`) that
+  Anycubic Slicer Next carries. This is a shared client identity, identical in every copy of Anycubic
+  Slicer Next, not a per-user secret; kobracontrol **bundles it** (in the package and the wheel) so
+  the plugin connects without a setup step. Anyone who has the wheel has this certificate and its
+  key. You can override the bundled copy with the one from your own Anycubic Slicer Next install:
+  **Find certificate** saves it in the plugin's storage folder and uses it instead. On macOS and
+  Linux a saved copy is readable only by you (mode 0600); on Windows it is protected only by the
+  permissions of your user profile. While searching, candidate keys are written to a private
+  temporary folder and removed afterwards. Neither the bundled key nor a saved key is ever sent to
   the page or written to logs.
 - **MQTT credentials:** recovered from the printer each time it connects and kept in memory only.
   They are never written to disk, sent to the page or written to logs.

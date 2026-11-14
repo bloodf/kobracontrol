@@ -30,9 +30,9 @@ The Python standard library has no AES, so the plugin carries a small decrypt-on
 ## TLS
 
 - The MQTT broker requires a client certificate. The printer accepts only the certificate (subject
-  `CN=AnycubicSlicer`) that Anycubic Slicer Next carries. kobracontrol does not ship it. It finds the
-  certificate and key in the user's own Anycubic Slicer Next installation, or in a file the user
-  picks, and keeps a copy in the plugin's storage folder.
+  `CN=AnycubicSlicer`) that Anycubic Slicer Next carries. It is a shared client identity, the same in
+  every Anycubic Slicer Next install, so kobracontrol bundles it (`certs.bundled()`) in the package
+  and the wheel. A copy found in the user's own install (Find certificate) overrides the bundled one.
 - The printer's server certificate is self-signed and is not verified (see [SECURITY.md](../SECURITY.md)).
 - OrcaSlicer's Python is 3.12 with OpenSSL 1.1.1w. The connection uses the cipher string
   `DEFAULT:@SECLEVEL=0`.

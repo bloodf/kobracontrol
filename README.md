@@ -24,9 +24,11 @@ kobracontrol is an independent project. It is not made or supported by Anycubic.
 
 kobracontrol connects to the printer over HTTP on port 18910 and MQTT over mutual TLS on port 9883.
 The printer must have LAN mode enabled. The printer only accepts the TLS client certificate that
-Anycubic Slicer Next carries. The plugin never ships it: on first use it finds the certificate in
-your own Anycubic Slicer Next installation (or a file you pick) and keeps a copy in the plugin's
-storage folder. The protocol is described in [docs/protocol.md](docs/protocol.md).
+Anycubic Slicer Next carries. This is a shared client identity, the same in every copy of Anycubic
+Slicer Next, not a per-user secret; kobracontrol bundles it so the plugin connects out of the box.
+If a future firmware stops accepting the bundled copy, **Find certificate** replaces it with the one
+from your own Anycubic Slicer Next install. The protocol is described in
+[docs/protocol.md](docs/protocol.md).
 
 ## Features
 
@@ -73,8 +75,10 @@ plugin works on its own.
 
 - OrcaSlicer 2.5.0 or newer.
 - An Anycubic Kobra X on the same network, with LAN mode enabled.
-- Anycubic Slicer Next installed, to find the client certificate.
 - `ffmpeg`, only for the tab's camera.
+
+Anycubic Slicer Next is not required: the client certificate is bundled. Install it only if you need
+to replace the bundled certificate with your own copy.
 
 ## Install
 
@@ -91,10 +95,12 @@ The **Kobra Control** tab appears next to Prepare, Preview and Device.
 
 Full steps are in [docs/setup.md](docs/setup.md). In short:
 
-1. **Certificate:** open the Kobra Control tab and press **Find certificate**.
-2. **Preference:** in OrcaSlicer, tick **Preferences > Developer > Experimental Features > Use
+1. **Preference:** in OrcaSlicer, tick **Preferences > Developer > Experimental Features > Use
    printer agents**.
-3. **Printer preset:** set the address to the printer's IP and **Printer Agent** to `kobracontrol`.
+2. **Printer preset:** set the address to the printer's IP and **Printer Agent** to `kobracontrol`.
+
+The certificate is bundled, so there is no certificate step; **Find certificate** is only for
+replacing it.
 
 ## Privacy and security
 
