@@ -8,7 +8,8 @@
 Addresses: `host` ("127.0.0.1"), `http_port`, `mqtt_port` (random free ports).
 Identity: `token` (/info token, 32 chars), `username`, `password`, `device_id`, `mode_id`, `model`
   (all encrypted into the /ctrl answer); `upload_token`, `upload_url` (announce it in info/report urls).
-HTTP knobs: `info_answer` (dict served by /info, default {"token": token}), `ctrl_answer` (dict served
+HTTP knobs: `info_redirect` (URL: /info answers 302 to it), `info_answer` (dict or raw bytes served by
+  /info, default {"token": token}), `ctrl_answer` (dict served
   verbatim by /ctrl instead of the real encrypted answer), `upload_answer` (dict, default code 200).
   Recorded: `ctrl_calls` (query dicts), `uploads` (list of {"filename", "data", "headers"}).
 MQTT knobs: `connack_code` (None = check username/password, else forced CONNACK code), `connack_delay`
@@ -164,7 +165,7 @@ class FakeKobra:
         self.username, self.password = "userX", "pw-" + os.urandom(6).hex()
         self.device_id, self.mode_id, self.model = "dev" + os.urandom(4).hex(), "20030", "Anycubic Kobra X"
         self.upload_token = os.urandom(8).hex()
-        self.info_answer = self.ctrl_answer = None
+        self.info_answer = self.ctrl_answer = self.info_redirect = None
         self.upload_answer = {"code": 200, "message": "success"}
         self.connack_code, self.suback_code, self.answer_pings, self.chunk_size = None, 0, True, None
         self.connack_delay = 0.0
@@ -335,7 +336,12 @@ class FakeKobra:
                 self.wfile.write(raw)
 
             def do_GET(self):
-                if self.path == "/info":
+                if self.path == "/info" and fake.info_redirect:
+                    self.send_response(302)
+                    self.send_header("Location", fake.info_redirect)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                elif self.path == "/info":
                     self.answer(200, fake.info_answer if fake.info_answer is not None else {"token": fake.token})
                 else:
                     self.answer(404, {"code": 404})

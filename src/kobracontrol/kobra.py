@@ -57,6 +57,8 @@ import mqtt
 
 log = logging.getLogger(__name__)
 UPLOAD_CHUNK = 256 * 1024
+MAX_HTTP_BODY = 1024 * 1024  # /info, /ctrl and upload answers are a few hundred bytes
+JSON_ERRORS = (ValueError, RecursionError)  # deeply nested JSON raises RecursionError, not ValueError
 BOUNDARY = "------------------------a3a050b927d92a4c"
 # Print-preparation phases (KX-Bridge PREPARATION_STATES + Kobralink PRE_PRINT_STATES; firmware 2.0.x
 # reports each phase on its own). They belong to a running print, and the progress they report is
@@ -94,22 +96,43 @@ class Credentials:
 
 
 # credentials ----------------------------------------------------------------------------------
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # the printer must not send us elsewhere: the 3xx surfaces as an HTTPError
+
+
+def _read_capped(resp, what):
+    body = resp.read(MAX_HTTP_BODY + 1)
+    if len(body) > MAX_HTTP_BODY:
+        raise KobraError("answer from %s too large" % what)
+    return body
+
+
+def _loads(body):
+    """Parsed JSON, or None for anything that is not valid UTF-8 JSON (never raises)."""
+    try:
+        return json.loads(body)
+    except JSON_ERRORS:
+        return None
+
+
 def _http_json(url, timeout, what, post=False):
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # LAN only: never via a proxy
+    # LAN only: never via a proxy, never following a redirect.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
     req = urllib.request.Request(url, data=b"" if post else None, method="POST" if post else "GET")
     try:
         with opener.open(req, timeout=timeout) as resp:
-            body = resp.read()
+            body = _read_capped(resp, what)
     except urllib.error.HTTPError as e:
         e.close()
         raise KobraError("%s answered HTTP %d" % (what, e.code)) from None
     except (urllib.error.URLError, OSError) as e:
         host = urllib.parse.urlsplit(url).netloc
         raise KobraError("printer not reachable at %s (%s)" % (host, getattr(e, "reason", e))) from None
-    try:
-        return json.loads(body)
-    except ValueError:
-        raise KobraError("bad answer from %s (not JSON)" % what) from None
+    result = _loads(body)
+    if result is None:
+        raise KobraError("bad answer from %s (not JSON)" % what)
+    return result
 
 
 def fetch_credentials(ip, port=18910, timeout=10):
@@ -128,14 +151,15 @@ def fetch_credentials(ip, port=18910, timeout=10):
         raise KobraError("unexpected /ctrl answer from the printer")
     try:  # AES-128: KX-Bridge's notes say AES-256, but both use the 16-byte key token[16:32]
         plain = aes.decrypt_cbc(token[16:32].encode(), data["token"].encode(), base64.b64decode(data["info"]))
-        result = json.loads(plain.decode("utf-8"))
-    except (ValueError, UnicodeError):
-        result = None
+    except ValueError:
+        plain = b""
+    result = _loads(plain)
     if not isinstance(result, dict):
         raise KobraError("could not decrypt the printer credentials")
     if result.get("error"):
         raise KobraError("printer refused LAN access: %s" % result["error"])
-    return Credentials(str(result.get("ip") or ip), str(result.get("username", "")), str(result.get("password", "")),
+    # The decrypted "ip" is ignored: the printer must not choose where we connect (both references use it).
+    return Credentials(ip, str(result.get("username", "")), str(result.get("password", "")),
                        str(result.get("deviceId", "")), str(result.get("modeId") or "20030"),
                        str(result.get("modelName") or "Anycubic Kobra"))
 
@@ -248,10 +272,7 @@ class Printer:
                 log.exception("Kobra callback failed")
 
     def _on_message(self, topic, raw):
-        try:
-            payload = json.loads(raw)
-        except ValueError:
-            return
+        payload = _loads(raw)
         if not isinstance(payload, dict):
             return
         suffix = "/".join(topic.split("/")[-2:])
@@ -470,17 +491,17 @@ class Printer:
             conn.send(tail)
             conn.sock.settimeout(180)  # the printer answers after writing the file to its storage
             resp = conn.getresponse()
-            status, body = resp.status, resp.read()
+            status, body = resp.status, _read_capped(resp, "the upload")
         except OSError as e:
             raise KobraError("upload to the printer failed (%s)" % e) from None
         finally:
             conn.close()
         if status != 200:
             raise KobraError("the printer refused the upload: HTTP %d" % status)
-        try:
-            return json.loads(body)
-        except ValueError:
-            raise KobraError("unexpected upload answer: %r" % body[:200]) from None
+        result = _loads(body)
+        if result is None:
+            raise KobraError("unexpected upload answer: %r" % body[:200])
+        return result
 
     def _upload_headers(self, file_size, body_size):
         return [("Host", "%s:%d" % (self.creds.ip, self.http_port)), ("User-Agent", "AnycubicSlicerNext/1.3.9.4"),

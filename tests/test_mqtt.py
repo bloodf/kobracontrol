@@ -46,6 +46,21 @@ class FramingTests(unittest.TestCase):
         with self.assertRaises(mqtt.MqttError):
             mqtt.decode_length(b"\xff\xff\xff\xff\x01", 0)
 
+    def test_packet_above_cap_is_refused(self):
+        """M3: a declared length above MAX_PACKET is an error before any byte of it is buffered."""
+        buf = bytearray(b"\x30" + mqtt.encode_length(mqtt.MAX_PACKET + 1))
+        with self.assertRaisesRegex(mqtt.MqttError, "too large"):
+            mqtt.split_packets(buf)
+        ok = bytearray(mqtt.packet(0x30, b"\x00\x01t" + b"x" * (mqtt.MAX_PACKET - 3)))
+        self.assertEqual(len(mqtt.split_packets(ok)[0][2]), mqtt.MAX_PACKET)
+
+    def test_oversized_connack_is_refused(self):
+        c = mqtt.Client("h", 1, "x", timeout=1)
+        sock = mock.Mock()
+        sock.recv.return_value = b"\x20" + mqtt.encode_length(mqtt.MAX_PACKET + 1)
+        with self.assertRaisesRegex(mqtt.MqttError, "too large"):
+            c._await_connack(sock)
+
     def test_split_packets_byte_by_byte(self):
         wire = mqtt.packet(0x30, b"\x00\x01t" + b"x" * 300) + mqtt.packet(0xD0, b"")
         buf, out = bytearray(), []
@@ -100,6 +115,16 @@ class OfflineUnitTests(unittest.TestCase):
         self.assertFalse(c.connected)
         c._sock.shutdown.assert_called_once()
 
+    def test_unexpected_reader_error_closes_session(self):
+        """M1: any exception in the reader ends in a closed session with on_close, not a dead thread."""
+        c, closes, _ = self.make()
+        c._recv = mock.Mock(side_effect=RuntimeError("boom"))
+        with self.assertLogs(mqtt.log, "ERROR"):
+            c._run()
+        self.assertFalse(c.connected)
+        self.assertEqual(len(closes), 1)
+        self.assertIn("boom", closes[0])
+
     def test_brief_empty_reads_are_tolerated_then_eof(self):
         c, closes, messages = self.make()
         pkt = mqtt.packet(0x30, b"\x00\x01t" + b"hi")
@@ -149,6 +174,22 @@ class ConnectTests(BrokerCase):
         c.subscribe("again/#")
         self.assertEqual(c._next_id, 1)
         self.assertEqual(self.fake.subscriptions[-1], "again/#")
+
+    def test_unencodable_credentials_raise_mqtt_error(self):
+        """M1: a 70000-byte password is an MqttError, not an OverflowError."""
+        with self.assertRaises(mqtt.MqttError):
+            self.client(password="p" * 70000)
+        c = self.client()
+        with self.assertRaises(mqtt.MqttError):
+            c.publish("t" * 70000, b"")
+
+    def test_oversized_packet_from_broker_closes(self):
+        """M3: the reader refuses a packet declared above MAX_PACKET and closes."""
+        c = self.client()
+        self.fake._sessions[0].send(b"\x30" + mqtt.encode_length(mqtt.MAX_PACKET + 1) + b"\x00")
+        self.assertTrue(wait_for(lambda: self.closes))
+        self.assertIn("too large", self.closes[0])
+        self.assertFalse(c.connected)
 
     def test_bad_password_is_auth_error(self):
         with self.assertRaises(mqtt.MqttAuthError) as cm:

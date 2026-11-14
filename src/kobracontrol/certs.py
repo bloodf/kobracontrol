@@ -12,6 +12,14 @@ before any grant or full access, a plugin path is refused when its base name sta
 Whole-component matching means this module file `certs.py` is reachable, but a folder named `certs`
 is not. Saved files are therefore `anycubic_slicer.pem` and `anycubic_slicer_key.pem`, and callers
 must pass a folder whose components avoid the words above.
+
+Key file handling: `save` makes the folder 0700 and each file 0600 (fchmod before any byte is
+written, O_NOFOLLOW where available, so a symlink planted at the key path is refused). On Windows
+these modes have no effect; the files are then protected only by the user profile's ACLs. `find`
+writes candidate PEMs to a private 0700 temp dir that is removed even when matching fails.
+`find` is bounded: at most MAX_FILES files examined, MAX_DEPTH folder levels, files up to MAX_SIZE
+read in CHUNK pieces (OVERLAP bytes shared between pieces so a PEM block on a boundary is still
+seen), symlinked folders never followed.
 """
 
 import base64
@@ -25,7 +33,11 @@ from collections import namedtuple
 CERT_FILE, KEY_FILE = "anycubic_slicer.pem", "anycubic_slicer_key.pem"
 EXPECTED_CN = b"AnycubicSlicer"
 SCAN_EXT = {".dll", ".exe", ".so", ".dylib", ""}
-MAX_SIZE = 512 * 1024 * 1024
+MAX_SIZE = 200 * 1024 * 1024
+MAX_FILES = 20000
+MAX_DEPTH = 16
+CHUNK = 16 * 1024 * 1024
+OVERLAP = 64 * 1024  # far larger than a PEM certificate or RSA key block
 CERT_RE = re.compile(rb"-----BEGIN CERTIFICATE-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
 KEY_RE = re.compile(rb"-----BEGIN ((?:RSA |EC )?PRIVATE KEY)-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END \1-----")
 
@@ -53,14 +65,36 @@ def default_locations(platform=None, env=None):
 
 
 def _files(paths):
+    seen = 0
     for path in paths:
         if os.path.isfile(path):
             yield path
         elif os.path.isdir(path):
-            for folder, _, names in os.walk(path):
+            base = path.rstrip(os.sep).count(os.sep)
+            for folder, dirs, names in os.walk(path):  # followlinks=False: symlinked folders are skipped
+                if folder.count(os.sep) - base > MAX_DEPTH:
+                    raise CertError("%s is nested deeper than %d folders; point to the slicer's library folder"
+                                    % (path, MAX_DEPTH))
+                dirs.sort()
+                seen += len(names)
+                if seen > MAX_FILES:
+                    raise CertError("more than %d files under %s; point to the slicer's library folder"
+                                    % (MAX_FILES, path))
                 for name in sorted(names):
                     if os.path.splitext(name)[1].lower() in SCAN_EXT:
                         yield os.path.join(folder, name)
+
+
+def _chunks(path):
+    """The file in CHUNK pieces, each starting OVERLAP bytes before the previous one ended."""
+    with open(path, "rb") as f:
+        tail = b""
+        while True:
+            data = f.read(CHUNK)
+            if not data:
+                return
+            yield tail + data
+            tail = (tail + data)[-OVERLAP:]
 
 
 def _normalize(block):
@@ -73,15 +107,14 @@ def _scan(paths):
         try:
             if os.path.getsize(path) > MAX_SIZE:
                 continue
-            with open(path, "rb") as f:
-                data = f.read()
+            for data in _chunks(path):
+                for m in CERT_RE.finditer(data):
+                    cert_found.setdefault(_normalize(m.group(0)), path)
+                for m in KEY_RE.finditer(data):
+                    key_found.setdefault(_normalize(m.group(0)), path)
         except OSError:
             continue
         scanned += 1
-        for m in CERT_RE.finditer(data):
-            cert_found.setdefault(_normalize(m.group(0)), path)
-        for m in KEY_RE.finditer(data):
-            key_found.setdefault(_normalize(m.group(0)), path)
     return cert_found, key_found, scanned
 
 
@@ -143,16 +176,28 @@ def paths(folder):
     return os.path.join(folder, CERT_FILE), os.path.join(folder, KEY_FILE)
 
 
+def _write_private(path, text):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)  # an existing file keeps its old mode through O_CREAT: tighten it first
+    except OSError:
+        os.close(fd)
+        raise
+    with open(fd, "w", encoding="ascii") as f:
+        f.write(text)
+
+
 def save(folder, cert_pem, key_pem):
-    os.makedirs(folder, 0o700, exist_ok=True)
     out = paths(folder)
-    for path, text in zip(out, (cert_pem, key_pem)):
-        with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="ascii") as f:
-            f.write(text)
-        try:
-            os.chmod(path, 0o600)  # an existing file keeps its old mode through O_CREAT; no-op on Windows
-        except OSError:
-            pass
+    try:
+        os.makedirs(folder, 0o700, exist_ok=True)
+        os.chmod(folder, 0o700)  # makedirs leaves an existing folder as it was
+        for path, text in zip(out, (cert_pem, key_pem)):
+            _write_private(path, text)
+    except OSError as e:
+        raise CertError("cannot save the client certificate in %s (%s)" % (folder, e.strerror or e)) from None
     return out
 
 

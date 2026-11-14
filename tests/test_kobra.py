@@ -85,9 +85,49 @@ class CredentialTests(FakeCase):
         self.assertNotIn(self.fake.token, str(cm.exception))
 
     def encrypted(self, plain):
+        return self.encrypted_raw(json.dumps(plain).encode())
+
+    def encrypted_raw(self, raw):
         iv = "fedcba9876543210"
-        enc = aes.encrypt_cbc(self.fake.token[16:32].encode(), iv.encode(), json.dumps(plain).encode())
+        enc = aes.encrypt_cbc(self.fake.token[16:32].encode(), iv.encode(), raw)
         return {"data": {"info": base64.b64encode(enc).decode(), "token": iv}}
+
+    def test_deeply_nested_json_is_kobra_error(self):
+        """M1: RecursionError from json must not escape."""
+        self.fake.info_answer = b"[" * 200000
+        with self.assertRaisesRegex(kobra.KobraError, "/info"):
+            self.creds()
+        self.fake.info_answer = None
+        self.fake.ctrl_answer = self.encrypted_raw(b"[" * 200000)
+        with self.assertRaisesRegex(kobra.KobraError, "decrypt"):
+            self.creds()
+
+    def test_non_utf8_answer_is_kobra_error(self):
+        self.fake.info_answer = b"\xff\xfe{"
+        with self.assertRaises(kobra.KobraError):
+            self.creds()
+
+    def test_printer_cannot_choose_the_address(self):
+        """M2: the decrypted "ip" is ignored; we keep talking to the address we were given."""
+        self.fake.ctrl_answer = self.encrypted({"ip": "203.0.113.7", "username": "u", "password": "p",
+                                                 "deviceId": "d"})
+        with self.assertNoLogs(kobra.log):
+            self.assertEqual(self.creds().ip, "127.0.0.1")
+
+    def test_redirects_are_not_followed(self):
+        """M2: a 3xx from /info is an error, never a request to another host."""
+        other = FakeKobra().start()
+        self.addCleanup(other.stop)
+        self.fake.info_redirect = "http://%s:%d/info" % (other.host, other.http_port)
+        with self.assertRaisesRegex(kobra.KobraError, "HTTP 302"):
+            self.creds()
+        self.assertEqual(other.ctrl_calls, [])
+
+    def test_oversized_http_answer(self):
+        """M3: at most 1 MiB is read from /info."""
+        self.fake.info_answer = b'{"token": "' + b"a" * (kobra.MAX_HTTP_BODY + 10) + b'"}'
+        with self.assertRaisesRegex(kobra.KobraError, "too large"):
+            self.creds()
 
     def test_printer_error_field(self):
         self.fake.ctrl_answer = self.encrypted({"error": "LAN mode disabled"})
@@ -164,6 +204,14 @@ class RequestTests(PrinterCase):
             self.fake.report("info/report", {"msgid": m["msgid"], "action": "move"})
         self.fake.replies[("axis", "move")] = wrong_topic
         self.assertIsNone(self.printer.request("axis", "move", timeout=0.4, match_action=True))
+
+    def test_deeply_nested_report_is_dropped(self):
+        """M1: a hostile report must not reach on_report nor break the session."""
+        self.fake.report("x/report", b"[" * 200000)
+        self.fake.report("light/report", {"data": {}})
+        self.assertTrue(wait_for(lambda: self.reports))
+        self.assertEqual([s for s, _ in self.reports], ["light/report"])
+        self.assertTrue(self.printer.connected)
 
     def test_reports_and_bad_payloads(self):
         self.fake.report("x/report", b"not json")
@@ -514,6 +562,18 @@ class UploadTests(PrinterCase):
                                 cancelled=lambda: len(seen) >= 2)
         time.sleep(0.2)
         self.assertEqual(self.fake.uploads, [])
+
+    def test_hostile_upload_url_host_is_ignored(self):
+        """M2: only the token is taken from the printer's URL; the file goes to creds.ip."""
+        url = "http://203.0.113.7:1/gcode_upload?s=" + self.fake.upload_token
+        self.printer.upload("a.gcode", self.source(10), url)
+        self.assertEqual(len(self.fake.uploads), 1)
+
+    def test_oversized_upload_answer(self):
+        """M3: the upload answer is capped too."""
+        self.fake.upload_answer = b'{"m": "' + b"a" * (kobra.MAX_HTTP_BODY + 10) + b'"}'
+        with self.assertRaisesRegex(kobra.KobraError, "too large"):
+            self.printer.upload("a.gcode", self.source(1), self.fake.upload_url)
 
     def test_unsafe_filename(self):
         for name in ('a"b.gcode', "a\r\nb.gcode", ""):

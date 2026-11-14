@@ -70,6 +70,32 @@ class FindTests(Tmp):
         self.write("tree/readme.txt", b"nothing")
         self.assert_client_pair(certs.find([os.path.join(self.tmp, "tree")]))
 
+    def test_blocks_across_chunk_boundaries(self):
+        """L6: large files are read in chunks with an overlap; a PEM split by a boundary is still found."""
+        lib = self.blob()
+        cut = lib.index(read(self.tls.client_cert)) + 100
+        self.write("c/lib.dylib", lib)
+        with mock.patch.object(certs, "CHUNK", cut), mock.patch.object(certs, "OVERLAP", 8192):
+            self.assert_client_pair(certs.find([os.path.join(self.tmp, "c")]))
+
+    def test_match_cleans_up_on_error(self):
+        """L3: candidate keys live in a private 0700 temp dir that is removed even on exceptions."""
+        private = os.path.join(self.tmp, "tmp")
+        os.makedirs(private)
+        self.write("t/a.dylib", self.blob())
+        modes = []
+
+        def boom():
+            d = [os.path.join(private, n) for n in os.listdir(private)][0]
+            modes.append(stat.S_IMODE(os.stat(d).st_mode))
+            raise RuntimeError("boom")
+        with mock.patch.object(tempfile, "tempdir", private), mock.patch.object(certs, "_client_context", boom):
+            with self.assertRaises(RuntimeError):
+                certs.find([os.path.join(self.tmp, "t")])
+        self.assertEqual(os.listdir(private), [])
+        if os.name == "posix":
+            self.assertEqual(modes, [0o700])
+
     def test_cert_and_key_in_different_files(self):
         self.write("t/a.so", read(self.tls.client_cert))
         self.write("t/b.so", read(self.tls.client_key) + read(self.tls.server_key))
@@ -135,6 +161,67 @@ class NoOpensslTests(Tmp):
                 self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
         certs.save(folder, "C2\n", "K2\n")
         self.assertEqual(certs.load(folder), ("C2\n", "K2\n"))
+
+    @unittest.skipUnless(os.name == "posix", "file modes are POSIX only")
+    def test_save_tightens_before_writing(self):
+        """L3: an existing 0644 key file is made 0600 before the key goes in; the folder becomes 0700."""
+        folder = os.path.join(self.tmp, "keep")
+        os.makedirs(folder, 0o755)
+        os.chmod(folder, 0o755)
+        key_path = certs.paths(folder)[1]
+        with open(key_path, "w") as f:
+            f.write("old")
+        os.chmod(key_path, 0o644)
+        seen = []
+        real = os.fchmod
+
+        def spy(fd, mode):
+            real(fd, mode)
+            st = os.fstat(fd)
+            seen.append((stat.S_IMODE(st.st_mode), st.st_size))
+        with mock.patch.object(certs.os, "fchmod", spy):
+            certs.save(folder, "C\n", "SECRET KEY\n")
+        self.assertEqual(seen, [(0o600, 0), (0o600, 0)])
+        self.assertEqual(stat.S_IMODE(os.stat(folder).st_mode), 0o700)
+        self.assertEqual(certs.load(folder)[1], "SECRET KEY\n")
+
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW not available")
+    def test_save_refuses_symlinked_key_file(self):
+        folder = os.path.join(self.tmp, "keep")
+        os.makedirs(folder)
+        target = os.path.join(self.tmp, "elsewhere.txt")
+        with open(target, "w") as f:
+            f.write("untouched")
+        os.symlink(target, certs.paths(folder)[1])
+        with self.assertRaises(certs.CertError):
+            certs.save(folder, "C\n", "KEY\n")
+        with open(target) as f:
+            self.assertEqual(f.read(), "untouched")
+
+    def test_walk_is_bounded(self):
+        """L6: too many files or too deep a tree is a clear CertError."""
+        for i in range(5):
+            self.write("many/f%d.so" % i, b"x")
+        with mock.patch.object(certs, "MAX_FILES", 3):
+            with self.assertRaisesRegex(certs.CertError, "more than 3 files"):
+                certs.find([os.path.join(self.tmp, "many")])
+        self.write("deep/" + "/".join("d%d" % i for i in range(5)) + "/a.so", b"x")
+        with mock.patch.object(certs, "MAX_DEPTH", 3):
+            with self.assertRaisesRegex(certs.CertError, "deeper than 3"):
+                certs.find([os.path.join(self.tmp, "deep")])
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks not available")
+    def test_symlinked_directories_are_not_followed(self):
+        outside = os.path.join(self.tmp, "outside")
+        self.write("outside/lib.so", b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+        self.write("tree/real.so", b"nothing")
+        os.symlink(outside, os.path.join(self.tmp, "tree", "link"))
+        with self.assertRaisesRegex(certs.CertError, "0 certificates") as cm:
+            certs.find([os.path.join(self.tmp, "tree")])
+        self.assertIn("in 1 files", str(cm.exception))
+
+    def test_max_size_lowered(self):
+        self.assertLessEqual(certs.MAX_SIZE, 200 * 1024 * 1024)
 
     def test_load_missing(self):
         with self.assertRaises(certs.CertError):

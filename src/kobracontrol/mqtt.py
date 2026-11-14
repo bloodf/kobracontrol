@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 CONNECT, CONNACK, PUBLISH, SUBSCRIBE, SUBACK, PINGREQ, PINGRESP, DISCONNECT = 1, 2, 3, 8, 9, 12, 13, 14
 MAX_LENGTH = 268435455
+MAX_PACKET = 4 * 1024 * 1024  # printer packets are a few KB; refuse more before buffering it
 POLL = 0.25
 EMPTY_READS_EOF = 5  # KX-Bridge: Windows TLS sockets can return b"" briefly without a real EOF
 
@@ -72,6 +73,8 @@ def split_packets(buf):
         if decoded is None:
             break
         n, start = decoded
+        if n > MAX_PACKET:
+            raise MqttError("protocol error: packet too large (%d bytes)" % n)
         if len(buf) < start + n:
             break
         out.append((buf[0] >> 4, buf[0] & 0x0F, bytes(buf[start:start + n])))
@@ -104,6 +107,8 @@ def enable_tcp_keepalive(sock):
 
 def _s(value):
     raw = value.encode("utf-8") if isinstance(value, str) else value
+    if len(raw) > 0xFFFF:
+        raise MqttError("MQTT string too long (%d bytes)" % len(raw))
     return len(raw).to_bytes(2, "big") + raw
 
 
@@ -274,6 +279,9 @@ class Client:
             reason = str(e)
         except (OSError, ValueError) as e:
             reason = "connection lost (%s)" % e
+        except Exception as e:  # never a silently dead reader: close and tell the owner
+            log.exception("MQTT reader failed")
+            reason = "reader error (%s)" % e
         finally:
             self._open = False
             try:
