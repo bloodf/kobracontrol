@@ -19,8 +19,9 @@ Filament mode (`detect_filament_mode`):
 Slot dict (`aggregate_slots`):
     global_index  int   position in the flat slot list (rules below)
     box_id        int   reported box id, -1 for the head
-    box_pos       int   ams_id: 0-based position of the box in presentation
-                        order (head first in hub mode, then ACE ids ascending)
+    box_pos       int   ams_id: 0 for the head/toolhead; ACE: box_id in
+                        ace_direct, box_id + 1 in ace_hub (stable under gaps
+                        and report order, as KX-Bridge's multi-ACE tests need)
     index         int   slot index inside its box
     status        int   5 = filament loaded/ready; anything else is not usable
     type          str   material, "" when unknown
@@ -129,8 +130,9 @@ def aggregate_slots(boxes, mode):
         return slots, loaded
 
     if mode == "ace_direct":
-        for pos, unit in enumerate(aces):
+        for unit in aces:
             bid = _box_id(unit)
+            pos = bid
             for i, s in enumerate((unit.get("slots") or [])[:4]):
                 slots.append(_to_slot(s, bid * 4 + i, bid, pos))
             local = _num(unit.get("loaded_slot"), -1)
@@ -145,8 +147,9 @@ def aggregate_slots(boxes, mode):
         local = _num(head.get("loaded_slot"), -1)
         if 0 <= local <= 2:
             loaded = local
-    for pos, unit in enumerate(aces, start=1 if head else 0):
+    for unit in aces:
         bid = _box_id(unit)
+        pos = bid + 1
         base = 3 + bid * 4
         for i, s in enumerate(unit.get("slots") or []):
             slots.append(_to_slot(s, base + i, bid, pos))
@@ -624,16 +627,16 @@ def select_loaded_slots_for_print(slots, mode, default_slot="auto"):
     return usable, f"default slot {want} is empty, falling back to auto"
 
 
-def set_slot_payload(box_id, local_slot, material, color):
+def set_info_payload(box_id, local_slot, type, color):
     """`multiColorBox/setInfo` data to edit one slot (KX-Bridge
     handle_api_ams_set_slot / tools/probe_ams_setinfo.py variant A). Must be
     published on the web/printer topic; a slicer-topic publish is ignored by
-    the printer. Material is upper-cased, color must be [r, g, b] 0-255."""
+    the printer. Type is upper-cased, color must be [r, g, b] 0-255."""
     if not (isinstance(color, (list, tuple)) and len(color) == 3 and all(
             isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= 255 for c in color)):
         raise ValueError("color must be [r, g, b] with integers 0-255")
     return {"multi_color_box": [{"id": int(box_id), "slots": [
-        {"index": int(local_slot), "type": str(material).upper(), "color": list(color)}]}]}
+        {"index": int(local_slot), "type": str(type).upper(), "color": list(color)}]}]}
 
 
 def parse_multicolor_report(payload):

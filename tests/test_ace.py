@@ -309,6 +309,14 @@ class Trays(unittest.TestCase):
         slots, _ = ace.aggregate_slots([ACE0, ACE1], "ace_direct")
         self.assertEqual([ace.tray_id(s) for s in slots], list(range(8)))
 
+    def test_tray_stable_with_id_gaps(self):
+        slots, _ = ace.aggregate_slots([box(1, four())], "ace_direct")
+        self.assertEqual([ace.tray_id(s) for s in slots], [4, 5, 6, 7])
+        self.assertEqual(ace.slot_for_tray(5, slots)["global_index"], 5)
+        slots, _ = ace.aggregate_slots([HEAD, box(2, four())], "ace_hub")
+        self.assertEqual(ace.tray_id(slots[3]), 12)
+        self.assertEqual(ace.tray_id(slots[3]), ace.slot_to_print_ams_index(slots[3], "ace_hub"))
+
     def test_slot_for_tray(self):
         slots, _ = ace.aggregate_slots([HEAD, ACE0], "ace_hub")
         self.assertEqual(ace.slot_for_tray(5, slots)["global_index"], 4)
@@ -561,13 +569,13 @@ class SelectLoaded(unittest.TestCase):
 
 class SetSlotPayload(unittest.TestCase):
     def test_shape(self):
-        self.assertEqual(ace.set_slot_payload(0, 2, "petg", [1, 2, 3]),
+        self.assertEqual(ace.set_info_payload(0, 2, "petg", [1, 2, 3]),
                          {"multi_color_box": [{"id": 0, "slots": [{"index": 2, "type": "PETG", "color": [1, 2, 3]}]}]})
 
     def test_bad_color(self):
         for c in ([1, 2], [1, 2, 3, 4], [0, 0, 256], [0, 0, "1"], "abc", [True, 0, 0]):
             with self.assertRaises(ValueError):
-                ace.set_slot_payload(0, 0, "PLA", c)
+                ace.set_info_payload(0, 0, "PLA", c)
 
 
 if __name__ == "__main__":
