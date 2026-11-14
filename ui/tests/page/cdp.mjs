@@ -142,7 +142,7 @@ export const HELPERS = `
 const doc = document;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
-async function settle() { await sleep(0); await frame(); await frame(); await sleep(30); }
+async function settle() { await sleep(0); await frame(); await frame(); await sleep(60); }
 async function until(test, what, ms = 4000) { const end = performance.now() + ms; while (!test()) { if (performance.now() > end) throw new Error('timed out: ' + (what || test)); await sleep(20); } }
 function assert(c, what) { if (!c) throw new Error('assertion failed: ' + what); }
 function eq(a, b, what) { const x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error(what + ': ' + x + ' !== ' + y); }

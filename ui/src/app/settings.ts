@@ -2,47 +2,48 @@ import { computed, reactive, ref } from 'vue';
 import * as bridge from '../core/bridge';
 import { message } from '../core/tracker';
 import { t, onLangPref } from '../core/i18n';
-import { hello, onConfig, onRfid, tracker } from './store';
+import { hello, lease, onConfig, s, tracker } from './store';
 import type { Config } from './types';
 
 // Settings form: a config message from the plugin never wipes values the user is still editing; "Saved" only
 // once the plugin answered; on an error the typed values stay.
 export const config = ref<Config | null>(null);
-export const form = reactive({ mode: 'automagic', host: '', apiKey: '', name: 'Snapmaker U1', spoolman: '', draft: {} as Record<string, unknown> });
+const DEFAULT_NAME = 'Anycubic Kobra X';
+export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera: true, leveling: true, vibration: true,
+  spoolman: '', spoolmanAuto: true, usage: true });
 export const saving = ref(false);
-let rfidAuto = false;
+let cameraApplied = false;
 
-const savedExpert = (k: string) => (config.value ? (k in config.value.stored ? config.value.stored[k] : config.value.settings[k]) : undefined);
-export const valueOf = (key: string) => (key in form.draft ? form.draft[key] : savedExpert(key));
+type Form = typeof form;
+const fromSettings = (st: Record<string, any>): Form => ({
+  host: st.host || '', name: st.printer_name || DEFAULT_NAME, ffmpeg: st.ffmpeg_path || '', camera: st.camera_enabled === true,
+  leveling: st.auto_leveling !== false, vibration: st.vibration_compensation !== false, spoolman: st.spoolman_url || '',
+  spoolmanAuto: st.spoolman_auto !== false, usage: st.spoolman_report_usage !== false });
+const toSettings = (f: Form): Record<string, unknown> => ({
+  host: f.host.trim(), printer_name: f.name.trim() || DEFAULT_NAME, ffmpeg_path: f.ffmpeg.trim(), camera_enabled: f.camera,
+  auto_leveling: f.leveling, vibration_compensation: f.vibration, spoolman_url: f.spoolman.trim(),
+  spoolman_auto: f.spoolmanAuto, spoolman_report_usage: f.usage });
+
 export const dirty = computed(() => {
   const c = config.value;
   if (!c) return false;
-  const st = c.settings;
-  return form.mode !== c.mode || Object.entries(form.draft).some(([k, v]) => v !== savedExpert(k)) || form.apiKey !== (st.api_key || '')
-    || form.host.trim() !== (st.host || '') || form.name.trim() !== (st.printer_name || 'Snapmaker U1') || form.spoolman.trim() !== (st.spoolman_url || '');
+  const saved = toSettings(fromSettings(c.settings)), now = toSettings(form);
+  return Object.keys(now).some(k => now[k] !== saved[k]);
 });
 
 function fill(m: Config): void {
   const keep = !saving.value && dirty.value;
   config.value = m;
-  rfidAuto = !!m.settings.rfid_auto_sync;
-  if (keep) return;
-  const st = m.settings;
-  Object.assign(form, { mode: m.mode, host: st.host || '', apiKey: st.api_key || '', name: st.printer_name || 'Snapmaker U1', spoolman: st.spoolman_url || '', draft: {} });
+  if (!cameraApplied) { cameraApplied = true; s.camOn = m.settings.camera_enabled === true; lease(); }
+  if (!keep) Object.assign(form, fromSettings(m.settings));
 }
 
 export async function save(): Promise<void> {
   const c = config.value;
   if (!c || saving.value) return;
-  const settings: Record<string, unknown> = {
-    mode: form.mode, host: form.host.trim(), printer_name: form.name.trim() || 'Snapmaker U1', spoolman_url: form.spoolman.trim(),
-    ...Object.fromEntries(Object.entries(form.draft).filter(([k, v]) => form.mode === 'expert' || v !== savedExpert(k))),
-  };
-  if (form.apiKey !== '••••') settings.api_key = form.apiKey.trim();
   saving.value = true;
   try {
-    const r = await bridge.request({ type: 'save_settings', settings });
-    form.draft = {};
+    const r = await bridge.request({ type: 'save_settings', settings: toSettings(form) });
     if (r?.connect_error) tracker.notify('error', t('settings.savedBut', { error: r.connect_error }));
     else tracker.notify('success', t('ok.settings'));
     void hello();
@@ -55,14 +56,5 @@ export async function save(): Promise<void> {
 
 export function installSettings(): () => void {
   onLangPref(value => bridge.post({ type: 'ui_language', value }));
-  const a = onConfig(fill);
-  const b = onRfid(m => {
-    if (rfidAuto) { bridge.post({ type: 'sync_project', auto: true }); return; }
-    const names = (m.heads as number[]).map(i => {
-      const g = m.tags[i] ?? {};
-      return `T${i + 1} ${[g.vendor || g.manufacturer, g.type, g.sub_type].filter(Boolean).join(' ')}`;
-    });
-    tracker.notify('info', t('ok.rfidRead', { names: names.join(', ') }));
-  });
-  return () => { a(); b(); };
+  return onConfig(fill);
 }

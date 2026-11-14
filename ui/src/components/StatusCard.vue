@@ -6,179 +6,172 @@ import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
 import Icon from './Icon.vue';
-import { s, run, tracker, controlsOff, estopReason, printing, printerName } from '../app/store';
+import MotionPanel from './MotionPanel.vue';
+import { s, run, tracker, controlsOff, printing, printerName, reported } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
-import { parseTarget, parseSpeed } from '../core/logic';
+import { parseTarget, parseWhole } from '../core/logic';
 
 const st = computed(() => s.status);
-const state = computed(() => st.value?.state ?? '');
 const stateText = computed(() => {
-  if (!st.value) return t('status.noStatus');
-  const name = tMaybe(`status.state.${state.value}`, state.value);
-  return st.value.message ? `${name} · ${st.value.message}` : name;
-});
-const pct = computed(() => Math.max(0, Math.min(100, (st.value?.progress ?? 0) * 100)));
-const left = computed(() => {
   const d = st.value;
-  return d && (d.progress ?? 0) > 0.01 && d.print_duration ? d.print_duration / (d.progress as number) - d.print_duration : null;
+  if (!d) return t('status.noStatus');
+  const name = tMaybe(`status.state.${d.state}`, d.state);
+  const detail = d.preparing ? tMaybe(`phase.${d.kobra_state}`, d.kobra_state)
+    : d.state === 'error' ? d.last_error?.msg ?? '' : d.state === 'paused' ? d.pause_reason?.msg ?? '' : '';
+  return detail ? `${name} · ${detail}` : name;
 });
-const machine = computed(() => {
-  const m = st.value?.machine_state;
-  return m && m !== 'IDLE' ? t('status.machine', { state: m.toLowerCase().replace(/_/g, ' ') }) : '';
-});
+const pct = computed(() => Math.max(0, Math.min(100, st.value?.progress ?? 0)));
 
 // ---------------------------------------------------------------- print controls
-const pauseWhy = computed(() => controlsOff.value || (state.value !== 'printing' ? t('reason.notPrinting') : tracker.isBusy('pause') ? t('reason.pending') : ''));
-const resumeWhy = computed(() => controlsOff.value || (state.value !== 'paused' ? t('reason.notPaused') : tracker.isBusy('resume') ? t('reason.pending') : ''));
-const cancelWhy = computed(() => controlsOff.value || (!printing.value ? t('reason.noPrint') : tracker.isBusy('cancel') ? t('reason.pending') : ''));
+type Kind = 'pause' | 'resume' | 'stop';
+function why(kind: Kind): string {
+  if (controlsOff.value) return controlsOff.value;
+  if (tracker.isBusy(kind)) return t('reason.pending');
+  if (st.value?.can[kind]) return '';
+  if (kind === 'pause') return st.value?.preparing ? t('reason.preparing') : t('reason.notPrinting');
+  return kind === 'resume' ? t('reason.notPaused') : t('reason.noPrint');
+}
+const pauseWhy = computed(() => why('pause'));
+const resumeWhy = computed(() => why('resume'));
+const stopWhy = computed(() => why('stop'));
 const pause = () => run({ key: 'pause', label: t('act.pause'), cmd: 'pause', okText: t('ok.pause'), timeoutMs: 15000 });
 const resume = () => run({ key: 'resume', label: t('act.resume'), cmd: 'resume', okText: t('ok.resume'), timeoutMs: 15000 });
-async function cancel() {
-  if (!await ask({ title: t('confirm.cancel.title'), text: t('confirm.cancel.text', { printer: printerName.value }),
-    yes: t('confirm.cancel.yes'), no: t('confirm.cancel.no'), danger: true })) return;
-  await run({ key: 'cancel', label: t('act.cancel'), cmd: 'cancel', okText: t('ok.cancel'), timeoutMs: 15000 });
-}
-async function estop() {
-  if (!await ask({ title: t('confirm.estop.title'), text: t('confirm.estop.text', { printer: printerName.value }),
-    yes: t('confirm.estop.yes'), no: t('common.goBack'), danger: true })) return;
-  await run({ key: 'estop', label: t('act.estop'), cmd: 'emergency_stop', okText: t('ok.estop'), timeoutMs: 10000, allowRepeat: true });
+async function stop() {
+  if (!await ask({ title: t('confirm.stop.title'), text: t('confirm.stop.text', { printer: printerName.value }),
+    yes: t('confirm.stop.yes'), no: t('confirm.stop.no'), danger: true })) return;
+  await run({ key: 'stop', label: t('act.stop'), cmd: 'stop', okText: t('ok.stop'), timeoutMs: 15000 });
 }
 
 // ---------------------------------------------------------------- temperatures
 // InputNumber commits its model on blur; the typed value is tracked on every input so buttons react at once.
 const asNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-type HeaterKey = '0' | '1' | '2' | '3' | 'bed';
+type HeaterKey = 'nozzle' | 'bed';
 const drafts = reactive<Record<string, number | null>>({});
 const heaters = computed(() => {
   const d = st.value;
-  if (!d) return [];
-  const rows = d.extruders.map((e, i) => ({ key: String(i) as HeaterKey, label: `T${i + 1}`, heater: t('temps.heater.head', { n: i + 1 }),
-    reading: e, head: d.heads[i], max: s.limits.hotend, badge: `toolhead/t${i + 1}` }));
-  return [...rows, { key: 'bed' as HeaterKey, label: t('temps.bed'), heater: t('temps.heater.bed'), reading: d.bed, head: undefined, max: s.limits.bed, badge: 'icon/bed' }];
+  return [
+    { key: 'nozzle' as HeaterKey, label: t('temps.nozzle'), temp: d?.nozzle_temp, target: d?.nozzle_target, max: s.limits.nozzle_max, badge: 'icon/temperature' },
+    { key: 'bed' as HeaterKey, label: t('temps.bed'), temp: d?.bed_temp, target: d?.bed_target, max: s.limits.bed_max, badge: 'icon/bed' },
+  ];
 });
+const heatOff = computed(() => controlsOff.value || (st.value && !st.value.can.heat ? t('reason.noHeat') : ''));
 const parsed = (key: string, max: number) => parseTarget(drafts[key], max);
 function setWhy(key: string, max: number): string {
-  if (controlsOff.value) return controlsOff.value;
+  if (heatOff.value) return heatOff.value;
   const p = parsed(key, max);
   if (p.kind === 'empty') return t('temps.empty');
   if (p.kind === 'invalid') return t('temps.invalid', { min: 0, max });
   return tracker.isBusy('temp:' + key) ? t('reason.pending') : '';
 }
-async function turnOff(key: string, heater: string) {
-  if (printing.value && !await ask({ title: t('confirm.off.title', { heater }), text: t('confirm.off.text', { heater, printer: printerName.value }),
-    yes: t('confirm.off.yes', { heater }), no: t('confirm.off.no'), danger: true })) return;
-  await run({ key: 'temp:' + key, label: t('act.temperature', { heater }), cmd: 'temperature', args: { heater: key, target: 0 }, okText: t('ok.off', { heater }) });
+const reading = (v: number | undefined) => (reported.value && v != null ? fmt.number(v, 1) : '—');
+async function turnOff(key: HeaterKey, heater: string) {
+  await run({ key: 'temp:' + key, label: t('act.temperature', { heater }), cmd: 'set_temp', args: { [key]: 0 }, okText: t('ok.off', { heater }) });
 }
-async function setTemp(key: string, heater: string, max: number) {
+async function setTemp(key: HeaterKey, heater: string, max: number) {
   const p = parsed(key, max);
   if (p.kind === 'off') return turnOff(key, heater);
   if (p.kind !== 'heat') return;
   const value = p.value;
   if (!await ask({ title: t('confirm.heat.title', { heater }), text: t('confirm.heat.text', { heater, printer: printerName.value, value }),
     yes: t('confirm.heat.yes', { value }), no: t('common.goBack') })) return;
-  const r = await run({ key: 'temp:' + key, label: t('act.temperature', { heater }), cmd: 'temperature', args: { heater: key, target: value },
+  const r = await run({ key: 'temp:' + key, label: t('act.temperature', { heater }), cmd: 'set_temp', args: { [key]: value },
     okText: t('ok.heat', { heater, value }) });
   if (r.ok) drafts[key] = null;
 }
 
-// ---------------------------------------------------------------- speed, cover, light
+// ---------------------------------------------------------------- speed mode, fan, light
+const SPEED_MODES = [1, 2, 3];
 const speedDraft = ref<number | null>(null);
-const speedNow = computed(() => Math.round((st.value?.speed_factor ?? 1) * 100));
-const speedValue = computed(() => parseSpeed(speedDraft.value));
+const speedOptions = computed(() => SPEED_MODES.map(n => ({ value: n, label: t(`speed.mode.${n}` as 'speed.mode.1') })));
+const speedNow = computed(() => (st.value?.speed_mode ? tMaybe(`speed.mode.${st.value.speed_mode}`, t('speed.modeN', { n: st.value.speed_mode })) : '—'));
+const speedWhy = computed(() => controlsOff.value || (!printing.value ? t('reason.noPrint') : ''));
 async function setSpeed() {
-  const v = speedValue.value;
-  if (v == null) return;
-  const r = await run({ key: 'speed', label: t('act.speed'), cmd: 'speed', args: { percent: v }, okText: t('ok.speed', { value: v }) });
+  const mode = speedDraft.value;
+  if (mode == null) return;
+  const r = await run({ key: 'speed', label: t('act.speed'), cmd: 'set_speed', args: { mode }, okText: t('ok.speed') });
   if (r.ok) speedDraft.value = null;
 }
-const purMode = ref<string | null>(null);
-const purOptions = computed(() => ['strong', 'weak', 'keep-warm', 'idle'].map(v => ({ value: v, label: t(`purifier.${v}` as any) })));
-const setPurifier = () => purMode.value && run({ key: 'purifier', label: t('act.purifier'), cmd: 'purifier', args: { mode: purMode.value }, okText: t('ok.purifier') });
-async function setLight(on: boolean) {
-  await run({ key: 'light', label: t('act.light'), cmd: 'light', args: { on } });
+const fanDraft = ref<number | null>(null);
+const fanValue = computed(() => parseWhole(fanDraft.value, 0, 100));
+async function setFan() {
+  const value = fanValue.value;
+  if (value == null) return;
+  const r = await run({ key: 'fan', label: t('act.fan'), cmd: 'set_fan', args: { pct: value }, okText: t('ok.fan', { value }) });
+  if (r.ok) fanDraft.value = null;
 }
+const setLight = (on: boolean) => run({ key: 'light', label: t('act.light'), cmd: 'set_light', args: { on } });
 </script>
 
 <template>
-  <section class="u1-card" aria-labelledby="status-h">
+  <section class="kc-card" aria-labelledby="status-h">
     <h2 id="status-h">{{ t('status.title') }}</h2>
-    <div class="u1-row">
-      <strong data-test="state">{{ stateText }}</strong><span class="u1-spacer" />
+    <div class="kc-row">
+      <strong data-test="state">{{ stateText }}</strong><span class="kc-spacer" />
       <span v-if="st?.layer" class="oui-meta">{{ t('status.layer', { n: st.layer, total: st.total_layers || '?' }) }}</span>
     </div>
     <ProgressBar :value="pct" :show-value="false" style="height: 8px; margin: 8px 0" :aria-label="t('status.progress')" />
     <div v-if="st?.filename" class="oui-meta st-file">{{ st.filename }}<template v-if="printing"> · {{ fmt.number(pct) }}%</template></div>
     <dl v-if="printing" class="st-kv">
-      <dt>{{ t('status.elapsed') }}</dt><dd>{{ fmt.duration(st?.total_duration) }}</dd>
-      <dt>{{ t('status.left') }}</dt><dd>{{ fmt.duration(left) }}</dd>
+      <dt>{{ t('status.elapsed') }}</dt><dd>{{ fmt.duration(st?.elapsed_s) }}</dd>
+      <dt>{{ t('status.left') }}</dt><dd>{{ st?.remaining_s ? fmt.duration(st.remaining_s) : '—' }}</dd>
     </dl>
-    <p v-if="machine" class="oui-meta">{{ machine }}</p>
 
     <div class="st-controls" role="group" :aria-label="t('status.controls')">
-      <div class="u1-row">
+      <div class="kc-row">
         <Button severity="secondary" outlined :disabled="!!pauseWhy" :loading="tracker.isBusy('pause')" data-focus-key="pause" data-test="pause" @click="pause">
           <Icon name="icon/pause" /><span>{{ t('act.pause') }}</span></Button>
         <Button severity="secondary" outlined :disabled="!!resumeWhy" :loading="tracker.isBusy('resume')" data-focus-key="resume" data-test="resume" @click="resume">
           <Icon name="icon/resume" /><span>{{ t('act.resume') }}</span></Button>
-        <Button severity="danger" outlined :disabled="!!cancelWhy" :loading="tracker.isBusy('cancel')" data-focus-key="cancel" data-test="cancel" @click="cancel">
-          <Icon name="icon/cancel" /><span>{{ t('act.cancel') }}</span></Button>
+        <Button severity="danger" outlined :disabled="!!stopWhy" :loading="tracker.isBusy('stop')" data-focus-key="stop" data-test="stop" @click="stop">
+          <Icon name="icon/cancel" /><span>{{ t('act.stop') }}</span></Button>
       </div>
-      <p v-if="controlsOff" class="u1-why" data-test="controls-why">{{ t('reason.controlsOff', { reason: controlsOff }) }}</p>
-      <!-- Kept apart from Cancel (U12): its own group, its own rule (known target, even offline). -->
-      <div class="st-urgent u1-row">
-        <span class="oui-meta">{{ t('status.urgent') }}</span>
-        <Button severity="danger" :disabled="!!estopReason" data-focus-key="estop" data-test="estop" @click="estop">
-          <Icon name="icon/emergency-stop" /><span>{{ t('act.estop') }}</span></Button>
-        <span v-if="tracker.isBusy('estop')" class="u1-why" role="status">{{ t('msg.waiting', { action: t('act.estop') }) }}</span>
-        <span v-else-if="estopReason" class="u1-why">{{ estopReason }}</span>
-      </div>
+      <p v-if="controlsOff" class="kc-why" data-test="controls-why">{{ t('reason.controlsOff', { reason: controlsOff }) }}</p>
+      <p v-else-if="pauseWhy && resumeWhy && stopWhy" class="kc-why" data-test="print-why">{{ t('reason.noPrint') }}</p>
     </div>
 
     <h3 class="st-h3"><Icon name="icon/temperature" /> {{ t('temps.title') }}</h3>
     <div class="st-temps">
       <div v-for="h in heaters" :key="h.key" class="st-temp" :data-heater-row="h.key">
         <span class="st-tlabel"><Icon :name="h.badge" :size="20" /> {{ h.label }}</span>
-        <span v-if="h.head" class="st-fil" :title="[h.head.vendor, h.head.type, h.head.sub_type].filter(Boolean).join(' ')">
-          <span class="u1-sw" :style="{ background: h.head.colour || 'transparent' }" />
-          <template v-if="h.head.loaded">{{ h.head.type }} <span class="oui-muted">{{ h.head.sub_type }}</span></template>
-          <span v-else class="oui-muted">{{ t('heads.empty') }}</span>
-        </span><span v-else class="st-fil" />
-        <span class="u1-num st-read">{{ t('temps.reading', { temp: h.reading.temp == null ? '—' : fmt.number(h.reading.temp, 1), target: fmt.number(h.reading.target ?? 0) }) }}</span>
+        <span class="kc-num st-read">{{ t('temps.reading', { temp: reading(h.temp), target: reported && h.target != null ? fmt.number(h.target) : '—' }) }}</span>
         <InputNumber :model-value="drafts[h.key]" :input-id="'temp-' + h.key" :min="0" :max="h.max" :use-grouping="false" :allow-empty="true"
-                     input-class="st-input" :placeholder="t('temps.range', { min: 0, max: h.max })" :aria-label="t('temps.target', { heater: h.heater })"
-                     :aria-describedby="'temp-why-' + h.key" :invalid="parsed(h.key, h.max).kind === 'invalid'" :disabled="!!controlsOff"
+                     input-class="st-input" :placeholder="t('temps.range', { min: 0, max: h.max })" :aria-label="t('temps.target', { heater: h.label })"
+                     :aria-describedby="'temp-why-' + h.key" :invalid="parsed(h.key, h.max).kind === 'invalid'" :disabled="!!heatOff"
                      @input="e => (drafts[h.key] = asNumber(e.value))" @update:model-value="v => (drafts[h.key] = v)"
-                     @keydown.enter="setTemp(h.key, h.heater, h.max)" />
-        <Button severity="secondary" outlined :label="t('temps.set')" :aria-label="t('temps.setFor', { heater: h.heater })" :disabled="!!setWhy(h.key, h.max)"
-                :loading="tracker.isBusy('temp:' + h.key)" :data-focus-key="'set-' + h.key" :data-set="h.key" @click="setTemp(h.key, h.heater, h.max)" />
-        <Button severity="secondary" outlined :label="t('temps.off')" :aria-label="t('temps.offFor', { heater: h.heater })"
-                :disabled="!!controlsOff || tracker.isBusy('temp:' + h.key)" :data-focus-key="'off-' + h.key" :data-off="h.key" @click="turnOff(h.key, h.heater)" />
-        <span :id="'temp-why-' + h.key" class="u1-why st-why" :class="{ 'u1-err': parsed(h.key, h.max).kind === 'invalid' }">
-          {{ parsed(h.key, h.max).kind === 'invalid' ? t('temps.invalid', { min: 0, max: h.max }) : '' }}</span>
+                     @keydown.enter="setTemp(h.key, h.label, h.max)" />
+        <Button severity="secondary" outlined :label="t('temps.set')" :aria-label="t('temps.setFor', { heater: h.label })" :disabled="!!setWhy(h.key, h.max)"
+                :loading="tracker.isBusy('temp:' + h.key)" :data-focus-key="'set-' + h.key" :data-set="h.key" @click="setTemp(h.key, h.label, h.max)" />
+        <Button severity="secondary" outlined :label="t('temps.off')" :aria-label="t('temps.offFor', { heater: h.label })"
+                :disabled="!!heatOff || tracker.isBusy('temp:' + h.key)" :data-focus-key="'off-' + h.key" :data-off="h.key" @click="turnOff(h.key, h.label)" />
+        <span :id="'temp-why-' + h.key" class="kc-why st-why" :class="{ 'kc-err': parsed(h.key, h.max).kind === 'invalid' }">
+          {{ parsed(h.key, h.max).kind === 'invalid' ? t('temps.invalid', { min: 0, max: h.max }) : heatOff && !controlsOff ? heatOff : '' }}</span>
       </div>
     </div>
 
-    <div class="u1-row st-line">
-      <label for="speed">{{ t('speed.label') }}</label>
-      <InputNumber :model-value="speedDraft" input-id="speed" @input="e => (speedDraft = asNumber(e.value))" @update:model-value="v => (speedDraft = v)" :min="10" :max="300" :step="5" suffix=" %" :placeholder="`${speedNow} %`"
-                   :use-grouping="false" :disabled="!!controlsOff" input-class="st-input" aria-describedby="speed-why" />
-      <Button severity="secondary" outlined :label="t('speed.set')" :disabled="!!controlsOff || speedValue == null"
-              :loading="tracker.isBusy('speed')" data-focus-key="speed" @click="setSpeed" />
-      <span id="speed-why" class="u1-why">{{ speedDraft != null && speedValue == null ? t('speed.invalid') : '' }}</span>
+    <div class="kc-row st-line">
+      <label id="speed-l">{{ t('speed.label') }}</label>
+      <Select v-model="speedDraft" :options="speedOptions" option-label="label" option-value="value" :placeholder="speedNow" aria-labelledby="speed-l"
+              :disabled="!!speedWhy" class="st-select" data-test="speed" />
+      <Button severity="secondary" outlined :label="t('common.apply')" :disabled="!!speedWhy || speedDraft == null" :loading="tracker.isBusy('speed')"
+              data-focus-key="speed" @click="setSpeed" />
+      <span v-if="speedWhy && !controlsOff" class="kc-why">{{ speedWhy }}</span>
     </div>
-    <div class="u1-row st-line">
-      <Icon name="icon/fan" /><label id="pur-l">{{ t('purifier.label') }}</label>
-      <Select v-model="purMode" :options="purOptions" option-label="label" option-value="value" :placeholder="t('purifier.choose')"
-              aria-labelledby="pur-l" :disabled="!!controlsOff" class="st-select" />
-      <Button severity="secondary" outlined :label="t('common.apply')" :disabled="!!controlsOff || !purMode" :loading="tracker.isBusy('purifier')"
-              data-focus-key="purifier" @click="setPurifier" />
-      <span v-if="st?.purifier?.fitted === false" class="u1-why">{{ t('purifier.notFitted') }}</span>
+    <div class="kc-row st-line">
+      <Icon name="icon/fan" /><label for="fan">{{ t('fan.label') }}</label>
+      <InputNumber :model-value="fanDraft" input-id="fan" :min="0" :max="100" :step="5" suffix=" %" :use-grouping="false" :allow-empty="true"
+                   :placeholder="reported && st ? `${fmt.number(st.fan_pct)} %` : '—'" :disabled="!!controlsOff" input-class="st-input" aria-describedby="fan-why"
+                   @input="e => (fanDraft = asNumber(e.value))" @update:model-value="v => (fanDraft = v)" @keydown.enter="setFan" />
+      <Button severity="secondary" outlined :label="t('fan.set')" :disabled="!!controlsOff || fanValue == null" :loading="tracker.isBusy('fan')"
+              data-focus-key="fan" @click="setFan" />
+      <span id="fan-why" class="kc-why">{{ fanDraft != null && fanValue == null ? t('fan.invalid') : '' }}</span>
     </div>
-    <div class="u1-row st-line">
-      <Checkbox input-id="light" binary :model-value="!!st?.light" :disabled="!!controlsOff || tracker.isBusy('light')" @update:model-value="setLight" />
+    <div class="kc-row st-line">
+      <Checkbox input-id="light" binary :model-value="!!st?.light_on" :disabled="!!controlsOff || tracker.isBusy('light')" @update:model-value="setLight" />
       <label for="light"><Icon name="icon/chamber-light" /> {{ t('light.label') }}</label>
     </div>
+
+    <MotionPanel />
   </section>
 </template>
 
@@ -187,20 +180,17 @@ async function setLight(on: boolean) {
 .st-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0; }
 .st-kv dt { color: var(--oui-muted); } .st-kv dd { margin: 0; }
 .st-controls { margin: 12px 0; display: grid; gap: 8px; }
-.st-urgent { padding-top: 8px; border-top: 1px dashed var(--oui-border); }
 .st-h3 { display: flex; align-items: center; gap: 6px; margin: 16px 0 8px; }
 .st-temps { display: grid; gap: 8px; }
-.st-temp { display: grid; grid-template-columns: 56px minmax(0, 140px) minmax(96px, auto) 110px auto auto; align-items: center; gap: 8px; }
+.st-temp { display: grid; grid-template-columns: 96px minmax(96px, auto) 110px auto auto; align-items: center; gap: 8px; }
 .st-why { grid-column: 1 / -1; }
 .st-why:empty { display: none; }
 .st-tlabel { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.st-fil { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .st-line { margin-top: 12px; }
 .st-select { min-width: 180px; }
 :deep(.st-input) { width: 110px; }
 @media (max-width: 560px) {
   .st-temp { grid-template-columns: minmax(0, 1fr) auto auto; }
-  .st-fil { grid-column: 2 / -1; }
   .st-read { grid-column: 1 / -1; }
   :deep(.st-input), :deep(.st-input input) { width: 100%; min-width: 0; }
 }

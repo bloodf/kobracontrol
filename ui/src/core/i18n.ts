@@ -3,7 +3,7 @@ import { en, ptBR, type MessageKey } from './messages';
 import { interpolate, resolveLocale, type LangPref, type Locale } from './i18n-core';
 import { boot } from './boot';
 
-const PREF_KEY = 'u1control.lang';
+const PREF_KEY = 'kobracontrol.lang';
 const dicts: Record<Locale, Record<MessageKey, string>> = { en, 'pt-BR': ptBR };
 
 // The explicit choice lives in the plugin's settings (boot "pref"); localStorage is only a fallback cache.

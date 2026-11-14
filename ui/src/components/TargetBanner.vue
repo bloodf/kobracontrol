@@ -6,12 +6,16 @@ import { t, fmt } from '../core/i18n';
 </script>
 <template>
   <div role="status" aria-live="polite" data-test="target-banner">
-    <Message v-if="s.phase === 'noTarget'" severity="warn">
-      <strong>{{ t('target.none.title') }}</strong>
-      <p class="tb-p">{{ t('target.none.body') }}</p>
-      <p class="tb-p oui-meta">{{ t('target.detail', { error: s.error }) }}</p>
-      <div class="u1-row"><Button size="small" :label="t('common.openSettings')" @click="s.tab = 'settings'" />
-        <Button size="small" severity="secondary" outlined :label="t('common.retry')" @click="hello()" /></div>
+    <!-- No certificate / no printer: the Dashboard shows the one task; the other tabs say what is missing. -->
+    <Message v-if="s.phase === 'noCertificate' && s.tab !== 'dash'" severity="warn">
+      <strong>{{ t('fr.cert.title') }}</strong>
+      <p class="tb-p">{{ t('banner.cert') }}</p>
+      <Button size="small" :label="t('banner.toDashboard')" @click="s.tab = 'dash'" />
+    </Message>
+    <Message v-else-if="s.phase === 'noTarget' && s.tab !== 'dash'" severity="warn">
+      <strong>{{ t('fr.target.title') }}</strong>
+      <p class="tb-p">{{ t('banner.target') }}</p>
+      <Button v-if="s.tab !== 'settings'" size="small" :label="t('common.openSettings')" @click="s.tab = 'settings'" />
     </Message>
     <Message v-else-if="s.phase === 'unreachable' || s.offline" severity="error">
       <strong>{{ t('target.offline.title') }}</strong>

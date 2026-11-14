@@ -8,26 +8,33 @@ import { t } from '../core/i18n';
 
 function toggle() {
   s.camOn = !s.camOn;
-  if (!s.camOn) { s.frame = ''; s.camError = ''; }
+  if (!s.camOn) { s.frame = ''; s.camError = ''; s.camReason = ''; }
   lease();
 }
-const msg = computed(() => (s.camError ? t('cam.unavailable', { error: s.camError }) : t('cam.starting')));
+// A plain explanation per reason: what happened and what to do about it.
+const msg = computed(() => {
+  if (!s.camError) return t('cam.starting');
+  if (s.camReason === 'no_ffmpeg') return t('cam.reason.no_ffmpeg');
+  if (s.camReason === 'no_stream') return t('cam.reason.no_stream');
+  return t('cam.reason.failed', { error: s.camError });
+});
 </script>
 <template>
-  <!-- Off: a compact strip so status and controls stay above the fold (U08). -->
-  <section class="u1-card cam-card" :class="{ compact: !s.camOn }" aria-labelledby="cam-h">
-    <div class="u1-row">
+  <!-- Off: a compact strip so status and controls stay above the fold. -->
+  <section class="kc-card cam-card" :class="{ compact: !s.camOn }" aria-labelledby="cam-h">
+    <div class="kc-row">
       <h2 id="cam-h" class="cam-h"><Icon name="icon/camera" /> {{ t('cam.title') }}</h2>
       <span v-if="!s.camOn" class="oui-meta">{{ t('cam.off') }} · {{ t('cam.offHint') }}</span>
-      <span class="u1-spacer" />
+      <span class="kc-spacer" />
       <Button :severity="s.camOn ? 'secondary' : undefined" :outlined="s.camOn" :disabled="!targetKnown && !s.camOn"
               data-focus-key="camera" data-test="camera" @click="toggle">
         <Icon name="icon/live-stream" /><span>{{ s.camOn ? t('cam.stop') : t('cam.start') }}</span></Button>
     </div>
-    <p v-if="!targetKnown && !s.camOn" class="u1-why">{{ t('cam.noTarget') }}</p>
+    <p v-if="!targetKnown && !s.camOn" class="kc-why">{{ t('cam.noTarget') }}</p>
     <div v-if="s.camOn" class="cam-view">
       <img v-if="s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
-      <div v-else class="cam-empty" role="status"><Icon :name="s.camError ? 'spot/camera-off' : 'spot/not-connected'" :size="96" /><span>{{ msg }}</span></div>
+      <div v-else class="cam-empty" role="status" :data-reason="s.camReason"><Icon :name="s.camError ? 'spot/camera-off' : 'spot/not-connected'" :size="96" /><span>{{ msg }}</span>
+        <Button v-if="s.camReason === 'no_ffmpeg'" size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="s.tab = 'settings'" /></div>
     </div>
   </section>
 </template>

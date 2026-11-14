@@ -1,69 +1,79 @@
 // MOCK evidence: the built page in owned headless Chrome (CSP, scripted bridge), screenshots in light/dark,
-// en/pt-BR, 1280/720 px and 200 % zoom, with overflow and DOM measurements. Not a substitute for OrcaSlicer.
+// en/pt-BR and several widths, with overflow and DOM measurements. Not a substitute for OrcaSlicer.
 //   OUT=<dir> PAGE=<page with icons> node tests/page/shots.mjs
-import { writeFile, mkdtemp, rm, readFile } from 'node:fs/promises';
+import { writeFile, mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launch, MOCK_HOST, HELPERS, preparePage } from './cdp.mjs';
 
 const OUT = process.env.OUT; const page = await readFile(process.env.PAGE, 'utf8');
-const SETUP = { job: { name: 'Desk organiser — plate 1', time: '2h 04m', weight: 86, plate: 'Plate 1', address: '192.168.1.40' }, purifier: 'auto', auto_purifier: 'weak',
-  filaments: [{ index: 0, type: 'PLA', colour: '#e5484d', weight: 50 }, { index: 1, type: 'PETG', colour: '#3e63dd', weight: 36 }],
-  heads: [0, 1, 2, 3].map(i => ({ index: i, loaded: i !== 2, type: i === 2 ? '' : 'PLA', vendor: 'Generic', sub_type: 'Basic', colour: ['#e5484d', '#f4cf78', '#888', '#78cfd5'][i] })),
-  map: { 0: 0, 1: 1 }, prefs: { bed_level: true, flow_calibrate: true, time_lapse_camera: false }, labels: {} };
+await mkdir(OUT, { recursive: true });
 const STATE = `
 await until(() => __t.sent.find(m => m.type === 'hello'));
 const hello = __t.sent.find(m => m.type === 'hello');
-const VIEW = {state: 'printing', message: '', filename: 'desk_organiser_plate_1.gcode', progress: 0.37, layer: 142, total_layers: 380, print_duration: 4100, total_duration: 4500,
-  extruders: [0,1,2,3].map(i => ({temp: i === 0 ? 219.6 : 25, target: i === 0 ? 220 : 0, active: i === 0})), bed: {temp: 59.8, target: 60},
-  heads: ['PLA','PETG','','PLA'].map((t, i) => ({loaded: !!t, type: t, vendor: t ? 'Generic' : '', sub_type: t ? 'Basic' : '', colour: ['#e5484d','#3e63dd','','#78cfd5'][i], official: i === 0})),
-  rfid: [{vendor: 'Snapmaker', type: 'PLA', uid: '04A1', official: true}, null, null, null], options: {bed_level: true, flow_calibrate: true, time_lapse_camera: false, unload_when_done: false},
-  purifier: {fitted: true}, feed: [{state: 'loaded'},{state: 'loaded'},{state: 'empty'},{state: 'loaded'}], busy: true, machine_state: 'PRINTING', bindings: {'0': 7}, light: true, speed_factor: 1};
-if (SCN !== 'notarget') {
-  __t.handler({type: 'reply', id: hello.id, result: {firmware: {kind: 'stock', version: '2.0.0.205'}, address: '192.168.1.40', printer: 'Bench U1', generation: 1, limits: {hotend: 320, bed: 110}}});
+const DRY = {status: 0, target_temp: 0, duration: 0, remain_time: 0, humidity: null, current_temp: null};
+const slot = (g, box, i, o) => ({global_index: g, box_id: box, box_pos: box < 0 ? 0 : box + 1, index: i, status: 5, type: 'PLA', color: [229, 72, 77], rfid: null, sku: null,
+  activity: '', tray: g, usable: true, spool_id: null, ...o});
+const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state: 'printing', printer_name: 'Bench Kobra', model: 'Kobra X', firmware: '1.0',
+  filename: 'desk_organiser_plate_1.gcode', progress: 37, layer: 142, total_layers: 380, elapsed_s: 4100, remaining_s: 7000, task_id: '1',
+  nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, fan_pct: 70, light_on: true, speed_mode: 2, files: [], 
+  storage: {}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
+  slots: [slot(0, -1, 0, {type: 'PETG', color: [62, 99, 221]}), slot(1, -1, 1, {status: 0, type: ''}), slot(2, -1, 2, {color: [244, 207, 120], type: 'PLA+'}),
+    slot(3, 0, 0, {activity: 'loaded', spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
+  loaded_slot: 3, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
+  can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false}};
+const CONFIG = {type: 'config', settings: {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ffmpeg_path: '', camera_enabled: false, auto_leveling: true, vibration_compensation: true,
+  spoolman_url: 'http://192.168.1.10:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false},
+  certificate: {found: SCN !== 'nocert', source: 'Anycubic Slicer Next'}, spooler: {installed: true}, version: '0.1.0', limits: {nozzle_max: 300, bed_max: 100}};
+if (SCN === 'nocert') __t.handler({type: 'reply', id: hello.id, error: 'no certificate', no_certificate: true});
+else if (SCN === 'notarget') __t.handler({type: 'reply', id: hello.id, error: 'no target', no_target: true});
+else {
+  __t.handler({type: 'reply', id: hello.id, result: {address: '192.168.1.50', printer: 'Bench Kobra', generation: 1}});
   __t.handler({type: 'status', data: VIEW});
-} else __t.handler({type: 'reply', id: hello.id, error: 'Select a Snapmaker U1 printer, or set "host" in U1 Control’s plugin config.', no_target: true});
+}
+__t.handler(CONFIG);
 await settle();
 const ans = (cmd, r) => { const m = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === cmd); if (m) __t.handler({type: 'reply', id: m.id, result: r}); };
 await sleep(50);
-ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000}], bindings: {'0': 7}, via: 'direct'});
-ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'stale', code: 'stale', text: '', key: 's:1', ts: Date.now() / 1000 - 300,
+ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
+ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'ok', code: 'ok', text: '', key: 's:1', ts: Date.now() / 1000 - 30,
   rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
-  same_spoolman: true, usage: 'u1control', bindings: {'0': 7}});
-ans('usage', {pending: [], unconfirmed: [{id: 'a', at: null, spool: 7, grams: 12.5, head: 0, file: 'gcodes/benchy.gcode', error: 'Spoolman timed out', printer: '192.168.1.40', printer_name: 'Bench U1'}],
-  acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
-__t.handler({type: 'config', mode: 'expert', stored: {}, version: '0.5.0', spooler: {installed: true}, settings: {mode: 'expert', host: '', api_key: '••••', printer_name: 'Bench U1', spoolman_url: 'http://192.168.1.10:7912', rfid_auto_sync: true, purifier: 'auto'},
-  automations: [{key: 'rfid_auto_sync', label: 'Apply RFID tags', help: 'When a toolhead reads a new tag.', automagic: true, choices: null}, {key: 'purifier', label: 'Top cover', help: 'auto follows the rule.', automagic: 'auto', choices: ['auto','strong','off']}]});
-await settle();
-if (SCN === 'settings' || SCN === 'files' || SCN === 'console') { document.querySelector('[data-tab="' + SCN + '"]').click(); await sleep(300); }
-if (SCN === 'files') { ans('files', {path: 'gcodes', dirs: [{name: 'archive'}], files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, modified: Date.now()/1000 - 3600, time: 7440}, {name: 'benchy.gcode', size: 900000, modified: Date.now()/1000 - 86400, time: 2700}], disk: {free: 5.2e9}}); }
-if (SCN === 'console') { const i = document.querySelector('#console-cmd'); i.value = 'M105'; i.dispatchEvent(new Event('input')); }
-if (SCN === 'dialog') { document.querySelector('[data-test="cancel"]').focus(); document.querySelector('[data-test="cancel"]').click(); await until(() => document.querySelector('.p-dialog')); }
+  same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}});
+if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
+if (SCN === 'settings' || SCN === 'files') { document.querySelector('[data-tab="' + SCN + '"]').click(); await sleep(300); }
+if (SCN === 'files') {
+  ans('files', {files: [{filename: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {filename: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400}], storage: {total: 8000, used: 2100}});
+  await sleep(100);
+  document.querySelector('[data-print]').click(); await sleep(100);
+  ans('file_details', {thumbnail: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>'});
+}
+if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
 `;
 const SCENES = [
-  ['dash', 'light', 'en', 1280, 1], ['dash', 'dark', 'pt_BR', 1280, 1], ['dash', 'light', 'pt_BR', 720, 1], ['dash', 'dark', 'en', 640, 2],
-  ['notarget', 'light', 'pt_BR', 1280, 1], ['notarget', 'dark', 'en', 720, 1], ['dialog', 'dark', 'pt_BR', 720, 1], ['dialog', 'light', 'en', 640, 2],
-  ['settings', 'light', 'en', 1280, 1], ['settings', 'dark', 'pt_BR', 720, 1], ['files', 'light', 'pt_BR', 1280, 1], ['files', 'dark', 'en', 640, 2],
-  ['console', 'dark', 'en', 1280, 1], ['setup', 'light', 'pt_BR', 720, 1], ['setup', 'dark', 'en', 1280, 1], ['setup', 'light', 'en', 360, 2],
+  // scene, theme, lang, width, height
+  ['dash', 'light', 'en', 1280, 720], ['dash', 'dark', 'en', 1280, 720], ['dash', 'light', 'en', 1280, 2600], ['dash', 'dark', 'pt_BR', 1280, 2600],
+  ['dash', 'light', 'pt_BR', 720, 2800], ['dash', 'dark', 'en', 400, 3400],
+  ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1280, 720], ['settings', 'light', 'en', 1280, 1500], ['settings', 'dark', 'en', 1280, 720],
+  ['nocert', 'light', 'en', 1280, 720], ['nocert', 'dark', 'en', 1280, 720], ['nocert', 'light', 'pt_BR', 720, 720], ['notarget', 'dark', 'en', 1280, 720],
+  ['camera', 'light', 'en', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ];
-const dir = await mkdtemp(join(tmpdir(), 'u1-shots-'));
+const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));
 const browser = await launch();
 const metrics = [];
 try {
-  for (const [scn, theme, lang, width, scale] of SCENES) {
-    const boot = scn === 'setup' ? { mode: 'setup', version: '0.5.0', lang, data: SETUP } : { mode: 'app', version: '0.5.0', lang };
+  for (const [scn, theme, lang, width, height] of SCENES) {
     const file = join(dir, `${scn}.html`);
-    await writeFile(file, preparePage(page, boot));
+    await writeFile(file, preparePage(page, { version: '0.1.0', lang }));
     const p = await browser.newPage();
-    await p.size(width, 900, scale);
+    await p.size(width, height, 1);
     await p.init(MOCK_HOST);
     await p.goto(pathToFileURL(file).href + '?theme=' + theme);
     const m = await p.evaluate(`(async () => { ${HELPERS} const SCN = ${JSON.stringify(scn)};
       await until(() => document.querySelector('#app > *'));
-      ${scn === 'setup' ? 'await sleep(300);' : STATE}
+      ${STATE}
       const over = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
         .slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
       const b = document.querySelector('.p-button'); const cs = b ? getComputedStyle(b) : null;
@@ -71,13 +81,13 @@ try {
         dom: document.getElementsByTagName('*').length, lang: document.documentElement.lang, dark: document.documentElement.classList.contains('orca-dark'),
         bodyFont: getComputedStyle(document.body).fontSize, buttonRadius: cs && cs.borderRadius, buttonFont: cs && cs.fontSize,
         violations: __t.violations, errors: __t.errors, rejections: __t.rejections }; })()`);
-    const name = `MOCK-u1-${scn}-${theme}-${lang}-${width}${scale > 1 ? '-zoom200' : ''}.png`;
+    const name = `kobra-${scn}-${theme}-${lang}-${width}x${height}.png`;
     await writeFile(join(OUT, name), await p.screenshot());
     metrics.push({ name, ...m });
-    console.log(name, JSON.stringify({ overflowX: m.overflowX, dom: m.dom, lang: m.lang, dark: m.dark }));
+    console.log(name, JSON.stringify({ overflowX: m.overflowX, overflowing: m.overflowing, dom: m.dom, lang: m.lang, dark: m.dark }));
     await p.close();
   }
 } finally { await browser.close(); await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
-await writeFile(join(OUT, 'metrics-u1control.json'), JSON.stringify(metrics, null, 2));
+await writeFile(join(OUT, 'metrics-kobracontrol.json'), JSON.stringify(metrics, null, 2));
 if (metrics.some(m => m.overflowX || m.violations.length || m.errors.length || m.rejections.length)) { console.log('PROBLEMS'); process.exit(1); }
 console.log('OK');

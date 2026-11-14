@@ -1,5 +1,5 @@
-// Host transport: OrcaSlicer's window.orca (postMessage / onMessage / submit). Same message contract as the
-// previous page: {type:"cmd", id, cmd, args, gen} → {type:"reply", id, result|error}.
+// Host transport: OrcaSlicer's window.orca (postMessage / onMessage / submit). Message contract (docs/architecture.md):
+// {type:"cmd", id, cmd, args, gen} → {type:"reply", id, result|error}.
 type Handler = (m: any) => void;
 interface Waiter { resolve: (v: any) => void; reject: (e: unknown) => void }
 
@@ -9,7 +9,7 @@ let seq = 0;
 let attached = false;
 
 export class ReplyError extends Error {
-  constructor(message: string, readonly noTarget = false) { super(message); }
+  constructor(message: string, readonly noTarget = false, readonly noCertificate = false) { super(message); }
 }
 
 function host(): OrcaHostBridge {
@@ -25,7 +25,7 @@ export function attach(): void {
     if (m.type === 'reply' && typeof m.id === 'number' && waiters.has(m.id)) {
       const w = waiters.get(m.id)!;
       waiters.delete(m.id);
-      if ('error' in m) w.reject(new ReplyError(String(m.error), m.no_target === true)); else w.resolve(m.result);
+      if ('error' in m) w.reject(new ReplyError(String(m.error), m.no_target === true, m.no_certificate === true)); else w.resolve(m.result);
       return;
     }
     listeners.forEach(h => { try { h(m); } catch (e) { reportError(e); } });
