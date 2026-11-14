@@ -33,7 +33,8 @@ and kobracontrol cannot add any:
   writes that spool's location in Spoolman; finished prints book filament use there when the option
   is on.
 - **ffmpeg:** the tab's camera starts `ffmpeg` as a subprocess to turn the printer's stream into
-  frames. It stops when the page is idle. OrcaSlicer asks for permission when it starts.
+  frames. It stops when the page is idle. OrcaSlicer asks for permission to run that exact command
+  when it starts, and again whenever the printer's stream address changes.
 - **Files:** the plugin keeps its settings and its print ledger in its own storage folder. It
   uploads the G-code you print to the printer. It downloads nothing.
 - **Spooler:** it reads Spooler's files and never writes them.

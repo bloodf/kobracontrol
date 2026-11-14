@@ -38,7 +38,10 @@ The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with
 - **Files:** the printer's files.
 - **Settings:** connection, certificate, ffmpeg path, Spoolman and Spooler.
 
-The tab's camera needs `ffmpeg` installed. The Device tab camera does not.
+The tab's camera needs `ffmpeg` installed. The Device tab camera does not. When the tab's camera
+starts, OrcaSlicer asks for permission to run the `ffmpeg` command, and shows the full command with
+the printer's stream address. It asks again when that address changes, which happens when the
+printer restarts.
 
 ### Plugins > Run
 
