@@ -96,6 +96,38 @@ class FindTests(Tmp):
         if os.name == "posix":
             self.assertEqual(modes, [0o700])
 
+    def test_find_with_workdir_uses_no_tempfile(self):
+        """C3: OrcaSlicer denies tempfile creators off the main thread; with workdir the match dir is
+        os.mkdir'ed inside it and removed explicitly, also when matching fails."""
+        lib = self.write("w/lib.dylib", self.blob())
+        work = os.path.join(self.tmp, "storage")
+        os.makedirs(work)
+        made = []
+        real_mkdir = os.mkdir
+
+        def spy(path, mode=0o777):
+            if os.path.dirname(path) == work:
+                made.append((os.path.basename(path), mode))
+            real_mkdir(path, mode)
+        no = mock.Mock(side_effect=AssertionError("tempfile used"))
+        with mock.patch.multiple(tempfile, mkstemp=no, mkdtemp=no, TemporaryDirectory=no), \
+                mock.patch.object(certs.os, "mkdir", spy):
+            self.assert_client_pair(certs.find([lib], workdir=work))
+            self.assertEqual(os.listdir(work), [])
+            with mock.patch.object(certs, "_client_context", side_effect=RuntimeError("boom")):
+                with self.assertRaises(RuntimeError):
+                    certs.find([lib], workdir=work)
+            self.assertEqual(os.listdir(work), [])
+            self.write("w2/lib.dylib", read(self.tls.client_cert) + read(self.tls.server_key))
+            with self.assertRaises(certs.CertError):
+                certs.find([os.path.join(self.tmp, "w2")], workdir=work)
+            self.assertEqual(os.listdir(work), [])
+        self.assertEqual(len(made), 3)
+        for name, mode in made:
+            self.assertRegex(name, r"^match-[0-9a-f]{8}$")
+            self.assertNotIn(name.lower(), DENIED)
+            self.assertEqual(mode, 0o700)
+
     def test_cert_and_key_in_different_files(self):
         self.write("t/a.so", read(self.tls.client_cert))
         self.write("t/b.so", read(self.tls.client_key) + read(self.tls.server_key))
@@ -232,6 +264,20 @@ class NoOpensslTests(Tmp):
             self.assertNotIn(name.lower(), DENIED)
             self.assertFalse(name.lower().endswith((".conf", ".ini")))
             self.assertFalse(name.lower().startswith(("orcaslicer", "gcodeviewer", ".install_state", "user_secret")))
+
+    def test_grant_targets(self):
+        """C3: tree grants for OrcaSlicer: realpath + "/*", plus the given form when it differs."""
+        real = os.path.join(self.tmp, "real")
+        os.makedirs(real)
+        alias = os.path.join(self.tmp, "alias")
+        os.symlink(real, alias)
+        with mock.patch.object(certs, "default_locations", return_value=[real, alias]):
+            targets = certs.grant_targets()
+        rp = os.path.realpath(real)
+        self.assertEqual(targets[0], rp + "/*")
+        self.assertIn(alias + "/*", targets)
+        self.assertEqual(len(targets), len(set(targets)))
+        self.assertTrue(all(t.endswith("/*") for t in certs.grant_targets()))
 
     def test_default_locations(self):
         mac = certs.default_locations("darwin", {})

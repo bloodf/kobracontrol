@@ -3,15 +3,19 @@
 import json
 import os
 import sys
+import shutil
 import tempfile
+import threading
 import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
+import audit_guard  # noqa: E402
 import fake_orca  # noqa: E402
-from fake_kobra import FakeKobra  # noqa: E402
+from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
+import test_service  # noqa: E402
 from test_service import ACE0, FakeCamera, make_3mf, wait  # noqa: E402
 
 orca = fake_orca.install_orca(preset={"name": "Anycubic Kobra X 0.4 nozzle", "printer_model": "Anycubic Kobra X",
@@ -84,8 +88,8 @@ class Registration(unittest.TestCase):
         perms = orca.permissions[-1]
         self.assertTrue(perms["threading"])
         self.assertEqual(perms["network"], ["http://127.0.0.1"])
-        self.assertEqual(perms["fs_read"], certs.default_locations())
-        self.assertTrue(perms["fs_readwrite"][0].endswith(os.path.join("Downloads", "kobracontrol")))
+        self.assertEqual(perms["fs_read"], certs.grant_targets() + plugin.job_read_grants())
+        self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
 
     def test_agent_info(self):
         info = plugin.KobraAgent().get_agent_info()
@@ -183,6 +187,14 @@ class Agent(Base):
         params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
         self.assertEqual(self.agent.start_local_print(params, None, lambda: True), plugin.ERR_CANCELED)
         self.assertEqual(self.fake.uploads, [])
+
+    def test_foreign_camera_host_is_not_handed_to_orca(self):   # M2
+        self.connect()
+        self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                         "data": {"urls": {"rtspUrl": "rtsp://203.0.113.9/live"}}})
+        wait(lambda: plugin._service.view_for(self.fake.host)["camera_url"].startswith("rtsp://203"))
+        self.assertEqual(self.agent.get_camera_url(), "")
+        self.assertEqual(self.agent.get_camera_stream_mode(), pa.CameraStreamMode.None_)
 
     def test_camera(self):
         self.connect()
@@ -299,3 +311,138 @@ class Scripts(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PushingNoop(Base):
+    def test_pushing_start_and_stop_succeed(self):   # M7
+        self.connect()
+        for name in ("start", "stop"):
+            self.assertEqual(self.agent.send_message_to_printer("127.0.0.1", json.dumps({"pushing": {"command": name}}),
+                                                                0, 0), 0)
+
+
+class UnloadCycles(Base):
+    """M5: disable/enable never leaks a service or its threads; one capability unloading leaves the other's."""
+
+    def test_cycles_return_to_baseline(self):
+        self.close_service()
+        plugin._service_options = {"tls": lambda: None, "http_port": self.fake.http_port,
+                                   "mqtt_port": self.fake.mqtt_port, "camera_factory": FakeCamera}
+        self.addCleanup(setattr, plugin, "_service_options", {})
+        time.sleep(0.5)
+        baseline = threading.active_count()
+        for _ in range(3):
+            page, agent = plugin.KobraControlPage(), plugin.KobraAgent()
+            page.posted = []
+            page.on_load()
+            agent.on_load()
+            agent.connect_printer(pa.PrinterConnectionParams(dev_id="127.0.0.1", host=self.fake.host))
+            wait(lambda: plugin._service.connections[self.fake.host].connected)
+            page.on_unload()
+            self.assertIsNotNone(plugin._service)   # the agent still uses it
+            self.assertTrue(plugin._service.connections[self.fake.host].connected)
+            agent.disconnect_printer()
+            agent.on_unload()
+            self.assertIsNone(plugin._service)
+            time.sleep(0.3)
+            self.assertIsNone(plugin._service)   # the release thread did not create a new one
+        wait(lambda: threading.active_count() <= baseline + 1, 10)
+
+
+def run_off_main(fn):
+    box = {}
+    t = threading.Thread(target=lambda: box.setdefault("value", fn()), name="orca-job")
+    t.start()
+    t.join(30)
+    return box.get("value")
+
+
+class Guarded(Base):
+    """C1-C3 under tests/audit_guard.py: OrcaSlicer's permission model for plugin threads."""
+
+    def setUp(self):
+        super().setUp()
+        orca.permissions.clear()
+        self.slicer = tempfile.mkdtemp(prefix="anycubic-")
+        self.old_locations = plugin.certs.default_locations
+        plugin.certs.default_locations = lambda: [self.slicer]
+        self.addCleanup(setattr, plugin.certs, "default_locations", self.old_locations)
+        plugin.KobraControl().register_capabilities()
+        self.perms = orca.permissions[-1]
+        audit_guard.enable(self.perms, self.tmp)
+        self.addCleanup(audit_guard.disable)
+
+    def job_dir(self):
+        folder = os.path.join(plugin.slicer_temp_root(), "kobracontrol-test")
+        os.makedirs(folder, exist_ok=True)
+        self.addCleanup(shutil.rmtree, folder, True)
+        return folder
+
+    def test_slicer_temp_root(self):
+        if os.name != "nt":
+            self.assertEqual(plugin.slicer_temp_root(), os.path.join(tempfile.gettempdir(), "orcaslicer_%d" % os.getuid()))
+        self.assertIn(os.path.realpath(plugin.slicer_temp_root()) + "/*", self.perms["fs_read"])
+
+    def test_print_from_orca_temp_dir(self):   # C1 + C2
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.job_dir()), ams_mapping="[0]")
+        code = run_off_main(lambda: self.agent.start_local_print(params, None, lambda: False))
+        self.assertEqual((code, audit_guard.denials()), (0, []))
+        self.assertEqual(self.fake.uploads[0]["data"], test_service.GCODE)
+
+    def test_send_from_orca_temp_dir(self):
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.job_dir()))
+        self.assertEqual(run_off_main(lambda: self.agent.start_send_gcode_to_sdcard(params, None, lambda: False, None)), 0)
+        self.assertEqual(audit_guard.denials(), [])
+
+    def test_denied_read_is_reported_plainly(self):   # C1: never "not a zip"
+        self.connect()
+        stages = []
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(tempfile.mkdtemp()), ams_mapping="[0]")
+        code = run_off_main(lambda: self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False))
+        self.assertNotEqual(code, 0)
+        self.assertIn("did not let kobracontrol read the sliced file", stages[-1][2])
+        self.assertIn("Plugins > Permissions", stages[-1][2])
+        self.assertEqual(self.fake.uploads, [])
+
+    def write_slicer(self):
+        tls = make_tls_files(tempfile.mkdtemp(prefix="pems-"))
+        with open(os.path.join(self.slicer, "libcloud_mqtt.dylib"), "wb") as f:
+            for part in (tls.server_cert, tls.client_key, tls.client_cert):
+                with open(part, "rb") as src:
+                    f.write(os.urandom(300) + src.read())
+
+    @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed")
+    def test_find_certificate_page_command(self):   # C3
+        self.write_slicer()
+        published = []
+        plugin._service.publish = published.append
+        plugin._service.submit("f", "find_certificate", {})
+        reply = wait(lambda: next((m for m in published if m.get("id") == "f"), None), 20)
+        self.assertTrue(reply.get("result", {}).get("found"), reply)
+        self.assertEqual(audit_guard.denials(), [])
+
+    @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed")
+    def test_find_certificate_script(self):   # C3
+        self.write_slicer()
+        result = run_off_main(lambda: plugin.FindCertificate().execute())
+        self.assertEqual(result.status, "success", result.message)
+        self.assertEqual(audit_guard.denials(), [])
+
+    def test_find_certificate_ungranted_path(self):   # C3
+        outside = tempfile.mkdtemp(prefix="elsewhere-")
+        published = []
+        plugin._service.publish = published.append
+        plugin._service.submit("g", "find_certificate", {"path": outside})
+        reply = wait(lambda: next((m for m in published if m.get("id") == "g"), None), 20)
+        self.assertIn(outside, reply["error"])
+        self.assertIn("Plugins > Permissions", reply["error"])
+
+    def test_connect_to_granted_host(self):
+        page = plugin.KobraControlPage()
+        page.posted = []
+        run_off_main(lambda: page.on_message({"type": "hello", "id": 1}))
+        reply = wait(lambda: next((m for m in page.posted if m.get("id") == 1), None))
+        self.assertIn("result", reply)
+        self.assertEqual(audit_guard.denials(), [])

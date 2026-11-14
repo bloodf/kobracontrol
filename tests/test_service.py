@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -12,6 +13,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
+import connection  # noqa: E402
+import jobs  # noqa: E402
 import kobra  # noqa: E402
 import service  # noqa: E402
 from fake_kobra import FakeKobra  # noqa: E402
@@ -133,8 +136,9 @@ class Connect(Base):
         self.svc.touch(camera=False)
         msg = wait(lambda: next((m for m in self.published if m.get("type") == "status"), None))
         data = msg["data"]
-        for key in kobra.VIEW_KEYS + ("mode", "slots", "loaded_slot", "ace_units", "can"):
+        for key in set(kobra.VIEW_KEYS) - {"file_details"} | {"mode", "slots", "loaded_slot", "ace_units", "can"}:
             self.assertIn(key, data)
+        self.assertNotIn("file_details", data)   # stale details of some file: skip names come from cmd objects
         self.assertEqual(data["upload_url"], "")
         self.assertEqual(data["mode"], "ace_direct")
         self.assertEqual([s["tray"] for s in data["slots"]], [0, 1, 2, 3])
@@ -200,7 +204,12 @@ class IdleCommands(Base):
         self.assertEqual(self.sent("axis", "move")[0]["data"], {"axis": 2, "move_type": 0, "distance": 5.0})
         self.assertTrue(self.run_cmd("home", axes="z")["result"])
         self.assertEqual(self.sent("axis", "move")[1]["data"], {"axis": 3, "move_type": 2, "distance": 0})
-        self.assertIn("up to", self.run_cmd("move", axis="x", distance=0)["error"])
+        self.assertIn("no distance", self.run_cmd("move", axis="x", distance=0)["error"])
+
+    def test_move_is_clamped_to_50_mm(self):   # L5: whatever the page sends
+        self.fake.reply("axis", "move", {})
+        self.assertTrue(self.run_cmd("move", axis="z", distance=-120)["result"])
+        self.assertEqual(self.sent("axis", "move")[-1]["data"], {"axis": 3, "move_type": 0, "distance": 50.0})
         self.assertIn("axis", self.run_cmd("move", axis="e", distance=1)["error"])
 
     def test_fan_light(self):
@@ -211,6 +220,10 @@ class IdleCommands(Base):
 
     def test_speed_needs_a_print(self):
         self.assertIn("running print", self.run_cmd("set_speed", mode=3)["error"])
+
+    def test_objects_needs_a_print(self):
+        self.assertIn("no print is running", self.run_cmd("objects")["error"])
+        self.assertFalse(self.sent("file", "fileDetails"))
 
     def test_slot_set_and_feed_with_ack(self):
         self.assertTrue(self.run_cmd("slot_set", slot=2, type="petg", colour="#00ff00")["result"])
@@ -272,8 +285,30 @@ class PrintingCommands(Base):
         self.assertIn("/web/", next(r["topic"] for r in self.fake.requests if r["msg"] is msg))
 
     def test_speed(self):
-        self.assertTrue(self.run_cmd("set_speed", mode=4)["result"])
-        self.assertEqual(wait(lambda: self.sent("print", "update"))[0]["data"]["settings"], {"print_speed_mode": 4})
+        self.assertIn("1 (quiet) to 3 (sport)", self.run_cmd("set_speed", mode=4)["error"])
+        self.assertTrue(self.run_cmd("set_speed", mode=3)["result"])
+        self.assertEqual(wait(lambda: self.sent("print", "update"))[0]["data"]["settings"], {"print_speed_mode": 3})
+
+    def test_objects_of_the_running_file(self):
+        self.fake.reply("file", "fileDetails", {"file_details": {"objects_skip_parts": ["A", {"name": "B"}, 7]}})
+        self.fake.report("skip/report", {"type": "skip", "action": "update", "state": "success",
+                                         "data": {"objects_skip_parts": ["A"]}})
+        wait(lambda: self.conn.view()["skipped_objects"])
+        result = self.run_cmd("objects")["result"]
+        self.assertEqual(result, {"filename": "a.gcode", "objects": ["A", "B", "7"], "skipped": ["A"]})
+        asked = self.sent("file", "fileDetails")[-1]["data"]
+        self.assertEqual(asked["filename"], "a.gcode")
+
+    def test_skip_checks_names_against_the_running_file(self):
+        self.fake.reply("file", "fileDetails", {"file_details": {"objects_skip_parts": ["A", "B"]}})
+        self.fake.reply("skip", "start", {})
+        self.assertIn("not in a.gcode: Z", self.run_cmd("skip_objects", names=["B", "Z"])["error"])
+        self.assertFalse(self.sent("skip", "start"))
+        self.assertTrue(self.run_cmd("skip_objects", names=["B"])["result"])
+        self.assertEqual(self.sent("skip", "start")[0]["data"], {"objects_skip_parts": ["B"]})
+
+    def test_objects_without_an_answer(self):
+        self.assertIn("no details", self.run_cmd("objects", timeout=15)["error"])
 
     def test_print_job_refused(self):
         path = make_3mf(self.tmp)
@@ -429,3 +464,270 @@ class Stock(Base):
         self.assertEqual(self.stock()["reason"], "stale")
         self.svc.peers = FakePeers("active", "ok")
         self.assertEqual((self.stock()["available"], self.stock()["reason"]), (True, None))
+
+
+class LoopSurvives(unittest.TestCase):
+    """M1: no unexpected exception ends a printer's connection loop or a service thread."""
+
+    def setUp(self):
+        self.fake = FakeKobra().start()
+        self.addCleanup(self.fake.stop)
+        self.fake.reply("info", "query", {"urls": {"fileUploadurl": self.fake.upload_url}})
+        self.fake.reply("print", "query", {}, state="free")
+        self.fake.reply("multiColorBox", "getInfo", {"multi_color_box": [ACE0]})
+        self.logs = []
+
+    def service(self, fetch=kobra.fetch_credentials):
+        svc = service.Service(lambda m: None, self.logs.append, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              http_port=self.fake.http_port, mqtt_port=self.fake.mqtt_port, fetch=fetch,
+                              camera_factory=FakeCamera)
+        self.addCleanup(svc.close)
+        return svc
+
+    def test_deeply_nested_info_answer(self):
+        self.fake.info_answer = b"[" * 200000
+        conn = self.service().connection(self.fake.host)
+        wait(lambda: conn.error)
+        self.assertTrue(conn._thread.is_alive())
+        self.fake.info_answer = None
+        conn.retry()
+        wait(lambda: conn.connected, 15)
+
+    def test_any_exception_is_logged_and_retried(self):
+        calls = []
+
+        def fetch(host, port):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return kobra.fetch_credentials(host, port=port)
+        conn = self.service(fetch).connection(self.fake.host)
+        wait(lambda: conn.error)
+        self.assertIn("RuntimeError", conn.error)
+        conn.retry()
+        wait(lambda: conn.connected, 15)
+        self.assertTrue(any("RuntimeError: boom" in str(m) for m in self.logs))
+
+    def test_retry_restarts_a_dead_loop(self):
+        conn = self.service().connection(self.fake.host)
+        wait(lambda: conn.connected)
+        dead = threading.Thread(target=lambda: None)
+        dead.start()
+        dead.join()
+        conn._thread = dead
+        conn.retry()
+        self.assertTrue(conn._thread.is_alive())
+
+    def test_monitor_survives_an_exception(self):
+        published = []
+        svc = self.service()
+        svc.publish = published.append
+        svc.set_target(service.Target(self.fake.host))
+        wait(lambda: svc.connections[self.fake.host].connected)
+        real, fail = svc._data, [True]
+
+        def flaky(conn=None):
+            if fail and fail.pop():
+                raise RuntimeError("bad report")
+            return real(conn)
+        svc._data = flaky
+        svc.touch(camera=False)
+        wait(lambda: any(m.get("type") == "status" for m in published))
+        self.assertTrue(svc.monitor.is_alive())
+
+
+class CameraHost(Base):
+    """M2: a stream URL that does not point at the printer itself never reaches ffmpeg."""
+
+    def test_foreign_stream_host_dropped(self):
+        self.assertEqual(self.svc._camera_url(), "rtsp://127.0.0.1:1/live")
+        self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                         "data": {"urls": {"rtspUrl": "rtsp://203.0.113.9/live"}}})
+        wait(lambda: self.conn.view()["camera_url"] == "rtsp://203.0.113.9/live")
+        self.assertEqual(self.svc._camera_url(), "")
+        self.assertEqual(service.camera_url_for({"connected": True, "camera_url": "http://169.254.169.254/x"},
+                                                "127.0.0.1"), "")
+        self.assertTrue(any("203.0.113.9" in str(m) for m in self.logs))
+
+
+class SliceInfoCap(Base):
+    """L2: zip members are read only after their declared size is checked."""
+
+    def test_huge_slice_info_is_ignored(self):
+        self.fake.reply("print", "start", {}, code=0)
+        path = os.path.join(self.tmp, "big.3mf")
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("Metadata/plate_1.gcode", GCODE)
+            z.writestr("Metadata/slice_info.config", '<config><plate><metadata key="index" value="1"/>'
+                       '<filament id="1" used_g="5"/></plate>' + " " * (9 * 1024 * 1024) + "</config>")
+        with zipfile.ZipFile(path) as z:
+            self.assertEqual(jobs._plate_weights(z, 1), {})
+        self.svc.print_job(self.fake.host, path, 1, "big", [0], [{"colour": "#FF0000"}])
+        self.assertEqual(self.fake.uploads[0]["data"], GCODE)
+
+
+class Bounded(Base):
+    """L6: one certificate search (and one stock or usage job) at a time; page paths resolved first."""
+
+    def test_one_certificate_search_at_a_time(self):
+        gate = threading.Event()
+        real = service.certs.find
+        service.certs.find = lambda paths, workdir=None: gate.wait(5) and real(paths, workdir=workdir)
+        self.addCleanup(setattr, service.certs, "find", real)
+        self.svc.submit("a", "find_certificate", {"path": self.tmp})
+        time.sleep(0.1)
+        before = threading.active_count()
+        self.svc.submit("b", "find_certificate", {"path": self.tmp})
+        reply = wait(lambda: next((m for m in self.published if m.get("id") == "b"), None))
+        self.assertIn("already running", reply["error"])
+        self.assertEqual(threading.active_count(), before)
+        gate.set()
+        wait(lambda: next((m for m in self.published if m.get("id") == "a"), None))
+        self.assertIn("error", self.run_cmd("find_certificate", path=self.tmp))   # free again (nothing found)
+
+    def test_stock_bounded(self):
+        gate = threading.Event()
+        self.svc.cmd_stock = lambda refresh=False: gate.wait(5)
+        self.svc.submit("s1", "stock", {})
+        self.svc.submit("s2", "stock", {})
+        reply = wait(lambda: next((m for m in self.published if m.get("id") == "s2"), None))
+        self.assertIn("already running", reply["error"])
+        gate.set()
+
+    def test_page_path_must_exist(self):
+        reply = self.run_cmd("find_certificate", path=os.path.join(self.tmp, "nope", "..", "missing"))
+        self.assertIn("does not exist", reply["error"])
+
+
+class FeedAckAnyBox(Base):
+    """M3: a type-3 feedFilament for EVERY box reporting feed status 10/11 (Kobralink printer-bridge.ts:820-830,
+    KX-Bridge bridge_ams.py:426-440), once per event, two seconds later."""
+
+    def box_report(self, status, slot=2, box_id=0):
+        box = dict(ACE0, id=box_id, feed_status={"current_status": status, "slot_index": slot, "type": 1})
+        self.fake.report("multiColorBox/report", {"type": "multiColorBox", "action": "update", "state": "success",
+                                                  "data": {"multi_color_box": [box]}})
+
+    def acks(self):
+        return [m["data"]["multi_color_box"][0] for m in self.sent("multiColorBox", "feedFilament")
+                if m["data"]["multi_color_box"][0]["feed_status"].get("type") == 3]
+
+    def test_touchscreen_feed_is_acknowledged_once(self):
+        self.box_report(10)
+        started = time.monotonic()
+        ack = wait(lambda: self.acks(), 6)[0]
+        self.assertGreaterEqual(time.monotonic() - started, 1.5)
+        self.assertEqual(ack, {"id": 0, "feed_status": {"slot_index": 2, "type": 3}})
+        for _ in range(3):   # the status lingers: no repeat
+            self.box_report(10)
+            time.sleep(0.3)
+        time.sleep(2.5)
+        self.assertEqual(len(self.acks()), 1)
+        self.box_report(0)
+        self.box_report(11)   # a new event
+        wait(lambda: len(self.acks()) == 2, 6)
+
+
+class PausedTemperature(Base):
+    def test_paused_uses_tempature_set(self):   # M1: print/update only while exactly printing
+        self.set_state("paused")
+        self.assertTrue(self.run_cmd("set_temp", bed=55)["result"])
+        msg = wait(lambda: self.sent("tempature", "set"))[0]
+        self.assertEqual(msg["data"]["target_hotbed_temp"], 55)
+        self.assertFalse(self.sent("print", "update"))
+
+
+class NothingSent(Base):
+    def test_set_temp_reports_failure_when_nothing_was_sent(self):   # L1
+        self.conn.printer.set_idle_temperature = lambda nozzle=None, bed=None: False
+        self.assertIn("nothing was sent", self.run_cmd("set_temp", nozzle=200)["error"])
+
+
+class PrintStartLock(Base):
+    def test_check_and_start_are_serialised(self):   # L6
+        self.fake.reply("print", "start", {}, code=0)
+        result = {}
+        with self.conn.start_lock:
+            t = threading.Thread(target=lambda: result.setdefault("r", self._job()), daemon=True)
+            t.start()
+            wait(lambda: self.fake.uploads)
+            time.sleep(0.3)
+            self.set_state("printing")   # another start won the race while this job waited
+        t.join(10)
+        self.assertIsInstance(result["r"], kobra.KobraError)
+        self.assertFalse(self.sent("print", "start"))
+
+    def _job(self):
+        try:
+            return self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000"}])
+        except kobra.KobraError as e:
+            return e
+
+
+class SlowCamera(FakeCamera):
+    def stop(self):
+        time.sleep(1.0)
+
+
+class NoJoinsOnCallers(Base):
+    """M4: page messages and agent callbacks never wait for teardown."""
+
+    def test_fast(self):
+        self.svc.camera = SlowCamera(None, None)
+        for call in (lambda: self.svc.touch(camera=False), self.svc.clear_target,
+                     lambda: self.svc.set_target(service.Target("127.0.0.2")), lambda: self.svc.release("127.0.0.2")):
+            started = time.monotonic()
+            call()
+            self.assertLess(time.monotonic() - started, 0.3)
+
+
+class ReconnectStorm(unittest.TestCase):
+    """H1: a session dropped right after it opens must not turn into a reconnect loop."""
+
+    def test_backoff_after_short_sessions(self):
+        fake = FakeKobra().start()
+        self.addCleanup(fake.stop)
+        fake.reply("info", "query", {})
+        fake.reply("print", "query", {}, state="free")
+        fake.reply("multiColorBox", "getInfo", {"multi_color_box": []})
+        stop = threading.Event()
+
+        def dropper():
+            seen = 0
+            while not stop.is_set():
+                if len(fake.client_ids) > seen:
+                    seen = len(fake.client_ids)
+                    time.sleep(0.05)
+                    fake.drop_clients()
+                time.sleep(0.01)
+        threading.Thread(target=dropper, daemon=True).start()
+        self.addCleanup(stop.set)
+        svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              http_port=fake.http_port, mqtt_port=fake.mqtt_port, camera_factory=FakeCamera)
+        self.addCleanup(svc.close)
+        svc.connection(fake.host)
+        time.sleep(5)
+        self.assertLessEqual(len(fake.client_ids), 3)   # waits of 2 s then 4 s, never a tight loop
+        self.assertGreaterEqual(len(fake.client_ids), 2)
+
+
+class DeniedExplained(unittest.TestCase):
+    def test_denied_message(self):   # H2
+        error = kobra.KobraError("printer not reachable at 10.0.0.5 (denied)", code="denied")
+        text = connection._explain("10.0.0.5", error)
+        self.assertIn("Allow kobracontrol to reach 10.0.0.5", text)
+        self.assertIn("press Retry", text)
+        self.assertIn("restart OrcaSlicer", text)
+        self.assertNotIn("Allow kobracontrol", connection._explain("10.0.0.5", kobra.KobraError("timed out")))
+
+    def test_retry_attempts_at_once(self):
+        calls = []
+
+        def fetch(host, port):
+            calls.append(time.monotonic())
+            raise kobra.KobraError("denied", code="denied")
+        conn = connection.Connection("10.0.0.5", lambda: None, lambda m: None, fetch=fetch).start()
+        self.addCleanup(conn.stop)
+        wait(lambda: calls)
+        conn.retry()
+        wait(lambda: len(calls) >= 2, 1.0)   # not after the 2 s backoff

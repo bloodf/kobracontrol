@@ -355,6 +355,22 @@ class CloseTests(BrokerCase):
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed to generate throwaway certificates")
 class TlsTests(unittest.TestCase):
+    def test_publish_not_blocked_by_stalled_tls_record(self):
+        """M8: the broker starts a TLS record and stalls; the reader must not hold the I/O lock for the
+        socket timeout, so a pause/stop publish goes out promptly."""
+        c = mqtt.Client(self.fake.host, self.fake.mqtt_port, "k", username=self.fake.username,
+                        password=self.fake.password, ssl_context=self.ctx(True), timeout=8)
+        self.addCleanup(c.close)
+        c.connect()
+        session = self.fake._sessions[0]
+        raw = socket.socket(fileno=os.dup(session.sock.fileno()))
+        self.addCleanup(raw.close)
+        raw.sendall(b"\x17\x03\x03\x01\x00")  # header of a 256-byte record that never comes
+        time.sleep(0.4)  # let the reader enter its read
+        start = time.monotonic()
+        c.publish("print/stop", b"{}")
+        self.assertLess(time.monotonic() - start, 0.8)
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)

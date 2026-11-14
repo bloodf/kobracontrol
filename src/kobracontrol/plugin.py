@@ -18,7 +18,8 @@ import kobra
 import peers
 import settings
 import spooler_bridge
-from service import BED_MAX, LIMITS, NOZZLE_MAX, Service, Target, can_flags, status_data
+from service import (BED_MAX, LIMITS, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
+                     find_and_save_certificate, status_data)
 
 VERSION = "0.0.0-dev"
 AGENT_ID = "kobracontrol"
@@ -26,7 +27,6 @@ AGENT_NAME = "Anycubic Kobra X (kobracontrol)"
 MODEL = "Anycubic Kobra X"
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
-DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads", "kobracontrol")
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
 ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010, -6010
@@ -171,13 +171,34 @@ def page_html(language="auto"):
 
 # ---------------------------------------------------------------------- service and Spooler link
 
+_service_options = {}   # extra Service keyword arguments (tests only: ports and fakes of a loopback printer)
+_users = set()          # loaded capabilities that use the service: closed once none is left
+
+
+def _use(name):
+    with _service_lock:
+        _users.add(name)
+
+
+def _unuse(name):
+    """`name` unloaded; the last one out closes the service (and the Spooler link with the page)."""
+    global _service
+    with _service_lock:
+        _users.discard(name)
+        svc = _service if not _users else None
+        if svc is not None:
+            _service = None
+    if svc is not None:
+        svc.close()
+
+
 def service(publish=None):
     global _service
     with _service_lock:
         if _service is None:
             folder = _storage()
             _service = Service(publish or (lambda m: None), log, cert_dir=cert_dir(),
-                               ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None)
+                               ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None, **_service_options)
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
@@ -261,6 +282,27 @@ def _target():
                   bool(cfg["camera_enabled"]))
 
 
+def slicer_temp_root():
+    """OrcaSlicer's per-user temp folder, where the sliced .3mf for Print/Send is written: OrcaSlicer.cpp:1335
+    per_user_temp_dir(wxFileName::GetTempDir(), per_user_temp_id()) -> utils.cpp:1559-1575: "<temp>/orcaslicer_
+    <uid>" on macOS and Linux, "<temp>" itself on Windows (empty id). wxFileName::GetTempDir and Python's
+    tempfile.gettempdir both follow TMPDIR/TMP/TEMP, so they name the same folder in practice."""
+    base = tempfile.gettempdir().rstrip("/\\") or os.sep
+    return base if os.name == "nt" else os.path.join(base, "orcaslicer_%d" % os.getuid())
+
+
+def job_read_grants():
+    """Tree read grants for slicer_temp_root(): its realpath form first (e.g. /private/var/folders/... on macOS),
+    then the given form when it differs."""
+    out = []
+    root = slicer_temp_root()
+    for form in (os.path.realpath(root), root):
+        target = form.rstrip("/\\") + "/*"
+        if target not in out:
+            out.append(target)
+    return out
+
+
 def known_hosts():
     """Printer addresses known at load, for the network permission request."""
     hosts = set()
@@ -285,12 +327,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         return "Kobra Control"
 
     def get_icon(self):
+        """The icon file in the plugin storage folder (data_dir(), writable for the plugin); none without it."""
         svg = _asset("icon.svg")
-        try:
-            folders = [_storage_or_raise(), tempfile.gettempdir()]
-        except Exception:
-            folders = [tempfile.gettempdir()]
-        for folder in folders:
+        for folder in [f for f in [_storage()] if f]:
             path = os.path.join(folder, "kobracontrol.svg")
             try:
                 try:
@@ -366,18 +405,15 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
 
     def on_load(self):
         _storage()
+        _use("page")
         try:
             start_link()
         except Exception as e:
             log("Spooler discovery not started: %r" % e)
 
     def on_unload(self):
-        global _service
         stop_link()
-        with _service_lock:
-            svc, _service = _service, None
-        if svc is not None:
-            svc.close()
+        _unuse("page")
 
 
 # ====================================================================== printer agent
@@ -421,6 +457,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self._stop = threading.Event()
         self._pusher = None
         self._camera_key = None
+        self._camera_refused = set()
 
     def get_name(self):
         return AGENT_NAME
@@ -506,6 +543,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self._pusher = threading.Thread(target=self._push_loop, args=(self._stop,), name="kobracontrol-agent",
                                         daemon=True)
         self._pusher.start()
+        _use("agent")
         service().connection(host).add_listener(self._on_change)
         self._dirty.set()
         return OK
@@ -513,9 +551,17 @@ class KobraAgent(pa.PrinterAgentBase):
     def disconnect_printer(self):
         host = self._detach()
         self.dev_id = self.host = ""
-        if host:
-            threading.Thread(target=lambda: service().release(host), name="kobracontrol-release", daemon=True).start()
+        svc = _service   # only the running service: never start a new one while the plugin unloads
+        if host and svc is not None:
+            threading.Thread(target=svc.release, args=(host,), name="kobracontrol-release", daemon=True).start()
         return OK
+
+    def on_load(self):
+        _use("agent")
+
+    def on_unload(self):
+        self.disconnect_printer()
+        _unuse("agent")
 
     def _detach(self):
         host = self.host
@@ -593,7 +639,8 @@ class KobraAgent(pa.PrinterAgentBase):
             self._dirty.set()
             return OK
         if kind == "noop":
-            self._message(bambu.gcode_reply(command, "G90 \n", True))
+            if command.get("gcode"):
+                self._message(bambu.gcode_reply(command, "G90 \n", True))
             return OK
         if not view or not view["connected"]:
             return ERR_CONNECT
@@ -732,9 +779,7 @@ class KobraAgent(pa.PrinterAgentBase):
 
     def _camera_url(self):
         view = service().view_for(self.host) if self.host else None
-        if not view or not view["connected"]:
-            return ""
-        return view["camera_url"] or ""
+        return camera_url_for(view, self.host, log, self._camera_refused)   # only a stream on the printer itself
 
     def get_camera_stream_mode(self):
         return pa.CameraStreamMode.RTSP if self._camera_url() else pa.CameraStreamMode.None_
@@ -783,9 +828,8 @@ class FindCertificate(orca.script.ScriptPluginCapabilityBase):
         if not folder:
             return orca.ExecutionResult.skipped("No storage folder to keep the certificate in.")
         try:
-            found = certs.find(certs.default_locations())
-            certs.save(folder, found.cert_pem, found.key_pem)
-        except certs.CertError as e:
+            found = find_and_save_certificate(folder)
+        except (certs.CertError, OSError) as e:
             return orca.ExecutionResult.skipped("No Anycubic Slicer certificate: %s" % e)
         if _service is not None:
             for conn in list(_service.connections.values()):
@@ -798,10 +842,12 @@ class KobraControl(orca.base):
     def register_capabilities(self):
         _storage()
         hosts = known_hosts()
-        # Network I/O runs on the plugin's own threads. fs_read: where Anycubic Slicer Next keeps its client
-        # certificate; network: every printer address known now (a new one is asked for on first contact).
-        orca.request_permissions(threading=True, fs_read=certs.default_locations(),
-                                 fs_readwrite=[DOWNLOADS], network=["http://%s" % h for h in hosts])
+        # Network I/O runs on the plugin's own threads. fs_read: the Anycubic Slicer Next install folders (as
+        # trees: a bare folder grant covers only that path) and OrcaSlicer's per-user temp folder, where Print
+        # and Send hand over the sliced .3mf; network: every printer address known now (a new one is asked
+        # for on first contact).
+        orca.request_permissions(threading=True, fs_read=certs.grant_targets() + job_read_grants(),
+                                 network=["http://%s" % h for h in hosts])
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)
         orca.register_capability(CheckConnection)

@@ -10,7 +10,8 @@ parse_command(json_str) returns {"kind", ..., "seq"}; kinds and their fields:
     pause, resume, stop
     set_temp      nozzle and/or bed (deg C, as sent; the service clamps)
     set_fan       pct 0-100
-    set_speed     mode 1-4 (the Kobra print_speed_mode; same numbers as Bambu spd_lvl)
+    set_speed     mode 1-3 (the Kobra print_speed_mode: 1 quiet, 2 standard, 3 sport, as Kobralink's
+                  controls-card.tsx; Bambu spd_lvl uses the same numbers, its 4 = ludicrous is unsupported)
     set_light     on
     home          axes "xyz" or "z"
     move          axis "x"|"y"|"z", distance (mm, signed)
@@ -109,7 +110,7 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
         "mc_percent": int(round(max(0, min(100, view.get("progress", 0))))),               # DM:3431
         "mc_remaining_time": int(max(0, view.get("remaining_s", 0)) // 60),               # DM:3449, minutes
         "layer_num": int(view.get("layer", 0)), "total_layer_num": int(view.get("total_layers", 0)),  # DM:3578
-        "spd_lvl": int(view.get("speed_mode")) if view.get("speed_mode") in (1, 2, 3, 4) else 2,  # DevPrintOptions
+        "spd_lvl": int(view.get("speed_mode")) if view.get("speed_mode") in (1, 2, 3) else 2,  # DevPrintOptions
         "lights_report": [{"node": CHAMBER_LIGHT, "mode": "on" if view.get("light_on") else "off"}],  # DM:3783
         "ipcam": {"ipcam_dev": "1" if view.get("camera_url") else "0"},                             # DM:3923
         "ams": ams_block(slots, filament_id),
@@ -186,7 +187,7 @@ def _print_command(p, name):
         return {"kind": "set_temp", "nozzle": _num(p["target_temp"])}                    # DM:1698-1704
     if name == "set_fan" and p.get("fan_index") == 1 and _num(p.get("speed")) is not None:   # DevFan:61-70
         return {"kind": "set_fan", "pct": int(max(0, min(100, _num(p["speed"]))))}
-    if name == "print_speed" and str(p.get("param")) in ("1", "2", "3", "4"):            # DM:1935-1940
+    if name == "print_speed" and str(p.get("param")) in ("1", "2", "3"):   # DM:1935-1940; "4" (ludicrous): no Kobra mode
         return {"kind": "set_speed", "mode": int(p["param"])}
     if name == "ams_filament_setting":                                                    # DM:1820-1835
         colour = str(p.get("tray_color") or "")
@@ -226,6 +227,9 @@ def parse_command(json_str):
     if section == "info" and name == "get_version" or section == "system" and name == "get_access_code" \
             or section == "pushing" and name == "pushall":
         out = {"kind": name}
+    elif section == "pushing" and name in ("start", "stop"):
+        # DevManager.cpp:262-268 sends pushing start on a timer until a push arrives: answer it, never -7010
+        out = {"kind": "pushall" if name == "start" else "noop"}
     elif section == "system" and name == "ledctrl":
         if body.get("led_node") == CHAMBER_LIGHT and body.get("led_mode") in ("on", "off"):
             out = {"kind": "set_light", "on": body["led_mode"] == "on"}

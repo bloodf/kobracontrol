@@ -5,7 +5,6 @@ _data(conn), log and remember_job (usage.UsageMixin). Free of the `orca` module.
 import contextlib
 import os
 import re
-import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -15,6 +14,7 @@ import kobra
 
 CONNECT_WAIT = 10.0             # s a print job waits for the session
 GCODE_MAX = 1024 ** 3           # BAMBU_NETWORK_ERR_PRINT_LP_FILE_OVER_SIZE: 1 GB
+SLICE_INFO_MAX = 8 * 1024 * 1024 # Metadata/slice_info.config read only up to this declared size
 
 
 def remote_name(name):
@@ -25,40 +25,54 @@ def remote_name(name):
     return base[:120] + ".gcode"
 
 
+DENIED_READ = ("OrcaSlicer did not let kobracontrol read the sliced file %s. Allow kobracontrol to read %s in "
+               "Plugins > Permissions, then print again.")
+
+
+def _open_job_file(path):
+    try:
+        return open(path, "rb")
+    except PermissionError:   # OrcaSlicer's audit hook: no read grant for this folder (never "not a zip")
+        raise kobra.KobraError(DENIED_READ % (path, os.path.join(os.path.dirname(path), "*")), code="denied") from None
+    except OSError as e:
+        raise kobra.KobraError("cannot read the sliced file %s (%s)" % (path, e.strerror or e)) from None
+
+
 @contextlib.contextmanager
-def plate_gcode(path, plate_index=1):
-    """(gcode path, {filament index: grams}) for a sliced .3mf (Metadata/plate_<n>.gcode, copied to a private
-    temp file that is removed afterwards) or a plain .gcode file. The zip member is read by its exact name and
-    never used as a file system path, so a crafted archive cannot write outside the temp file."""
-    if not zipfile.is_zipfile(path):
-        yield path, {}
-        return
-    plate = int(plate_index) if str(plate_index).isdigit() and int(plate_index) > 0 else 1
-    with zipfile.ZipFile(path) as z:
-        member = "Metadata/plate_%d.gcode" % plate
-        try:
-            info = z.getinfo(member)
-        except KeyError:
-            raise kobra.KobraError("the sliced file has no G-code for plate %d: slice it first" % plate) from None
-        if info.file_size > GCODE_MAX:
-            raise kobra.KobraError("the G-code is larger than 1 GB")
-        weights = _plate_weights(z, plate)
-        fd, tmp = tempfile.mkstemp(prefix="kobracontrol-", suffix=".gcode")
-        try:
-            with os.fdopen(fd, "wb") as out, z.open(info) as src:
-                while chunk := src.read(1024 * 1024):
-                    out.write(chunk)
-            yield tmp, weights
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(tmp)
+def plate_source(path, plate_index=1):
+    """(readable binary file, size, {filament index: grams}) for a sliced .3mf (its Metadata/plate_<n>.gcode
+    member, streamed straight from the archive) or a plain .gcode file. No temporary file is written: OrcaSlicer
+    denies file creation outside the plugin's storage on a job thread. The member is chosen by its exact name and
+    its declared size is checked before anything is read."""
+    with _open_job_file(path) as raw:
+        if not zipfile.is_zipfile(raw):
+            raw.seek(0)
+            size = os.fstat(raw.fileno()).st_size
+            if size > GCODE_MAX:
+                raise kobra.KobraError("the G-code is larger than 1 GB")
+            yield raw, size, {}
+            return
+        plate = int(plate_index) if str(plate_index).isdigit() and int(plate_index) > 0 else 1
+        with zipfile.ZipFile(raw) as z:
+            try:
+                info = z.getinfo("Metadata/plate_%d.gcode" % plate)
+            except KeyError:
+                raise kobra.KobraError("the sliced file has no G-code for plate %d: slice it first" % plate) from None
+            if info.file_size > GCODE_MAX:
+                raise kobra.KobraError("the G-code is larger than 1 GB")
+            weights = _plate_weights(z, plate)
+            with z.open(info) as member:
+                yield member, info.file_size, weights
 
 
 def _plate_weights(z, plate):
     """{0-based project filament index: grams} from Metadata/slice_info.config, {} when absent."""
     try:
-        root = ET.fromstring(z.read("Metadata/slice_info.config"))
-    except (KeyError, ET.ParseError, zipfile.BadZipFile):
+        info = z.getinfo("Metadata/slice_info.config")
+        if info.file_size > SLICE_INFO_MAX:   # declared size checked before reading; larger counts as absent
+            return {}
+        root = ET.fromstring(z.read(info))
+    except (KeyError, ET.ParseError, zipfile.BadZipFile, ValueError, RecursionError):
         return {}
     for p in root.iter("plate"):
         index = next((m.get("value") for m in p.iter("metadata") if m.get("key") == "index"), None)
@@ -85,23 +99,21 @@ class JobsMixin:
             raise cls(conn.error or "the printer at %s did not answer" % host)
         return conn
 
-    def _upload(self, conn, filename, path, progress, cancelled):
+    def _upload(self, conn, filename, source, size, progress, cancelled):
         upload_url = conn.view()["upload_url"]
         if not upload_url:
             conn.printer.query_info()
             upload_url = conn.view()["upload_url"]
         if not upload_url:
             raise kobra.KobraError("the printer has not announced its upload address yet; try again")
-        if os.path.getsize(path) > GCODE_MAX:
-            raise kobra.KobraError("the G-code is larger than 1 GB")
-        conn.printer.upload(filename, path, upload_url, progress, cancelled)
+        conn.printer.upload(filename, source, upload_url, size=size, progress=progress, cancelled=cancelled)
 
     def send_file(self, host, path, name, plate_index=1, progress=None, cancelled=None):
         """Upload only (OrcaSlicer's Send): the plate's G-code goes to the printer's storage; returns its name."""
         conn = self.ready(host)
         filename = remote_name(name or os.path.basename(path))
-        with plate_gcode(path, plate_index) as (gcode, _):
-            self._upload(conn, filename, gcode, progress, cancelled)
+        with plate_source(path, plate_index) as (source, size, _):
+            self._upload(conn, filename, source, size, progress, cancelled)
         return filename
 
     def print_job(self, host, path, plate_index=1, name="", tray_ids=(), filaments=(), task=None, progress=None,
@@ -112,15 +124,15 @@ class JobsMixin:
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
         filename = remote_name(name or os.path.basename(path))
-        with plate_gcode(path, plate_index) as (gcode, weights):
+        with plate_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
-            self._upload(conn, filename, gcode, progress, cancelled)
-            if cancelled and cancelled():
-                raise kobra.Cancelled("print cancelled; the file stays on the printer")
-            stage and stage("start")
+            self._upload(conn, filename, source, size, progress, cancelled)
+        if cancelled and cancelled():
+            raise kobra.Cancelled("print cancelled; the file stays on the printer")
+        stage and stage("start")
+        with conn.start_lock:   # the idle check and print/start of one job at a time (tab file prints too)
             mapping, used = self._job_mapping(conn, tray_ids, filaments)   # the slots may have changed meanwhile
-            payload = kobra.print_file_payload(filename, os.path.getsize(gcode), mapping, task or {})
-            conn.printer.start_print(payload)
+            conn.printer.start_print(kobra.print_file_payload(filename, size, mapping, task or {}))
         self._remember(host, filename, used, weights)
         return filename
 

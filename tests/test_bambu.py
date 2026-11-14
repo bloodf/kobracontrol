@@ -55,6 +55,7 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(p["subtask_name"], "cube.gcode")
         self.assertEqual(p["gcode_file"], "cube.gcode")
         self.assertEqual(p["spd_lvl"], 3)
+        self.assertEqual(self.push(view(speed_mode=4))["spd_lvl"], 2)   # the Kobra has modes 1-3 only
         self.assertEqual(p["lights_report"], [{"node": "chamber_light", "mode": "on"}])
         self.assertEqual((p["mc_print_error_code"], p["print_error"]), (0, 0))
         json.dumps(p)
@@ -139,6 +140,9 @@ class ParseCommand(unittest.TestCase):
         self.assertEqual(cmd({"info": {"command": "get_version"}})["kind"], "get_version")
         self.assertEqual(cmd({"system": {"command": "get_access_code"}})["kind"], "get_access_code")
         self.assertEqual(cmd({"pushing": {"command": "pushall"}})["kind"], "pushall")
+        # M7: the host sends pushing start on a timer until it sees a push (DevManager.cpp:262-268): never -7010
+        self.assertEqual(cmd({"pushing": {"command": "start"}})["kind"], "pushall")
+        self.assertEqual(cmd({"pushing": {"command": "stop"}})["kind"], "noop")
 
     def test_temperatures(self):
         self.assertEqual(cmd({"print": {"command": "set_bed_temp", "temp": 60}}), {"kind": "set_temp", "bed": 60, "seq": ""})
@@ -167,7 +171,8 @@ class ParseCommand(unittest.TestCase):
     def test_fan_speed_light(self):
         self.assertEqual(cmd({"print": {"command": "set_fan", "fan_index": 1, "speed": 40}})["pct"], 40)
         self.assertEqual(cmd({"print": {"command": "set_fan", "fan_index": 3, "speed": 40}})["kind"], "unsupported")
-        self.assertEqual(cmd({"print": {"command": "print_speed", "param": "4"}}), {"kind": "set_speed", "mode": 4, "seq": ""})
+        self.assertEqual(cmd({"print": {"command": "print_speed", "param": "3"}}), {"kind": "set_speed", "mode": 3, "seq": ""})
+        self.assertEqual(cmd({"print": {"command": "print_speed", "param": "4"}})["kind"], "unsupported")   # ludicrous
         self.assertEqual(cmd({"print": {"command": "print_speed", "param": "9"}})["kind"], "unsupported")
         self.assertEqual(cmd({"system": {"command": "ledctrl", "led_node": "chamber_light", "led_mode": "off"}}),
                          {"kind": "set_light", "on": False, "seq": ""})

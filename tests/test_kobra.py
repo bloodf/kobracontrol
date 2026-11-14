@@ -11,6 +11,7 @@ import threading
 import time
 import unittest
 import uuid
+import zipfile
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +23,16 @@ import kobra  # noqa: E402
 import probe  # noqa: E402
 from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
 from test_mqtt import wait_for  # noqa: E402
+
+AUDIT = {"active": False, "events": []}
+
+
+def _audit(event, args):  # sys.addaudithook cannot be removed, so it records only while a test asks
+    if AUDIT["active"] and event in ("urllib.Request", "http.client.connect", "socket.connect"):
+        AUDIT["events"].append((event, args[1] if event == "http.client.connect" else args[0]))
+
+
+sys.addaudithook(_audit)
 
 
 class FakeCase(unittest.TestCase):
@@ -113,6 +124,38 @@ class CredentialTests(FakeCase):
                                                  "deviceId": "d"})
         with self.assertNoLogs(kobra.log):
             self.assertEqual(self.creds().ip, "127.0.0.1")
+
+    def test_credentials_never_use_urllib(self):
+        """H2: OrcaSlicer audits urllib by full URL (the /ctrl query changes every time, so it can never
+        be granted); http.client is audited by host, which one grant covers."""
+        AUDIT["events"].clear()
+        AUDIT["active"] = True
+        try:
+            self.creds()
+        finally:
+            AUDIT["active"] = False
+        names = {e for e, _ in AUDIT["events"]}
+        self.assertNotIn("urllib.Request", names)
+        self.assertIn(("http.client.connect", "127.0.0.1"), AUDIT["events"])
+
+    def test_denied_network_is_told_apart(self):
+        """H2: the audit hook's PermissionError is KobraError(code="denied"), not "not reachable"."""
+        with mock.patch("http.client.HTTPConnection.connect", side_effect=PermissionError("audit: denied")):
+            with self.assertRaises(kobra.KobraError) as cm:
+                self.creds()
+        self.assertEqual(cm.exception.code, "denied")
+        self.assertIn("denied", str(cm.exception))
+        self.fake.stop()
+        with self.assertRaises(kobra.KobraError) as cm:
+            self.creds()
+        self.assertEqual(cm.exception.code, "unreachable")
+        self.fake.start()
+
+    def test_malformed_http_is_kobra_error(self):
+        import http.client
+        with mock.patch("http.client.HTTPConnection.getresponse", side_effect=http.client.BadStatusLine("x")):
+            with self.assertRaises(kobra.KobraError):
+                self.creds()
 
     def test_redirects_are_not_followed(self):
         """M2: a 3xx from /info is an error, never a request to another host."""
@@ -452,6 +495,18 @@ class HelperTests(PrinterCase):
         for call, expected in cases:
             self.check(call, expected)
 
+    def test_temperature_setters_return_bool(self):
+        """L1: like the other setters, True when everything was published."""
+        p = self.printer
+        self.assertIs(p.set_idle_temperature(200, 60), True)
+        self.assertIs(p.set_printing_temperature("1", 200, 60), True)
+        self.assertIs(p.set_printing_temperature("1", bed=60), True)
+        self.assertIs(p.set_idle_temperature(), False)
+        self.assertIs(p.set_printing_temperature("1"), False)
+        p.close()
+        self.assertIs(p.set_idle_temperature(200), False)
+        self.assertIs(p.set_printing_temperature("1", 200, 60), False)
+
     def test_temperatures(self):
         p = self.printer
         self.check(lambda: p.set_idle_temperature(210.4, 60.6),
@@ -561,6 +616,43 @@ class UploadTests(PrinterCase):
             self.printer.upload("c.gcode", path, self.fake.upload_url, progress=lambda s, t: seen.append(s),
                                 cancelled=lambda: len(seen) >= 2)
         time.sleep(0.2)
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_upload_from_zip_member(self):
+        """C2: a zip member streams straight to the printer, no temp file."""
+        payload = os.urandom(700_000)
+        zpath = self.source(0)
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("Metadata/plate_1.gcode", payload)
+        progress = []
+        with zipfile.ZipFile(zpath) as z, z.open("Metadata/plate_1.gcode") as member:
+            size = z.getinfo("Metadata/plate_1.gcode").file_size
+            with mock.patch.object(kobra, "UPLOAD_CHUNK", 65536):
+                self.printer.upload("plate.gcode", member, self.fake.upload_url, size=size,
+                                    progress=lambda s, t: progress.append((s, t)))
+        self.assertEqual(self.fake.uploads[0]["data"], payload)
+        self.assertEqual(self.fake.uploads[0]["headers"]["X-File-Length"], str(len(payload)))
+        self.assertEqual(progress[-1], (len(payload), len(payload)))
+        self.assertGreater(len(progress), 5)
+
+    def test_file_object_needs_size(self):
+        with open(self.source(5), "rb") as f, self.assertRaisesRegex(kobra.KobraError, "size"):
+            self.printer.upload("a.gcode", f, self.fake.upload_url)
+
+    def test_short_source_is_an_error(self):
+        """C2: fewer bytes than announced is never sent as a truncated upload."""
+        import io
+        with self.assertRaisesRegex(kobra.KobraError, "ended early"):
+            self.printer.upload("a.gcode", io.BytesIO(b"x" * 10), self.fake.upload_url, size=100)
+        time.sleep(0.2)
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_file_object_cancel(self):
+        import io
+        seen = []
+        with self.assertRaises(kobra.Cancelled):
+            self.printer.upload("c.gcode", io.BytesIO(os.urandom(600_000)), self.fake.upload_url, size=600_000,
+                                progress=lambda s, t: seen.append(s), cancelled=lambda: len(seen) >= 1)
         self.assertEqual(self.fake.uploads, [])
 
     def test_hostile_upload_url_host_is_ignored(self):
@@ -790,6 +882,27 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.apply("skip/report", {})["skipped_objects"], ["a", "b"])
         self.apply("print/report", {}, state="free")
         self.assertEqual(self.apply("skip/report", {"skipped_parts": ["c"]})["skipped_objects"], ["c"])
+
+    def test_skipped_objects_cleared_on_new_print(self):
+        """L4: a new print starts with no skipped objects (Kobralink clears them at print start)."""
+        self.apply("print/report", {"filename": "a.gcode", "taskid": "1"}, state="printing")
+        self.apply("skip/report", {"objects_skip_parts": ["o1"]})
+        self.apply("print/report", {"filename": "a.gcode"}, state="paused")
+        self.assertEqual(self.apply("print/report", {}, state="printing")["skipped_objects"], ["o1"])
+        self.apply("print/report", {}, state="finished")
+        self.assertEqual(self.s.view()["skipped_objects"], ["o1"])  # still visible after the job
+        v = self.apply("print/report", {"filename": "b.gcode"}, state="printing")  # non-print -> printing
+        self.assertEqual(v["skipped_objects"], [])
+        self.apply("skip/report", {"objects_skip_parts": ["o2"]})
+        v = self.apply("info/report", {"project": {"state": "printing", "filename": "c.gcode"}})  # new file
+        self.assertEqual(v["skipped_objects"], [])
+        self.apply("skip/report", {"objects_skip_parts": ["o3"]})
+        v = self.apply("print/report", {"taskid": "99"}, state="printing")  # new task, same file
+        self.assertEqual(v["skipped_objects"], [])
+        self.apply("skip/report", {"objects_skip_parts": ["o4"]})
+        v = self.apply("info/report", {"state": "busy"})  # device state only: not a new print
+        v = self.apply("print/report", {"taskid": "99"}, state="printing")
+        self.assertEqual(v["skipped_objects"], ["o4"])
 
     def test_buried_storage_and_video(self):
         self.assertTrue(self.apply("video/report", {}, action="startCapture", state="success")["camera_active"])

@@ -23,11 +23,12 @@ import ace
 import camera
 import certs
 import connection
+from connection import camera_url_for, find_and_save_certificate  # noqa: F401  (plugin.py imports them here)
 import kobra
 import settings
 import spoolman as sm
 import usage
-from jobs import CONNECT_WAIT, JobsMixin, plate_gcode, remote_name  # noqa: F401  (re-exported for callers)
+from jobs import CONNECT_WAIT, JobsMixin, plate_source, remote_name  # noqa: F401  (re-exported for callers)
 from files import FilesMixin
 from stockview import StockMixin
 from usage import UsageMixin
@@ -35,7 +36,9 @@ from usage import UsageMixin
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
-DEDICATED = URGENT + ("stock", "usage", "usage_ack", "find_certificate")   # own short-lived thread
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate")   # own thread, at most one of each in flight
+DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
+BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
 NO_PRINTER = "no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address"
 # The Kobra X machine profile (OrcaSlicer resources/profiles/Anycubic/machine/Anycubic Kobra X 0.4 nozzle.json)
@@ -43,7 +46,7 @@ NO_PRINTER = "no Kobra X selected: choose an Anycubic Kobra X printer preset wit
 NOZZLE_MAX, BED_MAX = 320, 120
 LIMITS = {"nozzle_max": NOZZLE_MAX, "bed_max": BED_MAX}
 IDLE = ("idle", "finished", "cancelled")
-MOVE_MAX = 300.0                # mm per jog (Kobralink macros.ts)
+MOVE_MAX = 50.0                 # mm per jog: the largest step the page offers; anything larger is clamped
 AXIS = {"x": 1, "y": 2, "z": 3}
 # axis/move codes as Kobralink (macro.service.ts): move_type 1 = +, 0 = -, distance > 0; home move_type 2 with
 # axis 4 = all, 2 = X/Y, 3 = Z. KX-Bridge's web UI uses 5/4/3 for home: unverified on a real printer.
@@ -81,7 +84,8 @@ def can_flags(view):
 
 def status_data(view, units_before=(), bindings=None, pending_load=-1):
     """status.data for the page (architecture.md) -> (data, ace units). The upload URL carries the printer's
-    upload token, so it never leaves the plugin: `upload_url` is always ""."""
+    upload token, so it never leaves the plugin: `upload_url` is always "". `file_details` is left out: it holds
+    whichever file was asked about last; the running print's objects come from cmd_objects."""
     boxes = view.get("multi_color_box") or []
     mode = ace.detect_filament_mode(boxes, view.get("head_tools_model"))
     slots, loaded = ace.aggregate_slots(boxes, mode)
@@ -90,11 +94,17 @@ def status_data(view, units_before=(), bindings=None, pending_load=-1):
     bindings = bindings or {}
     slots = [{**s, "activity": activity.get(s["global_index"], ""), "tray": ace.tray_id(s),
               "usable": ace.slot_usable_for_print(s, mode), "spool_id": bindings.get(s["global_index"])} for s in slots]
+    view = {k: v for k, v in view.items() if k != "file_details"}   # some file's details, maybe not the running one
     data = {**view, "upload_url": "", "mode": mode, "slots": slots, "loaded_slot": loaded, "ace_units": units,
             "can": can_flags(view)}
     return data, units
 
 
+
+
+def _background(fn, name):
+    """Teardown that joins threads or closes sockets never runs on the caller (UI thread, agent callback)."""
+    threading.Thread(target=fn, name="kobracontrol-" + name, daemon=True).start()
 
 
 class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
@@ -117,7 +127,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
             self.log("kobracontrol: " + self.ledger.restore_notice)
-        self._units, self._feed_acks, self._capture = {}, {}, None
+        self._units, self._feed_acks, self._capture, self._busy = {}, {}, None, set()
+        self._camera_refused = set()
         self._reset_printer_state()
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
         self.jobs = queue.Queue()
@@ -154,7 +165,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if conn is None or (self.target and self.target.host == host) or conn.listeners != [self._on_change]:
                 return
             del self.connections[host]
-        conn.stop()
+        _background(conn.stop, "release")
 
     def _on_change(self, conn):   # a connection's reader or loop thread: no I/O here
         self._changed.set()
@@ -184,7 +195,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             previous, self.target = self.target.host, None
             self.generation += 1
             self._reset_printer_state()
-        self.camera.stop()
+        _background(self.camera.stop, "camera-stop")
         self.release(previous)
 
     def touch(self, camera=None, stock=None):
@@ -195,7 +206,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if camera is not None:
                 self.camera_on = bool(camera)
         if camera is False:
-            self.camera.stop()
+            _background(self.camera.stop, "camera-stop")
 
     def ack_frame(self):
         self.camera.ack()
@@ -209,10 +220,26 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             return
         conn = self.connections.get(target.host) if target else None
         job = (request_id, command, args, (current, conn, target, command in URGENT))
-        if command in DEDICATED:
-            threading.Thread(target=self._run, args=job, name="kobracontrol-" + str(command), daemon=True).start()
+        if command in BOUNDED:
+            with self.lock:
+                busy = command in self._busy
+                self._busy.add(command)
+            if busy:
+                self.publish({"type": "reply", "id": request_id, "error": BUSY % command})
+                return
+            threading.Thread(target=self._run_bounded, args=job, name="kobracontrol-" + command, daemon=True).start()
+        elif command in DEDICATED:
+            threading.Thread(target=self._guard, args=(command, lambda: self._run(*job)),
+                             name="kobracontrol-" + str(command), daemon=True).start()
         else:
             self.jobs.put(job)
+
+    def _run_bounded(self, request_id, command, args, ctx):
+        try:
+            self._guard(command, lambda: self._run(request_id, command, args, ctx))
+        finally:
+            with self.lock:
+                self._busy.discard(command)
 
     def close(self):
         self.closed = True
@@ -233,7 +260,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             job = self.jobs.get()
             if job is None:
                 return
-            self._run(*job)
+            self._guard("command worker", lambda: self._run(*job))
 
     def _run(self, request_id, command, args, ctx):
         handler = getattr(self, "cmd_" + str(command), None) if re.fullmatch(r"\w+", str(command)) else None
@@ -337,16 +364,13 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 active = now < self.lease_until and target is not None
                 cam = active and self.camera_on and target.camera_enabled
             if not active:
-                self.camera.stop()
+                self._guard("camera", self.camera.stop)
                 self._closing.wait(0.25)
                 continue
             if now >= next_status:
                 next_status = now + STATUS_EVERY
-                self._push_status(target, gen)
-            if cam:
-                self._camera_tick(target)
-            else:
-                self.camera.stop()
+                self._guard("status", lambda: self._push_status(target, gen))
+            self._guard("camera", lambda: self._camera_tick(target) if cam else self.camera.stop())
             self._closing.wait(0.1)
 
     def _push_status(self, target, gen):
@@ -364,7 +388,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         with self.lock:
             target = self.target
         conn = self.connections.get(target.host) if target else None
-        return conn.view()["camera_url"] if conn and conn.connected else ""
+        return camera_url_for(conn.view(), conn.host, self.log, self._camera_refused) if conn else ""
 
     def _camera_tick(self, target):
         """Ask the printer to start its stream (once per stream URL), then keep the reader running."""
@@ -394,14 +418,17 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if self.closed:
                 return
             for host, conn in list(self.connections.items()):
-                view = conn.view()
-                if view["connected"]:
-                    self._guard("usage", lambda: self.track(host, view))
-                    self._guard("feed", lambda: self._feed_ack(conn, view))
+                self._guard("tracker", lambda: self._track_one(host, conn))
             self._guard("spoolman", self._follow_slots)
             if time.monotonic() >= retry_at:
                 retry_at = time.monotonic() + 60
                 self._guard("usage retry", self.retry_due)
+
+    def _track_one(self, host, conn):
+        view = conn.view()
+        if view["connected"]:
+            self._guard("usage", lambda: self.track(host, view))
+            self._guard("feed", lambda: self._feed_ack(conn, view))
 
     def _guard(self, what, fn):
         try:
@@ -410,19 +437,30 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.log("kobracontrol: %s: %r" % (what, e))
 
     def _feed_ack(self, conn, view):
-        """Kobralink confirms a finished feed/retract (feed_status 10/11) with feedFilament type 3. Only for the
-        boxes the user fed or retracted from here, so nothing is ever sent on its own."""
-        for box in view.get("multi_color_box") or []:
-            bid, status = box.get("id"), box.get("feed_status") or {}
-            with self.lock:
-                entry = (self._feed_acks.get(conn.host) or {}).get(bid)
-                if entry is None or status.get("current_status") not in (10, 11):
+        """As Kobralink (printer-bridge.ts:820-830) and KX-Bridge (bridge_ams.py:426-440): every box reporting
+        feed_status 10/11 (a feed or retract finished, from here, the touchscreen or an automatic refill) gets
+        feedFilament type 3 for its slot two seconds later. Sent once per event: a status that lingers in later
+        reports is not acknowledged again; it is re-armed once the box reports anything else."""
+        now = time.monotonic()
+        due = []
+        with self.lock:
+            events = self._feed_acks.setdefault(conn.host, {})
+            for box in view.get("multi_color_box") or []:
+                status = box.get("feed_status") if isinstance(box.get("feed_status"), dict) else {}
+                bid, key = box.get("id", -1), (status.get("current_status"), status.get("slot_index", 0))
+                if key[0] not in (10, 11):
+                    events.pop(bid, None)
                     continue
-                due = time.monotonic() - entry.setdefault("seen", time.monotonic()) >= FEED_ACK_DELAY
-                if due:
-                    del self._feed_acks[conn.host][bid]
-            if due and conn.printer:
-                conn.printer.feed_filament(bid, status.get("slot_index", entry["slot"]), 3)
+                entry = events.get(bid)
+                if entry is None or entry["key"] != key:
+                    entry = events[bid] = {"key": key, "seen": now, "sent": False}
+                if not entry["sent"] and now - entry["seen"] >= FEED_ACK_DELAY:
+                    entry["sent"] = True
+                    due.append((bid, key[1]))
+        printer = conn.printer
+        for bid, slot in due:
+            if printer:
+                printer.feed_filament(bid, slot, 3)
 
     def _follow_slots(self):
         """spoolman_auto: when a slot's filament changes, bind the closest Spoolman spool (location only; the
@@ -497,10 +535,12 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         bed = None if bed is None else max(0, min(float(bed), BED_MAX))
         if nozzle is None and bed is None:
             raise ValueError("no temperature given")
-        if data["state"] in ("printing", "paused"):   # a running print takes print/update (Kobralink)
-            self._printer().set_printing_temperature(data["task_id"] or "-1", nozzle, bed)
+        if data["state"] == "printing":   # only a running print takes print/update; paused uses tempature/set
+            # (Kobralink printer-bridge.ts:1162, KX-Bridge handle_api_temperature)
+            sent = self._printer().set_printing_temperature(data["task_id"] or "-1", nozzle, bed)
         else:
-            self._printer().set_idle_temperature(nozzle, bed)
+            sent = self._printer().set_idle_temperature(nozzle, bed)
+        self._sent(sent)
         return {"nozzle": nozzle, "bed": bed}
 
     def cmd_set_fan(self, pct):
@@ -512,8 +552,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def cmd_set_speed(self, mode):
         mode = int(mode)
-        if mode not in (1, 2, 3, 4):
-            raise ValueError("speed mode is 1 (silent) to 4 (ludicrous)")
+        if mode not in (1, 2, 3):   # the Kobra's three modes (Kobralink controls-card.tsx); no reference sends 4
+            raise ValueError("speed mode is 1 (quiet) to 3 (sport)")
         data = self._data()
         if data["state"] not in ("printing", "paused"):
             raise kobra.KobraError("the speed mode applies to a running print")
@@ -528,8 +568,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if axis not in AXIS:
             raise ValueError("axis is x, y or z")
         distance = float(distance)
-        if not 0 < abs(distance) <= MOVE_MAX:
-            raise ValueError("a move is up to %d mm" % MOVE_MAX)
+        if not distance or distance != distance:
+            raise ValueError("no distance given")
+        distance = max(-MOVE_MAX, min(MOVE_MAX, distance))   # one move is never longer than MOVE_MAX
         self._allowed("move", "moving")
         reply = self._printer().move_axis(AXIS[axis], 1 if distance > 0 else 0, abs(distance))
         if reply and reply.get("state") == "failed":
@@ -549,11 +590,27 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._allowed("move", "turning the motors off")
         return self._sent(self._printer().disable_steppers())
 
+    def _running_objects(self):
+        """(view, object names of the running file), asked of the printer now (file/fileDetails, read-only)."""
+        data = self._data()
+        if data["state"] not in ("printing", "paused") or not data["filename"]:
+            raise kobra.KobraError("no print is running")
+        raw = self._printer().file_details(data["filename"]).get("objects_skip_parts")
+        names = [str(o.get("name") if isinstance(o, dict) else o) for o in raw if o not in (None, "")] \
+            if isinstance(raw, list) else []
+        return data, [n for n in names if n and n != "None"]
+
+    def cmd_objects(self):
+        data, names = self._running_objects()
+        return {"filename": data["filename"], "objects": names, "skipped": list(data["skipped_objects"])}
+
     def cmd_skip_objects(self, names):
         if not isinstance(names, list) or not names or not all(isinstance(n, str) and n for n in names):
             raise ValueError("no objects chosen")
-        if self._data()["state"] not in ("printing", "paused"):
-            raise kobra.KobraError("objects are skipped during a print")
+        data, objects = self._running_objects()
+        unknown = [n for n in names if n not in objects]
+        if unknown:
+            raise ValueError("not in %s: %s; nothing was skipped" % (data["filename"], ", ".join(unknown)))
         return self._answer(self._printer().skip_objects(names), "the skip")
 
     # slots and ACE -----------------------------------------------------------------------------------
@@ -585,9 +642,6 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         found = self._slot(data, slot)
         if kind == 1 and found["status"] != 5:
             raise kobra.KobraError("slot %d is empty" % (slot + 1))
-        conn = self._conn()
-        with self.lock:
-            self._feed_acks.setdefault(conn.host, {})[found["box_id"]] = {"slot": found["index"]}
         return self._sent(self._printer().feed_filament(found["box_id"], found["index"], kind))
 
     def cmd_slot_feed(self, slot):
@@ -619,6 +673,10 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return self._sent(self._printer().set_dry(self._aces(data, aces), {"status": 0}))
 
     # files (files.FilesMixin: cmd_files, cmd_file_details, cmd_file_print, cmd_file_delete) ----------------
+
+    def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False):
+        with self._conn().start_lock:   # the idle check and print/start of one job at a time (agent jobs too)
+            return super().cmd_file_print(name, auto_leveling, vibration_compensation)
 
     def _view(self):
         """status.data of the printer this thread works for (FilesMixin reads its slots and mode)."""
@@ -653,11 +711,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return {**out, "available": reason is None, "reason": reason}
 
     def cmd_find_certificate(self, path=None):
-        where = [str(path)] if path else certs.default_locations()
-        found = certs.find(where)
-        if not self.cert_dir:
-            raise certs.CertError("no storage folder to keep the certificate in")
-        certs.save(self.cert_dir, found.cert_pem, found.key_pem)
+        found = find_and_save_certificate(self.cert_dir, path)
         for conn in list(self.connections.values()):
             conn.retry()
         return {"found": True, "source": found.source}

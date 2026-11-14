@@ -16,15 +16,20 @@ must pass a folder whose components avoid the words above.
 Key file handling: `save` makes the folder 0700 and each file 0600 (fchmod before any byte is
 written, O_NOFOLLOW where available, so a symlink planted at the key path is refused). On Windows
 these modes have no effect; the files are then protected only by the user profile's ACLs. `find`
-writes candidate PEMs to a private 0700 temp dir that is removed even when matching fails.
+writes candidate PEMs to a private 0700 folder that is removed even when matching fails: with
+`workdir` (inside OrcaSlicer: the plugin's storage folder) a `match-<8 hex>` sub-folder made with
+os.mkdir and removed with os.remove/os.rmdir, because OrcaSlicer denies every tempfile.* creator off
+the main thread; without it (scripts/probe.py) a tempfile.TemporaryDirectory.
 `find` is bounded: at most MAX_FILES files examined, MAX_DEPTH folder levels, files up to MAX_SIZE
 read in CHUNK pieces (OVERLAP bytes shared between pieces so a PEM block on a boundary is still
 seen), symlinked folders never followed.
 """
 
 import base64
+import contextlib
 import os
 import re
+import secrets
 import ssl
 import sys
 import tempfile
@@ -136,9 +141,26 @@ def _client_context():
     return ctx
 
 
-def _match(cert_pems, key_pems):
+@contextlib.contextmanager
+def _private_dir(workdir):
+    """A fresh 0700 folder for the candidates, removed afterwards with the files written in it."""
+    if workdir is None:
+        with tempfile.TemporaryDirectory(prefix="kobracontrol-") as tmp:
+            yield tmp
+        return
+    tmp = os.path.join(workdir, "match-" + secrets.token_hex(4))  # never a denied component name
+    os.mkdir(tmp, 0o700)
+    try:
+        yield tmp
+    finally:
+        for name in os.listdir(tmp):
+            os.remove(os.path.join(tmp, name))
+        os.rmdir(tmp)
+
+
+def _match(cert_pems, key_pems, workdir=None):
     """First (cert, key) pair OpenSSL accepts together; load_cert_chain raises on a mismatch."""
-    with tempfile.TemporaryDirectory(prefix="kobracontrol-") as tmp:
+    with _private_dir(workdir) as tmp:
         written = []
         for i, pem in enumerate(cert_pems + key_pems):
             path = os.path.join(tmp, "%d.pem" % i)
@@ -156,8 +178,9 @@ def _match(cert_pems, key_pems):
     return None
 
 
-def find(paths):
-    """Scan files/folders for the AnycubicSlicer certificate and its private key -> Found."""
+def find(paths, workdir=None):
+    """Scan files/folders for the AnycubicSlicer certificate and its private key -> Found.
+    workdir: an existing folder the candidates may be written to for matching (see the module doc)."""
     paths = list(paths)
     cert_found, key_found, scanned = _scan(paths)
     if not scanned:
@@ -166,10 +189,21 @@ def find(paths):
     candidates = [pem for pem in cert_found if _is_anycubic(pem)]
     if not candidates:
         raise CertError("no AnycubicSlicer client certificate found (%s in %d files)" % (counts, scanned))
-    pair = _match(candidates, list(key_found))
+    pair = _match(candidates, list(key_found), workdir)
     if not pair:
         raise CertError("AnycubicSlicer certificate found but no matching private key (%s)" % counts)
     return Found(pair[0], pair[1], cert_found[pair[0]], key_found[pair[1]])
+
+
+def grant_targets():
+    """default_locations() as OrcaSlicer tree grants: realpath + "/*", plus the given form when it differs."""
+    out = []
+    for folder in default_locations():
+        for form in (os.path.realpath(folder), folder):
+            target = form.rstrip("/\\") + "/*"
+            if target not in out:
+                out.append(target)
+    return out
 
 
 def paths(folder):

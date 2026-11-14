@@ -163,6 +163,9 @@ class Client:
             if isinstance(e, OSError):
                 raise MqttError("MQTT handshake with %s:%s failed (%s)" % (self.host, self.port, e)) from None
             raise
+        # Short read timeout from now on: the reader holds the I/O lock across recv, and a TLS record that
+        # stalls half-way would otherwise block every publish for the full timeout (KX-Bridge uses 0.2 s).
+        sock.settimeout(POLL)
         self._last_in = self._last_out = time.monotonic()
         self._open = True
         self._thread = threading.Thread(target=self._run, name="kobracontrol-mqtt", daemon=True)
@@ -245,7 +248,11 @@ class Client:
             raise MqttError("not connected")
         try:
             with self._io:
-                self._sock.sendall(data)
+                self._sock.settimeout(self.timeout)  # writes may take the full timeout; reads may not
+                try:
+                    self._sock.sendall(data)
+                finally:
+                    self._sock.settimeout(POLL)
                 self._last_out = time.monotonic()
         except OSError as e:
             # A failed write means a dead session: report it now instead of waiting for the reader.

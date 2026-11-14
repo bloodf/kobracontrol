@@ -8,14 +8,17 @@ Kobralink's pollLoop does. Nothing else is ever sent on its own: every other com
 When the session drops it reconnects with a growing delay, recovering the credentials again each time.
 """
 
+import os
 import threading
 import time
+import urllib.parse
 
 import certs
 import kobra
 
 POLL_EVERY = 5.0                # s between read-only polls while connected
 RETRY_FIRST, RETRY_MAX = 2.0, 60.0
+STABLE_AFTER = 30.0             # s a session must stay up before the retry delay starts again from RETRY_FIRST
 CONNECT_QUERIES = (("info", "query"), ("print", "query"), ("multiColorBox", "getInfo"))
 
 
@@ -38,11 +41,12 @@ def tls_from(cert_dir):
 
 
 def _explain(host, error):
-    text = str(error)
-    if "ermission" in text or "denied" in text.lower():
-        return ("OrcaSlicer has not allowed kobracontrol to reach %s yet: allow it in OrcaSlicer's permission "
-                "prompt, then retry (%s)" % (host, text))
-    return text
+    """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do."""
+    if getattr(error, "code", None) == "denied" or isinstance(error, PermissionError):
+        return ("OrcaSlicer has not let kobracontrol reach %s yet. Allow kobracontrol to reach %s in the dialog "
+                "OrcaSlicer just showed, then press Retry. If no dialog appeared, restart OrcaSlicer once so the "
+                "saved address is granted when the plugin loads." % (host, host))
+    return str(error)
 
 
 class Connection:
@@ -56,15 +60,19 @@ class Connection:
         self.firmware_name = ""
         self._listeners = []
         self._lock = threading.Lock()
-        self._wake = threading.Event()
+        self._wake = threading.Event()      # ends the poll wait: a drop, a retry or stop
+        self._retry = threading.Event()     # ends a backoff wait: only a retry (the user's) or stop
+        self._opened_at = None
+        self.start_lock = threading.Lock()  # "check idle + print/start" runs for one job at a time
         self._stop = threading.Event()
         self._connected = threading.Event()
         self._thread = None
 
     # -- lifecycle -------------------------------------------------------------------------------------
     def start(self):
+        """Start the loop thread, or start it again if it ever ended (it should not: see _loop)."""
         with self._lock:
-            if self._thread is None and not self._stop.is_set():
+            if (self._thread is None or not self._thread.is_alive()) and not self._stop.is_set():
                 self._thread = threading.Thread(target=self._loop, name="kobracontrol-link", daemon=True)
                 self._thread.start()
         return self
@@ -72,6 +80,7 @@ class Connection:
     def stop(self):
         self._stop.set()
         self._wake.set()
+        self._retry.set()
         printer = self.printer
         if printer:
             printer.close()
@@ -81,6 +90,8 @@ class Connection:
 
     def retry(self):
         """Try again now (the user pressed Retry, or a certificate was just saved)."""
+        self.start()
+        self._retry.set()
         self._wake.set()
 
     def wait_connected(self, timeout):
@@ -115,20 +126,38 @@ class Connection:
 
     # -- loop --------------------------------------------------------------------------------------
     def _loop(self):
-        delay = RETRY_FIRST
+        delay = [RETRY_FIRST]
         while not self._stop.is_set():
-            if not self.connected:
-                if self._open():
-                    delay = RETRY_FIRST
-                else:
-                    self._wake.wait(delay)
-                    self._wake.clear()
-                    delay = min(delay * 2, RETRY_MAX)
-                    continue
-            self._wake.wait(POLL_EVERY)
-            self._wake.clear()
-            if not self._stop.is_set() and self.connected:
-                self._poll()
+            try:
+                self._step(delay)
+            except Exception as e:   # never let the loop die: pause and stop must stay reachable
+                self.log("kobracontrol: %s: connection loop error %s: %s" % (self.host, type(e).__name__, e))
+                self._backoff(delay)
+
+    def _backoff(self, delay):
+        """Wait delay[0] (cut short only by retry() or stop()), then double it up to RETRY_MAX."""
+        self._retry.wait(delay[0])
+        self._retry.clear()
+        delay[0] = min(delay[0] * 2, RETRY_MAX)
+
+    def _step(self, delay):
+        """One turn: reconnect with backoff when not connected, else wait and poll."""
+        if not self.connected:
+            if self._opened_at is not None:   # a session just ended: never reconnect at once
+                stable = time.monotonic() - self._opened_at >= STABLE_AFTER
+                self._opened_at = None
+                if stable:
+                    delay[0] = RETRY_FIRST
+                self._backoff(delay)
+                if self._stop.is_set():
+                    return
+            if not self._open():
+                self._backoff(delay)
+            return
+        self._wake.wait(POLL_EVERY)
+        self._wake.clear()
+        if not self._stop.is_set() and self.connected:
+            self._poll()
 
     def _open(self):
         old, self.printer, printer = self.printer, None, None
@@ -146,7 +175,14 @@ class Connection:
             self._fail(_explain(self.host, e), getattr(e, "no_certificate", False))
             return False
         except OSError as e:   # e.g. the plugin sandbox refusing a socket before kobra wraps it
+            if printer:
+                printer.close()
             self._fail(_explain(self.host, e), False)
+            return False
+        except Exception as e:   # anything else a hostile or broken answer can raise (RecursionError, ...)
+            if printer:
+                printer.close()
+            self._fail("unexpected answer from the printer (%s: %s)" % (type(e).__name__, e), False)
             return False
         if self._stop.is_set():
             printer.close()
@@ -157,6 +193,7 @@ class Connection:
             self._fail("the printer closed the connection right after it opened", False)
             return False
         self.state.connected = True
+        self._opened_at = time.monotonic()
         self.error, self.no_certificate = "", False
         self._connected.set()
         self.log("kobracontrol: connected to %s" % self.host)
@@ -209,3 +246,50 @@ def wait_until(predicate, timeout, step=0.05):
         if value or time.monotonic() >= deadline:
             return value
         time.sleep(step)
+
+
+def camera_url_for(view, host, log=None, logged=None):
+    """The printer's stream URL only when its host is the printer itself, else "". The URL comes from the
+    printer and goes to ffmpeg (or to OrcaSlicer's viewer), so a stream elsewhere is never opened."""
+    url = (view.get("camera_url") or "") if view and view.get("connected") else ""
+    try:
+        same = bool(url) and (urllib.parse.urlsplit(url).hostname or "").lower() == str(host).lower()
+    except ValueError:
+        same = False
+    if url and not same:
+        if log and (logged is None or url not in logged):   # `logged`: the caller's set, one line per URL
+            if logged is not None:
+                logged.add(url)
+            log("kobracontrol: camera stream %s is not on the printer (%s); not opened" % (url, host))
+        return ""
+    return url
+
+
+DENIED_PATH = ("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
+               "Permissions), then press Find certificate again.")
+
+
+def find_and_save_certificate(cert_dir, path=None):
+    """Find the Anycubic Slicer client certificate (in `path`, else the default install folders, which the plugin
+    holds tree grants for) and save it in cert_dir. Key matching writes its candidates under cert_dir (the plugin
+    storage folder), never through tempfile, which OrcaSlicer denies off the main thread."""
+    if not cert_dir:
+        raise certs.CertError("no storage folder to keep the certificate in")
+    if path:
+        real = os.path.realpath(str(path))
+        if not os.path.exists(real):
+            raise ValueError("%s does not exist" % path)
+        try:   # a read OrcaSlicer denies off the main thread must say so, not "nothing found"
+            if os.path.isdir(real):
+                os.listdir(real)
+            else:
+                open(real, "rb").close()
+        except PermissionError:
+            raise certs.CertError(DENIED_PATH % path) from None
+        where = [real]
+    else:
+        where = certs.default_locations()
+    os.makedirs(cert_dir, 0o700, exist_ok=True)
+    found = certs.find(where, workdir=cert_dir)
+    certs.save(cert_dir, found.cert_pem, found.key_pem)
+    return found

@@ -46,9 +46,7 @@ import secrets
 import string
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from dataclasses import dataclass
 
@@ -96,9 +94,18 @@ class Credentials:
 
 
 # credentials ----------------------------------------------------------------------------------
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None  # the printer must not send us elsewhere: the 3xx surfaces as an HTTPError
+# HTTP goes through http.client, never urllib.request. OrcaSlicer's plugin audit (PluginAuditManager.cpp,
+# v2.5.0) matches `urllib.Request` against the full URL, and /ctrl carries a fresh ts/nonce/sign query
+# every time, so no grant could ever cover it. http.client raises `http.client.connect` (target: the
+# host) and then `socket.getaddrinfo`/`socket.connect` (target: the address), all network events matched
+# by host whatever the port, so one grant of the printer's IP covers /info, /ctrl, the upload and MQTT.
+# A denied event raises PermissionError from the audit hook. http.client has no proxy and never follows
+# redirects: a 3xx is just a non-200 answer.
+def _network_error(e, host, what):
+    if isinstance(e, PermissionError):
+        return KobraError("OrcaSlicer denied network access to %s (grant it in the plugin's permissions)" % host,
+                          code="denied")
+    return KobraError("printer not reachable at %s for %s (%s)" % (host, what, e), code="unreachable")
 
 
 def _read_capped(resp, what):
@@ -116,19 +123,18 @@ def _loads(body):
         return None
 
 
-def _http_json(url, timeout, what, post=False):
-    # LAN only: never via a proxy, never following a redirect.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
-    req = urllib.request.Request(url, data=b"" if post else None, method="POST" if post else "GET")
+def _http_json(ip, port, path, timeout, what, post=False):
+    conn = http.client.HTTPConnection(ip, port, timeout=timeout)
     try:
-        with opener.open(req, timeout=timeout) as resp:
-            body = _read_capped(resp, what)
-    except urllib.error.HTTPError as e:
-        e.close()
-        raise KobraError("%s answered HTTP %d" % (what, e.code)) from None
-    except (urllib.error.URLError, OSError) as e:
-        host = urllib.parse.urlsplit(url).netloc
-        raise KobraError("printer not reachable at %s (%s)" % (host, getattr(e, "reason", e))) from None
+        conn.request("POST" if post else "GET", path, body=b"" if post else None, headers={"Connection": "close"})
+        resp = conn.getresponse()
+        if resp.status != 200:
+            raise KobraError("%s answered HTTP %d" % (what, resp.status))
+        body = _read_capped(resp, what)
+    except (OSError, http.client.HTTPException) as e:
+        raise _network_error(e, "%s:%d" % (ip, port), what) from None
+    finally:
+        conn.close()
     result = _loads(body)
     if result is None:
         raise KobraError("bad answer from %s (not JSON)" % what)
@@ -136,8 +142,7 @@ def _http_json(url, timeout, what, post=False):
 
 
 def fetch_credentials(ip, port=18910, timeout=10):
-    base = "http://%s:%d" % (ip, port)
-    info = _http_json(base + "/info", timeout, "/info")
+    info = _http_json(ip, port, "/info", timeout, "/info")
     token = info.get("token") if isinstance(info, dict) else None
     if not isinstance(token, str) or len(token) < 32:
         raise KobraError("/info gave no token: is LAN mode enabled on the printer?")
@@ -145,7 +150,7 @@ def fetch_credentials(ip, port=18910, timeout=10):
     nonce = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(6))
     sign = _md5(_md5(token[:16]) + ts + nonce)
     query = urllib.parse.urlencode({"ts": ts, "nonce": nonce, "sign": sign, "did": "random"})
-    ctrl = _http_json(base + "/ctrl?" + query, timeout, "/ctrl", post=True)
+    ctrl = _http_json(ip, port, "/ctrl?" + query, timeout, "/ctrl", post=True)
     data = ctrl.get("data") if isinstance(ctrl, dict) else None
     if not (isinstance(data, dict) and isinstance(data.get("info"), str) and isinstance(data.get("token"), str)):
         raise KobraError("unexpected /ctrl answer from the printer")
@@ -377,6 +382,7 @@ class Printer:
         return self.publish_web("print", "update", {"taskid": taskid, "settings": {"print_speed_mode": mode}})
 
     def set_idle_temperature(self, nozzle=None, bed=None):
+        """True when published; False when nothing to set or not connected."""
         if nozzle is None and bed is None:
             return False
         kind = 2 if nozzle is not None and bed is not None else (0 if nozzle is not None else 1)
@@ -384,9 +390,10 @@ class Printer:
                                                      "target_hotbed_temp": _round(bed or 0)})
 
     def set_printing_temperature(self, taskid, nozzle=None, bed=None):
-        for key, value in (("target_nozzle_temp", nozzle), ("target_hotbed_temp", bed)):
-            if value is not None:
-                self.publish_web("print", "update", {"taskid": taskid, "settings": {key: _round(value)}})
+        """True when every requested target was published."""
+        sent = [self.publish_web("print", "update", {"taskid": taskid, "settings": {key: _round(value)}})
+                for key, value in (("target_nozzle_temp", nozzle), ("target_hotbed_temp", bed)) if value is not None]
+        return bool(sent) and all(sent)
 
     def move_axis(self, axis, move_type, distance=0):
         timeout = 30 if move_type == 2 else 5
@@ -468,31 +475,45 @@ class Printer:
         return reply
 
     # upload ------------------------------------------------------------------------------------------
-    def upload(self, filename, source_path, upload_url, progress=None, cancelled=None):
-        """Stream source_path to the printer as `filename`; returns the printer's JSON answer."""
+    def upload(self, filename, source, upload_url, size=None, progress=None, cancelled=None):
+        """Stream `source` to the printer as `filename`; returns the printer's JSON answer.
+
+        source: a path (size from the file) or a readable binary file object such as a zipfile member
+        (then `size` is required). Only the ?s= token is taken from upload_url; the POST goes to creds.ip.
+        progress(sent, total) after each chunk; cancelled() is checked before each chunk (-> Cancelled).
+        A source that ends before `size` bytes raises KobraError: nothing truncated is ever completed."""
         if not filename or any(ch in filename for ch in '"\r\n'):
             raise KobraError("unsupported file name for the printer")
         idx = upload_url.find("?s=")
         if idx < 0:
             raise KobraError("the printer's upload URL has no session token")
-        total = os.path.getsize(source_path)
+        if isinstance(source, (str, os.PathLike)):
+            with open(source, "rb") as f:
+                return self._upload(filename, f, os.path.getsize(source), upload_url[idx + 3:], progress, cancelled)
+        if size is None:
+            raise KobraError("upload from a file object needs its size")
+        return self._upload(filename, source, int(size), upload_url[idx + 3:], progress, cancelled)
+
+    def _upload(self, filename, source, total, token, progress, cancelled):
         head = ("--{b}\r\nContent-Disposition: form-data; name=\"filename\"\r\n\r\n{f}\r\n--{b}\r\n"
                 "Content-Disposition: form-data; name=\"gcode\"; filename=\"{f}\"\r\n"
                 "Content-Type: application/octet-stream\r\n\r\n").format(b=BOUNDARY, f=filename).encode()
         tail = ("\r\n--%s--\r\n" % BOUNDARY).encode()
         conn = http.client.HTTPConnection(self.creds.ip, self.http_port, timeout=30)
         try:
-            conn.putrequest("POST", "/gcode_upload?s=" + upload_url[idx + 3:], skip_host=True, skip_accept_encoding=True)
+            conn.putrequest("POST", "/gcode_upload?s=" + token, skip_host=True, skip_accept_encoding=True)
             for key, value in self._upload_headers(total, len(head) + total + len(tail)):
                 conn.putheader(key, value)
             conn.endheaders()
             conn.send(head)
-            self._stream(conn, source_path, total, progress, cancelled)
+            self._stream(conn, source, total, progress, cancelled)
             conn.send(tail)
             conn.sock.settimeout(180)  # the printer answers after writing the file to its storage
             resp = conn.getresponse()
             status, body = resp.status, _read_capped(resp, "the upload")
-        except OSError as e:
+        except PermissionError as e:
+            raise _network_error(e, self.creds.ip, "the upload") from None
+        except (OSError, http.client.HTTPException) as e:
             raise KobraError("upload to the printer failed (%s)" % e) from None
         finally:
             conn.close()
@@ -512,19 +533,20 @@ class Printer:
                 ("Content-Length", str(body_size)), ("Connection", "close")]
 
     @staticmethod
-    def _stream(conn, path, total, progress, cancelled):
+    def _stream(conn, source, total, progress, cancelled):
         sent = 0
-        with open(path, "rb") as f:
-            while True:
-                if cancelled and cancelled():
-                    raise Cancelled("upload cancelled")
-                chunk = f.read(UPLOAD_CHUNK)
-                if not chunk:
-                    return
-                conn.send(chunk)
-                sent += len(chunk)
-                if progress:
-                    progress(sent, total)
+        while sent < total:
+            if cancelled and cancelled():
+                raise Cancelled("upload cancelled")
+            chunk = source.read(min(UPLOAD_CHUNK, total - sent))
+            if not chunk:  # closing the connection short of Content-Length makes the printer drop it
+                raise KobraError("the file ended early (%d of %d bytes)" % (sent, total))
+            conn.send(chunk)
+            sent += len(chunk)
+            if progress:
+                progress(sent, total)
+        if cancelled and cancelled():  # last chance: the printer keeps nothing until the closing boundary
+            raise Cancelled("upload cancelled")
 
 
 def print_file_payload(filename, size, mapping, task=None):
@@ -629,9 +651,26 @@ class State:
             if payload.get("state") == "failed":
                 self._v["last_error"] = {"report": suffix, "action": _str(payload.get("action")),
                                          "code": payload.get("code"), "msg": _str(payload.get("msg"))}
+            before = self._job_key()
             if handler:
                 handler(self, payload, _dict(payload.get("data")))
+            self._clear_skips_on_new_print(before)
             self._v["updated_at"] = time.time()
+
+    def _job_key(self):
+        return normalise(self._v["kobra_state"]), self._v["filename"], self._v["task_id"]
+
+    def _clear_skips_on_new_print(self, before):
+        """Kobralink clears skipped objects at print start: a print starts when the state enters printing
+        from a non-print state, or when the job's filename or task id changes to a new value. "busy" (the
+        device-level state info/report may carry mid-print) counts as in-print, so it never clears."""
+        (was, old_file, old_task), (now, new_file, new_task) = before, self._job_key()
+        active = ("printing", "paused", "busy")
+        if now != "printing":
+            return
+        if (was not in active or (new_file and old_file and new_file != old_file)
+                or (new_task and old_task and new_task != old_task)):
+            self._v["skipped_objects"] = []
 
     def _print_fields(self, d, kobra_state):
         v = self._v
