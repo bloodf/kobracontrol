@@ -5,11 +5,9 @@ import os
 import shutil
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol")]

@@ -5,7 +5,6 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
-import ace  # noqa: E402
 import files  # noqa: E402
 import kobra  # noqa: E402
 from fake_kobra import FakeKobra  # noqa: E402
