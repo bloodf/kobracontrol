@@ -1,0 +1,23 @@
+{
+  "version": "3.0.0",
+  "dependencies": {
+    "@primeuix/themes": "3.1.1",
+    "primevue": "5.0.5",
+    "vue": "3.5.45"
+  },
+  "files": {
+    "src/index.ts": "907ac754977e56f1380384aeaa24579ac5363cff45831fae30da389d8fcaf26e",
+    "src/license.ts": "f2c83aeec15ac664d478bf5258bc1864ccf2dfe6d2bd4ab826596b118b630f89",
+    "src/theme.ts": "f2ea703571cdc2c9b17a9636fed16a0699286ef1a0f25b58d1b1a73f5b111a3e",
+    "src/palette.json": "c34122d2cec296af74a0db5171a0ec3d0ee2e37b78bbe2a9e76df1e47501c677",
+    "src/base.css": "2d1345d738eab74e402c8a94e1156890ea0afecb7c0c05cd4a4ab3325143e05b",
+    "package.json": "16ba5e8ad7783578faf81d323ef0facaa95ab45000f4734ac911c8dc64a9326e",
+    "package-lock.json": "b7a1f99178d6664879414c71ec0dabb9a5feab04ad02b4b747adbc6d99299857",
+    "scripts/check.mjs": "0e0ca8dcdd0b745629dac631a18fed704f4744712ca6d9281332a11d8b4f58b6",
+    "README.md": "6ed75c62bb82d07497007d86f7e8c1c99d1cdad70e22772c55dc1562171c18d5",
+    "DESIGN.md": "d089e150c4c738797619ff59db7fae49af99d8da3f0400a0142d68623b6324a1",
+    "licenses/PrimeVue.txt": "0aa69c559104023e51ce6244bb9f4f605b6dad819af8fb1b317d8d853db98761",
+    "licenses/PrimeUIX.txt": "3598e4f3d2a09c5c34024119c4be888d5de7ff92b58c4abdabc86b0443236244",
+    "licenses/Vue.txt": "1bb85cc9b13b81ef41c81c51866172fc345e0503c86726a6755b796590b70175"
+  }
+}
