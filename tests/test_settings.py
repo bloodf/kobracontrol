@@ -15,15 +15,15 @@ class StoreTests(unittest.TestCase):
         s = settings.Store().effective()
         self.assertEqual(s, settings.DEFAULTS)
         self.assertEqual(s["printer_name"], "Anycubic Kobra X")
-        self.assertTrue(s["camera_enabled"])
+        self.assertFalse(s["camera_enabled"])   # the camera stays off until the user turns it on
         self.assertEqual(s["ui_language"], "auto")
 
     def test_update_validates_and_ignores_unknown(self):
         st = settings.Store()
-        out = st.update({"host": "192.168.1.9", "camera_enabled": False, "auto_leveling": "yes", "nope": 1,
+        out = st.update({"host": "192.168.1.9", "camera_enabled": True, "auto_leveling": "yes", "nope": 1,
                          "ui_language": "klingon", "printer_name": "  Bob   X  "})
         self.assertEqual(out["host"], "192.168.1.9")
-        self.assertFalse(out["camera_enabled"])
+        self.assertTrue(out["camera_enabled"])
         self.assertTrue(out["auto_leveling"])              # wrong type ignored
         self.assertNotIn("nope", out)
         self.assertEqual(out["ui_language"], "auto")       # not in UI_LANGUAGES

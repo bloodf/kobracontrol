@@ -12,7 +12,7 @@ DEFAULTS = {
     "printer_name": DEFAULT_PRINTER_NAME,  # also the Spoolman location prefix of the slot bindings
     "ui_language": "auto",
     "ffmpeg_path": "",                   # "" = look ffmpeg up on PATH
-    "camera_enabled": True,
+    "camera_enabled": False,
     "auto_leveling": True,               # print options default
     "vibration_compensation": True,
     "spoolman_url": "",
