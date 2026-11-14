@@ -41,6 +41,8 @@ ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {s
   rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
   same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}});
+ans('usage', {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
+  acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
 if (SCN === 'settings' || SCN === 'files') { document.querySelector('[data-tab="' + SCN + '"]').click(); await sleep(300); }
 if (SCN === 'files') {
@@ -58,7 +60,7 @@ const SCENES = [
   ['dash', 'light', 'pt_BR', 720, 2800], ['dash', 'dark', 'en', 400, 3400],
   ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1280, 720], ['settings', 'light', 'en', 1280, 1500], ['settings', 'dark', 'en', 1280, 720],
   ['nocert', 'light', 'en', 1280, 720], ['nocert', 'dark', 'en', 1280, 720], ['nocert', 'light', 'pt_BR', 720, 720], ['notarget', 'dark', 'en', 1280, 720],
-  ['camera', 'light', 'en', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
+  ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'en', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ];
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));
 const browser = await launch();

@@ -4,7 +4,7 @@ import { Tracker, message, type RunOptions } from '../core/tracker';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { boundSlots } from '../core/logic';
-import type { Certificate, Config, Info, Limits, Spool, Status, StockView } from './types';
+import type { Certificate, Config, Info, Limits, Spool, Status, StockView, UsageView } from './types';
 
 export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 'unreachable';
 export const LIMITS: Limits = { nozzle_max: 300, bed_max: 100 };
@@ -34,6 +34,8 @@ export const s = reactive({
   stock: null as StockView | null,
   stockError: '',
   stockLoading: false,
+  usage: null as UsageView | null,
+  usageError: '',
 });
 
 export const tracker = new Tracker(
@@ -64,7 +66,7 @@ export const bindings = computed(() => boundSlots(
 function reset(): void {
   s.epoch++;
   Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
-    frame: '', camError: '', camReason: '' });
+    frame: '', camError: '', camReason: '', usageError: '' });
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
@@ -88,7 +90,7 @@ export async function hello(): Promise<void> {
     s.error = message(e);
   } finally {
     helloInFlight = false;
-    if (epoch === s.epoch) void loadStock(false);
+    if (epoch === s.epoch) { void loadStock(false); void loadUsage(); }
   }
 }
 
@@ -118,6 +120,16 @@ export async function loadStock(refresh: boolean): Promise<void> {
     if (mine === stockSeq && epoch === s.epoch) s.stockError = message(e);
   } finally {
     if (mine === stockSeq) s.stockLoading = false;
+  }
+}
+
+export async function loadUsage(): Promise<void> {
+  const epoch = s.epoch;
+  try {
+    const r: UsageView = await bridge.command('usage', {}, s.info?.generation);
+    if (epoch === s.epoch) { s.usage = r; s.usageError = ''; }
+  } catch (e) {
+    if (epoch === s.epoch) s.usageError = message(e);
   }
 }
 
@@ -156,6 +168,7 @@ export function start(): () => void {
     window.setInterval(lease, 2000),
     window.setInterval(() => { s.now = Date.now(); }, 1000),
     window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadStock(false); }, 5000),
+    window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadUsage(); }, 10000),
   ];
   void hello();
   return () => { off(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };

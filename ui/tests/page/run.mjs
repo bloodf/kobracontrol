@@ -61,6 +61,8 @@ const STOCK = extra => ({spooler: {state: 'active', text: 'Spooler is running', 
   stock: {state: 'ok', code: 'ok', text: '', rows: ROWS, key: 's1:3', ts: Date.now() / 1000}, same_spoolman: true, usage: 'kobracontrol', bindings: {},
   available: true, reason: null, ...extra});
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const ENTRY = {id: 'abc', at: null, spool: 7, grams: 12.5, slot: 4, file: 'gcodes/benchy.gcode', error: 'Spoolman timeout', job: 'j1', printer: '192.168.1.50', printer_name: 'Bench Kobra', spoolman: 'http://box:7912'};
+const USAGE = extra => ({pending: [], unconfirmed: [], acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: '', ...extra});
 `;
 
 const scenarios = [];
@@ -430,6 +432,80 @@ test('stock card shows only for a usable list; the lease flag follows; Settings 
   await tab('settings');
   assert(text(byTest('spooler-no-stock')).includes('needs a Spooler version that supports Kobra Control'), 'Settings says why: ' + text(q('.sv')));
 `);
+
+// ------------------------------------------------------------------ filament use
+test('filament use: nothing pending shows no card, and the page asked for it', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'), 'usage asked');
+  eq(last('cmd', 'usage').args, {}, 'no arguments');
+  await reply(last('cmd', 'usage'), USAGE());
+  assert(!byTest('usage-card'), 'no empty card');
+  await post({type: 'status', data: VIEW()});
+  assert(!byTest('usage-card'), 'still none');
+`);
+
+test('filament use: a pending booking is shown with its slots and grams, and goes when it is booked', `
+  await ready(PRINTING());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5, '4': 3}}]}));
+  const card = byTest('usage-card');
+  assert(card, 'card shown for a pending booking');
+  const t = text(card);
+  for (const s of ['1 print is waiting to be booked', 'benchy.gcode', 'ACE 1 · Slot 1: 12.5 g', 'ACE 1 · Slot 2: 3.0 g']) assert(t.includes(s), 'shows ' + s + ': ' + t);
+  assert(!q('[data-ack]'), 'nothing to acknowledge yet');
+  assert(!card.classList.contains('warn'), 'not a warning');
+`);
+
+test('filament use: a failed booking lists its identity and reason; marking it checked is local and asks first', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY], restore_notice: '2 unreadable unconfirmed entries were skipped'}));
+  const card = byTest('usage-card');
+  assert(card, 'card shown');
+  const t = text(card);
+  for (const s of ['1 unconfirmed use', 'benchy.gcode', 'Bench Kobra', 'ACE 1 · Slot 2', '12.5', '#7', 'time unknown', 'Spoolman timeout', 'never sends them again', 'unreadable'])
+    assert(t.includes(s), 'shows ' + s + ': ' + t);
+  const before = sent().length;
+  await click(btn('Mark the use on ACE 1 · Slot 2 of benchy.gcode as checked'));
+  assert(dialogText().includes('nothing is sent to Spoolman'), 'says nothing is booked: ' + dialogText());
+  await no();
+  eq(cmds('usage_ack'), [], 'cancel changes nothing');
+  await click(btn('Mark the use on ACE 1 · Slot 2 of benchy.gcode as checked'));
+  await yes();
+  eq(cmds('usage_ack').map(m => m.args), [{id: 'abc'}], 'only the local acknowledgement');
+  assert(!sent().slice(before).some(m => m.type === 'cmd' && !['usage_ack', 'usage', 'stock', 'spools'].includes(m.cmd)), 'no booking command');
+  await reply(last('cmd', 'usage_ack'), USAGE({acknowledged: [{...ENTRY, acknowledged_at: 1794300000}], acknowledged_total: 1}));
+  assert(!byTest('usage-card'), 'nothing left to show once checked: no empty card');
+`);
+
+test('filament use: a failed acknowledgement keeps the entry and says why', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [{...ENTRY, spool: null, at: 1794300000}]}));
+  assert(text(byTest('usage-card')).includes('none linked'), 'unlinked spool said, not hidden');
+  await click(btn('Mark the use on ACE 1 · Slot 2 of benchy.gcode as checked')); await yes();
+  await fail(last('cmd', 'usage_ack'), "can't save the print ledger (disk full)");
+  assert(alerts().includes('disk full') && text(byTest('usage-card')).includes('benchy.gcode'), 'entry kept, error shown: ' + alerts());
+`);
+
+test('filament use: the error path of usage is shown with the reason; a ledger that cannot be saved too', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await fail(last('cmd', 'usage'), 'ledger unreadable');
+  assert(byTest('usage-card') && text(byTest('usage-card')).includes('Couldn’t read the filament-use ledger: ledger unreadable'), 'load error shown: ' + text(q('.kc-main')));
+  const n = cmds('usage').length;
+  await until(() => cmds('usage').length > n, 'asked again later', 20000);   // every 10 s while the Dashboard is on screen
+  await reply(last('cmd', 'usage'), USAGE({save_error: 'disk full'}));
+  assert(text(byTest('usage-card')).includes('The ledger can’t be saved: disk full') && !text(byTest('usage-card')).includes('Couldn’t read'), 'recovers, and shows the save error');
+`);
+
+test('filament use: pt-BR', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
+  const t = text(byTest('usage-card'));
+  assert(t.includes('Consumo de filamento no Spoolman') && t.includes('1 consumo não confirmado') && t.includes('Já conferi no Spoolman'), 'Portuguese: ' + t);
+`, { lang: 'pt-BR' });
 
 // ------------------------------------------------------------------ camera
 test('camera: off by default and compact; frames are acknowledged; leases follow it', `

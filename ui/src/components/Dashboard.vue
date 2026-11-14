@@ -6,6 +6,7 @@ import AceCard from './AceCard.vue';
 import SpoolmanCard from './SpoolmanCard.vue';
 import StockCard from './StockCard.vue';
 import SpoolerHint from './SpoolerHint.vue';
+import UsageCard from './UsageCard.vue';
 import FirstRun from './FirstRun.vue';
 import { s } from '../app/store';
 
@@ -16,6 +17,7 @@ const firstRun = computed(() => s.phase === 'noCertificate' || s.phase === 'noTa
   <div class="db">
     <FirstRun v-if="firstRun" />
     <template v-else>
+      <UsageCard />
       <div class="db-grid">
         <StatusCard />
         <div class="db-side">

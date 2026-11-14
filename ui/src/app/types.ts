@@ -32,3 +32,8 @@ export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
   version: string; limits: Limits;
 }
+export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
+export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;
+  job?: string; printer: string; printer_name?: string; spoolman?: string; acknowledged_at?: number }
+export interface UsageView { pending: UsagePending[]; unconfirmed: UsageEntry[]; acknowledged: UsageEntry[]; acknowledged_total: number;
+  save_error: string; restore_notice: string }
