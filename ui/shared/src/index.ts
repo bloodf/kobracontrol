@@ -6,7 +6,7 @@ import './base.css';
 
 export type OrcaLocale = 'en' | 'pt-BR';
 export type OrcaTheme = 'light' | 'dark';
-export const UI_VERSION = '3.0.0';
+export const UI_VERSION = '3.1.0';
 export { PRIMEUI_LICENSE_EXPIRES } from './license';
 export { OrcaPreset };
 
@@ -35,8 +35,19 @@ export function primeVueOptions(locale: OrcaLocale): PrimeVueConfiguration {
   };
 }
 
+// PrimeVue 5.0.5 bug: Tab's Home/End and arrow wrap-around read `$pcTabList.$refs.tabs`, but TabList 5
+// renamed that element ref to `content`, so those keys throw. Alias it until PrimeVue fixes Tab.
+const tabListRefsAlias = {
+  mounted(this: { $options: { name?: string }; $refs: Record<string, unknown> }) {
+    if (this.$options.name !== 'TabList' || 'tabs' in this.$refs) return;
+    const refs = this.$refs;
+    Object.defineProperty(refs, 'tabs', { configurable: true, enumerable: false, get: () => refs.content });
+  },
+};
+
 export function installOrcaUI(app: App, locale: OrcaLocale): void {
   app.use(PrimeVue, primeVueOptions(locale));
+  app.mixin(tabListRefsAlias);
 }
 
 // The host adapter owns detecting theme changes; this function applies its resolved mode.

@@ -1,4 +1,10 @@
-# Orca UI foundation 3.0.0 — Vue and PrimeVue
+# Orca UI foundation 3.1.0 — Vue and PrimeVue
+
+Version 3.1.0 moves the build tools to TypeScript 7.0.2 (the native compiler). TypeScript 7 has no JS API and vue-tsc 3.3 needs one, so `scripts/vue-tsc.mjs` runs vue-tsc on the TypeScript 6 compiler from Microsoft's `@typescript/typescript6` package. Consumers add `typescript` 7.0.2 and `@typescript/typescript6` 6.0.2 as dev dependencies and type-check with `node shared/scripts/vue-tsc.mjs --noEmit`. The runtime, preset and palette are unchanged.
+
+Version 3.0.2 restores the 4.x text metrics: the preset sets `typography.lineHeight: inherit` (aura-compat's `normal` reached whole views through Tabs and shrank fields from 38px to 35px), and `base.css` keeps the button label weight on `.p-button-label` instead of the `.p-button` root, so slot content is not bold.
+
+Version 3.0.1 works around a PrimeVue 5.0.5 Tabs bug: `Tab` reads `$refs.tabs` from `TabList`, which 5.x renamed to `content`, so Home, End and arrow wrap-around threw. `installOrcaUI()` registers a global mixin that aliases the ref. Remove it once PrimeVue fixes `Tab`.
 
 Version 3.0.0 moves to **PrimeVue 5.0.5 + @primeuix/themes 3.1.1** with the `aura-compat` base (Aura with the 4.x sizes, so layouts keep their measures). PrimeVue 5 is no longer MIT: it is under the PrimeUI License and needs a key. The Community License key lives in `src/license.ts` and is passed by `primeVueOptions()`; it is verified offline. It expires on 2027-11-13 (30 days grace): renew it, release a new foundation version and rebuild all four plugins, or every plugin page shows PrimeVue's "Invalid PrimeUI License" banner. PrimeVue 5 colours use CSS `light-dark()` with `color-scheme`, which `applyOrcaTheme()` sets: hosts need WebKit 17.5+ (macOS), WebView2 (Windows) or WebKitGTK 2.44+ (Linux).
 
