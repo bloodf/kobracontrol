@@ -81,21 +81,30 @@ class FilesMixin:
 
     _details_lock = threading.Lock()
 
-    def _dcache(self):
-        """{file name: file_details} fetched so far (thumbnails); kept for the life of the service."""
+    def _dcache(self, printer):
+        """{file name: file_details} fetched so far from this printer (thumbnails). One dict per printer, so
+        a file of the same name on another printer never shows this one's thumbnail."""
+        creds = getattr(printer, "creds", None)
+        key = (getattr(creds, "ip", ""), getattr(creds, "device_id", ""))
         with self._details_lock:
-            return self.__dict__.setdefault("_details", {})
+            return self.__dict__.setdefault("_details", {}).setdefault(key, {})
 
     def cmd_files(self):
         """Fresh list of the printer's files, as page rows (thumbnails known so far included)."""
         printer = self._printer()
         listing = printer.list_files()
-        details = dict(self._dcache())
+        cache = self._dcache(printer)
+        with self._details_lock:
+            names = {f.get("filename") for f in listing}
+            for gone in [n for n in cache if n not in names]:   # deleted (maybe re-uploaded): details are stale
+                del cache[gone]
+            details = dict(cache)
         return {"files": rows(listing, details)}
 
     def cmd_file_details(self, name):
-        details = self._printer().file_details(valid_name(name))
-        self._dcache()[name] = details
+        printer = self._printer()
+        details = printer.file_details(valid_name(name))
+        self._dcache(printer)[name] = details
         return {"name": name, "thumbnail": _thumbnail(details)}
 
     def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False):
@@ -110,8 +119,9 @@ class FilesMixin:
 
     def cmd_file_delete(self, names):
         names = valid_names(names)
-        self._printer().delete_files(names)
-        cache = self._dcache()
+        printer = self._printer()
+        printer.delete_files(names)
+        cache = self._dcache(printer)
         for n in names:
             cache.pop(n, None)
         return self.cmd_files()

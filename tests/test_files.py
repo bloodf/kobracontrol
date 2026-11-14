@@ -86,7 +86,8 @@ class PayloadTests(unittest.TestCase):
 
 
 class FakePrinter:
-    def __init__(self):
+    def __init__(self, ip=""):
+        self.creds = type("C", (), {"ip": ip, "device_id": "d" + ip})()
         self.files, self.started, self.deleted, self.details = [dict(f) for f in LISTING], [], [], {"thumbnail": "AAAA"}
 
     def list_files(self):
@@ -128,6 +129,21 @@ class MixinTests(unittest.TestCase):
         self.assertEqual((h.idle_checks, h.printer.started[0]["filename"], h.printer.started[0]["filesize"]), (1, "a.gcode", 100))
         self.assertEqual([r["name"] for r in h.cmd_file_delete(["a.gcode"])["files"]], ["b.gcode"])
         self.assertEqual(h.printer.deleted, ["a.gcode"])
+
+    def test_thumbnails_are_per_printer_and_forgotten_when_the_file_is_gone(self):
+        first = FakePrinter("10.0.0.1")
+        h = Host(first)
+        h.cmd_file_details("a.gcode")
+        self.assertIsNotNone(h.cmd_files()["files"][1]["thumbnail"])
+        other = FakePrinter("10.0.0.2")                   # the service now talks to another printer
+        h.printer = other
+        self.assertIsNone(h.cmd_files()["files"][1]["thumbnail"])
+        h.printer = first
+        self.assertIsNotNone(h.cmd_files()["files"][1]["thumbnail"])
+        first.files = [f for f in first.files if f["filename"] != "a.gcode"]
+        h.cmd_files()                                      # a.gcode deleted outside kobracontrol
+        first.files.append({"filename": "a.gcode", "size": 1, "timestamp": 1})
+        self.assertIsNone(h.cmd_files()["files"][-1]["thumbnail"])
 
     def test_bad_names_never_reach_the_printer(self):
         h = Host()

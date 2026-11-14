@@ -235,6 +235,11 @@ class Camera:
         self._kill(proc)
         for w in workers:
             w.join(2)
+        for pipe in (proc.stdout, proc.stderr):   # after the readers ended: a closed pipe under a reader would raise
+            try:
+                pipe.close()
+            except (OSError, ValueError):
+                pass
         self._proc = None
         if got[0]:
             self._last_error = None

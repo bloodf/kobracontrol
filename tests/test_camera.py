@@ -240,6 +240,40 @@ class RunTests(Base):
         self.assertEqual(self.spawned, 1)
         self.assertEqual([t for t in threading.enumerate() if t.name.startswith("kobracontrol-camera")], [])
 
+    def test_pipes_are_closed_on_every_restart_and_stop(self):
+        def fds():
+            return len(os.listdir("/dev/fd"))
+        self.url = "rtsp://127.0.0.1:1/live?mode=die"
+        cam = self.make()
+        cam.start()
+        self.assertTrue(wait_for(lambda: self.spawned >= 1))
+        time.sleep(0.3)                                   # let thread and file startup settle
+        before = fds()
+        self.assertTrue(wait_for(lambda: self.spawned >= 6, 10))
+        procs_seen = self.spawned
+        cam.stop()
+        self.assertGreater(procs_seen, 5)
+        self.assertLessEqual(fds(), before)               # 5+ restarts leaked nothing
+        self.url = "rtsp://127.0.0.1:1/live?mode=frames"
+        for _ in range(3):                                # start/stop cycles with a live ffmpeg
+            cam.start()
+            self.assertTrue(wait_for(lambda: self.frames))
+            cam.stop()
+        cam.close()
+        self.assertLessEqual(fds(), before)
+
+    def test_stdout_and_stderr_are_closed_after_a_session(self):
+        procs = []
+
+        def popen(argv, **kw):
+            procs.append(self.popen(argv, **kw))
+            return procs[-1]
+        cam = self.make(popen=popen)
+        cam.start()
+        self.assertTrue(wait_for(lambda: self.frames))
+        cam.close()
+        self.assertTrue(procs and all(p.stdout.closed and p.stderr.closed for p in procs))
+
     def test_stop_then_start_again(self):
         cam = self.make()
         cam.start()
