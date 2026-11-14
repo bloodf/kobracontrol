@@ -50,7 +50,8 @@ Commands from OrcaSlicer's own Device tab and Print dialog go through OrcaSlicer
 whatever confirmations OrcaSlicer shows.
 
 Whatever the page or OrcaSlicer sends, the plugin refuses a command the printer's state does not
-allow, and it sends the printer nothing on its own except status queries.
+allow. On its own it sends the printer only status queries and the "feed finished" acknowledgement
+the printer waits for after a filament load or unload.
 
 ## Reporting a vulnerability
 
