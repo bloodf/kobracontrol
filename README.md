@@ -87,11 +87,11 @@ Full steps are in [docs/setup.md](docs/setup.md). In short:
 
 ## Privacy and security
 
-kobracontrol talks only to your printer and, if you set one up, your Spoolman server. It sends
-nothing to the internet. The printer's TLS certificate is self-signed, so the connection is
-encrypted but the printer's identity is not verified: use it on a network you trust. The client
-certificate copy and the MQTT credentials are never sent to the page or written to logs. See
-[SECURITY.md](SECURITY.md).
+kobracontrol connects only to the printer address you set and, if you set one up, your Spoolman
+server. It has no cloud service. Use it on a network you trust: the printer hands out its MQTT
+credentials to anyone on the network, and its TLS certificate is self-signed and not verified, so
+the connection is protected against passive reading only. The client certificate copy and the MQTT
+credentials are never sent to the page or written to logs. See [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
