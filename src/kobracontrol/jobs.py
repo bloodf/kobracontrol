@@ -1,0 +1,152 @@
+"""OrcaSlicer's Print and Send for the printer agent: the plate's G-code out of the sliced .3mf, the upload,
+and print/start with the trays the user chose. Mixed into service.Service, which provides connection(),
+_data(conn), log and remember_job (usage.UsageMixin). Free of the `orca` module."""
+
+import contextlib
+import os
+import re
+import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
+
+import ace
+import connection
+import kobra
+
+CONNECT_WAIT = 10.0             # s a print job waits for the session
+GCODE_MAX = 1024 ** 3           # BAMBU_NETWORK_ERR_PRINT_LP_FILE_OVER_SIZE: 1 GB
+
+
+def remote_name(name):
+    """A printer file name from a job name: safe characters only, ending in .gcode."""
+    base = str(name or "")
+    base = re.sub(r"\.(gcode|3mf)$", "", base, flags=re.I)
+    base = re.sub(r"[^\w .()+-]", "_", base).strip(" .") or "kobracontrol"
+    return base[:120] + ".gcode"
+
+
+@contextlib.contextmanager
+def plate_gcode(path, plate_index=1):
+    """(gcode path, {filament index: grams}) for a sliced .3mf (Metadata/plate_<n>.gcode, copied to a private
+    temp file that is removed afterwards) or a plain .gcode file. The zip member is read by its exact name and
+    never used as a file system path, so a crafted archive cannot write outside the temp file."""
+    if not zipfile.is_zipfile(path):
+        yield path, {}
+        return
+    plate = int(plate_index) if str(plate_index).isdigit() and int(plate_index) > 0 else 1
+    with zipfile.ZipFile(path) as z:
+        member = "Metadata/plate_%d.gcode" % plate
+        try:
+            info = z.getinfo(member)
+        except KeyError:
+            raise kobra.KobraError("the sliced file has no G-code for plate %d: slice it first" % plate) from None
+        if info.file_size > GCODE_MAX:
+            raise kobra.KobraError("the G-code is larger than 1 GB")
+        weights = _plate_weights(z, plate)
+        fd, tmp = tempfile.mkstemp(prefix="kobracontrol-", suffix=".gcode")
+        try:
+            with os.fdopen(fd, "wb") as out, z.open(info) as src:
+                while chunk := src.read(1024 * 1024):
+                    out.write(chunk)
+            yield tmp, weights
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+
+
+def _plate_weights(z, plate):
+    """{0-based project filament index: grams} from Metadata/slice_info.config, {} when absent."""
+    try:
+        root = ET.fromstring(z.read("Metadata/slice_info.config"))
+    except (KeyError, ET.ParseError, zipfile.BadZipFile):
+        return {}
+    for p in root.iter("plate"):
+        index = next((m.get("value") for m in p.iter("metadata") if m.get("key") == "index"), None)
+        if index == str(plate):
+            out = {}
+            for f in p.iter("filament"):
+                try:
+                    out[int(f.get("id")) - 1] = float(f.get("used_g") or 0)
+                except (TypeError, ValueError):
+                    continue
+            return out
+    return {}
+
+
+class JobsMixin:
+    def ready(self, host, timeout=CONNECT_WAIT):
+        """The connected Connection for `host`, waiting up to timeout; KobraError when it does not connect."""
+        conn = self.connection(host)
+        if not conn.connected:
+            conn.retry()
+            conn.wait_connected(timeout)
+        if not conn.connected or conn.printer is None:
+            cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
+            raise cls(conn.error or "the printer at %s did not answer" % host)
+        return conn
+
+    def _upload(self, conn, filename, path, progress, cancelled):
+        upload_url = conn.view()["upload_url"]
+        if not upload_url:
+            conn.printer.query_info()
+            upload_url = conn.view()["upload_url"]
+        if not upload_url:
+            raise kobra.KobraError("the printer has not announced its upload address yet; try again")
+        if os.path.getsize(path) > GCODE_MAX:
+            raise kobra.KobraError("the G-code is larger than 1 GB")
+        conn.printer.upload(filename, path, upload_url, progress, cancelled)
+
+    def send_file(self, host, path, name, plate_index=1, progress=None, cancelled=None):
+        """Upload only (OrcaSlicer's Send): the plate's G-code goes to the printer's storage; returns its name."""
+        conn = self.ready(host)
+        filename = remote_name(name or os.path.basename(path))
+        with plate_gcode(path, plate_index) as (gcode, _):
+            self._upload(conn, filename, gcode, progress, cancelled)
+        return filename
+
+    def print_job(self, host, path, plate_index=1, name="", tray_ids=(), filaments=(), task=None, progress=None,
+                  cancelled=None, stage=None):
+        """OrcaSlicer's Print: upload the plate's G-code, then print/start with the chosen trays.
+        tray_ids[i]: Bambu tray id for project filament i (-1 unused); filaments[i]: {"colour", "type"};
+        task: {"auto_leveling", "vibration_compensation"}; stage(name) is told "upload" then "start"."""
+        conn = self.ready(host)
+        mapping, used = self._job_mapping(conn, tray_ids, filaments)
+        filename = remote_name(name or os.path.basename(path))
+        with plate_gcode(path, plate_index) as (gcode, weights):
+            stage and stage("upload")
+            self._upload(conn, filename, gcode, progress, cancelled)
+            if cancelled and cancelled():
+                raise kobra.Cancelled("print cancelled; the file stays on the printer")
+            stage and stage("start")
+            mapping, used = self._job_mapping(conn, tray_ids, filaments)   # the slots may have changed meanwhile
+            payload = kobra.print_file_payload(filename, os.path.getsize(gcode), mapping, task or {})
+            conn.printer.start_print(payload)
+        self._remember(host, filename, used, weights)
+        return filename
+
+    def _job_mapping(self, conn, tray_ids, filaments):
+        """(ams_box_mapping, {filament index: global slot}); refuses unless the printer is idle and every chosen
+        tray is usable. With no tray chosen at all, the loaded slots are used in order (Kobralink's auto mapping)."""
+        data = self._data(conn)
+        if not data["connected"]:
+            raise kobra.KobraError(conn.error or "the printer is not connected")
+        if not data["can"]["print"]:
+            raise kobra.KobraError("the printer is %s; nothing was sent" % data["state"])
+        trays = [int(t) for t in tray_ids or []]
+        if not any(t >= 0 for t in trays):
+            loaded, _ = ace.select_loaded_slots_for_print(data["slots"], data["mode"])
+            return ace.build_auto_ams_box_mapping(loaded, data["mode"]), {s["global_index"]: s["global_index"] for s in loaded}
+        mapping, problems = ace.mapping_from_trays(trays, list(filaments or []), data["slots"], data["mode"])
+        if problems:
+            raise kobra.KobraError("; ".join(problems) + "; nothing was sent")
+        used = {i: ace.slot_for_tray(t, data["slots"])["global_index"] for i, t in enumerate(trays) if t >= 0}
+        return mapping, used
+
+    def _remember(self, host, filename, used, weights):
+        filaments = [{"index": i, "weight": g} for i, g in weights.items() if g]
+        if not filaments:
+            return
+        try:
+            self.remember_job(filename, used, filaments, host=host)
+        except Exception as e:   # usage tracking must never fail a print that started
+            self.log("kobracontrol: usage not tracked for %s: %r" % (filename, e))
