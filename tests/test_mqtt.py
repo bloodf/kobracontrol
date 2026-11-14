@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
@@ -59,6 +60,58 @@ class FramingTests(unittest.TestCase):
         self.assertEqual(mqtt.parse_publish(0, b"\x00\x01thi"), ("t", b"hi"))
 
 
+class TcpKeepaliveTests(unittest.TestCase):
+    """Ported from KX-Bridge tests/test_tcp_keepalive.py."""
+
+    def test_sets_short_keepalive_options(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addCleanup(s.close)
+        mqtt.enable_tcp_keepalive(s)
+        self.assertNotEqual(s.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE), 0)
+        idle = getattr(socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None))
+        for opt, limit in ((idle, 10), (getattr(socket, "TCP_KEEPINTVL", None), 5),
+                           (getattr(socket, "TCP_KEEPCNT", None), 5)):
+            if opt is not None:
+                self.assertLessEqual(s.getsockopt(socket.IPPROTO_TCP, opt), limit)
+        if hasattr(socket, "TCP_USER_TIMEOUT"):
+            self.assertTrue(0 < s.getsockopt(socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT) <= 20000)
+
+    def test_unsupported_platform_does_not_raise(self):
+        s = mock.Mock()
+        s.setsockopt.side_effect = OSError("unsupported")
+        mqtt.enable_tcp_keepalive(s)
+
+
+class OfflineUnitTests(unittest.TestCase):
+    """Reader/writer edge cases driven without a broker."""
+
+    def make(self):
+        closes, messages = [], []
+        c = mqtt.Client("h", 1, "x", on_close=closes.append, on_message=lambda t, p: messages.append(p))
+        c._sock, c._open = mock.Mock(), True
+        c._last_in = c._last_out = time.monotonic()
+        return c, closes, messages
+
+    def test_failed_write_marks_session_dead(self):
+        c, _, _ = self.make()
+        c._sock.sendall.side_effect = OSError("broken pipe")
+        with self.assertRaises(mqtt.MqttError):
+            c.publish("a", b"x")
+        self.assertFalse(c.connected)
+        c._sock.shutdown.assert_called_once()
+
+    def test_brief_empty_reads_are_tolerated_then_eof(self):
+        c, closes, messages = self.make()
+        pkt = mqtt.packet(0x30, b"\x00\x01t" + b"hi")
+        reads = [b"", b"", None, pkt] + [b""] * mqtt.EMPTY_READS_EOF
+        c._recv = mock.Mock(side_effect=reads)
+        c._run()
+        self.assertEqual(messages, [b"hi"])
+        self.assertEqual(len(closes), 1)
+        self.assertIn("closed by the printer", closes[0])
+        self.assertGreater(c.last_rx, 0)
+
+
 class BrokerCase(unittest.TestCase):
     def setUp(self):
         self.fake = FakeKobra().start()
@@ -84,6 +137,18 @@ class ConnectTests(BrokerCase):
         self.assertEqual(self.fake.subscriptions, ["anycubic/#"])
         reader = [t for t in threading.enumerate() if t.name.startswith("kobracontrol-mqtt")]
         self.assertTrue(reader and all(t.daemon for t in reader))
+
+    def test_connect_enables_tcp_keepalive(self):
+        with mock.patch.object(mqtt, "enable_tcp_keepalive", wraps=mqtt.enable_tcp_keepalive) as spy:
+            self.client()
+        spy.assert_called_once()
+
+    def test_packet_id_wraps(self):
+        c = self.client()
+        c._next_id = 65535
+        c.subscribe("again/#")
+        self.assertEqual(c._next_id, 1)
+        self.assertEqual(self.fake.subscriptions[-1], "again/#")
 
     def test_bad_password_is_auth_error(self):
         with self.assertRaises(mqtt.MqttAuthError) as cm:

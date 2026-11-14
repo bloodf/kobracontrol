@@ -1,11 +1,14 @@
-"""Anycubic Kobra X LAN protocol (ported from Kobralink, GPL-3.0): credentials, MQTT commands, upload, state.
+"""Anycubic Kobra X LAN protocol: credentials, MQTT commands, upload, state. Ported from Kobralink and
+KX-Bridge (both GPL-3.0); where they disagree, a comment says which behaviour is kept and why.
 
 `fetch_credentials(ip)` -> Credentials; `Printer(creds, ssl_context=certs.context(...))` talks MQTT;
 `Printer.upload(...)` + `Printer.start_print(print_file_payload(...))` print a file; `State` folds reports.
 
 State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KEYS):
   connected        bool, set by the owner through `State.connected`
-  state            "offline|idle|printing|paused|finished|cancelled|error|busy" (normalised)
+  state            "offline|idle|printing|paused|finished|cancelled|error|busy" (normalised: see normalise())
+  preparing        bool, True while a print runs a preparation phase (heating, levelling, wiping, ...);
+                   state is then "printing" and progress keeps its last value
   kobra_state      raw printer state ("free", "printing", "pause", "stoped", ...; "" before any report)
   printer_name, model, firmware                       str ("" when unknown; model from the constructor
                                                       unless info/report carries model/modelName)
@@ -16,11 +19,16 @@ State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KE
   nozzle_temp, nozzle_target, bed_temp, bed_target    numbers, deg C
   fan_pct          number 0-100; light_on bool; light_brightness number; speed_mode number (printer's code)
   multi_color_box  raw list from multiColorBox/report (ACE units and slots); head_tools_model raw value
+  box_set_failed   bool, the last multiColorBox/report was state "failed" (e.g. a refused slot setInfo)
   files            [{"filename", "size", "timestamp"}] newest first (file/report listLocal, code 200)
   file_details     raw dict of the last file/report file_details (thumbnail, objects_skip_parts, ...)
-  upload_url       info urls.fileUploadurl ("" until announced); camera_url urls.rtspUrl
+  upload_url       info urls.fileUploadurl ("" until announced); camera_url urls.rtspUrl, always the latest
   camera_urls      every info url except fileUploadurl; camera_active bool (video/report, unconfirmed)
-  storage          {"total", "used"} from info storage or buried/report storage_total/used, else {}
+  camera_url_rev   int, +1 each time camera_url changes to a new value (the printer rotates its stream
+                   token on reboot, KX-Bridge issue #99): a camera reader restarts when it changes
+  storage          {"total", "used"} from info storage or buried/report storage_total/used (MB), else {}
+  last_job         buried/report of the last print start: {"task_name", "gcode_size" (bytes),
+                   "estimate_duration" (s), "total_layers"} or None; metadata for files not uploaded by us
   skipped_objects  [str]; pause_reason {"code", "msg"} or None; last_error {"report", "action",
                    "code", "msg"} of the last report with state "failed", or None
   updated_at       time.time() of the last applied report (0.0 before)
@@ -50,10 +58,13 @@ import mqtt
 log = logging.getLogger(__name__)
 UPLOAD_CHUNK = 256 * 1024
 BOUNDARY = "------------------------a3a050b927d92a4c"
+# Print-preparation phases (KX-Bridge PREPARATION_STATES + Kobralink PRE_PRINT_STATES; firmware 2.0.x
+# reports each phase on its own). They belong to a running print, and the progress they report is
+# their own, so it is ignored: passing it through makes print progress jump (KX-Bridge issue #102).
 PRE_PRINT = {"preheating", "auto_leveling", "checking", "updated", "init", "hotbed_heating", "nozzle_heating",
              "nozzle_cooling", "nozzle_cooling_off", "hotbed_cooling_off", "nozzle_purging", "nozzle_wiping",
              "frequency_sweeping", "z_offset_calibrating", "extfilbox_filament_feeding"}
-PRINTING = PRE_PRINT | {"printing", "resuming", "resumed"}
+PRINTING = PRE_PRINT | {"printing", "resuming", "resumed", "stopping"}
 PAUSED = {"pausing", "paused", "pause"}
 TERMINAL = {"finished", "stoped", "canceled"}
 
@@ -115,7 +126,7 @@ def fetch_credentials(ip, port=18910, timeout=10):
     data = ctrl.get("data") if isinstance(ctrl, dict) else None
     if not (isinstance(data, dict) and isinstance(data.get("info"), str) and isinstance(data.get("token"), str)):
         raise KobraError("unexpected /ctrl answer from the printer")
-    try:
+    try:  # AES-128: KX-Bridge's notes say AES-256, but both use the 16-byte key token[16:32]
         plain = aes.decrypt_cbc(token[16:32].encode(), data["token"].encode(), base64.b64decode(data["info"]))
         result = json.loads(plain.decode("utf-8"))
     except (ValueError, UnicodeError):
@@ -153,17 +164,39 @@ class Printer:
         self.client_id = "kobracontrol_" + secrets.token_hex(4)
         self._client = None
         self._lock = threading.Lock()
-        self._by_id, self._by_report = {}, {}
+        self._connect_lock = threading.Lock()
+        self._by_id, self._by_report, self._watchers = {}, {}, []
 
     @property
     def connected(self):
         client = self._client
         return bool(client and client.connected)
 
+    @property
+    def last_rx(self):
+        """time.monotonic() of the last MQTT bytes from the printer, 0.0 when never connected."""
+        client = self._client
+        return client.last_rx if client else 0.0
+
     def _topic(self, kind, type_):
         return "anycubic/anycubicCloud/v1/%s/printer/%s/%s/%s" % (kind, self.creds.mode_id, self.creds.device_id, type_)
 
-    def connect(self):
+    def connect(self, wait=True):
+        """Open the MQTT session; a no-op when already connected. Returns `connected`.
+
+        Concurrent callers never start two handshakes (the printer accepts one mTLS session at a time,
+        KX-Bridge issue #105): with wait=True they block until the running attempt ends; with
+        wait=False they return the current `connected` at once (for a poll loop that must stay prompt)."""
+        if not self._connect_lock.acquire(blocking=wait):
+            return self.connected
+        try:
+            if not self.connected:
+                self._open_session()
+            return True
+        finally:
+            self._connect_lock.release()
+
+    def _open_session(self):
         self.close()
         c = self.creds
         client = mqtt.Client(c.ip, self.mqtt_port, self.client_id, username=c.username, password=c.password,
@@ -192,12 +225,14 @@ class Printer:
 
     def _fail_pending(self):
         with self._lock:
-            pending = list(self._by_id.values())
+            pending = list(self._by_id.values()) + list(self._watchers)
         for p in pending:
             self._resolve(p, None)
 
     def _resolve(self, p, payload):
         with self._lock:
+            if p in self._watchers:
+                self._watchers.remove(p)
             self._by_id.pop(p.msgid, None)
             if self._by_report.get(p.report_key) is p:
                 del self._by_report[p.report_key]
@@ -228,6 +263,10 @@ class Printer:
             self._resolve(by_report, payload)
         if by_id and (not by_id.action or suffix == by_id.report_key):
             self._resolve(by_id, payload)
+        with self._lock:
+            watchers = [w for w in self._watchers if w.report_key == suffix and w.action == payload.get("action")]
+        for w in watchers:
+            self._resolve(w, payload)
         self._emit(self.on_report, suffix, payload)
 
     def _publish(self, kind, type_, action, data, msgid=None):
@@ -256,6 +295,20 @@ class Printer:
         finally:
             self._resolve(p, None)
         return p.reply
+
+    def await_report(self, suffix, action, send, timeout):
+        """Call send() and wait for the next `suffix` report carrying `action`, whatever its msgid.
+        The file/* commands answer this way: the real result arrives later as a file/report with the
+        same action (KX-Bridge and Kobralink both wait for it so)."""
+        w = _Pending(None, suffix, action)
+        with self._lock:
+            self._watchers.append(w)
+        try:
+            if send():
+                w.event.wait(max(timeout, 0.001))
+        finally:
+            self._resolve(w, None)
+        return w.reply
 
     def send(self, type_, action, data=None):
         return self._publish("slicer", type_, action, data)
@@ -291,6 +344,8 @@ class Printer:
     def stop_camera(self):
         return self.request("video", "stopCapture")
 
+    # fan setSpeed and light type 3 as Kobralink and KX-Bridge's HTTP endpoints; KX-Bridge's older client
+    # helpers (fan "set", light type 2) are not used by its own UI.
     def set_fan(self, pct):
         return self.send("fan", "setSpeed", {"fan_speed_pct": pct})
 
@@ -342,13 +397,43 @@ class Printer:
         return self.request("skip", "start", {"objects_skip_parts": list(names)})
 
     def list_local_files(self):
-        return self.send("file", "listLocal", {"page_num": 1, "page_size": 1000, "path": "/"})
+        # page_size 200 as KX-Bridge (tested against a real printer); Kobralink sends 1000.
+        return self.send("file", "listLocal", {"page_num": 1, "page_size": 200, "path": "/"})
 
     def delete_local_files(self, filenames):
         return self.send("file", "deleteBatch", {"root": "local", "files": [{"path": "/", "filename": f} for f in filenames]})
 
     def request_file_details(self, filename):
         return self.send("file", "fileDetails", {"root": "local", "filename": filename})
+
+    def list_files(self, timeout=15):
+        """[{"filename", "size", "timestamp"}] of the printer's local storage, newest first."""
+        reply = self.await_report("file/report", "listLocal", self.list_local_files, timeout)
+        if reply is None:
+            raise KobraError("the printer sent no file list")
+        if reply.get("code") != 200:
+            raise KobraError("the printer refused the file list (code %s)" % reply.get("code"), code=reply.get("code"))
+        return _file_records(_dict(reply.get("data")).get("records"))
+
+    def delete_files(self, filenames, timeout=8):
+        filenames = list(filenames)
+        if not filenames:
+            raise KobraError("no file to delete")
+        reply = self.await_report("file/report", "deleteBatch", lambda: self.delete_local_files(filenames), timeout)
+        if reply is None:
+            raise KobraError("the printer did not answer the delete request")
+        if reply.get("state") != "success" and reply.get("code") != 200:
+            raise KobraError("the printer refused the delete (code %s): %s" % (reply.get("code"), _str(reply.get("msg"))),
+                             code=reply.get("code"))
+        return reply
+
+    def file_details(self, filename, timeout=5):
+        """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, svg_image)."""
+        reply = self.await_report("file/report", "fileDetails", lambda: self.request_file_details(filename), timeout)
+        if reply is None or reply.get("state") == "failed":
+            raise KobraError("no details for %s from the printer" % filename,
+                             code=reply.get("code") if reply else None)
+        return _dict(_dict(reply.get("data")).get("file_details"))
 
     def start_print(self, payload, timeout=15):
         reply = self.request("print", "start", payload, timeout)
@@ -443,14 +528,17 @@ def print_file_payload(filename, size, mapping, task=None):
 
 
 # state reducer -------------------------------------------------------------------------------------
-VIEW_KEYS = ("connected", "state", "kobra_state", "printer_name", "model", "firmware", "filename", "progress",
+VIEW_KEYS = ("connected", "state", "preparing", "box_set_failed", "camera_url_rev", "kobra_state", "printer_name", "model", "firmware", "filename", "progress",
              "layer", "total_layers", "elapsed_s", "remaining_s", "task_id", "nozzle_temp", "nozzle_target",
              "bed_temp", "bed_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
              "head_tools_model", "files", "file_details", "upload_url", "camera_url", "camera_urls",
-             "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at")
+             "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job")
 
 
 def normalise(kobra_state):
+    """Printer state -> view state. Both references map "busy" (the top-level device state) and unknown
+    states to printing/standby; here they are "busy", which says less but is never wrong. "offline" is
+    error in Kobralink and unused by KX-Bridge; it is reported as "offline"."""
     if kobra_state in ("", "free"):
         return "idle"
     if kobra_state in PAUSED:
@@ -459,9 +547,17 @@ def normalise(kobra_state):
         return "finished"
     if kobra_state in ("stoped", "canceled"):
         return "cancelled"
-    if kobra_state in ("failed", "offline"):
+    if kobra_state == "failed":
         return "error"
+    if kobra_state == "offline":
+        return "offline"
     return "printing" if kobra_state in PRINTING else "busy"
+
+
+def _file_records(records):
+    files = [{"filename": _str(r.get("filename")), "size": _num(r.get("size")), "timestamp": _num(r.get("timestamp"))}
+             for r in (records if isinstance(records, list) else []) if isinstance(r, dict) and not r.get("is_dir")]
+    return sorted(files, key=lambda f: -f["timestamp"])
 
 
 def _dict(value):
@@ -493,13 +589,15 @@ class State:
             "nozzle_target": 0, "bed_temp": 0, "bed_target": 0, "fan_pct": 0, "light_on": False,
             "light_brightness": 80, "speed_mode": 0, "multi_color_box": [], "head_tools_model": None, "files": [],
             "file_details": {}, "upload_url": "", "camera_url": "", "camera_urls": {}, "camera_active": False,
-            "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0}
+            "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0,
+            "box_set_failed": False, "camera_url_rev": 0, "last_job": None}
 
     def view(self):
         with self._lock:
             out = copy.deepcopy(self._v)
         out["connected"] = bool(self.connected)
         out["state"] = normalise(out["kobra_state"]) if self.connected else "offline"
+        out["preparing"] = out["state"] == "printing" and out["kobra_state"] in PRE_PRINT
         return out
 
     def apply(self, suffix, payload):
@@ -554,6 +652,8 @@ class State:
         if st:
             v["kobra_state"] = st
         if st in TERMINAL:
+            # KX-Bridge still adopts project.filename here; Kobralink (followed) does not, so a finished
+            # job does not reappear as the current file. Neither project has a test for it.
             v.update(layer=0, total_layers=0)
             project = {k: x for k, x in project.items() if k not in ("filename", "curr_layer", "total_layers")}
         elif "filename" in project:
@@ -564,7 +664,10 @@ class State:
         v["upload_url"] = urls.pop("fileUploadurl", v["upload_url"])
         if urls:
             v["camera_urls"] = urls
-            v["camera_url"] = urls.get("rtspUrl", v["camera_url"])
+            camera = urls.get("rtspUrl", v["camera_url"])
+            if v["camera_url"] and camera != v["camera_url"]:
+                v["camera_url_rev"] += 1
+            v["camera_url"] = camera
         for key, field in (("fan_speed_pct", "fan_pct"), ("print_speed_mode", "speed_mode")):
             if key in d:
                 v[field] = _num(d[key])
@@ -582,7 +685,10 @@ class State:
         self._temps(d)
 
     def _on_box(self, p, d):
-        if p.get("state") == "failed":
+        # A refused setInfo answers state "failed" with data as a list (KX-Bridge issue #100): keep the
+        # slots, raise the flag. Unlike both references, an empty list is kept: it is what the printer says.
+        self._v["box_set_failed"] = p.get("state") == "failed"
+        if self._v["box_set_failed"]:
             return
         if isinstance(d.get("multi_color_box"), list):
             self._v["multi_color_box"] = d["multi_color_box"]
@@ -599,10 +705,7 @@ class State:
     def _on_file(self, p, d):
         if p.get("action") == "listLocal":
             if p.get("code") == 200 and isinstance(d.get("records"), list):
-                files = [{"filename": _str(r.get("filename")), "size": _num(r.get("size")),
-                          "timestamp": _num(r.get("timestamp"))}
-                         for r in d["records"] if isinstance(r, dict) and not r.get("is_dir")]
-                self._v["files"] = sorted(files, key=lambda f: -f["timestamp"])
+                self._v["files"] = _file_records(d["records"])
         elif isinstance(d.get("file_details"), dict):
             self._v["file_details"] = d["file_details"]
 
@@ -615,8 +718,13 @@ class State:
         self._v["skipped_objects"] = skipped
 
     def _on_buried(self, p, d):
-        if "storage_total" in d or "storage_used" in d:
-            self._v["storage"] = {"total": _num(d.get("storage_total")), "used": _num(d.get("storage_used"))}
+        # The printer's analytics event, once per print start; ignored without task_name (both references).
+        if not _str(d.get("task_name")):
+            return
+        self._v["last_job"] = {"task_name": d["task_name"], "gcode_size": _num(d.get("gcode_size")),
+                               "estimate_duration": _num(d.get("estimate_duration")),
+                               "total_layers": _num(d.get("total_layers"))}
+        self._v["storage"] = {"total": _num(d.get("storage_total")), "used": _num(d.get("storage_used"))}
 
     def _on_video(self, p, d):
         if p.get("state") != "failed" and p.get("action") in ("startCapture", "stopCapture"):

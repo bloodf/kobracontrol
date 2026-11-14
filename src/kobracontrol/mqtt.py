@@ -2,7 +2,13 @@
 
 One daemon reader thread per connection delivers `on_message(topic, payload_bytes)` and, exactly once
 when the connection ends, `on_close(reason)` ("closed" after `close()`). Callback exceptions are logged
-and swallowed. `publish` is thread-safe. No reconnection: the owner decides when to build a new Client.
+and swallowed. `publish` is thread-safe. No reconnection: the owner decides when to build a new Client;
+`connected` turns False as soon as a read, a write or the keepalive fails, and `last_rx` tells how long
+the printer has been silent.
+
+Socket handling (TCP keepalive + TCP_USER_TIMEOUT, tolerated empty TLS reads, one lock around every
+socket read/write) is ported from KX-Bridge's kobrax_client.py; packet framing and request semantics
+follow Kobralink's mqtt.js usage.
 """
 
 import logging
@@ -16,6 +22,7 @@ log = logging.getLogger(__name__)
 CONNECT, CONNACK, PUBLISH, SUBSCRIBE, SUBACK, PINGREQ, PINGRESP, DISCONNECT = 1, 2, 3, 8, 9, 12, 13, 14
 MAX_LENGTH = 268435455
 POLL = 0.25
+EMPTY_READS_EOF = 5  # KX-Bridge: Windows TLS sockets can return b"" briefly without a real EOF
 
 
 class MqttError(Exception):
@@ -78,6 +85,23 @@ def parse_publish(flags, body):
     return body[2:2 + n].decode("utf-8", "replace"), body[start:]
 
 
+def enable_tcp_keepalive(sock):
+    """Best effort. A printer that is unplugged never closes its TCP side; without short keepalive
+    probes and TCP_USER_TIMEOUT (unacknowledged data in flight, Linux) the OS keeps the dead socket
+    alive for 15+ minutes (KX-Bridge, verified by unplugging a real printer)."""
+    options = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    idle = getattr(socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None))  # TCP_KEEPALIVE: macOS
+    for opt, value in ((idle, 5), (getattr(socket, "TCP_KEEPINTVL", None), 3),
+                       (getattr(socket, "TCP_KEEPCNT", None), 3), (getattr(socket, "TCP_USER_TIMEOUT", None), 15000)):
+        if opt is not None:
+            options.append((socket.IPPROTO_TCP, opt, value))
+    for level, opt, value in options:
+        try:
+            sock.setsockopt(level, opt, value)
+        except OSError as e:
+            log.debug("socket option %s not supported: %s", opt, e)
+
+
 def _s(value):
     raw = value.encode("utf-8") if isinstance(value, str) else value
     return len(raw).to_bytes(2, "big") + raw
@@ -97,6 +121,7 @@ class Client:
         self._closing = self._open = False
         self._acks, self._next_id = {}, 0
         self._last_in = self._last_out = 0.0
+        self._empty_reads = 0
 
     def __repr__(self):
         return "<mqtt.Client %s:%s id=%s>" % (self.host, self.port, self.client_id)
@@ -104,6 +129,11 @@ class Client:
     @property
     def connected(self):
         return self._open and not self._closing
+
+    @property
+    def last_rx(self):
+        """time.monotonic() of the last bytes received (0.0 before connect)."""
+        return self._last_in
 
     # connection ---------------------------------------------------------------------------
     def connect(self):
@@ -113,6 +143,7 @@ class Client:
             raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as e:
             raise MqttError("cannot reach %s:%s (%s)" % (self.host, self.port, e)) from None
+        enable_tcp_keepalive(raw)
         try:
             sock = self.ssl_context.wrap_socket(raw) if self.ssl_context else raw
             self._sock = sock
@@ -212,6 +243,12 @@ class Client:
                 self._sock.sendall(data)
                 self._last_out = time.monotonic()
         except OSError as e:
+            # A failed write means a dead session: report it now instead of waiting for the reader.
+            self._open = False
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             raise MqttError("send failed (%s)" % e) from None
 
     # reader thread ------------------------------------------------------------------------
@@ -224,7 +261,11 @@ class Client:
                 if data is None:
                     continue
                 if not data:
-                    raise MqttError("connection closed by the printer")
+                    self._empty_reads += 1
+                    if self._empty_reads >= EMPTY_READS_EOF:
+                        raise MqttError("connection closed by the printer")
+                    continue
+                self._empty_reads = 0
                 self._last_in = time.monotonic()
                 self._buf += data
                 for item in split_packets(self._buf):

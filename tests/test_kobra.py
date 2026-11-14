@@ -144,6 +144,7 @@ class RequestTests(PrinterCase):
         start = time.monotonic()
         self.assertIsNone(self.printer.request("info", "query", timeout=0.3))
         self.assertLess(time.monotonic() - start, 1.5)
+        self.assertTrue(self.printer.connected)  # one missed answer is not a dead session (KX-Bridge #105)
 
     def test_reply_without_msgid_matches_report_suffix(self):
         self.fake.replies[("status", "query")] = lambda m: {"type": "status", "action": "x", "msgid": None, "data": 1}
@@ -209,6 +210,138 @@ class RequestTests(PrinterCase):
         self.assertEqual(self.drops, [])
 
 
+class SessionTests(PrinterCase):
+    """Ported from KX-Bridge tests/test_mqtt_reconnect.py, test_client_robustness.py, test_poll_loop_reconnect.py."""
+
+    def test_connect_is_idempotent(self):
+        self.assertTrue(self.printer.connect())
+        self.assertEqual(len(self.fake.client_ids), 1)
+
+    def test_concurrent_connects_run_one_handshake(self):
+        p = self.make()
+        self.fake.connack_delay = 0.3
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(p.connect())) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(3)
+        self.assertEqual(results, [True, True])
+        self.assertEqual(len(self.fake.client_ids), 2)  # setUp's printer + exactly one more
+
+    def test_non_blocking_connect_returns_while_handshake_runs(self):
+        p = self.make()
+        self.fake.connack_delay = 0.5
+        t = threading.Thread(target=p.connect)
+        t.start()
+        self.assertTrue(wait_for(lambda: len(self.fake.client_ids) == 2))
+        start = time.monotonic()
+        self.assertFalse(p.connect(wait=False))
+        self.assertLess(time.monotonic() - start, 0.2)
+        t.join(3)
+        self.assertTrue(p.connected)
+
+    def test_reconnect_after_printer_reboot(self):
+        self.fake.drop_clients()
+        self.assertTrue(wait_for(lambda: self.drops))
+        self.assertFalse(self.printer.connected)
+        self.assertIsNone(self.printer.query_info())
+        self.assertTrue(self.printer.connect())
+        self.assertEqual(len(self.fake.subscriptions), 2)
+        self.fake.reply("info", "query", {"version": "2"})
+        self.assertEqual(self.printer.query_info()["data"]["version"], "2")
+        self.assertGreater(self.printer.last_rx, 0)
+
+    def test_concurrent_requests_of_one_type_each_get_their_reply(self):
+        self.fake.replies[("info", "query")] = lambda m: {"type": "info", "action": "query", "data": m["msgid"]}
+        results = {}
+
+        def call(label):
+            results[label] = self.printer.request("info", "query", timeout=3)
+        threads = [threading.Thread(target=call, args=(k,)) for k in "ab"]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(4)
+        self.assertEqual(set(results), {"a", "b"})
+        self.assertTrue(all(r is not None for r in results.values()))
+        self.assertNotEqual(results["a"]["data"], results["b"]["data"])
+
+    def test_stale_reply_not_delivered_to_newer_request(self):
+        def late(m):
+            self.fake.report("info/report", {"msgid": "an-older-request", "action": "query", "data": "stale"})
+        self.fake.replies[("info", "query")] = late
+        self.assertIsNone(self.printer.request("info", "query", timeout=0.4))
+
+
+class FileCommandTests(PrinterCase):
+    """Ported from KX-Bridge tests/test_printer_files_endpoint.py: answers arrive as file/report."""
+    RECORDS = [{"filename": "a.gcode", "is_dir": False, "size": 100, "timestamp": 1700000000},
+               {"filename": "subdir", "is_dir": True, "size": 0, "timestamp": 1700000001},
+               {"filename": "b.gcode", "is_dir": False, "size": 200, "timestamp": 1700000002}]
+
+    def answer(self, action, **fields):
+        self.fake.replies[("file", action)] = lambda m: {"type": "file", "action": action, "msgid": None, **fields}
+
+    def test_list_files(self):
+        self.answer("listLocal", code=200, state="success", data={"records": self.RECORDS})
+        files = self.printer.list_files(timeout=2)
+        self.assertEqual([f["filename"] for f in files], ["b.gcode", "a.gcode"])
+        self.assertEqual(self.fake.wait_request("file", "listLocal")["data"], {"page_num": 1, "page_size": 200, "path": "/"})
+
+    def test_list_files_refused_or_silent(self):
+        self.answer("listLocal", code=10112, state="failed", data=None)
+        with self.assertRaises(kobra.KobraError) as cm:
+            self.printer.list_files(timeout=2)
+        self.assertEqual(cm.exception.code, 10112)
+        self.fake.replies.clear()
+        with self.assertRaisesRegex(kobra.KobraError, "no file list"):
+            self.printer.list_files(timeout=0.3)
+
+    def test_other_actions_do_not_answer_a_waiter(self):
+        def wrong(m):
+            self.fake.report("file/report", {"action": "fileDetails", "code": 200, "data": {}})
+        self.fake.replies[("file", "listLocal")] = wrong
+        with self.assertRaises(kobra.KobraError):
+            self.printer.list_files(timeout=0.3)
+
+    def test_delete_files(self):
+        self.answer("deleteBatch", code=200, state="success", data={})
+        self.assertEqual(self.printer.delete_files(["a.gcode", "b.gcode"], timeout=2)["code"], 200)
+        self.assertEqual(self.fake.wait_request("file", "deleteBatch")["data"],
+                         {"root": "local", "files": [{"path": "/", "filename": "a.gcode"},
+                                                     {"path": "/", "filename": "b.gcode"}]})
+
+    def test_delete_files_errors(self):
+        with self.assertRaisesRegex(kobra.KobraError, "no file"):
+            self.printer.delete_files([])
+        self.answer("deleteBatch", code=10112, state="failed", msg="busy")
+        with self.assertRaisesRegex(kobra.KobraError, "10112"):
+            self.printer.delete_files(["a.gcode"], timeout=2)
+        self.fake.replies.clear()
+        with self.assertRaisesRegex(kobra.KobraError, "did not answer"):
+            self.printer.delete_files(["a.gcode"], timeout=0.3)
+
+    def test_file_details(self):
+        details = {"thumbnail": "iVBOR", "png_image": "", "svg_image": "", "objects_skip_parts": []}
+        self.answer("fileDetails", code=200, state="done", data={"file_details": details, "filename": "a.gcode"})
+        self.assertEqual(self.printer.file_details("a.gcode", timeout=2), details)
+        self.assertEqual(self.fake.wait_request("file", "fileDetails")["data"], {"root": "local", "filename": "a.gcode"})
+        self.answer("fileDetails", code=10112, state="failed", data=None)
+        with self.assertRaises(kobra.KobraError):
+            self.printer.file_details("a.gcode", timeout=2)
+
+    def test_disconnect_releases_file_waiter(self):
+        result = []
+        t = threading.Thread(target=lambda: result.append(
+            self.printer.await_report("file/report", "listLocal", self.printer.list_local_files, 10)))
+        t.start()
+        self.assertIsNotNone(self.fake.wait_request("file", "listLocal"))
+        self.fake.drop_clients()
+        t.join(3)
+        self.assertEqual(result, [None])
+
+
 class HelperTests(PrinterCase):
     def published(self, n=1):
         self.assertTrue(wait_for(lambda: len(self.fake.requests) >= n))
@@ -262,7 +395,7 @@ class HelperTests(PrinterCase):
             (lambda: p.set_dry([0, 1], drying),
              ("slicer", "multiColorBox", "setDry",
               {"multi_color_box": [{"id": 0, "drying_status": drying}, {"id": 1, "drying_status": drying}]})),
-            (p.list_local_files, ("slicer", "file", "listLocal", {"page_num": 1, "page_size": 1000, "path": "/"})),
+            (p.list_local_files, ("slicer", "file", "listLocal", {"page_num": 1, "page_size": 200, "path": "/"})),
             (lambda: p.delete_local_files(["a.gcode"]),
              ("slicer", "file", "deleteBatch", {"root": "local", "files": [{"path": "/", "filename": "a.gcode"}]})),
             (lambda: p.request_file_details("a.gcode"),
@@ -542,9 +675,9 @@ class StateTests(unittest.TestCase):
 
     def test_normalised_states(self):
         for raw, norm in (("stoped", "cancelled"), ("canceled", "cancelled"), ("pausing", "paused"),
-                          ("pause", "paused"), ("failed", "error"), ("busy", "busy"), ("stopping", "busy"),
+                          ("pause", "paused"), ("failed", "error"), ("busy", "busy"),
                           ("weird_new_state", "busy"), ("free", "idle"), ("auto_leveling", "printing"),
-                          ("resumed", "printing")):
+                          ("resumed", "printing"), ("stopping", "printing"), ("offline", "offline")):
             self.assertEqual(self.apply("print/report", {}, state=raw)["state"], norm, raw)
         self.s.connected = False
         self.assertEqual(self.s.view()["state"], "offline")
@@ -599,11 +732,71 @@ class StateTests(unittest.TestCase):
         self.assertEqual(self.apply("skip/report", {"skipped_parts": ["c"]})["skipped_objects"], ["c"])
 
     def test_buried_storage_and_video(self):
-        v = self.apply("buried/report", {"task_name": "a", "storage_total": 8000, "storage_used": 100})
-        self.assertEqual(v["storage"], {"total": 8000, "used": 100})
-        self.assertEqual(self.apply("buried/report", {"task_name": "b"})["storage"], {"total": 8000, "used": 100})
         self.assertTrue(self.apply("video/report", {}, action="startCapture", state="success")["camera_active"])
         self.assertFalse(self.apply("video/report", {}, action="stopCapture", state="success")["camera_active"])
+
+    FW2_PREPARATION = ("nozzle_heating", "nozzle_cooling", "nozzle_wiping", "nozzle_purging", "hotbed_heating",
+                       "hotbed_cooling_off", "z_offset_calibrating", "frequency_sweeping", "extfilbox_filament_feeding")
+    LEGACY_PREPARATION = ("preheating", "auto_leveling", "checking", "updated", "init")
+
+    def test_preparation_phases_are_printing_and_keep_progress(self):
+        """Ported from KX-Bridge tests/test_fw2_print_states.py and test_metadata_and_print_state_reset.py."""
+        self.apply("print/report", {"progress": 0}, state="printing")
+        for st in self.FW2_PREPARATION + self.LEGACY_PREPARATION + ("nozzle_cooling_off",):
+            v = self.apply("print/report", {"progress": 87}, state=st)
+            self.assertEqual((v["state"], v["preparing"], v["progress"]), ("printing", True, 0), st)
+            v = self.apply("info/report", {"project": {"state": st, "progress": 55}})
+            self.assertEqual((v["state"], v["preparing"], v["progress"]), ("printing", True, 0), st)
+        v = self.apply("print/report", {"progress": 33}, state="printing")
+        self.assertEqual((v["state"], v["preparing"], v["progress"]), ("printing", False, 33))
+        for st in ("finished", "stoped", "canceled", "free", "paused"):
+            self.assertFalse(self.apply("print/report", {}, state=st)["preparing"], st)
+
+    def test_finished_resets_job_fields(self):
+        self.apply("print/report", {"filename": "job.gcode", "progress": 50, "curr_layer": 10, "total_layers": 20},
+                   state="printing")
+        v = self.apply("print/report", {"filename": "job.gcode"}, state="finished")
+        self.assertEqual((v["progress"], v["filename"], v["layer"], v["total_layers"]), (0, "", 0, 0))
+        self.apply("print/report", {"filename": "job.gcode", "curr_layer": 7, "total_layers": 20}, state="printing")
+        v = self.apply("info/report", {"project": {"state": "finished"}})
+        self.assertEqual((v["layer"], v["total_layers"]), (0, 0))
+
+    def test_multi_color_box_failure_shapes(self):
+        """Ported from KX-Bridge tests/test_multicolor_box_failed_state.py (issue #100)."""
+        ok = {"head_tools_model": 1, "multi_color_box": [{"id": -1, "slots": []}, {"id": 0, "slots": [
+            {"index": 0, "type": "PLA", "color": [0, 156, 189], "status": 5}]}]}
+        self.apply("multiColorBox/report", ok, state="success")
+        v = self.apply("multiColorBox/report", ["multi_color_box", [{"filaments": {"id": 2}, "id": 0}]], state="failed")
+        self.assertTrue(v["box_set_failed"])
+        self.assertEqual(v["multi_color_box"], ok["multi_color_box"])
+        self.assertEqual(v["last_error"]["report"], "multiColorBox/report")
+        self.assertFalse(self.apply("multiColorBox/report", ok, state="success")["box_set_failed"])
+        v = self.apply("multiColorBox/report", ["multi_color_box", []], state="success")
+        self.assertEqual(v["multi_color_box"], ok["multi_color_box"])
+
+    def test_buried_report(self):
+        """Ported from KX-Bridge tests/test_buried_report.py."""
+        self.assertEqual(self.s.view()["storage"], {})
+        data = {"task_name": "Smileys_simple_plate(01)_PLA_0.2_16m39s.gcode", "gcode_size": 644437,
+                "estimate_duration": 1264, "total_layers": 8, "storage_total": 6481, "storage_used": 898,
+                "slicer": "OrcaSlicer"}
+        v = self.apply("buried/report", data, type="buried", action="PrintStart", code=200, state="done")
+        self.assertEqual(v["storage"], {"total": 6481, "used": 898})
+        self.assertEqual(v["last_job"], {"task_name": data["task_name"], "gcode_size": 644437,
+                                         "estimate_duration": 1264, "total_layers": 8})
+        v = self.apply("buried/report", {"gcode_size": 123, "storage_total": 1})
+        self.assertEqual((v["last_job"]["gcode_size"], v["storage"]["total"]), (644437, 6481))
+
+    def test_camera_url_rotation(self):
+        """Ported from KX-Bridge tests/test_camera_cache_url_rotation.py (issue #99)."""
+        def urls(rtsp):
+            return self.apply("info/report", {"urls": {"rtspUrl": rtsp}})
+        self.assertEqual((urls("http://printer/live/tokenA")["camera_url_rev"]), 0)
+        self.assertEqual(urls("http://printer/live/tokenA")["camera_url_rev"], 0)
+        v = urls("http://printer/live/tokenB")
+        self.assertEqual((v["camera_url"], v["camera_url_rev"]), ("http://printer/live/tokenB", 1))
+        v = self.apply("info/report", {"urls": {"fileUploadurl": "http://u?s=1"}})
+        self.assertEqual((v["camera_url"], v["camera_url_rev"]), ("http://printer/live/tokenB", 1))
 
     def test_view_is_a_copy_and_tolerates_junk(self):
         self.apply("multiColorBox/report", {"multi_color_box": [{"id": 0}]})

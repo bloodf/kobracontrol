@@ -11,7 +11,8 @@ Identity: `token` (/info token, 32 chars), `username`, `password`, `device_id`, 
 HTTP knobs: `info_answer` (dict served by /info, default {"token": token}), `ctrl_answer` (dict served
   verbatim by /ctrl instead of the real encrypted answer), `upload_answer` (dict, default code 200).
   Recorded: `ctrl_calls` (query dicts), `uploads` (list of {"filename", "data", "headers"}).
-MQTT knobs: `connack_code` (None = check username/password, else forced CONNACK code), `suback_code`
+MQTT knobs: `connack_code` (None = check username/password, else forced CONNACK code), `connack_delay`
+  (seconds before CONNACK, to stretch a handshake), `suback_code`
   (0), `answer_pings` (True), `chunk_size` (None, or int: outgoing packets are dribbled in chunks so the
   client sees split reads). Scripted replies: `reply(type, action, data=None, state="success", code=None,
   **fields)` or `replies[(type, action)] = callable(request_msg) -> dict | None` (the reply is published on
@@ -128,6 +129,7 @@ class _Session:
         user, i = _take_str(body, i) if flags & 0x80 else (b"", i)
         pw, i = _take_str(body, i) if flags & 0x40 else (b"", i)
         self.fake.client_ids.append(client_id.decode())
+        time.sleep(self.fake.connack_delay)
         code = self.fake.connack_code
         if code is None:
             code = 0 if (user.decode(), pw.decode()) == (self.fake.username, self.fake.password) else 4
@@ -165,6 +167,7 @@ class FakeKobra:
         self.info_answer = self.ctrl_answer = None
         self.upload_answer = {"code": 200, "message": "success"}
         self.connack_code, self.suback_code, self.answer_pings, self.chunk_size = None, 0, True, None
+        self.connack_delay = 0.0
         self.replies, self.requests, self.uploads, self.ctrl_calls = {}, [], [], []
         self.client_ids, self.subscriptions, self.disconnects, self.pings = [], [], 0, 0
         self._sessions, self._cond = [], threading.Condition()
