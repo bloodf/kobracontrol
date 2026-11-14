@@ -1,7 +1,7 @@
 """Build the OrcaSlicer plugin as a pure-Python wheel: dist/kobracontrol_any.whl.
 
 Layout inside the wheel: kobracontrol/__init__.py (plugin.py), one module per helper, and _assets.py
-(the HTML pages and SVG icon as string constants). The sources keep plain imports (`import u1`) so
+(the HTML pages and SVG icon as string constants). The sources keep plain imports (`import kobra`) so
 they run and test in place; the build rewrites them to package-relative form in the wheel copies.
 Nothing is executed or compiled at load time; the wheel is plain importable source. Zip timestamps
 are fixed so equal sources give equal bytes.

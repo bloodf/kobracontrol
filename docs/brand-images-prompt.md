@@ -118,7 +118,7 @@ space, minimum sizes, colour usage, and three things never to do with the logo.
 
 ## Screenshots
 
-Any UI screenshot inside these images is a real render made by `scripts/render_images.py`, not
+Any UI screenshot inside these images is a real render of the built page (`node ui/tests/page/shots.mjs`), not
 generated art. The image model must not draw fake UI. Wherever a screenshot belongs (hero, store
 frames, install cards, social images), leave a clearly marked empty rounded frame, with a thin
 border and no content, at the stated position and 16:10 ratio, so the renderer can place the real

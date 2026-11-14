@@ -3,7 +3,7 @@
 Transport: Spoolman's REST API at the configured URL (the Kobra X has no Moonraker to proxy it).
 
 Binding slot -> spool: the spool's `location` is "<printer name> S<n>" (n = global_index + 1), so the binding
-lives in Spoolman and every client sees it (the same idea as the U1 Control plugin's "<printer> T<n>").
+lives in Spoolman and every client sees it.
 """
 
 import json

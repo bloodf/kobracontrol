@@ -120,7 +120,9 @@ is always empty, because it carries the upload token. Plus:
 | `find_certificate` | `path` (optional file or folder) | |
 | `spools` | | |
 | `bind`, `unbind` | `slot`, `spool_id` | |
-| `stock`, `stock_assign` | as in u1control, with `slot` in place of `head` | yes for `stock_assign` |
+| `stock` | `refresh` (optional) | |
+| `stock_assign` | `slot`, `spool_id`, `key` (the row's key from the `stock` reply) | yes |
+| `usage`, `usage_ack` | the ledger of filament use still to be booked in Spoolman; no page surface yet | |
 
 Replies:
 

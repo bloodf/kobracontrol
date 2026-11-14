@@ -78,8 +78,8 @@ open a pull request.
 ## Assets
 
 Images live in `assets/` and the UI icons in `src/kobracontrol/ui/`. Screenshots inside images are
-real renders made by `scripts/render_images.py`, not edited by hand. Fonts stay with their licence
-files.
+real renders of the built page (`node ui/tests/page/shots.mjs`), not edited by hand. Fonts stay with
+their licence files.
 
 ## License
 

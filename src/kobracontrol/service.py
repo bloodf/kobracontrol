@@ -174,7 +174,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         conn = self.connections.get(host)
         return conn.view() if conn else None
 
-    # ------------------------------------------------------------------ page plumbing (as u1control)
+    # ------------------------------------------------------------------ page plumbing
 
     def set_target(self, target):
         with self.lock:
