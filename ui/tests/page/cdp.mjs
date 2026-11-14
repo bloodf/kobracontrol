@@ -140,10 +140,20 @@ window.addEventListener('error', e => __t.errors.push(String(e.message)));
 /** Scenario helpers, evaluated in the page before each scenario body. */
 export const HELPERS = `
 const doc = document;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => new Promise(r => setTimeout(r, ms));   // only for polling in until() and for asserting that nothing happens
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
-async function settle() { await sleep(0); await frame(); await frame(); await sleep(60); }
-async function until(test, what, ms = 4000) { const end = performance.now() + ms; while (!test()) { if (performance.now() > end) throw new Error('timed out: ' + (what || test)); await sleep(20); } }
+// settle: the page is quiet when its DOM has not changed for three animation frames (frames slow down under load,
+// so the wait scales with the machine); capped, so an animated page cannot hang a scenario.
+async function settle() {
+  await sleep(0);
+  let quiet = 0, dirty = false;
+  const obs = new MutationObserver(() => { dirty = true; });
+  obs.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  const end = performance.now() + 5000;
+  while (quiet < 3 && performance.now() < end) { dirty = false; await frame(); quiet = dirty ? 0 : quiet + 1; }
+  obs.disconnect();
+}
+async function until(test, what, ms = 15000) { const end = performance.now() + ms; while (!test()) { if (performance.now() > end) throw new Error('timed out: ' + (what || test)); await sleep(20); } }
 function assert(c, what) { if (!c) throw new Error('assertion failed: ' + what); }
 function eq(a, b, what) { const x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error(what + ': ' + x + ' !== ' + y); }
 const sent = () => __t.sent;

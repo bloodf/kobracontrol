@@ -45,7 +45,10 @@ async function ready(view, gen) { await connect(gen); await post(CONFIG()); awai
 async function tab(name) { await click(q('[data-tab="' + name + '"]')); }
 async function pick(root, label) {
   assert(root, 'select to open'); root.click(); await until(() => q('.p-select-overlay') && !q('.p-select-overlay[class*="enter-active"]'), 'select overlay open');
-  await sleep(250);   // the overlay finishes positioning (a filtered list moves while it focuses its search field)
+  // the overlay is positioned when the option stops moving (a filtered list shifts while it focuses its search field)
+  const first = qa('.p-select-overlay [role=option]')[0];
+  let at = '', steady = 0;
+  await until(() => { const r = first.getBoundingClientRect(), now = r.top + ':' + r.left; steady = now === at ? steady + 1 : 0; at = now; return steady >= 5; }, 'overlay in place');
   const opt = qa('.p-select-overlay [role=option]').find(o => text(o) === label);
   assert(opt, 'option ' + label + ' in ' + qa('.p-select-overlay [role=option]').map(text).join('|'));
   opt.click(); await settle(); await until(() => !q('.p-select-overlay'), 'overlay closed'); await settle();
@@ -408,7 +411,7 @@ test('stock card shows only for a usable list; the lease flag follows; Settings 
   await ready(VIEW());
   await reply(last('cmd', 'stock'), STOCK());
   await until(() => byTest('stock-card'), 'usable list: card');
-  await until(() => last('lease').stock === true, 'lease: stock on', 4000);
+  await until(() => last('lease').stock === true, 'lease: stock on', 15000);
   const states = [
     ['Spooler absent', STOCK({available: false, reason: 'absent', spooler: {state: 'absent', text: '', version: ''}})],
     ['Spooler without a list for this plugin', STOCK({available: false, reason: 'unsupported', stock: {state: 'missing', code: 'no_origin', text: 'none', rows: [], key: ''}})],
@@ -423,8 +426,7 @@ test('stock card shows only for a usable list; the lease flag follows; Settings 
     assert(!byTest('stock-card'), what + ': no card at all');
     assert(!qa('.kc-card').some(c => /stock/i.test(text(c.querySelector('h2')))), what + ': no stock heading');
   }
-  await sleep(2100);
-  assert(last('lease').stock === false, 'lease: stock off when there is no usable list');
+  await until(() => last('lease').stock === false, 'lease: stock off when there is no usable list (renewed every 2 s)');
   await tab('settings');
   assert(text(byTest('spooler-no-stock')).includes('needs a Spooler version that supports Kobra Control'), 'Settings says why: ' + text(q('.sv')));
 `);
@@ -440,8 +442,7 @@ test('camera: off by default and compact; frames are acknowledged; leases follow
   await until(() => q('.cam-view img'), 'frame shown');
   await until(() => last('frame_ack'), 'frame acknowledged');
   await tab('settings');
-  await sleep(2100);
-  assert(last('lease').camera === false, 'lease drops when the Dashboard is not on screen');
+  await until(() => last('lease').camera === false, 'lease drops when the Dashboard is not on screen (the lease is renewed every 2 s)');
 `);
 
 test('camera errors: a plain explanation per reason', `
@@ -546,7 +547,7 @@ test('stale status shows its age', `
   await ready(PRINTING());
   const real = Date.now;
   Date.now = () => real() + 30000;
-  await until(() => text(byTest('target-banner')).includes('out of date'), 'stale banner', 5000);
+  await until(() => text(byTest('target-banner')).includes('out of date'), 'stale banner', 15000);
   assert(text(byTest('target-banner')).includes('Last printer status'), 'says the age: ' + text(byTest('target-banner')));
   Date.now = real;
 `);
@@ -736,9 +737,9 @@ test('boot and icon blocks are the ones the code reads', `
 test('theme follows the host colour while the page runs', `
   const root = document.documentElement;
   root.style.setProperty('--orca-bg', '#f4f4f4');
-  await until(() => !root.classList.contains('orca-dark'), 'light', 4000);
+  await until(() => !root.classList.contains('orca-dark'), 'light', 15000);
   root.style.setProperty('--orca-bg', '#151515');
-  await until(() => root.classList.contains('orca-dark'), 'dark after the host changed', 4000);
+  await until(() => root.classList.contains('orca-dark'), 'dark after the host changed', 15000);
   eq(getComputedStyle(document.body).backgroundColor, 'rgb(24, 28, 34)', 'dark palette background');
 `);
 

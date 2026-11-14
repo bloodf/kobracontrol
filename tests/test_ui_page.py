@@ -41,7 +41,12 @@ class BuiltPage(unittest.TestCase):
             results = os.path.join(tmp, "results.json")
             env = {**os.environ, "PAGE": page, "RESULTS": results}
             proc = subprocess.run([NODE, RUNNER], capture_output=True, text=True, timeout=600, env=env, cwd=os.path.join(ROOT, "ui"))
-            self.assertEqual(proc.returncode, 0, proc.stdout[-6000:] + proc.stderr[-3000:])
+            failed = []
+            if os.path.exists(results):
+                with open(results, encoding="utf-8") as f:
+                    failed = ["%s: %s" % (r["name"], r.get("error", "")) for r in json.load(f) if not r["ok"]]
+            # the failing scenarios by name and assertion first, then the runner's own output
+            self.assertEqual(proc.returncode, 0, "failed page scenarios:\n  " + "\n  ".join(failed) + "\n\n" + proc.stdout[-4000:] + proc.stderr[-3000:])
             self.assertIn("PASS", proc.stdout)
             with open(results, encoding="utf-8") as f:
                 done = json.load(f)
