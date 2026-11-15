@@ -51,6 +51,9 @@ def listen(seconds, show_all, out):
             data = data[:locate.MAX_REPLY]
         except TimeoutError:
             break
+        except OSError as e:   # Windows: an ICMP port unreachable for an earlier send (WinError 10054)
+            out("\n(skipped a reply: %s)" % e)
+            continue
         printer = locate.is_printer_reply(data)
         if not (printer or show_all):
             continue
