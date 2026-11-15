@@ -39,7 +39,11 @@ def tls_from(cert_dir):
                 pass
         shipped = certs.bundled()
         if shipped:
-            return certs.context(*shipped)
+            try:
+                return certs.context(*shipped)
+            except certs.CertError as e:   # the loop would show it as "unexpected answer from the printer"
+                raise NoCertificate("the bundled Anycubic Slicer certificate does not load (%s): run Find Anycubic "
+                                    "certificate (needs Anycubic Slicer Next installed)" % e) from None
         raise NoCertificate("no Anycubic Slicer certificate: run Find Anycubic certificate "
                             "(needs Anycubic Slicer Next installed)")
     return load

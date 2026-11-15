@@ -297,6 +297,19 @@ class BundledTests(unittest.TestCase):
         self.assertTrue(certs._is_anycubic(open(cert_path, encoding="ascii").read()))
         certs.context(cert_path, key_path)   # raises on a mismatched pair
 
+    def test_unloadable_bundled_pair_is_no_certificate(self):
+        """A bundled pair that is unreadable or broken (and no saved one) says what to do, not a generic error."""
+        import connection
+        bad = tempfile.mkdtemp()
+        for name in ("c.pem", "k.pem"):
+            with open(os.path.join(bad, name), "w") as f:
+                f.write("not a pem")
+        with mock.patch.object(certs, "bundled", return_value=(os.path.join(bad, "c.pem"), os.path.join(bad, "k.pem"))):
+            with self.assertRaises(connection.NoCertificate) as raised:
+                connection.tls_from(tempfile.mkdtemp())()
+        self.assertIn("bundled", str(raised.exception))
+        self.assertIn("Find Anycubic certificate", str(raised.exception))
+
     def test_bundled_is_none_without_files(self):
         with mock.patch.object(certs, "paths", return_value=("/no/such.pem", "/no/such_key.pem")):
             self.assertIsNone(certs.bundled())
