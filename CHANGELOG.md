@@ -34,8 +34,11 @@ tests only and have not been tried on a printer yet.
 - Settings show the certificate source actually in use: a saved copy that does not load is not "saved".
 - The Device tab's unload with nothing loaded is refused with a plain reason, not "slot 0 does not exist".
 - The camera no longer starts a capture thread on a session that was replaced a moment before.
-- Camera tests: they wait for the fake stream instead of assuming its timing, and check processes in a
-  way that works on Windows (they no longer send Ctrl+C to the test runner there).
+- Find certificate pairs a certificate with its key whatever line endings the slicer's files use (CR,
+  CR CR LF, blank lines inside a block); before, such a block was refused and no pair was found.
+- The test suite runs on Windows: the camera tests wait for the fake stream instead of assuming its
+  timing and check processes without sending Ctrl+C to the test runner; the certificate, MQTT and
+  permission tests no longer assume LF files, POSIX descriptors or a private temp folder.
 
 ## [0.1.0] - 2026-11-14
 
