@@ -12,6 +12,7 @@ import { config, form, dirty, saving, save } from '../app/settings';
 import { t, langPref, setLangPref, autoLocale } from '../core/i18n';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
+import { fingerprintText } from '../core/logic';
 
 const cert = computed(() => s.certificate ?? config.value?.certificate ?? null);
 const certText = computed(() => (!cert.value ? t('cert.unknown') : cert.value.found ? t('cert.found', { source: cert.value.source || t('common.unknown') }) : t('cert.missing')));
@@ -42,6 +43,11 @@ const langOptions = computed(() => [
         <span class="sv-field"><InputText id="c-name" v-model="form.name" aria-describedby="c-name-help" />
           <span id="c-name-help" class="oui-meta">{{ t('conn.nameHelp') }}</span></span>
       </form>
+      <template v-if="s.status?.tls">
+        <p class="oui-meta sv-fp" data-test="tls-fp">{{ t('tls.fingerprint', { fp: fingerprintText(s.status.tls.fingerprint) }) }}
+          <template v-if="s.status.tls.changed_from"><br>{{ t('tls.previous', { fp: fingerprintText(s.status.tls.changed_from) }) }}</template></p>
+        <p class="oui-meta">{{ t('tls.help') }}</p>
+      </template>
     </section>
 
     <section class="kc-card" aria-labelledby="cert-h">
@@ -98,6 +104,7 @@ const langOptions = computed(() => [
 <style scoped>
 .sv { display: grid; gap: 16px; max-width: 1000px; }
 .sv-h { margin: 0; }
+.sv-fp { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .sv-prefs { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .sv-conn { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 8px; }
 .sv-conn > label { padding-top: 8px; }

@@ -56,3 +56,30 @@ export function boundSlots(live: Record<number, number | null>, fromStock: Recor
   for (const [k, v] of Object.entries(live)) { if (v != null) out[Number(k)] = v; else delete out[Number(k)]; }
   return out;
 }
+
+export type FileSort = 'newest' | 'oldest' | 'name' | 'largest';
+/** The printer's files matching `q` (name, case-insensitive), in the chosen order; the input is not changed. */
+export function listFiles<T extends { name: string; size: number; timestamp: number }>(files: readonly T[], q: string, sort: FileSort): T[] {
+  const needle = q.trim().toLowerCase();
+  const out = files.filter(f => !needle || f.name.toLowerCase().includes(needle));
+  const by: Record<FileSort, (a: T, b: T) => number> = {
+    newest: (a, b) => b.timestamp - a.timestamp,
+    oldest: (a, b) => a.timestamp - b.timestamp,
+    name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+    largest: (a, b) => b.size - a.size,
+  };
+  return out.sort(by[sort]);
+}
+
+/** A SHA-256 hex fingerprint as AB:CD:...; anything else unchanged. */
+export function fingerprintText(hex: string): string {
+  return /^(?:[0-9a-f]{2})+$/i.test(hex) ? hex.toUpperCase().match(/../g)!.join(':') : hex;
+}
+
+/** Unix time a running print should end: the printer's remaining time from its last report; null when unknown
+ * (not printing, still preparing, no remaining time). */
+export function finishAt(st: { state: string; preparing: boolean; remaining_s: number; updated_at: number } | null | undefined,
+  now: number): number | null {
+  if (!st || st.state !== 'printing' || st.preparing || !(st.remaining_s > 0)) return null;
+  return (st.updated_at > 0 ? st.updated_at : now) + st.remaining_s;
+}

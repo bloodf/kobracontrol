@@ -10,7 +10,7 @@ import MotionPanel from './MotionPanel.vue';
 import { s, run, tracker, controlsOff, printing, printerName, reported } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
-import { parseTarget, parseWhole } from '../core/logic';
+import { parseTarget, parseWhole, finishAt } from '../core/logic';
 
 const st = computed(() => s.status);
 const stateText = computed(() => {
@@ -24,6 +24,11 @@ const stateText = computed(() => {
   return detail ? `${name} · ${detail}` : name;
 });
 const pct = computed(() => Math.max(0, Math.min(100, st.value?.progress ?? 0)));
+const eta = computed(() => {
+  const at = finishAt(st.value, s.now / 1000);
+  if (at == null) return '';
+  return new Date(at * 1000).toDateString() === new Date(s.now).toDateString() ? fmt.time(at) : fmt.dateTime(at);
+});
 
 // ---------------------------------------------------------------- print controls
 type Kind = 'pause' | 'resume' | 'stop';
@@ -117,6 +122,7 @@ const setLight = (on: boolean) => run({ key: 'light', label: t('act.light'), cmd
     <dl v-if="printing" class="st-kv">
       <dt>{{ t('status.elapsed') }}</dt><dd>{{ fmt.duration(st?.elapsed_s) }}</dd>
       <dt>{{ t('status.left') }}</dt><dd>{{ st?.remaining_s ? fmt.duration(st.remaining_s) : '—' }}</dd>
+      <template v-if="eta"><dt>{{ t('status.eta') }}</dt><dd data-test="eta">{{ eta }}</dd></template>
     </dl>
 
     <div class="st-controls" role="group" :aria-label="t('status.controls')">

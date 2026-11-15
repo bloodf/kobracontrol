@@ -1,7 +1,7 @@
 // Pure rules of the page (node --test runs this TypeScript directly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots } from '../../src/core/logic.ts';
+import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, fingerprintText, finishAt } from '../../src/core/logic.ts';
 import { normalizeLocale, resolveLocale, interpolate } from '../../src/core/i18n-core.ts';
 import { en, ptBR } from '../../src/core/messages.ts';
 
@@ -83,5 +83,39 @@ test('both languages have the same keys and the same placeholders; no U1 wording
   for (const k of Object.keys(en) as (keyof typeof en)[]) {
     assert.equal(holes(ptBR[k]), holes(en[k]), `placeholders of ${k}`);
     assert.doesNotMatch(en[k] + ptBR[k], /\bU1\b|toolhead|Snapmaker|Moonraker|Klipper/i, `U1 wording in ${k}`);
+  }
+});
+
+test('files: search ignores case and spaces around it; the four orders', () => {
+  const files = [{ name: 'b.gcode', size: 5, timestamp: 20 }, { name: 'cube.gcode', size: 9, timestamp: 30 }, { name: 'Arch.gcode', size: 1, timestamp: 10 }];
+  const names = (q: string, sort: Parameters<typeof listFiles>[2]) => listFiles(files, q, sort).map(f => f.name);
+  assert.deepEqual(names('', 'newest'), ['cube.gcode', 'b.gcode', 'Arch.gcode']);
+  assert.deepEqual(names('', 'oldest'), ['Arch.gcode', 'b.gcode', 'cube.gcode']);
+  assert.deepEqual(names('', 'name'), ['Arch.gcode', 'b.gcode', 'cube.gcode']);
+  assert.deepEqual(names('', 'largest'), ['cube.gcode', 'b.gcode', 'Arch.gcode']);
+  assert.deepEqual(names('  CU ', 'newest'), ['cube.gcode']);
+  assert.deepEqual(names('zzz', 'newest'), []);
+  assert.equal(files[0].name, 'b.gcode', 'the input is not reordered');
+});
+
+test('fingerprints read in pairs; anything that is not hex is shown as is', () => {
+  assert.equal(fingerprintText('ab01ff'), 'AB:01:FF');
+  assert.equal(fingerprintText(''), '');
+  assert.equal(fingerprintText('xyz'), 'xyz');
+});
+
+test('the finish time needs a running print that is not preparing and a remaining time', () => {
+  const st = { state: 'printing', preparing: false, remaining_s: 600, updated_at: 1000 };
+  assert.equal(finishAt(st, 5000), 1600);
+  assert.equal(finishAt({ ...st, updated_at: 0 }, 5000), 5600);
+  assert.equal(finishAt({ ...st, preparing: true }, 5000), null);
+  assert.equal(finishAt({ ...st, remaining_s: 0 }, 5000), null);
+  assert.equal(finishAt({ ...st, state: 'paused' }, 5000), null);
+  assert.equal(finishAt(null, 5000), null);
+});
+
+test('the new texts exist in every language', () => {
+  for (const key of ['files.count', 'files.noMatch', 'files.mat.differs', 'files.mat.missing', 'tls.changed.body', 'status.eta'] as const) {
+    assert.ok(en[key] && ptBR[key] && en[key] !== ptBR[key], key);
   }
 });
