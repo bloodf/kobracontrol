@@ -600,7 +600,10 @@ class KobraAgent(pa.PrinterAgentBase):
             self._dirty.clear()
             if stop.is_set():
                 return
-            self._push()
+            try:
+                self._push()
+            except Exception as e:   # one bad sample must not end the Device tab's status for the session
+                log("Device tab status push failed: %r" % e)
             stop.wait(PUSH_EVERY)
 
     def _push(self):

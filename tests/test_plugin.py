@@ -114,6 +114,25 @@ class Agent(Base):
         self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OGFL99"))
         self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "")   # no Generic PETG preset loaded
 
+    def test_status_push_survives_a_failing_sample(self):
+        """One status sample that raises must not end the Device tab's pusher thread for the rest of the session."""
+        self.connect()
+        real, calls = plugin.bambu.push_status, []
+
+        def flaky(*a, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ValueError("bad sample")
+            return real(*a, **kw)
+        plugin.bambu.push_status = flaky
+        self.addCleanup(setattr, plugin.bambu, "push_status", real)
+        self.events["message"].clear()
+        self.agent._dirty.set()
+        wait(lambda: calls)
+        self.agent._dirty.set()
+        wait(lambda: self.events["message"])
+        self.assertTrue(self.agent._pusher.is_alive())
+
     def test_discovery_announces_the_printer(self):
         self.connect()
         self.assertTrue(self.agent.start_discovery(True, False))
