@@ -93,6 +93,7 @@ is always empty, because it carries the upload token. Plus:
 | `ace_units` | `ace.aggregate_ace_units` units: `{id, auto_feed, humidity, temp, status, model_id, drying}`; `drying.remain_time` is in minutes |
 | `features`, `aux_fan_pct`, `phase_unit`, `phase_channel` | from `kobra.State.view()`: the `*_support` flags, the auxiliary fan percentage, and the ACE unit and slot (1-based) of the current slot check during a job, or `null` |
 | `can` | `{pause, resume, stop, move, heat, feed, print}` booleans: what the printer state allows now |
+| `tls` | `{fingerprint, changed_from}`: SHA-256 (hex) of the certificate the printer presented on this session, and the one remembered from before when it differs (else `""`); `null` without TLS. See SECURITY.md |
 
 ### Commands
 
@@ -131,7 +132,7 @@ Replies:
 | `cmd` | `result` |
 |---|---|
 | `files` | `{files: [{name, size, timestamp, thumbnail}]}`; storage is in `status.data.storage` |
-| `file_details` | `{name, thumbnail}` (PNG data URL or `null`) |
+| `file_details` | `{name, thumbnail, info, materials}`: thumbnail is a PNG data URL or `null`; `info` is `{estimated_s, layers, filament_g, layer_height, nozzle_temp, bed_temp, nozzle, printer_model, model_ok}` (numbers `null` when the file does not say); `materials` is one `{paint_index, material, colour, grams, slot, slot_type, slot_colour, check}` per filament, where `slot` is the `global_index` a print from the Files page would use (the same auto mapping as `file_print`, `null` when none) and `check` is `ok`, `differs` or `missing` (`files.plan`) |
 | `file_print` | `{started: name}`; uses the automatic slot mapping from the loaded slots |
 | `objects` | `{filename, objects: [name], skipped: [name]}` for the running print; an error when none runs |
 | `find_certificate` | `{found, source}` |

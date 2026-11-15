@@ -294,6 +294,12 @@ class Printer:
         return bool(client and client.connected)
 
     @property
+    def tls_fingerprint(self):
+        """SHA-256 (hex) of the certificate the printer presented on this session; "" without TLS or a session."""
+        der = getattr(self._client, "peer_cert", None)
+        return hashlib.sha256(der).hexdigest() if der else ""
+
+    @property
     def last_rx(self):
         """time.monotonic() of the last MQTT bytes from the printer, 0.0 when never connected."""
         client = self._client
@@ -724,16 +730,28 @@ def _dict(value):
 
 
 def _num(value, default=0):
-    if isinstance(value, (int, float)):
+    """A finite number, else default (JSON numbers such as 1e999 parse as infinity)."""
+    if isinstance(value, int):
         return value
     try:
-        return float(value)
+        value = float(value)
     except (TypeError, ValueError):
         return default
+    return value if math.isfinite(value) else default
 
 
 def _str(value):
     return value if isinstance(value, str) else ""
+
+
+def _box(raw):
+    """A multiColorBox entry the slot code can read: a slot that is not an object becomes an empty one (its
+    position is its slot number, so it is never dropped), a status block that is not an object is left out."""
+    box = {k: v for k, v in raw.items() if k not in ("feed_status", "drying_status", "drying_settings")
+           or isinstance(v, dict)}
+    if "slots" in box:
+        box["slots"] = [s if isinstance(s, dict) else {} for s in box["slots"]] if isinstance(box["slots"], list) else []
+    return box
 
 
 class State:
@@ -911,7 +929,7 @@ class State:
         if self._v["box_set_failed"]:
             return
         if isinstance(d.get("multi_color_box"), list):
-            self._v["multi_color_box"] = d["multi_color_box"]
+            self._v["multi_color_box"] = [_box(b) for b in d["multi_color_box"] if isinstance(b, dict)]
         if "head_tools_model" in d:
             self._v["head_tools_model"] = d["head_tools_model"]
 

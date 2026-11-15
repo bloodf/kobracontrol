@@ -18,7 +18,7 @@ import kobra
 import peers
 import settings
 import spooler_bridge
-from service import (BED_MAX, LIMITS, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
+from service import (BED_MAX, LIMITS, NOTHING_LOADED, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
                      find_and_save_certificate, status_data)
 
 VERSION = "0.0.0-dev"
@@ -250,8 +250,8 @@ def spooler_state():
 
 
 def certificate_state():
-    try:
-        certs.load(cert_dir())
+    try:   # as connection.tls_from: a saved pair counts only when it loads
+        certs.context(*certs.paths(cert_dir()))
         return {"found": True, "source": "saved"}
     except certs.CertError:
         if certs.bundled():
@@ -537,7 +537,7 @@ class KobraAgent(pa.PrinterAgentBase):
         host = host_of(getattr(params, "host", ""))
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
-        self._detach()
+        previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._filament_ids = self._generic_ids()
         self._was_connected = False
@@ -547,16 +547,22 @@ class KobraAgent(pa.PrinterAgentBase):
         self._pusher.start()
         _use("agent")
         service().connection(host).add_listener(self._on_change)
+        if previous != host:
+            self._release(previous)
         self._dirty.set()
         return OK
 
     def disconnect_printer(self):
         host = self._detach()
         self.dev_id = self.host = ""
+        self._release(host)
+        return OK
+
+    @staticmethod
+    def _release(host):
         svc = _service   # only the running service: never start a new one while the plugin unloads
         if host and svc is not None:
             threading.Thread(target=svc.release, args=(host,), name="kobracontrol-release", daemon=True).start()
-        return OK
 
     def on_load(self):
         _use("agent")
@@ -600,7 +606,10 @@ class KobraAgent(pa.PrinterAgentBase):
             self._dirty.clear()
             if stop.is_set():
                 return
-            self._push()
+            try:
+                self._push()
+            except Exception as e:   # one bad sample must not end the Device tab's status for the session
+                log("Device tab status push failed: %r" % e)
             stop.wait(PUSH_EVERY)
 
     def _push(self):
@@ -650,6 +659,9 @@ class KobraAgent(pa.PrinterAgentBase):
                     "set_temp": "heat", "slot_feed": "feed", "slot_retract": "feed", "slot_set": "feed"}
         if kind in flag_for and not can_flags(view)[flag_for[kind]]:
             log("Device tab %s refused: the printer is %s" % (kind, view["state"]))
+            return ERR_INVALID_HANDLE
+        if kind == "slot_retract" and "tray" not in command and status_data(view)[0]["loaded_slot"] < 0:
+            log("Device tab unload refused: %s" % NOTHING_LOADED)
             return ERR_INVALID_HANDLE
         threading.Thread(target=self._run_command, args=(self.host, command, json_str), name="kobracontrol-device",
                          daemon=True).start()
@@ -758,9 +770,12 @@ class KobraAgent(pa.PrinterAgentBase):
         name = os.path.basename(clean(getattr(params, "dst_file", "")) or clean(params.filename))
         try:
             service().call(self._job_host(params), "file_print", name=name,
-                           auto_leveling=bool(getattr(params, "task_bed_leveling", False)))
+                           auto_leveling=bool(getattr(params, "task_bed_leveling", False)),
+                           vibration_compensation=bool(getattr(params, "task_vibration_cali", False)))
         except Exception as e:
             return self._fail(update_fn, ERR_LP_PUBLISH, e)
+        if update_fn:
+            update_fn(STAGE_FINISHED, 100, "Print started")
         return OK
 
     # no binding or certificates on this printer -------------------------------------------------------------
@@ -796,12 +811,12 @@ class KobraAgent(pa.PrinterAgentBase):
     def command_start_camera(self, dev_id):
         """video/startCapture (Kobralink starts the stream before reading it), once per stream URL."""
         conn = service().connections.get(self.host) if self.host else None
-        if not conn or not conn.connected:
+        printer = conn.printer if conn else None   # read once: the loop may replace the session meanwhile
+        if printer is None or not conn.connected:
             return ERR_CONNECT
-        key = (self.host, conn.view()["camera_url_rev"], id(conn.printer))
+        key = (self.host, conn.view()["camera_url_rev"], id(printer))
         if key != self._camera_key:
             self._camera_key = key
-            printer = conn.printer
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
         return OK
 

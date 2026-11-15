@@ -1,5 +1,6 @@
 """Client certificate discovery in slicer binaries, saving/loading, TLS context."""
 
+import json
 import os
 import shutil
 import ssl
@@ -19,6 +20,11 @@ HAS_OPENSSL = bool(shutil.which("openssl"))
 DENIED = {"secret", "secrets", "cert", "certs", "certificate", "certificates", "conf", "config"}
 
 
+def pem_body(pem):
+    """A PEM block's base64 body without any whitespace or line endings."""
+    return "".join(pem.strip().splitlines()[1:-1]).replace(" ", "").replace("\r", "")
+
+
 def read(path):
     with open(path, "rb") as f:
         return f.read()
@@ -30,7 +36,8 @@ class Tmp(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def write(self, rel, data):
-        path = os.path.join(self.tmp, rel)
+        """rel uses "/"; the file is written at, and its path returned in, this OS's own form."""
+        path = os.path.join(self.tmp, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             f.write(data)
@@ -52,13 +59,34 @@ class FindTests(Tmp):
         return data.replace(b"\n", b"\r\n") if crlf else data
 
     def assert_client_pair(self, found):
-        self.assertEqual(found.cert_pem.strip(), read(self.tls.client_cert).decode().strip())
-        self.assertEqual(found.key_pem.strip(), read(self.tls.client_key).decode().strip())
+        """The same PEM blocks whatever their line endings: openssl writes CRLF files on Windows, and find()
+        returns every block in one form (LF, 64-character lines)."""
+        self.assertEqual(pem_body(found.cert_pem), pem_body(read(self.tls.client_cert).decode()))
+        self.assertEqual(pem_body(found.key_pem), pem_body(read(self.tls.client_key).decode()))
+        for pem in (found.cert_pem, found.key_pem):
+            self.assertNotIn("\r", pem)
+            self.assertTrue(all(len(line) <= 64 for line in pem.splitlines()))
+
+    def test_any_line_endings_pair(self):
+        """A certificate and its key are paired whatever line endings the binary carries: LF, CRLF (Windows), CR,
+        CR CR LF (CRLF text converted twice), blank lines, or one form for the certificate and another for the
+        key. Pinned on every OS: the fixtures' own endings (CRLF on Windows) are first made LF."""
+        def lf(path):
+            return read(path).replace(b"\r\n", b"\n")
+        forms = {"lf": b"\n", "crlf": b"\r\n", "cr": b"\r", "crcrlf": b"\r\r\n", "blank": b"\n\n"}
+        for cert_form, key_form in [(f, f) for f in forms] + [("lf", "crlf"), ("crlf", "cr"), ("crcrlf", "lf")]:
+            data = (b"\x00" + lf(self.tls.client_cert).replace(b"\n", forms[cert_form]) + b"\x01"
+                    + lf(self.tls.client_key).replace(b"\n", forms[key_form]) + b"\x02")
+            lib = self.write("e/%s-%s.dll" % (cert_form, key_form), data)
+            with self.subTest(cert=cert_form, key=key_form):
+                self.assert_client_pair(certs.find([lib]))
 
     def test_picks_anycubic_pair_from_fake_dylib(self):
         lib = self.write("Frameworks/libcloud_mqtt.dylib", self.blob())
         found = certs.find([os.path.join(self.tmp, "Frameworks")])
         self.assert_client_pair(found)
+        # find() walks the folder itself, so the path it reports (and Find certificate shows) is a native one
+        self.assertEqual(found.source, os.path.join(self.tmp, "Frameworks", "libcloud_mqtt.dylib"))
         self.assertEqual(found.source, lib)
 
     def test_crlf_and_single_file(self):
@@ -284,8 +312,39 @@ class NoOpensslTests(Tmp):
         self.assertIn("/Applications/AnycubicSlicerNext.app/Contents/Frameworks", mac)
         self.assertIn("/Applications/AnycubicSlicerNext.app/Contents/MacOS", mac)
         win = certs.default_locations("win32", {"ProgramFiles": r"C:\Program Files"})
-        self.assertIn(os.path.join(r"C:\Program Files", "AnycubicSlicerNext"), win)
-        self.assertTrue(certs.default_locations("linux", {"HOME": "/home/u"}))
+        self.assertIn(r"C:\Program Files\AnycubicSlicerNext", win)
+        self.assertIn(r"C:\Users\u\AppData\Local\Programs\AnycubicSlicerNext",
+                      certs.default_locations("win32", {"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}))
+        self.assertIn("/home/u/.local/share/AnycubicSlicerNext", certs.default_locations("linux", {"HOME": "/home/u"}))
+
+
+class PinTests(unittest.TestCase):
+    """The printer's TLS certificate, remembered per address: a change is reported, never refused."""
+
+    def setUp(self):
+        self.path = os.path.join(tempfile.mkdtemp(), "printers.json")
+
+    def test_first_same_and_changed(self):
+        pins = certs.Pins(self.path)
+        self.assertEqual(pins.check("10.0.0.5", "aa"), None)
+        self.assertEqual(pins.check("10.0.0.5", "aa"), None)
+        self.assertEqual(certs.Pins(self.path).check("10.0.0.5", "bb"), "aa")   # survives a restart
+        self.assertEqual(certs.Pins(self.path).check("10.0.0.5", "bb"), None)    # the new one is remembered
+        self.assertEqual(pins.check("10.0.0.6", "aa"), None)                   # per address
+
+    def test_unreadable_file_starts_over(self):
+        with open(self.path, "w") as f:
+            f.write("{not json")
+        self.assertEqual(certs.Pins(self.path).check("h", "aa"), None)
+        with open(self.path) as f:
+            self.assertEqual(json.load(f)["printers"], {"h": "aa"})
+
+    def test_bad_entries_are_ignored(self):
+        with open(self.path, "w") as f:
+            json.dump({"printers": {"h": 5, "g": "cc"}}, f)
+        pins = certs.Pins(self.path)
+        self.assertEqual(pins.check("h", "aa"), None)
+        self.assertEqual(pins.check("g", "dd"), "cc")
 
 
 class BundledTests(unittest.TestCase):
@@ -294,8 +353,21 @@ class BundledTests(unittest.TestCase):
         shipped = certs.bundled()
         self.assertIsNotNone(shipped, "bundled Anycubic certificate missing from the package")
         cert_path, key_path = shipped
-        self.assertTrue(certs._is_anycubic(open(cert_path, encoding="ascii").read()))
+        self.assertTrue(certs._is_anycubic(read(cert_path).decode("ascii")))
         certs.context(cert_path, key_path)   # raises on a mismatched pair
+
+    def test_unloadable_bundled_pair_is_no_certificate(self):
+        """A bundled pair that is unreadable or broken (and no saved one) says what to do, not a generic error."""
+        import connection
+        bad = tempfile.mkdtemp()
+        for name in ("c.pem", "k.pem"):
+            with open(os.path.join(bad, name), "w") as f:
+                f.write("not a pem")
+        with mock.patch.object(certs, "bundled", return_value=(os.path.join(bad, "c.pem"), os.path.join(bad, "k.pem"))):
+            with self.assertRaises(connection.NoCertificate) as raised:
+                connection.tls_from(tempfile.mkdtemp())()
+        self.assertIn("bundled", str(raised.exception))
+        self.assertIn("Find Anycubic certificate", str(raised.exception))
 
     def test_bundled_is_none_without_files(self):
         with mock.patch.object(certs, "paths", return_value=("/no/such.pem", "/no/such_key.pem")):

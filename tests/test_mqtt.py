@@ -363,8 +363,11 @@ class TlsTests(unittest.TestCase):
         self.addCleanup(c.close)
         c.connect()
         session = self.fake._sessions[0]
-        raw = socket.socket(fileno=os.dup(session.sock.fileno()))
-        self.addCleanup(raw.close)
+        # A plain socket over the broker's TLS socket, to write a bare record header. Not os.dup(fileno): on
+        # Windows a socket is a SOCKET handle, not a C runtime descriptor (EBADF), and SSLSocket.dup() is not
+        # allowed. Detached afterwards, so it never closes the broker's socket under it.
+        raw = socket.socket(fileno=session.sock.fileno())
+        self.addCleanup(raw.detach)
         raw.sendall(b"\x17\x03\x03\x01\x00")  # header of a 256-byte record that never comes
         time.sleep(0.4)  # let the reader enter its read
         start = time.monotonic()

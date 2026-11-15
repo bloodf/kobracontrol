@@ -370,6 +370,14 @@ class FakeKobra:
             def log_message(self, *args):
                 pass
 
+            def handle(self):
+                # A client that gave up (a test's short timeout, a refused redirect) may be gone before the
+                # answer is written; on Windows that is WinError 10054 printed by socketserver. Not a failure.
+                try:
+                    super().handle()
+                except ConnectionError:
+                    pass
+
             def answer(self, status, body):
                 raw = body if isinstance(body, bytes) else json.dumps(body).encode()
                 self.send_response(status)

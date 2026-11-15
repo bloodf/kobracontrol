@@ -1,8 +1,11 @@
 """Service end to end against FakeKobra on 127.0.0.1. Run: python3 -m unittest tests/test_service.py -v"""
 
 import glob
+import hashlib
 import json
 import os
+import shutil
+import ssl
 import sys
 import tempfile
 import threading
@@ -21,7 +24,7 @@ import connection  # noqa: E402
 import jobs  # noqa: E402
 import kobra  # noqa: E402
 import service  # noqa: E402
-from fake_kobra import FakeKobra  # noqa: E402
+from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
 
 ACE0 = {"id": 0, "loaded_slot": -1, "auto_feed": 1, "slots": [
     {"index": 0, "status": 5, "type": "PLA", "color": [255, 0, 0]},
@@ -247,6 +250,12 @@ class IdleCommands(Base):
         self.assertIn("no print is running", self.run_cmd("objects")["error"])
         self.assertFalse(self.sent("file", "fileDetails"))
 
+    def test_retract_with_nothing_loaded_says_so(self):
+        """No slot given (the Device tab's unload) and nothing loaded: a plain reason, never "slot 0 does not exist"."""
+        error = self.run_cmd("slot_retract")["error"]
+        self.assertEqual(error, service.NOTHING_LOADED)
+        self.assertFalse(self.sent("multiColorBox", "feedFilament"))
+
     def test_slot_set_and_feed_with_ack(self):
         self.assertTrue(self.run_cmd("slot_set", slot=2, type="petg", colour="#00ff00")["result"])
         data = wait(lambda: self.sent("multiColorBox", "setInfo"))[0]["data"]
@@ -442,6 +451,7 @@ class Files(Base):
         self.assertEqual([r["name"] for r in self.run_cmd("files")["result"]["files"]], ["a.gcode", "b.gcode"])
         details = self.run_cmd("file_details", name="a.gcode")["result"]
         self.assertTrue(details["thumbnail"].startswith("data:image/png;base64,"))
+        self.assertEqual((details["materials"], details["info"]["model_ok"]), ([], True))   # no paint_infos in this fake
         self.assertTrue(self.run_cmd("file_print", name="a.gcode", auto_leveling=True)["result"])
         self.assertEqual(start_mapping(self), [0, 1, 3, 3])   # the loaded ACE slots, Kobralink's auto mapping
         start = wait(lambda: self.sent("print", "start"))[0]["data"]
@@ -560,6 +570,73 @@ class LoopSurvives(unittest.TestCase):
         svc.touch(camera=False)
         wait(lambda: any(m.get("type") == "status" for m in published))
         self.assertTrue(svc.monitor.is_alive())
+
+
+@unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed to generate throwaway certificates")
+class PrinterCertificate(unittest.TestCase):
+    """The printer's TLS certificate is remembered per address; a different one is shown, the connection kept."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        tls = make_tls_files(self.tmp)
+        self.fake = FakeKobra(tls=tls).start()
+        self.addCleanup(self.fake.stop)
+        self.fake.reply("info", "query", {"project": {"state": "free"}})
+        self.fake.reply("print", "query", {"taskid": "1"}, state="free")
+        self.fake.reply("multiColorBox", "getInfo", {"multi_color_box": [ACE0]})
+        self.ctx = lambda: certs.context(tls.client_cert, tls.client_key)
+        with open(tls.server_cert) as f:
+            self.fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(f.read())).hexdigest()
+
+    def connect(self):
+        published, logs = [], []
+        svc = service.Service(published.append, logs.append, cert_dir=self.tmp, tls=self.ctx, http_port=self.fake.http_port,
+                              mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera)
+        self.addCleanup(svc.close)
+        svc.set_target(service.Target(self.fake.host))
+        conn = svc.connections[self.fake.host]
+        wait(lambda: conn.connected)
+        return svc._data(conn), logs
+
+    def test_first_connection_remembers_the_certificate(self):
+        data, logs = self.connect()
+        self.assertEqual(data["tls"], {"fingerprint": self.fingerprint, "changed_from": ""})
+        data, _ = self.connect()
+        self.assertEqual(data["tls"]["changed_from"], "")
+
+    def test_a_different_certificate_is_reported_and_still_connects(self):
+        with open(os.path.join(self.tmp, certs.PINS_FILE), "w") as f:
+            json.dump({"printers": {self.fake.host: "ab" * 32}}, f)
+        data, logs = self.connect()
+        self.assertTrue(data["connected"])
+        self.assertEqual(data["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
+        self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
+
+    def test_plain_session_reports_none(self):
+        self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
+
+
+class CameraPrinterGone(Base):
+    """The session can be replaced (printer None) between the connected check and the capture thread."""
+
+    class Swapped:
+        host, connected, printer = "127.0.0.1", True, None
+
+        def view(self):
+            return {"camera_url_rev": 0, "connected": True, "camera_url": ""}
+
+    def test_camera_tick_with_no_printer(self):
+        errors = []
+        old = threading.excepthook
+        threading.excepthook = lambda args: errors.append(args.exc_value)
+        self.addCleanup(setattr, threading, "excepthook", old)
+        target = service.Target("swapped")
+        self.svc.connections["swapped"] = self.Swapped()
+        self.addCleanup(self.svc.connections.pop, "swapped", None)
+        self.svc._camera_tick(target)
+        time.sleep(0.2)
+        self.assertEqual(errors, [])
 
 
 class CameraHost(Base):

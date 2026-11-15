@@ -63,6 +63,18 @@ const STOCK = extra => ({spooler: {state: 'active', text: 'Spooler is running', 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const ENTRY = {id: 'abc', at: null, spool: 7, grams: 12.5, slot: 4, file: 'gcodes/benchy.gcode', error: 'Spoolman timeout', job: 'j1', printer: '192.168.1.50', printer_name: 'Bench Kobra', spoolman: 'http://box:7912'};
 const USAGE = extra => ({pending: [], unconfirmed: [], acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: '', ...extra});
+const DETAILS = extra => ({name: 'benchy.gcode', thumbnail: PNG,
+  info: {estimated_s: 25816, layers: 1875, filament_g: 102.99, layer_height: 0.16, nozzle_temp: 205, bed_temp: 60, nozzle: 0.4, printer_model: 'Anycubic Kobra X', model_ok: true},
+  materials: [{paint_index: 0, material: 'PETG', colour: '#3E63DD', grams: 84.11, slot: 0, slot_type: 'PETG', slot_colour: '#3E63DD', check: 'ok'},
+    {paint_index: 4, material: 'PLA', colour: '#E10600', grams: 18.88, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}], ...extra});
+async function openDetails(details) {
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]});
+  await click(q('[data-file="benchy.gcode"] [data-print]'));
+  await reply(last('cmd', 'file_details'), details);
+  await until(() => q('.fv-thumb'), 'file details shown');
+}
 `;
 
 const scenarios = [];
@@ -739,6 +751,101 @@ test('files: a list error says so and can be retried', `
   await click(btn('Try again', q('.p-message')));
   eq(cmds('files').length, 2, 'retry');
 `);
+
+test('files: the print panel shows what the file needs and which slot prints each filament', `
+  await openDetails(DETAILS());
+  const info = text(byTest('file-info'));
+  for (const want of ['7 h 10 min', '1,875', '103 g', '0.16 mm', '205 / 60 °C']) assert(info.includes(want), want + ' in ' + info);
+  eq(qa('[data-mat]').length, 2, 'one row per filament');
+  assert(text(q('[data-mat="0"]')).includes('Print head · Slot 1') && text(q('[data-mat="0"]')).includes('PETG'), 'slot of filament 1: ' + text(q('[data-mat="0"]')));
+  assert(text(byTest('mat-warn')).includes('ACE 1 · Slot 2') && text(byTest('mat-warn')).includes('ABS'), 'mismatch named: ' + text(byTest('mat-warn')));
+  assert(!byTest('model-warn'), 'sliced for a Kobra X: no model warning');
+  await click(byTest('print-start'));
+  assert(dialogOpen() && dialogText().includes('ABS'), 'the confirmation repeats the mismatch: ' + dialogText());
+  await no();
+  eq(cmds('file_print'), [], 'nothing printed');
+`);
+
+test('files: a file sliced for another printer or with no loaded slot is flagged', `
+  await openDetails(DETAILS({info: {...DETAILS().info, printer_model: 'Anycubic Kobra 3', model_ok: false},
+    materials: [{paint_index: 7, material: 'PLA', colour: '#E10600', grams: 5, slot: null, slot_type: '', slot_colour: '', check: 'missing'}]}));
+  assert(text(byTest('model-warn')).includes('Anycubic Kobra 3'), 'model named: ' + text(byTest('model-warn')));
+  assert(text(byTest('mat-warn')).includes('Filament 8'), 'missing slot named: ' + text(byTest('mat-warn')));
+`);
+
+test('files: details without the new fields still show the panel', `
+  await openDetails({name: 'benchy.gcode', thumbnail: PNG});
+  eq(qa('[data-mat]').length, 0, 'no material rows');
+  assert(!byTest('mat-warn') && !byTest('model-warn'), 'no warnings');
+  await click(byTest('print-start'));
+  assert(dialogOpen() && !dialogText().includes('Not as sliced'), 'plain confirmation');
+  await no();
+`);
+
+test('files: search and sort the list', `
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}, {name: 'cube.gcode', size: 900000, timestamp: 1699000000},
+    {name: 'Arch.gcode', size: 9000000, timestamp: 1698000000}]});
+  const names = () => qa('[data-file]').map(e => e.getAttribute('data-file'));
+  eq(names(), ['benchy.gcode', 'cube.gcode', 'Arch.gcode'], 'newest first by default');
+  await type(byTest('files-q'), 'CU');
+  await until(() => names().length === 1, 'filtered');
+  eq(names(), ['cube.gcode'], 'search ignores case');
+  eq(text(byTest('files-count')), 'Showing 1 of 3 files', 'count');
+  await type(byTest('files-q'), 'zzz');
+  await until(() => byTest('files-nomatch'), 'no match');
+  assert(text(byTest('files-nomatch')).includes('zzz'), 'says what found nothing');
+  await type(byTest('files-q'), '');
+  await until(() => names().length === 3, 'cleared');
+  await pick(byTest('files-sort'), 'Name');
+  eq(names(), ['Arch.gcode', 'benchy.gcode', 'cube.gcode'], 'by name');
+  await pick(byTest('files-sort'), 'Largest first');
+  eq(names(), ['Arch.gcode', 'benchy.gcode', 'cube.gcode'], 'by size');
+  await pick(byTest('files-sort'), 'Oldest first');
+  eq(names(), ['Arch.gcode', 'cube.gcode', 'benchy.gcode'], 'oldest first');
+`);
+
+test('status: a running print says when it will finish', `
+  const at = Math.floor(Date.now() / 1000);
+  await ready(PRINTING({updated_at: at, remaining_s: 7000}));
+  const want = new Intl.DateTimeFormat('en', {timeStyle: 'short'}).format(new Date((at + 7000) * 1000));
+  assert(text(byTest('eta')).includes(want), 'finish time ' + want + ' in ' + text(byTest('eta')));
+  await post({type: 'status', data: PRINTING({updated_at: at, remaining_s: 0})});
+  assert(!byTest('eta'), 'no remaining time: no finish time');
+  await post({type: 'status', data: PRINTING({updated_at: at, remaining_s: 7000, preparing: true, kobra_state: 'nozzle_heating'})});
+  assert(!byTest('eta'), 'preparing: the printer reports no real remaining time yet');
+`);
+
+test('tls: a changed printer certificate is shown, the fingerprint is in Settings', `
+  await ready(VIEW({tls: {fingerprint: 'ab'.repeat(32), changed_from: ''}}));
+  assert(!byTest('tls-changed'), 'same certificate: no warning');
+  await post({type: 'status', data: VIEW({tls: {fingerprint: 'ab'.repeat(32), changed_from: 'cd'.repeat(32)}})});
+  await until(() => byTest('tls-changed'), 'warning');
+  assert(text(byTest('tls-changed')).includes('certificate changed') && text(byTest('tls-changed')).includes('Bench Kobra'), 'warning: ' + text(byTest('tls-changed')));
+  await tab('settings');
+  assert(text(byTest('tls-fp')).includes('AB:AB:AB'), 'fingerprint: ' + text(byTest('tls-fp')));
+  assert(text(byTest('tls-fp')).includes('CD:CD:CD'), 'previous fingerprint: ' + text(byTest('tls-fp')));
+  assert(byTest('tls-changed'), 'the warning stays on every tab');
+`);
+
+test('pt-BR: the new file, finish-time and certificate texts are translated', `
+  const at = Math.floor(Date.now() / 1000);
+  await ready(PRINTING({updated_at: at, remaining_s: 7000, tls: {fingerprint: 'ab'.repeat(32), changed_from: 'cd'.repeat(32)}}));
+  assert(text(q('.st-kv')).includes('Termina') && byTest('eta'), 'eta: ' + text(q('.st-kv')));
+  assert(text(byTest('tls-changed')).includes('certificado da impressora mudou'), 'tls: ' + text(byTest('tls-changed')));
+  await post({type: 'status', data: VIEW()});
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 1, timestamp: 1700000000}, {name: 'cube.gcode', size: 1, timestamp: 1}]});
+  await type(byTest('files-q'), 'cube');
+  await until(() => qa('[data-file]').length === 1, 'filtered');
+  eq(text(byTest('files-count')), 'Mostrando 1 de 2 arquivos', 'count');
+  await click(q('[data-file="cube.gcode"] [data-print]'));
+  await reply(last('cmd', 'file_details'), DETAILS({name: 'cube.gcode'}));
+  await until(() => byTest('file-info'), 'details');
+  assert(text(byTest('file-info')).includes('Tempo estimado'), 'info: ' + text(byTest('file-info')));
+  assert(text(byTest('mat-warn')).includes('ABS'), 'mismatch: ' + text(byTest('mat-warn')));
+`, { lang: 'pt-BR' });
 
 // ------------------------------------------------------------------ settings
 test('settings: connection fields save together; unsaved is flagged; Saved only after the answer', `

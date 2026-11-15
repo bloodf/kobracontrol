@@ -31,12 +31,11 @@ Everything stays on your local network. The plugin needs no extra Python package
   <img src="assets/features/feature-secure.svg" width="72" alt="Secure local connection">
 </p>
 
-> **Status: in development, not released.** The plugin's service layer was run against a real Kobra X
+> **Status: in development.** The plugin's service layer was run against a real Kobra X
 > (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing,
 > jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract,
 > drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the
-> printer, and nothing has been tested inside OrcaSlicer itself. There is no release and no Orca
-> Cloud listing.
+> printer, and nothing has been tested inside OrcaSlicer itself.
 
 After a print starts, the printer can spend many minutes in preparation (heating, levelling, and
 cycling through the ACE slots) before the first layer. In one test that took about 11 minutes for a
@@ -123,10 +122,16 @@ The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with
 
 ### Kobra Control tab
 
-- **Dashboard:** status and controls, camera, an ACE card (slots, feed, retract, auto-feed and
+- **Dashboard:** status and controls (with the clock time a running print should finish), camera, an ACE card (slots, feed, retract, auto-feed and
   drying), Spoolman and Spooler stock.
-- **Files:** the printer's files.
-- **Settings:** connection, certificate, ffmpeg path, Spoolman and Spooler.
+- **Files:** the printer's files, with search and sorting (newest, oldest, name, size). Before you print
+  one, the print panel shows its estimated time, layers, filament, layer height and temperatures, and
+  which ACE slot will print each of its filaments. It warns when a slot holds a different material than
+  the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another
+  printer; the confirmation repeats the warning.
+- **Settings:** connection (with the printer's certificate fingerprint), certificate, ffmpeg path, Spoolman
+  and Spooler. If the printer presents a different TLS certificate than last time, every tab shows a
+  warning; see [SECURITY.md](SECURITY.md).
 
 The tab's camera needs `ffmpeg` installed. The Device tab camera does not. When the tab's camera
 starts, OrcaSlicer asks for permission to run the `ffmpeg` command, and shows the full command with
@@ -167,7 +172,7 @@ to replace the bundled certificate with your own copy.
 
 ## Install
 
-There is no release yet. Build the wheel and install it:
+Download `kobracontrol_any.whl` from the [latest release](https://github.com/bloodf/kobracontrol/releases/latest), or build it:
 
 ```sh
 python3 scripts/build.py     # writes dist/kobracontrol_any.whl

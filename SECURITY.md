@@ -14,6 +14,15 @@ and kobracontrol cannot add any:
 - **The printer is not verified.** MQTT (port 9883) runs over TLS, but the printer's certificate is
   self-signed and is not checked. TLS stops someone from passively reading the MQTT traffic. It does
   not stop a device that answers in the printer's place.
+- **A changed printer certificate is reported, not refused.** kobracontrol remembers the SHA-256
+  fingerprint of the certificate each printer address presents (`printers.json` in the plugin's
+  `tls` storage folder) and shows the current one in Settings. When a later connection presents a
+  different one, the log and every tab of Kobra Control say so, and the new fingerprint is remembered.
+  The connection is kept: whether a firmware update or a factory reset gives the printer a new
+  certificate is not known, and refusing would stop a working printer with no way to recover from the
+  plugin. The first connection to an address is trusted as it is, and an impostor that answers before
+  the real printer was ever seen is not detected. Treat the warning as a reason to check the printer
+  before you send it a print.
 
 ## What it touches
 

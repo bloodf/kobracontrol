@@ -39,7 +39,11 @@ def tls_from(cert_dir):
                 pass
         shipped = certs.bundled()
         if shipped:
-            return certs.context(*shipped)
+            try:
+                return certs.context(*shipped)
+            except certs.CertError as e:   # the loop would show it as "unexpected answer from the printer"
+                raise NoCertificate("the bundled Anycubic Slicer certificate does not load (%s): run Find Anycubic "
+                                    "certificate (needs Anycubic Slicer Next installed)" % e) from None
         raise NoCertificate("no Anycubic Slicer certificate: run Find Anycubic certificate "
                             "(needs Anycubic Slicer Next installed)")
     return load
@@ -56,8 +60,9 @@ def _explain(host, error):
 
 class Connection:
     def __init__(self, host, tls, log=print, http_port=18910, mqtt_port=9883, fetch=kobra.fetch_credentials,
-                 model="Anycubic Kobra X"):
-        self.host, self.tls, self.log, self.fetch = host, tls, log, fetch
+                 model="Anycubic Kobra X", pins=None):
+        self.host, self.tls, self.log, self.fetch, self.pins = host, tls, log, fetch, pins
+        self.server_cert = None   # {"fingerprint", "changed_from"} of the printer's TLS certificate, None without TLS
         self.http_port, self.mqtt_port = http_port, mqtt_port
         self.state = kobra.State(model)
         self.printer = None
@@ -192,6 +197,7 @@ class Connection:
         if self._stop.is_set():
             printer.close()
             return False
+        self._note_certificate(printer.tls_fingerprint)
         self.printer = printer
         self._poll(initial=True)   # the first snapshot, before anyone sees the printer as connected
         if not printer.connected:
@@ -204,6 +210,27 @@ class Connection:
         self.log("kobracontrol: connected to %s" % self.host)
         self._notify()
         return True
+
+    def _note_certificate(self, fingerprint):
+        """Remember the printer's TLS certificate; a different one than last time is logged and shown, never
+        refused (the printer's certificate is self-signed and cannot be verified). The warning stays for this
+        session's reconnects until yet another certificate appears."""
+        if not fingerprint:
+            self.server_cert = None
+            return
+        previous = None
+        if self.pins:
+            try:
+                previous = self.pins.check(self.host, fingerprint)
+            except OSError as e:
+                self.log("kobracontrol: %s: the printer's certificate could not be remembered (%s)" % (self.host, e))
+        if previous is None and self.server_cert and self.server_cert["fingerprint"] == fingerprint:
+            previous = self.server_cert["changed_from"] or None
+        self.server_cert = {"fingerprint": fingerprint, "changed_from": previous or ""}
+        if previous:
+            self.log("kobracontrol: %s: the printer's TLS certificate changed since the last connection (was %s, now "
+                     "%s). If the printer was not reset or updated, another device may be answering in its place."
+                     % (self.host, previous, fingerprint))
 
     def _poll(self, initial=False):
         printer = self.printer

@@ -114,6 +114,72 @@ class Agent(Base):
         self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OGFL99"))
         self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "")   # no Generic PETG preset loaded
 
+    def test_status_push_survives_a_failing_sample(self):
+        """One status sample that raises must not end the Device tab's pusher thread for the rest of the session."""
+        self.connect()
+        real, calls = plugin.bambu.push_status, []
+
+        def flaky(*a, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ValueError("bad sample")
+            return real(*a, **kw)
+        plugin.bambu.push_status = flaky
+        self.addCleanup(setattr, plugin.bambu, "push_status", real)
+        self.events["message"].clear()
+        self.agent._dirty.set()
+        wait(lambda: calls)
+        self.agent._dirty.set()
+        wait(lambda: self.events["message"])
+        self.assertTrue(self.agent._pusher.is_alive())
+
+    def test_device_tab_unload_with_nothing_loaded_is_refused(self):
+        self.connect()
+        unload = {"print": {"command": "ams_change_filament", "ams_id": 255, "slot_id": 255, "target": 255}}
+        self.assertEqual(self.agent.send_message_to_printer("127.0.0.1", json.dumps(unload), 0, 0), plugin.ERR_INVALID_HANDLE)
+        time.sleep(0.2)
+        self.assertFalse(self.sent("multiColorBox", "feedFilament"))
+
+    def test_start_camera_with_no_printer(self):
+        """command_start_camera never starts a capture thread for a session that has just gone."""
+        self.connect()
+        conn = plugin._service.connections["127.0.0.1"]
+        errors = []
+        old = threading.excepthook
+        threading.excepthook = lambda args: errors.append(args.exc_value)
+        self.addCleanup(setattr, threading, "excepthook", old)
+
+        class Swapped:
+            connected, printer, host = True, None, "127.0.0.1"
+
+            def view(self):
+                return conn.view()
+        plugin._service.connections["127.0.0.1"] = Swapped()
+        self.addCleanup(plugin._service.connections.__setitem__, "127.0.0.1", conn)
+        self.assertEqual(self.agent.command_start_camera("127.0.0.1"), plugin.ERR_CONNECT)
+        time.sleep(0.2)
+        self.assertEqual(errors, [])
+
+    def test_print_a_file_on_the_printer(self):
+        """start_sdcard_print: the file already on the printer, with both print options and a finished stage."""
+        self.connect()
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "a.gcode", "size": 1, "timestamp": 1}]}, code=200)
+        stages = []
+        params = pa.PrintParams(dst_file="/a.gcode", task_bed_leveling=True, task_vibration_cali=True)
+        self.assertEqual(self.agent.start_sdcard_print(params, lambda *a: stages.append(a), lambda: False), 0)
+        start = wait(lambda: self.sent("print", "start"))[0]["data"]
+        self.assertEqual(start["filename"], "a.gcode")
+        self.assertEqual((start["task_settings"]["auto_leveling"], start["task_settings"]["vibration_compensation"]), (1, 1))
+        self.assertEqual(stages[-1][0], plugin.STAGE_FINISHED)
+
+    def test_switching_printer_releases_the_old_connection(self):
+        """connect_printer for another address closes the session to the previous one (disconnect_printer does)."""
+        self.connect()
+        params = pa.PrinterConnectionParams(dev_id="other", host="127.0.0.2", password="")
+        self.assertEqual(self.agent.connect_printer(params), 0)
+        wait(lambda: "127.0.0.1" not in plugin._service.connections)
+        self.assertIn("127.0.0.2", plugin._service.connections)
+
     def test_discovery_announces_the_printer(self):
         self.connect()
         self.assertTrue(self.agent.start_discovery(True, False))
@@ -259,6 +325,16 @@ class Page(Base):
         self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})   # the bundled certificate
         self.assertEqual(config["version"], plugin.VERSION)
 
+    def test_certificate_state_matches_the_one_in_use(self):
+        """A saved pair that does not load is not used (connection.tls_from falls back to the bundled one), so the
+        page must not call it "saved"."""
+        folder = plugin.cert_dir()
+        os.makedirs(folder, exist_ok=True)
+        for path in certs.paths(folder):
+            with open(path, "w") as f:
+                f.write("not a pem")
+        self.assertEqual(plugin.certificate_state(), {"found": True, "source": "bundled"})
+
     def test_hello_without_kobra_preset(self):
         preset = orca.host.preset_bundle().current_printer_preset()
         old = type(preset).name, type(preset).config_value
@@ -383,6 +459,15 @@ class Guarded(Base):
         audit_guard.enable(self.perms, self.tmp)
         self.addCleanup(audit_guard.disable)
 
+    def ungranted_dir(self, prefix):
+        """A folder no grant covers on any OS. Not under the system temp folder: on Windows OrcaSlicer's job
+        folder is that temp folder itself (plugin.slicer_temp_root), so the plugin is granted all of it."""
+        folder = tempfile.mkdtemp(prefix=prefix, dir=ROOT)
+        self.addCleanup(shutil.rmtree, folder, True)
+        root = os.path.realpath(plugin.slicer_temp_root())
+        self.assertFalse(os.path.realpath(folder).startswith(root.rstrip(os.sep) + os.sep))
+        return folder
+
     def job_dir(self):
         folder = os.path.join(plugin.slicer_temp_root(), "kobracontrol-test")
         os.makedirs(folder, exist_ok=True)
@@ -410,7 +495,7 @@ class Guarded(Base):
     def test_denied_read_is_reported_plainly(self):   # C1: never "not a zip"
         self.connect()
         stages = []
-        params = pa.PrintParams(project_name="cube", filename=make_3mf(tempfile.mkdtemp()), ams_mapping="[0]")
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.ungranted_dir("job-")), ams_mapping="[0]")
         code = run_off_main(lambda: self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False))
         self.assertNotEqual(code, 0)
         self.assertIn("did not let kobracontrol read the sliced file", stages[-1][2])
@@ -442,7 +527,7 @@ class Guarded(Base):
         self.assertEqual(audit_guard.denials(), [])
 
     def test_find_certificate_ungranted_path(self):   # C3
-        outside = tempfile.mkdtemp(prefix="elsewhere-")
+        outside = self.ungranted_dir("elsewhere-")
         published = []
         plugin._service.publish = published.append
         plugin._service.submit("g", "find_certificate", {"path": outside})

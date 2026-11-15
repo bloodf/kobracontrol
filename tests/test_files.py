@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -5,11 +6,62 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
 
+import ace  # noqa: E402
 import files  # noqa: E402
+import kobra_captures as cap  # noqa: E402
 import kobra  # noqa: E402
 from fake_kobra import FakeKobra  # noqa: E402
 
 LISTING = [{"filename": "b.gcode", "size": 200, "timestamp": 20}, {"filename": "a.gcode", "size": 100, "timestamp": 10}]
+
+
+def _slot(g, type_, status=5, color=(1, 2, 3)):
+    return {"global_index": g, "box_id": 0, "box_pos": 1, "index": g, "status": status, "type": type_, "color": list(color)}
+
+
+class PlanTests(unittest.TestCase):
+    """files.plan: what a file needs (from file/fileDetails) next to the slots its print would use."""
+    DETAILS = cap.FILE_FILEDETAILS["data"]["file_details"]
+
+    def test_captured_details(self):
+        slots = [_slot(0, "PLA"), _slot(1, "PETG"), _slot(2, "", status=0), _slot(3, "PETG", color=(9, 9, 9))]
+        plan = files.plan(self.DETAILS, slots, "ace_direct", "Anycubic Kobra X")
+        self.assertEqual(plan["info"], {"estimated_s": 25816, "layers": 1875, "filament_g": 102.99, "layer_height": 0.16,
+                                        "nozzle_temp": 205, "bed_temp": 60, "nozzle": 0.4,
+                                        "printer_model": "Anycubic Kobra X", "model_ok": True})
+        self.assertEqual(plan["materials"], [
+            {"paint_index": 0, "material": "PLA", "colour": "#E10600", "grams": 84.11, "slot": 0, "slot_type": "PLA",
+             "slot_colour": "#010203", "check": "ok"},
+            {"paint_index": 3, "material": "PLA", "colour": "#658946", "grams": 18.88, "slot": 3, "slot_type": "PETG",
+             "slot_colour": "#090909", "check": "differs"}])
+
+    def test_plan_follows_the_auto_mapping(self):
+        """The slot shown for each filament is the one print/start would map (ace.build_auto_ams_box_mapping)."""
+        slots = [_slot(0, "PLA"), _slot(1, "", status=0), _slot(2, "PLA")]
+        details = {"paint_infos": [{"paint_index": i, "material_type": "PLA", "filament_used": 1} for i in range(4)]}
+        plan = files.plan(details, slots, "ace_direct", "Anycubic Kobra X")
+        loaded, _ = ace.select_loaded_slots_for_print(slots, "ace_direct")
+        mapping = {e["paint_index"]: e["ams_index"] for e in ace.build_auto_ams_box_mapping(loaded, "ace_direct")}
+        self.assertEqual({m["paint_index"]: m["slot"] for m in plan["materials"]}, {0: 0, 1: 2, 2: 2, 3: None})
+        self.assertEqual({p: g for p, g in mapping.items()}, {0: 0, 1: 2, 2: 2})
+        self.assertEqual([m["check"] for m in plan["materials"]], ["ok", "ok", "ok", "missing"])
+
+    def test_nothing_loaded_and_other_model(self):
+        details = {"paint_infos": [{"paint_index": 0, "material_type": "pla "}], "printer_model": "Anycubic Kobra 3"}
+        plan = files.plan(details, [_slot(0, "PLA", status=0)], "ace_direct", "Anycubic Kobra X")
+        self.assertEqual(plan["materials"][0]["check"], "missing")
+        self.assertFalse(plan["info"]["model_ok"])
+
+    def test_hostile_details(self):
+        for details in (None, [], {"paint_infos": "x"}, {"paint_infos": [None, 5, {"paint_index": "a"}, {"paint_index": True}]},
+                        {"estimated_time_s": float("inf"), "layer_count": "x", "print_parameters": {"temperatures": []}},
+                        {"paint_infos": [{"paint_index": 0, "material_type": ["x"], "paint_color": "red", "filament_used": -5}]}):
+            plan = files.plan(details, [_slot(0, "PLA")], "ace_direct", "Anycubic Kobra X")
+            json.dumps(plan, allow_nan=False)
+            self.assertTrue(plan["info"]["model_ok"])
+        bad = files.plan({"paint_infos": [{"paint_index": 0, "material_type": ["x"], "paint_color": "red", "filament_used": -5}]},
+                         [_slot(0, "PLA")], "ace_direct", "")["materials"][0]
+        self.assertEqual((bad["material"], bad["colour"], bad["grams"], bad["check"]), ("", "", 0, "ok"))
 
 
 class RowTests(unittest.TestCase):

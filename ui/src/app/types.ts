@@ -13,6 +13,8 @@ export interface Status {
   skipped_objects: string[]; pause_reason: { code?: number; msg?: string } | null; last_error: { msg?: string; code?: number } | null;
   phase_unit?: number | null; phase_channel?: number | null; box_set_failed: boolean; updated_at: number;
   mode: 'toolhead' | 'ace_direct' | 'ace_hub'; slots: Slot[]; loaded_slot: number; ace_units: AceUnit[]; can: Can;
+  /** The printer's TLS certificate (SHA-256 hex); changed_from is the one seen before when it changed, else "". */
+  tls?: { fingerprint: string; changed_from: string } | null;
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string }
 export interface Spool { id: number; name: string; vendor: string; material: string; colour?: string; colours?: string[];
@@ -26,6 +28,11 @@ export interface StockView {
 }
 export interface FileEntry { name: string; size: number; timestamp: number; thumbnail?: string | null }
 export interface FilesResult { files: FileEntry[] }
+export interface FileInfo { estimated_s: number | null; layers: number | null; filament_g: number | null; layer_height: number | null;
+  nozzle_temp: number | null; bed_temp: number | null; nozzle: number | null; printer_model: string; model_ok: boolean }
+export interface FileMaterial { paint_index: number; material: string; colour: string; grams: number; slot: number | null;
+  slot_type: string; slot_colour: string; check: 'ok' | 'differs' | 'missing' }
+export interface FileDetails { name: string; thumbnail?: string | null; info?: FileInfo; materials?: FileMaterial[] }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {

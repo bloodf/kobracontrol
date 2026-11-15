@@ -16,6 +16,7 @@ command the state does not allow is refused whatever the page shows.
 
 import base64
 import contextlib
+import os
 import queue
 import re
 import threading
@@ -44,6 +45,7 @@ DEDICATED = URGENT + BOUNDED                                    # own short-live
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
 NO_PRINTER = "no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address"
+NOTHING_LOADED = "no filament is loaded in the print head, so there is nothing to unload"
 # The Kobra X machine profile (OrcaSlicer resources/profiles/Anycubic/machine/Anycubic Kobra X 0.4 nozzle.json)
 # sets no temperature maxima; these are Kobralink's limits (packages/shared/src/control.ts setTemperature).
 NOZZLE_MAX, BED_MAX = 320, 120
@@ -119,6 +121,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
+        self.pins = certs.Pins(os.path.join(cert_dir, certs.PINS_FILE)) if cert_dir else None
         self.http_port, self.mqtt_port, self.fetch = http_port, mqtt_port, fetch
         self.spoolman_factory = spoolman_factory
         self.lock = threading.RLock()
@@ -157,7 +160,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         with self.lock:
             conn = self.connections.get(host)
             if conn is None:
-                conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch)
+                conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
+                                             pins=self.pins)
                 conn.add_listener(self._on_change)
                 self.connections[host] = conn
                 conn.start()
@@ -346,6 +350,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             bindings = dict(self.bindings) if self.target and self.target.host == conn.host else {}
             before = self._units.get(conn.host, [])
         data, units = status_data(conn.view(), before, bindings)
+        data["tls"] = dict(conn.server_cert) if conn.server_cert else None
         with self.lock:
             self._units[conn.host] = units
         return data
@@ -398,14 +403,14 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _camera_tick(self, target):
         """Ask the printer to start its stream (once per stream URL), then keep the reader running."""
         conn = self.connections.get(target.host)
-        if not conn or not conn.connected:
+        printer = conn.printer if conn else None   # read once: the loop may replace the session meanwhile
+        if printer is None or not conn.connected:
             return
         view = conn.view()
-        key = (target.host, view["camera_url_rev"], id(conn.printer))
+        key = (target.host, view["camera_url_rev"], id(printer))
         if key != self._capture:
             self._capture = key
-            printer = conn.printer
-            threading.Thread(target=lambda: printer.start_camera(), name="kobracontrol-capture", daemon=True).start()
+            threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
         self.camera.set_ffmpeg(target.ffmpeg_path)
         self.camera.start()
 
@@ -644,6 +649,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         data = self._allowed("feed", "loading filament" if kind == 1 else "unloading filament")
         if kind == 2 and data["loaded_slot"] >= 0:   # Kobralink: retract unloads what is loaded
             slot = data["loaded_slot"]
+        elif kind == 2 and isinstance(slot, int) and slot < 0:   # "unload" without a slot and nothing loaded
+            raise kobra.KobraError(NOTHING_LOADED)
         found = self._slot(data, slot)
         if kind == 1 and found["status"] != 5:
             raise kobra.KobraError("slot %d is empty" % (slot + 1))
