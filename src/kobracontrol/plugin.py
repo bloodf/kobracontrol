@@ -8,6 +8,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 
 import orca
 
@@ -28,7 +29,8 @@ AGENT_NAME = "Anycubic Kobra X (kobracontrol)"
 MODEL = "Anycubic Kobra X"
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
-ADDRESSES_FILE = "addresses.json"
+ADDRESSES_FILE = "addresses.json"   # printer preset -> the Kobra X found for it (locate.Addresses)
+CHECK_SECONDS = 20.0                # Check Kobra X connection: locating and connecting together
 _granted = set()   # printer addresses declared at load or allowed since: the search probes only these by itself
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
@@ -834,12 +836,15 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
         return "Check Kobra X connection"
 
     def execute(self):
+        # Scripts run on a worker thread of their own (OrcaSlicer docs/HLSD/python-plugin-async-bridge.md, "Per-
+        # invocation worker and loop"), never on the UI thread; still, the whole check is bounded to 20 s.
         try:
             svc = service()
             if svc.target is None:
                 svc.set_target(_target())
-            host = svc.wait_located(30).host
-            conn = svc.ready(host, timeout=15)
+            deadline = time.monotonic() + CHECK_SECONDS
+            host = svc.wait_located(CHECK_SECONDS).host
+            conn = svc.ready(host, timeout=max(1.0, deadline - time.monotonic()))
         except Exception as e:
             return orca.ExecutionResult.skipped("Couldn't reach the Kobra X: %s" % e)
         view = conn.view()

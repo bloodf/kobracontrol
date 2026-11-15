@@ -258,34 +258,60 @@ def bundled():
     return None
 
 
-def _write_private(path, text):
-    """Write a fresh 0600 file next to `path` and move it into place. No chmod and no file-descriptor open: in
-    OrcaSlicer a chmod by descriptor or an open() of a descriptor has no path to judge and asks for an audit
-    event grant ("event=os.chmod reason=audit permission required"); a path-based create and rename inside the
-    plugin's storage folder need none. O_EXCL refuses anything already at the temporary name, and the rename
-    replaces a symlink at `path` instead of following it."""
+def _write_temp(path, text):
+    """A fresh 0600 temporary file next to `path` holding text; its name. Removed again if the write fails.
+    No chmod and no file-descriptor open(): in OrcaSlicer a chmod by descriptor or an open() of a descriptor
+    has no path to judge and asks for an audit event grant ("event=os.chmod reason=audit permission
+    required"); a path-based create and rename inside the plugin's storage folder need none. O_EXCL refuses
+    anything already at the temporary name."""
     tmp = "%s.%s.tmp" % (path, secrets.token_hex(4))
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
-        data = text.encode("ascii")
-        while data:
-            data = data[os.write(fd, data):]
-    finally:
-        os.close(fd)
+        try:
+            data = text.encode("ascii")
+            while data:
+                data = data[os.write(fd, data):]
+        finally:
+            os.close(fd)
+    except BaseException:
+        _remove_quietly(tmp)
+        raise
+    return tmp
+
+
+def _remove_quietly(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _write_private(path, text):
+    """Write text to path as a fresh 0600 file moved into place (the rename replaces a symlink at `path` instead
+    of following it)."""
+    tmp = _write_temp(path, text)
     try:
         os.replace(tmp, path)
-    except OSError:
-        os.remove(tmp)
+    except BaseException:
+        _remove_quietly(tmp)
         raise
 
 
 def save(folder, cert_pem, key_pem):
+    """Save the pair. Both are written to temporary files first, so a failure leaves the old pair as it was;
+    were the second rename to fail after the first, the mixed pair does not load (load_cert_chain refuses a key
+    of another certificate) and connection.tls_from falls back to the bundled pair."""
     out = paths(folder)
+    temps = []
     try:
         os.makedirs(folder, 0o700, exist_ok=True)
         for path, text in zip(out, (cert_pem, key_pem)):
-            _write_private(path, text)
+            temps.append(_write_temp(path, text))
+        for tmp, path in zip(temps, out):
+            os.replace(tmp, path)
     except OSError as e:
+        for tmp in temps:
+            _remove_quietly(tmp)
         raise CertError("cannot save the client certificate in %s (%s)" % (folder, e.strerror or e)) from None
     return out
 
@@ -344,8 +370,5 @@ class Pins:
                 return None
             known[key] = fingerprint
             os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"printers": known}, f, indent=1, sort_keys=True)
-            os.replace(tmp, self.path)
+            _write_private(self.path, json.dumps({"printers": known}, indent=1, sort_keys=True))   # unique temp name
             return previous

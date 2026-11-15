@@ -835,6 +835,11 @@ class CannotConnect(unittest.TestCase):
         self.fetch = fetch
 
     def service(self, **kw):
+        # A first retry delay far longer than any test: an attempt beyond the first one can only come from a
+        # reset of the backoff, never from the clock (no wall-clock assertions).
+        patcher = mock.patch.object(connection, "RETRY_FIRST", 60.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(),
                               http_port=self.fake.http_port, mqtt_port=self.mqtt_port, fetch=self.fetch,
                               camera_factory=FakeCamera, **{"tls": lambda: None, **kw})
@@ -850,31 +855,27 @@ class CannotConnect(unittest.TestCase):
     def test_hello_answers_the_last_error_at_once_and_keeps_the_backoff(self):
         svc, conn = self.service()
         wait(lambda: conn.failures)
-        started = time.monotonic()
-        while time.monotonic() - started < 0.8:   # the 0.2.0 page said hello again on every status
-            reply = self.connect(svc, timeout=1.0)
+        for _ in range(10):   # the 0.2.0 page said hello again on every status
+            reply = self.connect(svc, timeout=3.0)
             self.assertIn("no answer on the printer's MQTT port", reply["error"])
             svc.touch(camera=False)
-        self.assertEqual(len(self.attempts), 1)   # still in the first 2 s wait
-        wait(lambda: len(self.attempts) == 2, 3)
+        self.assertEqual(len(self.attempts), 1)   # still in the first (60 s) wait: nothing reset it
 
     def test_retry_tries_now_and_answers_at_its_failure(self):
         svc, conn = self.service()
         wait(lambda: conn.failures)
-        started = time.monotonic()
-        reply = self.connect(svc, timeout=3.0, retry=True)
-        self.assertLess(time.monotonic() - started, 6.0)   # not CONNECT_WAIT (10 s)
-        self.assertEqual(len(self.attempts), 2)
+        reply = self.connect(svc, timeout=service.CONNECT_WAIT - 1, retry=True)   # answered at the failure
+        self.assertEqual(len(self.attempts), 2)   # at once, not after the 60 s delay
         self.assertIn("no answer on the printer's MQTT port", reply["error"])
 
     def test_status_and_hellos_do_not_reset_the_growing_delay(self):
-        svc, _ = self.service()
-        started = time.monotonic()
-        while time.monotonic() - started < 7.0:
-            self.connect(svc, timeout=1.0)
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        for _ in range(10):
+            self.connect(svc, timeout=3.0)
             svc.touch(camera=False)
-            time.sleep(0.2)
-        self.assertLessEqual(len(self.attempts), 3)   # at 0, 2 and 6 s
+            svc._push_status(svc.target, svc.generation)
+        self.assertEqual(len(self.attempts), 1)
         self.assertEqual([m.get("type") for m in self.published if m.get("type") == "notice"], [])
 
     def test_failed_attempts_never_search_the_slicer_install(self):
@@ -945,6 +946,16 @@ class RefusedInfoPort(unittest.TestCase):
         def fetch(host, port):
             self.attempts.append(time.monotonic())
             return kobra.fetch_credentials(host, port=port, timeout=2)
+        self.delays = []
+        real = connection.Connection._backoff
+
+        def backoff(conn, delay):   # the delays the loop waits, recorded instead of timed
+            self.delays.append(delay[0])
+            return real(conn, delay)
+        for patcher in (mock.patch.object(connection.Connection, "_backoff", backoff),
+                        mock.patch.object(connection, "RETRY_FIRST", 0.05)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
                                    http_port=self.port, mqtt_port=self.port, fetch=fetch, camera_factory=FakeCamera)
         self.addCleanup(self.svc.close)
@@ -959,19 +970,19 @@ class RefusedInfoPort(unittest.TestCase):
         self.assertIn("The address comes from Settings > Printer address.", conn.error)
         self.assertTrue(conn.http_failed)
         self.svc.touch(camera=False)
-        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline"), None))
-        self.assertGreater(offline["retry_at"], time.time())   # the page shows when the next try is
-        time.sleep(3.5)
-        self.assertLessEqual(len(self.attempts), 2)   # at 0 and 2 s, then 4 s later: never a spin (a slow runner may do 1)
+        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline" and m.get("retry_at")), None))
+        self.assertGreater(offline["retry_at"], 0)   # the page shows when the next try is
+        wait(lambda: len(self.delays) >= 5)
+        self.assertEqual(self.delays[:5], [0.05, 0.1, 0.2, 0.4, 0.8])   # each failure doubles the wait: never a spin
 
     def test_save_retries_at_once_with_a_fresh_delay(self):
         self.svc.set_target(service.Target("127.0.0.1"))
         conn = self.svc.connections["127.0.0.1"]
-        wait(lambda: len(self.attempts) >= 3, 12)   # waits 2 s, then 4 s
-        before = len(self.attempts)
-        self.svc.set_target(service.Target("127.0.0.1"), retry=True)   # Save with the same address
-        wait(lambda: len(self.attempts) == before + 1, 1)
-        wait(lambda: len(self.attempts) == before + 2, 8)   # the delay starts again from 2 s, not 16 s
+        wait(lambda: len(self.delays) >= 5)
+        with mock.patch.object(connection, "RETRY_FIRST", 0.07):   # a value only a fresh start can produce
+            before = len(self.delays)
+            self.svc.set_target(service.Target("127.0.0.1"), retry=True)   # Save with the same address
+            wait(lambda: 0.07 in self.delays[before:])
         self.assertTrue(conn._thread.is_alive())
 
     def test_save_with_a_new_address_stops_the_old_loop(self):
@@ -983,6 +994,24 @@ class RefusedInfoPort(unittest.TestCase):
 
 
 class SpoolmanFromSpooler(unittest.TestCase):
+    def test_usage_is_booked_unless_spooler_books_this_printer_in_the_same_spoolman(self):
+        """M-C. Spooler 0.26 reads only slots from a Kobra X (no print state), so it never books its prints, and
+        Kobra Control books them, also in Spooler's Spoolman. A Spooler that declares it books Anycubic prints
+        (presence provides.books contains "anycubic") makes Kobra Control stand down in that Spoolman."""
+        books = []
+        target = service.Target("10.0.0.5")
+        target.spooler_origin, target.spooler_books = (lambda: "http://box:7912"), (lambda: bool(books))
+        self.assertTrue(target.spoolman_report_usage)                     # fallback, Spooler does not book
+        books.append("anycubic")
+        self.assertFalse(target.spoolman_report_usage)                    # same Spoolman, Spooler books
+        own = service.Target("10.0.0.5", spoolman_url="http://other:7912")
+        own.spooler_origin, own.spooler_books = (lambda: "http://box:7912"), (lambda: True)
+        self.assertTrue(own.spoolman_report_usage)                        # another Spoolman: no double count
+        self.assertEqual(service.Service._usage_owner(target), "spooler")
+        self.assertEqual(service.Service._origin_check(target, "http://box:7912"), "fallback")
+        self.assertIs(service.Service._origin_check(own, "http://box:7912"), False)   # the real comparison
+
+
     def test_spooler_address_is_used_when_none_is_set_here(self):
         class Peers:
             origin = "http://box:7912"

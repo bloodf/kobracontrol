@@ -483,6 +483,9 @@ export const en = {
 
   'fr.pick.different': 'A different Kobra X answered',
   'fr.pick.allow': 'Allow and use',
+  'stock.usage.spooler': 'Spooler books this printer’s filament use in the same Spoolman, so Kobra Control doesn’t book it again.',
+  'stock.fallback': 'No Spoolman address is set in Kobra Control, so it uses the one Spooler uses.',
+  'fr.allow.fallback': 'Kobra Control may not reach {ip} yet. Allow it in OrcaSlicer’s permission dialog (or under Plugins > Permissions), then press Search again.',
   'age.seconds': '{n} s ago',
   'age.minutes': '{n} min ago',
   'age.at': 'at {time}',
@@ -973,6 +976,9 @@ export const ptBR: Record<MessageKey, string> = {
 
   'fr.pick.different': 'Outra Kobra X respondeu',
   'fr.pick.allow': 'Permitir e usar',
+  'stock.usage.spooler': 'O Spooler lança o consumo desta impressora no mesmo Spoolman, então o Kobra Control não lança de novo.',
+  'stock.fallback': 'Nenhum endereço do Spoolman definido no Kobra Control, então ele usa o mesmo do Spooler.',
+  'fr.allow.fallback': 'O Kobra Control ainda não pode acessar {ip}. Permita no diálogo de permissão do OrcaSlicer (ou em Plugins > Permissões) e toque em Procurar de novo.',
   'age.seconds': 'há {n} s',
   'age.minutes': 'há {n} min',
   'age.at': 'às {time}',

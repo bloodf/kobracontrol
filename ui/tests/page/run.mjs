@@ -743,9 +743,18 @@ test('a found printer OrcaSlicer must allow first: the page asks once, then conn
   assert(text(byTest('first-run-target')).includes('connects by itself'), 'says what to do: ' + text(byTest('first-run-target')));
   await reply(last('allow_hosts'), {allowed: ['10.25.7.41'], refused: []});
   await until(() => sent().filter(m => m.type === 'hello').length === 2, 'connects without another click');
-  await fail(last('hello'), 'Found a printer at 10.25.7.41.', {no_target: true, pending: ['10.25.7.41']});
+  await fail(last('hello'), 'Found a printer at 10.25.7.99.', {no_target: true, pending: ['10.25.7.99']});
   await settle();
-  eq(sent().filter(m => m.type === 'allow_hosts').length, 1, 'never asks twice for the same address in a loop');
+  eq(sent().filter(m => m.type === 'allow_hosts').length, 1, 'one dialog by itself, whatever new address comes next');
+`);
+
+test('a dialog that does not allow the printer leaves a clear next step, not a wait', `
+  await until(() => last('hello'));
+  await fail(last('hello'), 'Found a printer at 10.25.7.41.', {no_target: true, candidates: [], pending: ['10.25.7.41']});
+  await until(() => last('allow_hosts'));
+  await reply(last('allow_hosts'), {allowed: [], refused: ['10.25.7.41']});
+  await until(() => text(byTest('first-run-target')).includes('may not reach 10.25.7.41 yet'), 'what to do');
+  assert(text(byTest('first-run-target')).includes('Search again'), 'with Search again');
 `);
 
 test('a different Kobra X is offered as a choice, and one OrcaSlicer must allow is allowed on the click', `

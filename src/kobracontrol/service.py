@@ -30,6 +30,7 @@ import connection
 from connection import camera_url_for, find_and_save_certificate  # noqa: F401  (plugin.py imports them here)
 import kobra
 import locate
+import peers
 import settings
 import spoolman as sm
 import usage
@@ -77,11 +78,12 @@ class Target:
                  preset_agent=""):
         self.host, self.override, self.name = host, host, name or settings.DEFAULT_PRINTER_NAME
         self.own_spoolman_url, self.spoolman_auto = spoolman_url, spoolman_auto
-        self.spoolman_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
+        self.own_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
         self.preset_host, self.preset_key, self.preset_agent = preset_host, preset_key, preset_agent
         self.source = "override" if host else ""
         self.identity = ""                 # the located printer's /info identity
         self.spooler_origin = lambda: ""   # the service links this to Spooler's Spoolman address
+        self.spooler_books = lambda: False  # ... and to whether Spooler books Anycubic prints itself
 
     @property
     def spoolman_url(self):
@@ -92,6 +94,16 @@ class Target:
     def spoolman_source(self):
         return "settings" if self.own_spoolman_url else "spooler" if self.spooler_origin() else ""
 
+    @property
+    def spoolman_report_usage(self):
+        """Book filament use: the setting, except when Spooler books this printer's prints in the same Spoolman
+        (it would count every print twice)."""
+        if not self.own_report_usage:
+            return False
+        url = self.spoolman_url
+        same = bool(url) and peers_origin(url) == peers_origin(self.spooler_origin())
+        return not (same and self.spooler_books())
+
     def key(self):
         """What selects the printer. Name, Spoolman and camera options are not part of it: changing them applies
         to the live target without touching the connection."""
@@ -100,6 +112,10 @@ class Target:
     @property
     def ident(self):
         return usage.printer_ident(self.host)
+
+
+def peers_origin(url):
+    return peers.normalize_origin(url) if url else ""
 
 
 def can_flags(view):
@@ -219,7 +235,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         """Select the tab's printer (UI thread: no I/O). Without an address in Settings the printer is located on
         a thread of its own; cmd_connect waits for it. The same target again keeps the address found for it;
         retry (Save) tries a failed connection or search again at once, with a fresh retry delay."""
-        target.spooler_origin = self._spooler_origin
+        target.spooler_origin, target.spooler_books = self._spooler_origin, self._spooler_books
         with self.lock:
             if self.closed:
                 return
@@ -241,6 +257,13 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self._start_locate(gen)
         if previous and previous != target.host:
             self.release(previous)
+
+    def _spooler_books(self):
+        peers = self.peers
+        try:
+            return bool(peers.spooler().get("books_anycubic")) if peers is not None and hasattr(peers, "spooler") else False
+        except Exception:
+            return False
 
     def _spooler_origin(self):
         peers = self.peers
@@ -573,10 +596,12 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         """The tab's hello. Only the user's Retry (retry=True) cuts the connection's backoff short; otherwise a
         connection that already failed answers its error at once and keeps its retry delay. Without an address
         it first waits for the printer to be located (a NotFound names the candidates, if any)."""
-        with self.lock:
-            gen, target, unlocated = self.generation, self.target, self.target is not None and not self.target.host
-        if retry is True and unlocated and self.locate_error is not None:
-            self.locate_error = None
+        with self.lock:   # check and reset together: a locate thread may set a new error at the same moment
+            gen, target = self.generation, self.target
+            again = retry is True and target is not None and not target.host and self.locate_error is not None
+            if again:
+                self.locate_error = None
+        if again:
             self._start_locate(gen)
         target = self.wait_located(CONNECT_WAIT + 2 * (locate.SEARCH_SECONDS + locate.SEND_GAP) + 2 * locate.PROBE_TIMEOUT)
         if not self._current(gen):

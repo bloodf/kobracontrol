@@ -376,6 +376,9 @@ class UsageMixin:
         name = opts.get("printer_name") or (target.name if target else settings.DEFAULT_PRINTER_NAME)
         url = opts["spoolman_url"] if "spoolman_url" in opts else (target.spoolman_url if target else "")
         report = opts.get("spoolman_report_usage", target.spoolman_report_usage if target else True)
+        if not report and getattr(target, "own_report_usage", False) and "spoolman_report_usage" not in opts:
+            self.log("kobracontrol: filament use for %s is not booked here: Spooler books it in the same Spoolman"
+                     % filename)
         if not report:
             return None   # nothing to book: usage reporting is off
         job = Job(ident, filename, per_slot, bindings if same and bindings else None, name, url, report)

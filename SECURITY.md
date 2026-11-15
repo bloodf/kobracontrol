@@ -35,14 +35,16 @@ and kobracontrol cannot add any:
   1900). Replies are untrusted: only the address a reply came from is used, never an address or URL
   inside it; it must be a private, link-local or loopback IPv4 address and the reply must come from
   port 1900; at most 64 replies of at most 2048 bytes are read per search and at most 4 senders kept;
-  and an address counts as a printer only when its own `/info` answers with a LAN token. OrcaSlicer is
-  asked by itself about at most one new address per search, at most once a minute; with several, you
-  pick. An address that is not a Kobra X, or that you refused, is not asked about again until you press
+  and an address counts as a printer only when its own `/info` answers with a LAN token. Kobra Control
+  brings up OrcaSlicer's permission dialog by itself at most once per session, and only when one new
+  printer was found and none is remembered for the preset; in every other case the printers found are
+  listed and you pick. An address that is not a Kobra X, or that you refused, is not asked about again until you press
   Search again. A search the plugin starts by itself, when a found printer stops answering, runs at
   most once a minute.
 - **Which printer is used:** the printer found for a preset is remembered in the plugin's storage folder
   (`addresses.json`) with its identity (`cn` from `/info`, its serial) and the fingerprint of the TLS
-  certificate it presented at the first connection. Later it is used only at an address whose `/info`
+  certificate it presented at the first connection; the fingerprint is also kept per identity, so it
+  follows the printer to a new address. Later it is used only at an address whose `/info`
   gives that identity, and the session must present that certificate; otherwise it is not used, the
   remembered printer stays, and the tab asks "A different Kobra X answered at X. Use it?". A different
   printer is never taken by itself, even when it is the only one answering, and the plugin never looks

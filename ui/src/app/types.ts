@@ -27,7 +27,7 @@ export interface Spool { id: number; name: string; vendor: string; material: str
 export interface StockView {
   spooler: { state: string; text: string; detail?: string; version?: string };
   stock: { state: string; code?: string; text: string; detail?: string; rows: Spool[]; key: string; ts?: number };
-  same_spoolman: boolean | null; usage: string; bindings: Record<string, number>;
+  same_spoolman: boolean | 'fallback' | null; usage: string; bindings: Record<string, number>;
   /** true when the list is usable; otherwise `reason` says why (absent, stale, waiting, unsupported, or a stock state code). */
   available: boolean; reason: string | null;
 }

@@ -276,6 +276,33 @@ class NoOpensslTests(Tmp):
         self.assertEqual(certs.load(folder)[1], "SECRET KEY\n")
         self.assertEqual(sorted(os.listdir(folder)), sorted(os.path.basename(p) for p in certs.paths(folder)))
 
+    def test_a_failed_write_leaves_no_temp_file_and_the_old_pair(self):
+        """L2: a failed write (disk full, sandbox refusal) removes its temporary file, and a save that fails on
+        the key leaves the old certificate and key, never a new certificate beside the old key."""
+        folder = os.path.join(self.tmp, "keep")
+        certs.save(folder, "OLD C\n", "OLD K\n")
+        real = os.write
+
+        def fail_on_key(fd, data):
+            if b"NEW K" in data:
+                raise OSError(28, "No space left on device")
+            return real(fd, data)
+        with mock.patch.object(certs.os, "write", fail_on_key), self.assertRaises(certs.CertError):
+            certs.save(folder, "NEW C\n", "NEW K\n")
+        self.assertEqual(sorted(os.listdir(folder)), sorted(os.path.basename(p) for p in certs.paths(folder)))
+        self.assertEqual(certs.load(folder), ("OLD C\n", "OLD K\n"))
+
+    def test_pins_write_through_a_unique_temporary_file(self):
+        """L3: two OrcaSlicer windows writing pins never share one fixed temp name."""
+        pins = certs.Pins(os.path.join(self.tmp, "p", "printers.json"))
+        names = []
+        real = certs._write_temp
+        with mock.patch.object(certs, "_write_temp", lambda path, text: names.append(real(path, text)) or names[-1]):
+            pins.check("a", "1")
+            pins.check("b", "2")
+        self.assertEqual(len(set(names)), 2)
+        self.assertEqual(os.listdir(os.path.dirname(pins.path)), ["printers.json"])
+
     @unittest.skipUnless(hasattr(os, "symlink") and os.name != "nt", "symlinks")
     def test_save_replaces_a_symlinked_key_file_without_following_it(self):
         folder = os.path.join(self.tmp, "keep")

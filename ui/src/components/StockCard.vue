@@ -23,7 +23,8 @@ const sp = computed(() => s.stock?.spooler);
 const sk = computed(() => s.stock?.stock);
 const usable = stockVisible;
 /** Notes shown above the list. */
-const notes = computed(() => (s.stock!.same_spoolman === false ? [{ sev: 'error', text: t('stock.otherSpoolman') }] : []));
+const notes = computed(() => (s.stock!.same_spoolman === false ? [{ sev: 'error', text: t('stock.otherSpoolman') }]
+  : s.stock!.same_spoolman === 'fallback' ? [{ sev: 'info', text: t('stock.fallback') }] : []));
 const rows = computed<Spool[]>(() => sk.value?.rows ?? []);
 const materials = computed(() => [...new Set(rows.value.map(r => r.material).filter(Boolean))].sort().map(m => ({ value: m, label: m })));
 const slotList = computed(() => s.status?.slots ?? []);

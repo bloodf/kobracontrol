@@ -25,6 +25,7 @@ import threading
 import socket
 import time
 
+import certs
 import kobra
 
 SSDP_GROUP = "239.255.255.250"
@@ -198,10 +199,7 @@ class Addresses:
                     raise ValueError("%s is already remembered for the printer preset %r" % (ip, other))
             known[key] = {"ip": ip, "id": ident, "fp": fp}
             os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"printers": known}, f, indent=1, sort_keys=True)
-            os.replace(tmp, self.path)
+            certs._write_private(self.path, json.dumps({"printers": known}, indent=1, sort_keys=True))
 
 
 class Found:

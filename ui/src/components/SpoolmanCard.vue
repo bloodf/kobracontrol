@@ -24,7 +24,7 @@ const source = computed(() => {
   if (s.spoolsError) return t('sm.error', { error: s.spoolsError });
   if (!s.spoolsLoaded) return t('sm.notLoaded');
   const n = s.spools.length;
-  return s.stock?.spooler.state === 'active' && s.stock.same_spoolman === true ? t('sm.same', { n }) : t('sm.count', { n });
+  return s.stock?.spooler.state === 'active' && (s.stock.same_spoolman === true || s.stock.same_spoolman === 'fallback') ? t('sm.same', { n }) : t('sm.count', { n });
 });
 const label = (sp: Spool) => t('pick.option', { id: sp.id, vendor: sp.vendor, name: sp.name, material: sp.material, grams: fmt.grams(sp.remaining) });
 const swatch = (sp: Spool | null) => (!sp ? 'transparent' : spoolPaint(sp.colour, sp.colours) || 'transparent');

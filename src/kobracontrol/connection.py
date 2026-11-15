@@ -86,6 +86,9 @@ class Connection:
         # A remembered printer's certificate fingerprint (service sets it): a session that presents another one is
         # closed at once and `mismatch` holds what it presented; "" = nothing to compare with (first contact).
         self.expect_fp, self.mismatch = "", ""
+        # The printer's /info identity when known (service sets it): the certificate pin is kept per printer, so it
+        # follows the printer to a new address and a known identity at a new address must show the same certificate.
+        self.identity = ""
         self._fresh = False                 # retry(): start the delay again from RETRY_FIRST
         self.firmware_name = ""
         self._listeners = []
@@ -265,7 +268,7 @@ class Connection:
         previous = None
         if self.pins:
             try:
-                previous = self.pins.check(self.host, fingerprint)
+                previous = self.pins.check("id:" + self.identity if self.identity else self.host, fingerprint)
             except OSError as e:
                 self.log("kobracontrol: %s: the printer's certificate could not be remembered (%s)" % (self.host, e))
         if previous is None and self.server_cert and self.server_cert["fingerprint"] == fingerprint:

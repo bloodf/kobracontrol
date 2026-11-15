@@ -46,9 +46,17 @@ network search was measured on the printer; the plugin itself has not been tried
   seen printing or a print is tracked on it. Two presets can no longer be recorded for one printer.
 - Closing the plugin while a network search runs no longer leaves a connection running afterwards.
 - Changing the printer name or the Spoolman address in Settings no longer restarts the connection.
-- The network search keeps only answers from port 1900, at most 4 per search, asks OrcaSlicer by itself about at
-  most one new address (once a minute), and does not ask again about an address that is not a Kobra X or was
-  refused until Search again.
+- The network search keeps only answers from port 1900, at most 4 per search. Kobra Control brings up
+  OrcaSlicer's permission dialog by itself at most once per session (one new printer, none remembered); every
+  other printer found is listed for you to pick, and an address that is not a Kobra X or was refused is not asked
+  about again until Search again. If the dialog does not allow it, the tab says to allow the address and search
+  again instead of waiting.
+- The certificate fingerprint is kept per printer identity, so it follows the printer to a new address.
+- Saving a certificate writes both files before replacing either, and removes its temporary files when a write
+  fails; certificate pins are written through a unique temporary file.
+- Filament use is not booked in Spooler's Spoolman when Spooler says it books Kobra X prints itself (Spooler 0.26
+  never does). The Stock card says when Kobra Control uses Spooler's Spoolman because none is set here.
+- Check Kobra X connection takes at most 20 s.
 - An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
   "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
   what to check, and every attempt follows the growing delay.

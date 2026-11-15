@@ -20,6 +20,11 @@ plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs th
 | `connection.py` | One connection and one state per printer address, with the reconnect loop; certificate search | no |
 | `locate.py` | Where the printer is: Settings address, remembered printer, preset address, SSDP search; the address book (`addresses.json`) | no |
 | `locating.py` | The service side: locate threads, printer switch on a new address, identity and certificate checks, relocation limits | no |
+
+Filament use (`usage.py`) is booked by Kobra Control in its Spoolman, which is Spooler's when none is set
+here. Spooler 0.26 never books a Kobra X print: its Kobra link reads only slots (`kx_report` gives no print
+state, so `usage_track` never runs for it). A Spooler that does must list `"anycubic"` in its presence
+`provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
@@ -185,7 +190,17 @@ is written around that:
   thread every refused attempt would queue one more OrcaSlicer dialog (`request_permission`,
   PluginAuditManager.cpp, posts a prompt per denied event with no de-duplication). The page asks the
   plugin (`allow_hosts`) to raise the audited event on the UI thread instead (`socket.getaddrinfo` of the
-  numeric address, no network I/O): the dialog shows at once, a Yes is saved, and the tab connects.
+  numeric address, no network I/O): the dialog shows at once, a Yes is saved, and the tab connects. Checked
+  against OrcaSlicer 2.5.0: page messages arrive on the UI thread (PluginHostUi.cpp, the WebKit backends
+  deliver script messages from the native callback; PluginPages.cpp:148 calls `on_message`), inside an audit
+  scope (PagesPluginCapabilityTrampoline.hpp, `ORCA_PY_AUDIT_SCOPE`); CPython raises `socket.getaddrinfo`
+  before any lookup; PluginAuditManager.cpp maps it to the Socket category with the host as target (lines
+  110, 1181), prompts inline on the UI thread and saves the Yes (1764-1765, 1842) to `network_socket`, which
+  `has_network_permission` (1450) and `network_permission_matches` (313, bare host and address tuple, 356)
+  also apply to the later `http.client.connect` and `socket.connect` to that host. Not yet seen in a real
+  OrcaSlicer; if no Yes comes back, the page says to allow the address and press Search again. Without a
+  click the page raises that dialog at most once per session, and only for a single new printer with none
+  remembered for the preset.
 - OrcaSlicer's network grants are exact hosts: `network_permission_matches` (PluginAuditManager.cpp:313)
   compares one host per entry, and the Plugins dialog refuses wildcards (docs/HLSD/plugin-permissions.md,
   "Persistence and editing"). There is no CIDR or "local network" grant, so the found printer's address
