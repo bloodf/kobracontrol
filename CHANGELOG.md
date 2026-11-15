@@ -2,9 +2,44 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+## [0.2.0] - 2026-11-15
+
+Fixes and features from a code audit. They were checked against the repository's test fakes and page
+tests only and have not been tried on a printer yet.
+
+### Added
+
+- Files page: search by name and sort by newest, oldest, name or size.
+- Print panel of a printer file: estimated time, layers, filament, layer height, temperatures and
+  nozzle from the printer's file details, and the ACE slot that will print each filament. It warns
+  when that slot holds another material, when a filament has no loaded slot, or when the file was
+  sliced for another printer, and the print confirmation repeats the warning.
+- Dashboard: the clock time a running print should finish.
+- The printer's TLS certificate fingerprint is remembered per address and shown in Settings; a
+  different one later is logged and shown on every tab as a warning. The connection is never refused
+  for it (SECURITY.md).
+
+### Fixed
+
+- A multiColorBox report whose box, slot or feed/drying status is not an object no longer stops the
+  status updates; a bad slot reads as empty at its own position. Numbers such as `1e999` read as absent.
+- The Device tab's status updates no longer stop for the session after one failed update.
+- Switching the Device tab to another printer closes the connection to the previous one.
+- Printing a file already on the printer from OrcaSlicer passes vibration compensation and reports the
+  finished stage.
+- A bundled certificate that cannot be loaded (and no saved one) is reported as a missing certificate
+  with the Find certificate prompt, not as an unexpected answer from the printer.
+- Settings show the certificate source actually in use: a saved copy that does not load is not "saved".
+- The Device tab's unload with nothing loaded is refused with a plain reason, not "slot 0 does not exist".
+- The camera no longer starts a capture thread on a session that was replaced a moment before.
+- Camera tests: they wait for the fake stream instead of assuming its timing, and check processes in a
+  way that works on Windows (they no longer send Ctrl+C to the test runner there).
+
 ## [0.1.0] - 2026-11-14
 
-The first release. The plugin is in development.
+The first release, published to Orca Cloud by hand. The plugin is in development.
 
 ### Added
 
@@ -23,18 +58,6 @@ The first release. The plugin is in development.
 - Plugins > Run scripts "Check Kobra X connection" and "Find Anycubic certificate".
 - Spoolman and Spooler integration, shared with the sibling plugin u1control.
 - `docs/brand-images-prompt.md`, a prompt for the logo and image set, and a placeholder icon.
-
-### Added (audit, tests only: not yet tried on the printer)
-
-- Files page: search by name and sort by newest, oldest, name or size.
-- Print panel of a printer file: estimated time, layers, filament, layer height, temperatures and
-  nozzle from the printer's file details, and the ACE slot that will print each filament. It warns
-  when that slot holds another material, when a filament has no loaded slot, or when the file was
-  sliced for another printer, and the print confirmation repeats the warning.
-- Dashboard: the clock time a running print should finish.
-- The printer's TLS certificate fingerprint is remembered per address and shown in Settings; a
-  different one later is logged and shown on every tab as a warning. The connection is never refused
-  for it (SECURITY.md).
 
 ### Fixed
 
@@ -55,17 +78,3 @@ Found by running the plugin against a real Kobra X (firmware 2.0.2.8).
 - Camera: the Device tab stream mode follows the URL scheme, so the printer's HTTP-FLV URL works.
 - File details are matched to the requested file; file list timestamps are read as milliseconds.
 - The printer file name from a job name no longer keeps a `.gcode.3mf` suffix.
-
-Found in a code audit (tests only, not yet tried on the printer):
-
-- A multiColorBox report whose box, slot or feed/drying status is not an object no longer stops the
-  status updates; a bad slot reads as empty at its own position. Numbers such as `1e999` read as absent.
-- The Device tab's status updates no longer stop for the session after one failed update.
-- Switching the Device tab to another printer closes the connection to the previous one.
-- Printing a file already on the printer from OrcaSlicer passes vibration compensation and reports the
-  finished stage.
-- A bundled certificate that cannot be loaded (and no saved one) is reported as a missing certificate
-  with the Find certificate prompt, not as an unexpected answer from the printer.
-- Settings show the certificate source actually in use: a saved copy that does not load is not "saved".
-- The Device tab's unload with nothing loaded is refused with a plain reason, not "slot 0 does not exist".
-- The camera no longer starts a capture thread on a session that was replaced a moment before.
