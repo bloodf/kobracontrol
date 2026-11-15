@@ -24,6 +24,18 @@ Nothing is released yet. The plugin is in development.
 - Spoolman and Spooler integration, shared with the sibling plugin u1control.
 - `docs/brand-images-prompt.md`, a prompt for the logo and image set, and a placeholder icon.
 
+### Added (audit, tests only: not yet tried on the printer)
+
+- Files page: search by name and sort by newest, oldest, name or size.
+- Print panel of a printer file: estimated time, layers, filament, layer height, temperatures and
+  nozzle from the printer's file details, and the ACE slot that will print each filament. It warns
+  when that slot holds another material, when a filament has no loaded slot, or when the file was
+  sliced for another printer, and the print confirmation repeats the warning.
+- Dashboard: the clock time a running print should finish.
+- The printer's TLS certificate fingerprint is remembered per address and shown in Settings; a
+  different one later is logged and shown on every tab as a warning. The connection is never refused
+  for it (SECURITY.md).
+
 ### Fixed
 
 Found by running the plugin against a real Kobra X (firmware 2.0.2.8).
@@ -55,3 +67,5 @@ Found in a code audit (tests only, not yet tried on the printer):
 - A bundled certificate that cannot be loaded (and no saved one) is reported as a missing certificate
   with the Find certificate prompt, not as an unexpected answer from the printer.
 - Settings show the certificate source actually in use: a saved copy that does not load is not "saved".
+- The Device tab's unload with nothing loaded is refused with a plain reason, not "slot 0 does not exist".
+- The camera no longer starts a capture thread on a session that was replaced a moment before.

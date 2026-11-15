@@ -106,10 +106,16 @@ The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with
 
 ### Kobra Control tab
 
-- **Dashboard:** status and controls, camera, an ACE card (slots, feed, retract, auto-feed and
+- **Dashboard:** status and controls (with the clock time a running print should finish), camera, an ACE card (slots, feed, retract, auto-feed and
   drying), Spoolman and Spooler stock.
-- **Files:** the printer's files.
-- **Settings:** connection, certificate, ffmpeg path, Spoolman and Spooler.
+- **Files:** the printer's files, with search and sorting (newest, oldest, name, size). Before you print
+  one, the print panel shows its estimated time, layers, filament, layer height and temperatures, and
+  which ACE slot will print each of its filaments. It warns when a slot holds a different material than
+  the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another
+  printer; the confirmation repeats the warning.
+- **Settings:** connection (with the printer's certificate fingerprint), certificate, ffmpeg path, Spoolman
+  and Spooler. If the printer presents a different TLS certificate than last time, every tab shows a
+  warning; see [SECURITY.md](SECURITY.md).
 
 The tab's camera needs `ffmpeg` installed. The Device tab camera does not. When the tab's camera
 starts, OrcaSlicer asks for permission to run the `ffmpeg` command, and shows the full command with
