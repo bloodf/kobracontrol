@@ -4,6 +4,22 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Fixed
+
+- A printer that answers on its address but whose MQTT session cannot be opened no longer sends the tab into a
+  loop. Each status the plugin publishes every second made the page say hello again, the hello cut the retry delay
+  short, and the page went "Connecting" and back to "unreachable" every 10 s with a new connection attempt each time,
+  forever. Now only Retry (and Find certificate or a print job) tries again at once; otherwise the attempts follow
+  the growing delay of 2 s up to 60 s, the page shows one steady error, and Retry answers as soon as that attempt
+  fails instead of after 10 s.
+- The connection error says what failed: no answer on the MQTT port, the TLS/MQTT login timed out, the printer
+  closed the connection during the login or right after it opened, the printer refused the login, or a TLS
+  certificate problem.
+- Find certificate says when OrcaSlicer refused to let the plugin read Anycubic Slicer Next's folder, instead of
+  "no slicer files to scan".
+- The Device tab's status pushes carry a `sequence_id`, so OrcaSlicer no longer logs
+  "command_handle_response, error reponse." for each one.
+
 ## [0.2.0] - 2026-11-15
 
 Fixes and features from a code audit. They were checked against the repository's test fakes and page

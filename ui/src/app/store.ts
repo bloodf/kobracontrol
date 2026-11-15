@@ -72,13 +72,15 @@ function reset(): void {
 }
 
 let helloInFlight = false;
-export async function hello(): Promise<void> {
+/** Ask the plugin for the printer. `retry`: the user pressed Retry, so a failed connection tries again now
+ *  instead of after its growing delay; otherwise its last error comes back at once. */
+export async function hello(retry = false): Promise<void> {
   reset();
   s.phase = 'connecting';
   const epoch = s.epoch;
   helloInFlight = true;
   try {
-    const r: Info = await bridge.request({ type: 'hello' });
+    const r: Info = await bridge.request({ type: 'hello', retry });
     if (epoch !== s.epoch) return;
     s.info = r;
     s.phase = 'connected';
@@ -88,6 +90,7 @@ export async function hello(): Promise<void> {
     s.phase = e instanceof bridge.ReplyError && e.noCertificate ? 'noCertificate'
       : e instanceof bridge.ReplyError && e.noTarget ? 'noTarget' : 'unreachable';
     s.error = message(e);
+    s.offline = '';   // the answer is newer than any 'offline' message that came while it was awaited
   } finally {
     helloInFlight = false;
     if (epoch === s.epoch) { void loadStock(false); void loadUsage(); }
@@ -139,8 +142,10 @@ export const stockVisible = computed(() => !s.stockError && s.stock?.available =
 function onMessage(m: any): void {
   switch (m.type) {
     case 'status':
-      s.status = m.data; s.statusAt = Date.now(); s.offline = '';
-      if (s.phase === 'unreachable' && !helloInFlight) void hello();   // it answers again: fetch its generation
+      s.status = m.data; s.statusAt = Date.now();
+      if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message
+      // Statuses come every second, connected or not: only one that says connected means it answers again.
+      if (m.data?.connected === true && (s.phase === 'unreachable' || s.phase === 'noCertificate') && !helloInFlight) void hello();
       break;
     case 'offline': s.offline = String(m.error ?? ''); break;
     case 'frame': s.frame = m.image; s.camError = ''; s.camReason = ''; break;

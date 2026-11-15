@@ -19,7 +19,7 @@ async function find() {
   if (!r.ok) return;
   if (r.result?.found === false) { notFound.value = true; return; }
   tracker.notify('success', t('ok.cert', { source: r.result?.source ?? '' }));
-  void hello();
+  void hello(true);   // connect with the new certificate now, not after the retry delay
 }
 </script>
 

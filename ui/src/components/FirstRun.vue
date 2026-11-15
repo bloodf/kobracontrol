@@ -28,7 +28,7 @@ import { t } from '../core/i18n';
       </div>
     </div>
     <div class="kc-row"><Button :label="t('common.openSettings')" @click="s.tab = 'settings'" />
-      <Button severity="secondary" outlined :label="t('common.retry')" @click="hello()" /></div>
+      <Button severity="secondary" outlined :label="t('common.retry')" @click="hello(true)" /></div>
     <p class="oui-meta fr-detail">{{ t('target.detail', { error: s.error }) }}</p>
   </section>
 </template>

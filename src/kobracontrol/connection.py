@@ -67,6 +67,7 @@ class Connection:
         self.state = kobra.State(model)
         self.printer = None
         self.error, self.no_certificate = "", False
+        self.failures = 0                   # failed attempts so far: lets a waiter return at the next failure
         self.firmware_name = ""
         self._listeners = []
         self._lock = threading.Lock()
@@ -106,6 +107,12 @@ class Connection:
 
     def wait_connected(self, timeout):
         return self._connected.wait(timeout)
+
+    def wait_attempt(self, timeout, failures=None):
+        """Wait until connected or an attempt fails after `failures` (the count read before a retry(); default
+        now), at most timeout; returns `connected`."""
+        failures = self.failures if failures is None else failures
+        return bool(wait_until(lambda: self.connected or self.failures != failures, timeout) and self.connected)
 
     @property
     def connected(self):
@@ -201,7 +208,8 @@ class Connection:
         self.printer = printer
         self._poll(initial=True)   # the first snapshot, before anyone sees the printer as connected
         if not printer.connected:
-            self._fail("the printer closed the connection right after it opened", False)
+            self._fail("the printer closed the session right after it opened; another app connected to the printer may "
+                       "be the cause", False)
             return False
         self.state.connected = True
         self._opened_at = time.monotonic()
@@ -245,6 +253,7 @@ class Connection:
     def _fail(self, error, no_certificate):
         changed = error != self.error
         self.error, self.no_certificate = error, no_certificate
+        self.failures += 1
         self.state.connected = False
         self._connected.clear()
         if changed:
@@ -258,8 +267,14 @@ class Connection:
     def _dropped(self, reason):
         self.state.connected = False
         self._connected.clear()
-        self.error = "connection to the printer lost (%s); reconnecting" % (reason or "closed")
-        self.log("kobracontrol: %s: %s" % (self.host, self.error))
+        opened = self._opened_at
+        if opened is not None and time.monotonic() - opened < STABLE_AFTER:
+            error = ("the printer closed the session soon after it opened (%s); another app connected to the printer may "
+                     "be the cause. Retrying with a growing delay" % (reason or "closed"))
+        else:
+            error = "connection to the printer lost (%s); reconnecting" % (reason or "closed")
+        self.error = error
+        self.log("kobracontrol: %s: %s" % (self.host, error))
         self._notify()
         self._wake.set()
 

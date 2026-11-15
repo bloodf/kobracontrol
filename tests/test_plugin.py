@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
@@ -324,6 +325,17 @@ class Page(Base):
         self.assertEqual(config["limits"], {"nozzle_max": 320, "bed_max": 120})
         self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})   # the bundled certificate
         self.assertEqual(config["version"], plugin.VERSION)
+
+    def test_only_retry_hello_asks_for_a_retry(self):
+        """The page says hello on open and on selection changes; only its Retry button may cut the backoff short."""
+        page = self.page()
+        svc = plugin.service(page.post_message)
+        with mock.patch.object(svc, "submit") as submit:
+            page.on_message({"type": "hello", "id": 1})
+            page.on_message({"type": "hello", "id": 2, "retry": True})
+            page.on_message({"type": "hello", "id": 3, "retry": "yes"})
+        self.assertEqual([c.args[1:3] for c in submit.call_args_list],
+                         [("connect", {"retry": False}), ("connect", {"retry": True}), ("connect", {"retry": False})])
 
     def test_certificate_state_matches_the_one_in_use(self):
         """A saved pair that does not load is not used (connection.tls_from falls back to the bundled one), so the

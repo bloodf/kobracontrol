@@ -17,10 +17,11 @@ import { t, fmt } from '../core/i18n';
       <p class="tb-p">{{ t('banner.target') }}</p>
       <Button v-if="s.tab !== 'settings'" size="small" :label="t('common.openSettings')" @click="s.tab = 'settings'" />
     </Message>
-    <Message v-else-if="s.phase === 'unreachable' || s.offline" severity="error">
+    <!-- While a Retry is under way the last error stays out of the way: "connecting" until the plugin answers. -->
+    <Message v-else-if="s.phase === 'unreachable' || (s.offline && s.phase !== 'connecting')" severity="error">
       <strong>{{ t('target.offline.title') }}</strong>
       <p class="tb-p">{{ t('target.offline.body', { printer: printerName, error: s.offline || s.error }) }}</p>
-      <Button size="small" severity="secondary" outlined :label="t('common.retry')" @click="hello()" />
+      <Button size="small" severity="secondary" outlined :label="t('common.retry')" @click="hello(true)" />
     </Message>
     <Message v-else-if="s.phase === 'connecting'" severity="secondary">{{ t('target.connecting') }}</Message>
     <Message v-else-if="s.status && statusAge > STALE_STATUS_S" severity="warn">{{ t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) }}</Message>

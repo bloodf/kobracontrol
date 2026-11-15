@@ -505,11 +505,16 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     # ------------------------------------------------------------------ commands
 
-    def cmd_connect(self):
+    def cmd_connect(self, retry=False):
+        """The tab's hello. Only the user's Retry (retry=True) cuts the connection's backoff short; otherwise a
+        connection that already failed answers its error at once and keeps its retry delay."""
         gen, conn, target = self._ctx()
         if not conn.connected:
-            conn.retry()
-            conn.wait_connected(CONNECT_WAIT)
+            failures = conn.failures
+            if retry is True:
+                conn.retry()
+            if retry is True or not conn.error:
+                conn.wait_attempt(CONNECT_WAIT, failures)
         if not conn.connected:
             cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
             raise cls(conn.error or "the printer at %s did not answer yet" % target.host)

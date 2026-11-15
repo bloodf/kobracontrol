@@ -211,6 +211,35 @@ class NoOpensslTests(Tmp):
             certs.find([os.path.join(self.tmp, "nope")])
         self.assertIn("nope", str(cm.exception))
 
+    def test_refused_files_say_denied_not_nothing_found(self):
+        """OrcaSlicer's sandbox refusing every file must not read as "no slicer files" (the user would keep
+        pressing Find certificate, each press another blocked scan)."""
+        self.write("t/libcloud_mqtt.dylib", b"x")
+        with mock.patch.object(certs, "_chunks", side_effect=PermissionError(13, "audit permission required")), \
+                self.assertRaises(certs.CertError) as cm:
+            certs.find([os.path.join(self.tmp, "t")])
+        self.assertIn("OrcaSlicer did not let kobracontrol read", str(cm.exception))
+        self.assertIn("bundled with the plugin is used", str(cm.exception))
+
+    def test_refused_folder_says_denied(self):
+        folder = os.path.join(self.tmp, "t")
+        with mock.patch.object(certs.os, "stat", side_effect=PermissionError(13, "denied", folder)), \
+                self.assertRaises(certs.CertError) as cm:
+            certs.find([folder])
+        self.assertIn("OrcaSlicer did not let kobracontrol read", str(cm.exception))
+
+    def test_refused_listing_inside_a_folder_says_denied(self):
+        self.write("t/sub/a.dylib", b"x")
+        real = os.scandir
+
+        def scandir(path="."):
+            if os.path.basename(str(path)) == "t":
+                raise PermissionError(13, "denied", str(path))
+            return real(path)
+        with mock.patch.object(os, "scandir", scandir), self.assertRaises(certs.CertError) as cm:
+            certs.find([os.path.join(self.tmp, "t")])
+        self.assertIn("OrcaSlicer did not let kobracontrol read", str(cm.exception))
+
     def test_save_load_round_trip(self):
         folder = os.path.join(self.tmp, "plugin-data")
         cert_path, key_path = certs.save(folder, "CERT\n", "KEY\n")

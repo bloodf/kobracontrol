@@ -43,7 +43,9 @@ tab are two consumers of that one connection and one state. The scripts use it t
 never opens a second MQTT session to a printer. This is the plugin's own choice; on firmware 2.0.2.8
 the printer accepted a second client (Kobralink) at the same time. When the connection drops the service reconnects
 with a growing delay (2 s doubling to 60 s, reset only after a session has lasted 30 s), recovering
-the credentials again each time.
+the credentials again each time. Only the user's Retry, Find certificate and a print job cut that delay short; the
+page's statuses and hellos never do. The certificate comes from the plugin's data folder or the copy bundled with it;
+Anycubic Slicer Next's folders are read only when the user runs Find certificate.
 
 On connect the plugin sends three status queries and nothing else. After that it polls status. The
 one thing it sends without a user command is the "feed finished" acknowledgement the printer waits
@@ -60,7 +62,7 @@ Page to plugin:
 
 | type | fields | effect |
 |---|---|---|
-| `hello` | `id` | resolve the printer, connect, send `config`; with no usable printer the error reply has `no_target: true`; with no certificate it has `no_certificate: true` |
+| `hello` | `id`, `retry` | resolve the printer, connect, send `config`; a connection that already failed answers its last error at once and keeps its retry delay, unless `retry` is `true` (the page's Retry button), which tries again now and answers at that attempt's result; with no usable printer the error reply has `no_target: true`; with no certificate it has `no_certificate: true` |
 | `lease` | `camera`, `stock` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen |
 | `cmd` | `id`, `cmd`, `args`, `gen` | run `Service.cmd_<cmd>(**args)` for printer generation `gen` |
 | `frame_ack` | | the page has shown the last camera frame |

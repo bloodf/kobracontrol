@@ -671,6 +671,29 @@ test('offline: unreachable printer, retry, and recovery when it answers again', 
   assert(!q('[data-test="pause"]').disabled, 'a status brings controls back');
 `);
 
+test('cannot connect: statuses of a disconnected printer keep one steady error and never say hello again', `
+  await until(() => last('hello'));
+  eq(last('hello').retry, false, 'opening the tab is not a Retry');
+  await fail(last('hello'), 'MQTT 192.168.1.50:9883: no answer on the printer\u2019s MQTT port');
+  const banner = () => text(byTest('target-banner'));
+  for (let i = 0; i < 5; i++) {   // the plugin publishes a status and an offline message every second
+    await post({type: 'status', data: VIEW({connected: false})});
+    assert(banner().includes('no answer on the printer'), 'steady error after status ' + i + ': ' + banner());
+    await post({type: 'offline', error: 'MQTT 192.168.1.50:9883: no answer on the printer\u2019s MQTT port'});
+    assert(banner().includes('no answer on the printer') && !banner().includes('Connecting'), 'no flicker: ' + banner());
+  }
+  eq(sent().filter(m => m.type === 'hello').length, 1, 'a disconnected status does not retry the connection');
+  await click(btn('Try again', byTest('target-banner')));
+  eq(sent().filter(m => m.type === 'hello').map(m => m.retry), [false, true], 'Retry asks for a retry');
+  await post({type: 'offline', error: 'the old error'});
+  assert(!banner().includes('the old error'), 'while retrying the old error stays out: ' + banner());
+  await fail(last('hello'), 'MQTT 192.168.1.50:9883: the printer closed the connection during the TLS/MQTT login');
+  assert(banner().includes('closed the connection during the TLS/MQTT login'), 'the new reason: ' + banner());
+  await post({type: 'status', data: VIEW()});
+  await until(() => sent().filter(m => m.type === 'hello').length === 3, 'a connected status says hello');
+  eq(last('hello').retry, false, 'not a Retry');
+`);
+
 test('stale status shows its age', `
   await ready(PRINTING());
   const real = Date.now;

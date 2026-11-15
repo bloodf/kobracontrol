@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import ssl
 import sys
 import tempfile
@@ -808,10 +809,87 @@ class ReconnectStorm(unittest.TestCase):
         svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
                               http_port=fake.http_port, mqtt_port=fake.mqtt_port, camera_factory=FakeCamera)
         self.addCleanup(svc.close)
-        svc.connection(fake.host)
+        conn = svc.connection(fake.host)
         time.sleep(5)
         self.assertLessEqual(len(fake.client_ids), 3)   # waits of 2 s then 4 s, never a tight loop
         self.assertGreaterEqual(len(fake.client_ids), 2)
+        self.assertIn("another app connected to the printer", conn.error)   # says what happened, not only "lost"
+
+
+class CannotConnect(unittest.TestCase):
+    """The printer's HTTP side answers (credentials come back) but its MQTT port does not: the page's hello and
+    its once-a-second status must not cut the retry delay short; only the user's Retry does, and it answers at
+    that attempt's failure instead of after CONNECT_WAIT."""
+
+    def setUp(self):
+        self.fake = FakeKobra().start()
+        self.addCleanup(self.fake.stop)
+        closed = socket.create_server(("127.0.0.1", 0))
+        self.mqtt_port = closed.getsockname()[1]
+        closed.close()
+        self.attempts, self.published = [], []
+
+        def fetch(host, port):
+            self.attempts.append(time.monotonic())
+            return kobra.fetch_credentials(host, port=port)
+        self.fetch = fetch
+
+    def service(self, **kw):
+        svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(),
+                              http_port=self.fake.http_port, mqtt_port=self.mqtt_port, fetch=self.fetch,
+                              camera_factory=FakeCamera, **{"tls": lambda: None, **kw})
+        self.addCleanup(svc.close)
+        svc.set_target(service.Target(self.fake.host))
+        return svc, svc.connections[self.fake.host]
+
+    def connect(self, svc, timeout=3.0, **args):
+        rid = "c%d" % len(self.published)
+        svc.submit(rid, "connect", args)
+        return wait(lambda: next((m for m in self.published if m.get("id") == rid), None), timeout)
+
+    def test_hello_answers_the_last_error_at_once_and_keeps_the_backoff(self):
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        started = time.monotonic()
+        while time.monotonic() - started < 1.5:   # the 0.2.0 page said hello again on every status
+            reply = self.connect(svc, timeout=1.0)
+            self.assertIn("no answer on the printer's MQTT port", reply["error"])
+            svc.touch(camera=False)
+        self.assertEqual(len(self.attempts), 1)   # still in the first 2 s wait
+        wait(lambda: len(self.attempts) == 2, 3)
+
+    def test_retry_tries_now_and_answers_at_its_failure(self):
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        started = time.monotonic()
+        reply = self.connect(svc, timeout=3.0, retry=True)
+        self.assertLess(time.monotonic() - started, 2.0)   # not CONNECT_WAIT (10 s)
+        self.assertEqual(len(self.attempts), 2)
+        self.assertIn("no answer on the printer's MQTT port", reply["error"])
+
+    def test_status_and_hellos_do_not_reset_the_growing_delay(self):
+        svc, _ = self.service()
+        started = time.monotonic()
+        while time.monotonic() - started < 7.0:
+            self.connect(svc, timeout=1.0)
+            svc.touch(camera=False)
+            time.sleep(0.2)
+        self.assertLessEqual(len(self.attempts), 3)   # at 0, 2 and 6 s
+        self.assertEqual([m.get("type") for m in self.published if m.get("type") == "notice"], [])
+
+    def test_failed_attempts_never_search_the_slicer_install(self):
+        """Every attempt loads the saved or bundled certificate; only Find certificate reads Anycubic Slicer
+        Next's folders (each read there can be an OrcaSlicer sandbox block or prompt)."""
+        with mock.patch.object(certs, "find", side_effect=AssertionError("scan")) as find, \
+                mock.patch.object(certs, "default_locations", side_effect=AssertionError("scan")) as where:
+            _, conn = self.service(tls=connection.tls_from(tempfile.mkdtemp()))
+            for count in range(1, 4):
+                wait(lambda n=count: conn.failures >= n)
+                conn.retry()
+        self.assertGreaterEqual(len(self.attempts), 3)
+        self.assertIn("no answer on the printer's MQTT port", conn.error)
+        find.assert_not_called()
+        where.assert_not_called()
 
 
 class DeniedExplained(unittest.TestCase):

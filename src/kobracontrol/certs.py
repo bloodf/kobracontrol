@@ -51,6 +51,9 @@ OVERLAP = 64 * 1024  # far larger than a PEM certificate or RSA key block
 CERT_RE = re.compile(rb"-----BEGIN CERTIFICATE-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
 KEY_RE = re.compile(rb"-----BEGIN ((?:RSA |EC )?PRIVATE KEY)-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END \1-----")
 
+DENIED = ("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
+          "Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.")
+
 Found = namedtuple("Found", "cert_pem key_pem source key_source")
 
 
@@ -76,14 +79,26 @@ def default_locations(platform=None, env=None):
             posixpath.join(home, "AnycubicSlicerNext"), posixpath.join(home, ".local", "share", "AnycubicSlicerNext")]
 
 
-def _files(paths):
+def _files(paths, denied):
+    """Files to scan under `paths`; folders and files OrcaSlicer refuses to list are added to `denied`."""
     seen = 0
+
+    def refused(error):
+        if isinstance(error, PermissionError):
+            denied.append(error.filename or "?")
     for path in paths:
+        try:   # os.path.isdir would answer False for a refused folder, as for a missing one
+            os.stat(path)
+        except PermissionError:
+            denied.append(path)
+            continue
+        except (OSError, ValueError):
+            continue
         if os.path.isfile(path):
             yield path
         elif os.path.isdir(path):
             base = path.rstrip(os.sep).count(os.sep)
-            for folder, dirs, names in os.walk(path):  # followlinks=False: symlinked folders are skipped
+            for folder, dirs, names in os.walk(path, onerror=refused):  # followlinks=False: symlinks skipped
                 if folder.count(os.sep) - base > MAX_DEPTH:
                     raise CertError("%s is nested deeper than %d folders; point to the slicer's library folder"
                                     % (path, MAX_DEPTH))
@@ -121,9 +136,10 @@ def _normalize(block):
     return "\n".join([text[:head_end], *lines, text[foot_start:].strip()]) + "\n"
 
 
-def _scan(paths):
+def _scan(paths, denied=None):
+    denied = [] if denied is None else denied
     cert_found, key_found, scanned = {}, {}, 0
-    for path in _files(paths):
+    for path in _files(paths, denied):
         try:
             if os.path.getsize(path) > MAX_SIZE:
                 continue
@@ -132,6 +148,9 @@ def _scan(paths):
                     cert_found.setdefault(_normalize(m.group(0)), path)
                 for m in KEY_RE.finditer(data):
                     key_found.setdefault(_normalize(m.group(0)), path)
+        except PermissionError:
+            denied.append(path)
+            continue
         except OSError:
             continue
         scanned += 1
@@ -196,8 +215,10 @@ def _match(cert_pems, key_pems, workdir=None):
 def find(paths, workdir=None):
     """Scan files/folders for the AnycubicSlicer certificate and its private key -> Found.
     workdir: an existing folder the candidates may be written to for matching (see the module doc)."""
-    paths = list(paths)
-    cert_found, key_found, scanned = _scan(paths)
+    paths, denied = list(paths), []
+    cert_found, key_found, scanned = _scan(paths, denied)
+    if not scanned and denied:   # OrcaSlicer's sandbox, not a missing slicer: say so, or the user keeps retrying
+        raise CertError(DENIED % ", ".join(paths))
     if not scanned:
         raise CertError("no slicer files to scan in: %s" % ", ".join(paths))
     counts = "%d certificates, %d keys" % (len(cert_found), len(key_found))
