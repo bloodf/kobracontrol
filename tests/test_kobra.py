@@ -19,9 +19,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests"), os.path.join(ROOT, "scripts")]
 
 import aes  # noqa: E402
+import bambu  # noqa: E402
 import certs  # noqa: E402
 import kobra  # noqa: E402
 import probe  # noqa: E402
+import service  # noqa: E402
 import kobra_captures as cap  # noqa: E402
 
 with open(os.path.join(ROOT, "tests", "kobra_print_capture.json"), encoding="utf-8") as _f:
@@ -1196,6 +1198,28 @@ class StateTests(unittest.TestCase):
         self.assertEqual((v["phase_unit"], v["phase_channel"]), (None, None))
         v = self.apply("print/report", {"slice_param": {}, "unit_no": 9}, action="getSliceParam", state="done")
         self.assertEqual(v["phase_unit"], None)
+
+    def test_malformed_box_entries(self):
+        """A box, slot or status block that is not an object never reaches the slot code (which would raise on
+        every status sample); a bad slot keeps its position, so slot numbers stay those of the printer."""
+        slot = {"index": 2, "status": 5, "type": "PLA", "color": [1, 2, 3]}
+        boxes = [1, "a", None, {"id": 0, "slots": [None, "x", slot], "feed_status": "x", "drying_status": 5,
+                                "loaded_slot": -1}, {"id": 1, "slots": "x"}]
+        v = self.apply("multiColorBox/report", {"multi_color_box": boxes}, state="success")
+        self.assertEqual(v["multi_color_box"], [{"id": 0, "slots": [{}, {}, slot], "loaded_slot": -1},
+                                                {"id": 1, "slots": []}])
+        data, _ = service.status_data(v)
+        self.assertEqual([(s["global_index"], s["status"]) for s in data["slots"]], [(0, 0), (1, 0), (2, 5)])
+        bambu.push_status(v, data["slots"], data["mode"])
+
+    def test_non_finite_numbers_read_as_absent(self):
+        """JSON 1e999 parses as infinity: never a number the Device tab or the page would choke on."""
+        self.apply("print/report", {"curr_layer": 3, "progress": 10}, action="start", state="printing")
+        v = self.apply("print/report", {"curr_layer": 1e999, "total_layers": float("nan"), "progress": 1e999},
+                       action="start", state="printing")
+        self.assertEqual((v["layer"], v["total_layers"], v["progress"]), (0, 0, 10))
+        data, _ = service.status_data(v)
+        json.dumps(bambu.push_status(v, data["slots"], data["mode"]), allow_nan=False)
 
     def test_multi_color_box_failure_shapes(self):
         """Ported from KX-Bridge tests/test_multicolor_box_failed_state.py (issue #100)."""
