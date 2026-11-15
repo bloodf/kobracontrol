@@ -4,6 +4,90 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
+Checked against the repository's test fakes and page tests. How a real Kobra X (firmware 2.0.2.8) answers the
+network search was measured on the printer; the plugin itself has not been tried in OrcaSlicer yet.
+
+### Added
+
+- The Kobra Control tab finds the printer by itself. With no address under Settings it tries the address found
+  before for the selected printer preset, then the preset's own address if a Kobra X answers there, then searches
+  the local network with SSDP (the search Anycubic Slicer Next sends; a Kobra X on firmware 2.0.2.8 answers it
+  with an empty datagram, which is what the search looks for). A printer found at an address OrcaSlicer does not
+  allow yet brings up OrcaSlicer's dialog once; Allow is the only click. One printer found is used and remembered
+  per preset; several are listed once to choose from. A found address that stops answering is searched again, at
+  most once a minute. When the preset's address is not a Kobra X (a Kobralink or Moonraker bridge, say), the tab
+  says so in one line and uses the printer it found. Settings shows the address in use, how it was found, and
+  Search again.
+- The tab says once when the selected preset uses another printer agent (Kobralink's `moonraker`, say), and how to
+  switch it to `kobracontrol`; the tab works on its own either way.
+- With no Spoolman address set in Kobra Control, the one Spooler uses is taken, and Settings says so. An address
+  set in Kobra Control always wins.
+- `scripts/discover.py`: a read-only network search that prints what printers answer, with secrets masked.
+- The printer found for a preset is remembered with its identity (`cn` from `/info`) and its TLS certificate
+  fingerprint. It is used again only where both match; any other Kobra X, even the only one answering, is
+  offered as "A different Kobra X answered at X. Use it?" and never taken by itself. The first connection to a
+  printer found on the network names it (name, model, address).
+
+### Changed
+
+- The certificate is the built-in one, with no setup step: the plugin no longer asks at load for read access to
+  Anycubic Slicer Next's folders and never reads them on its own. Settings shows "Certificate: built in"; using
+  the copy from your own Anycubic Slicer Next install is an advanced option, and on macOS reads only
+  `libcloud_mqtt.dylib`, so OrcaSlicer asks about one file.
+- Saving a certificate no longer uses chmod or opens a file descriptor, which OrcaSlicer's audit cannot judge by
+  path and blocked ("event=os.chmod reason=audit permission required").
+
+### Fixed
+
+- A change of the printer address in use is a printer switch: new generation, per-printer state reset, and
+  commands queued for the old printer refused as stale. No search for the printer elsewhere while it was last
+  seen printing or a print is tracked on it. Two presets can no longer be recorded for one printer.
+- Closing the plugin while a network search runs no longer leaves a connection running afterwards.
+- Changing the printer name or the Spoolman address in Settings no longer restarts the connection.
+- The network search keeps only answers from port 1900, at most 4 per search. Kobra Control brings up
+  OrcaSlicer's permission dialog by itself at most once per session (one new printer, none remembered); every
+  other printer found is listed for you to pick, and an address that is not a Kobra X or was refused is not asked
+  about again until Search again. If the dialog does not allow it, the tab says to allow the address and search
+  again instead of waiting.
+- The certificate fingerprint is kept per printer identity, so it follows the printer to a new address.
+- Saving a certificate writes both files before replacing either, and removes its temporary files when a write
+  fails; certificate pins are written through a unique temporary file.
+- Filament use is not booked in Spooler's Spoolman when Spooler says it books Kobra X prints itself (Spooler 0.26
+  never does). The Stock card says when Kobra Control uses Spooler's Spoolman because none is set here.
+- Check Kobra X connection takes at most 20 s.
+- When the known printer stops answering and another Kobra X answers, the tab keeps offering "Use it?" until you
+  choose, instead of only showing the known printer's connection error.
+- OrcaSlicer's Print, Send and Device tab check the certificate pin of a printer in the address book under its
+  identity too; a different certificate is logged and shown there, not refused (the address is the user's own).
+  When the tab then uses that remembered printer, a session that is already open must have presented the pinned
+  certificate, or it is closed at once and offered as a different printer.
+- An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
+  "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
+  what to check, and every attempt follows the growing delay.
+- Badge, banner, Status card and camera show one connection state; the banner says when the next automatic try
+  is. While the printer is not connected every printer control is off, including the jog step buttons, and the
+  camera gives the same reason instead of "Select a printer first".
+- Saving Settings tries the connection again at once with a fresh retry delay; a new address stops the old
+  address's connection.
+- Stock table: the spool pictures are fixed 40 px squares that never set the row height, rows stay compact at any
+  width (a narrow page scrolls the table sideways in its own area), and nothing runs onto the note below.
+- The Spoolman card says "No Spoolman address" instead of "Spoolman: Spoolman not configured: ...".
+- A printer that answers on its address but whose MQTT session cannot be opened no longer sends the tab into a
+  loop. Each status the plugin publishes every second made the page say hello again, the hello cut the retry delay
+  short, and the page went "Connecting" and back to "unreachable" every 10 s with a new connection attempt each time,
+  forever. Now only Retry (and Find certificate or a print job) tries again at once; otherwise the attempts follow
+  the growing delay of 2 s up to 60 s, the page shows one steady error, and Retry answers as soon as that attempt
+  fails instead of after 10 s.
+- The connection error says what failed: no answer on the MQTT port, the TLS/MQTT login timed out, the printer
+  closed the connection during the login or right after it opened, the printer refused the login, or a TLS
+  certificate problem.
+- Find certificate says when OrcaSlicer refused to let the plugin read Anycubic Slicer Next's folder, instead of
+  "no slicer files to scan".
+- The Device tab's status pushes carry a `sequence_id`, so OrcaSlicer no longer logs
+  "command_handle_response, error reponse." for each one.
+
 ## [0.2.0] - 2026-11-15
 
 Fixes and features from a code audit. They were checked against the repository's test fakes and page

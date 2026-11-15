@@ -49,13 +49,25 @@ def tls_from(cert_dir):
     return load
 
 
-def _explain(host, error):
-    """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do."""
+def _explain(host, error, origin="", http=False):
+    """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do; a
+    refused /info (http) means something else answers at this address. origin: where the address came from."""
     if getattr(error, "code", None) == "denied" or isinstance(error, PermissionError):
         return ("OrcaSlicer has not let kobracontrol reach %s yet. Allow kobracontrol to reach %s in the dialog "
                 "OrcaSlicer just showed, then press Retry. If no dialog appeared, restart OrcaSlicer once so the "
                 "saved address is granted when the plugin loads." % (host, host))
-    return str(error)
+    text = str(error)
+    if http and refused(text):
+        return ("Something answers at %s, but it is not a Kobra X in LAN mode: port 18910 refused the connection. "
+                "Check that %s is the printer itself (not a bridge such as Kobralink or Moonraker) and that LAN mode "
+                "is on at the printer.%s" % (host, host, " The address comes from %s." % origin if origin else ""))
+    return text
+
+
+def refused(text):
+    """True for a connection refused at once (errno 61 macOS, 111 Linux, 10061 Windows)."""
+    text = text.lower()
+    return "refused" in text or any("errno %d]" % n in text for n in (61, 111, 10061))
 
 
 class Connection:
@@ -67,6 +79,17 @@ class Connection:
         self.state = kobra.State(model)
         self.printer = None
         self.error, self.no_certificate = "", False
+        self.failures = 0                   # failed attempts so far: lets a waiter return at the next failure
+        self.http_failed = False            # the last attempt failed at the HTTP step (/info, /ctrl), before MQTT
+        self.next_try = 0.0                 # time.time() of the next automatic attempt while waiting, else 0
+        self.origin = ""                    # where the address came from, for the error text (service sets it)
+        # A remembered printer's certificate fingerprint (service sets it): a session that presents another one is
+        # closed at once and `mismatch` holds what it presented; "" = nothing to compare with (first contact).
+        self.expect_fp, self.mismatch = "", ""
+        # The printer's /info identity when known (service sets it): the certificate pin is kept per printer, so it
+        # follows the printer to a new address and a known identity at a new address must show the same certificate.
+        self.identity = ""
+        self._fresh = False                 # retry(): start the delay again from RETRY_FIRST
         self.firmware_name = ""
         self._listeners = []
         self._lock = threading.Lock()
@@ -99,13 +122,21 @@ class Connection:
             thread.join(3)
 
     def retry(self):
-        """Try again now (the user pressed Retry, or a certificate was just saved)."""
+        """Try again now (the user pressed Retry or Save, or a certificate was just saved); the retry delay
+        starts again from RETRY_FIRST."""
         self.start()
+        self._fresh = True
         self._retry.set()
         self._wake.set()
 
     def wait_connected(self, timeout):
         return self._connected.wait(timeout)
+
+    def wait_attempt(self, timeout, failures=None):
+        """Wait until connected or an attempt fails after `failures` (the count read before a retry(); default
+        now), at most timeout; returns `connected`."""
+        failures = self.failures if failures is None else failures
+        return bool(wait_until(lambda: self.connected or self.failures != failures, timeout) and self.connected)
 
     @property
     def connected(self):
@@ -146,9 +177,14 @@ class Connection:
 
     def _backoff(self, delay):
         """Wait delay[0] (cut short only by retry() or stop()), then double it up to RETRY_MAX."""
+        self.next_try = time.time() + delay[0]
         self._retry.wait(delay[0])
         self._retry.clear()
-        delay[0] = min(delay[0] * 2, RETRY_MAX)
+        self.next_try = 0.0
+        if self._fresh:
+            self._fresh, delay[0] = False, RETRY_FIRST
+        else:
+            delay[0] = min(delay[0] * 2, RETRY_MAX)
 
     def _step(self, delay):
         """One turn: reconnect with backoff when not connected, else wait and poll."""
@@ -173,21 +209,24 @@ class Connection:
         old, self.printer, printer = self.printer, None, None
         if old:
             old.close()
+        self.http_failed = False
         try:
             ssl_context = self.tls()
+            self.http_failed = True
             creds = self.fetch(self.host, port=self.http_port)
+            self.http_failed = False
             printer = kobra.Printer(creds, ssl_context=ssl_context, mqtt_port=self.mqtt_port, http_port=self.http_port,
                                     on_report=self._report, on_disconnect=self._dropped)
             printer.connect()
         except kobra.KobraError as e:
             if printer:
                 printer.close()
-            self._fail(_explain(self.host, e), getattr(e, "no_certificate", False))
+            self._fail(_explain(self.host, e, self.origin, self.http_failed), getattr(e, "no_certificate", False))
             return False
         except OSError as e:   # e.g. the plugin sandbox refusing a socket before kobra wraps it
             if printer:
                 printer.close()
-            self._fail(_explain(self.host, e), False)
+            self._fail(_explain(self.host, e, self.origin, self.http_failed), False)
             return False
         except Exception as e:   # anything else a hostile or broken answer can raise (RecursionError, ...)
             if printer:
@@ -197,11 +236,19 @@ class Connection:
         if self._stop.is_set():
             printer.close()
             return False
+        if self.expect_fp and printer.tls_fingerprint != self.expect_fp:
+            printer.close()
+            self.mismatch = printer.tls_fingerprint or "none"
+            self._stop.set()   # never retried: the service offers this printer as a choice instead
+            self._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used." % self.host, False)
+            return False
         self._note_certificate(printer.tls_fingerprint)
         self.printer = printer
         self._poll(initial=True)   # the first snapshot, before anyone sees the printer as connected
         if not printer.connected:
-            self._fail("the printer closed the connection right after it opened", False)
+            self._fail("the printer closed the session right after it opened; another app connected to the printer may "
+                       "be the cause", False)
             return False
         self.state.connected = True
         self._opened_at = time.monotonic()
@@ -221,7 +268,7 @@ class Connection:
         previous = None
         if self.pins:
             try:
-                previous = self.pins.check(self.host, fingerprint)
+                previous = self.pins.check("id:" + self.identity if self.identity else self.host, fingerprint)
             except OSError as e:
                 self.log("kobracontrol: %s: the printer's certificate could not be remembered (%s)" % (self.host, e))
         if previous is None and self.server_cert and self.server_cert["fingerprint"] == fingerprint:
@@ -245,6 +292,7 @@ class Connection:
     def _fail(self, error, no_certificate):
         changed = error != self.error
         self.error, self.no_certificate = error, no_certificate
+        self.failures += 1
         self.state.connected = False
         self._connected.clear()
         if changed:
@@ -258,8 +306,14 @@ class Connection:
     def _dropped(self, reason):
         self.state.connected = False
         self._connected.clear()
-        self.error = "connection to the printer lost (%s); reconnecting" % (reason or "closed")
-        self.log("kobracontrol: %s: %s" % (self.host, self.error))
+        opened = self._opened_at
+        if opened is not None and time.monotonic() - opened < STABLE_AFTER:
+            error = ("the printer closed the session soon after it opened (%s); another app connected to the printer may "
+                     "be the cause. Retrying with a growing delay" % (reason or "closed"))
+        else:
+            error = "connection to the printer lost (%s); reconnecting" % (reason or "closed")
+        self.error = error
+        self.log("kobracontrol: %s: %s" % (self.host, error))
         self._notify()
         self._wake.set()
 

@@ -16,13 +16,15 @@ const slots = computed(() => s.status?.slots ?? []);
 const groups = computed(() => groupSlots(slots.value));
 const groupName = (boxId: number) => (boxId < 0 ? t('ace.head') : t('ace.unit', { n: boxId + 1 }));
 const nameOf = (sl: Slot) => `${groupName(sl.box_id)} · ${t('slot.name', { n: sl.index + 1 })}`;
-const configured = computed(() => !!(config.value?.settings.spoolman_url));
+// Set here, or taken from Spooler when only Spooler has one (service.Target.spoolman_url).
+const configured = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
 // One visible spool source per screen: when Spooler's stock uses the same Spoolman, say so.
 const source = computed(() => {
+  if (!configured.value && !s.spoolsLoaded) return t('sm.notConfigured');
   if (s.spoolsError) return t('sm.error', { error: s.spoolsError });
-  if (!s.spoolsLoaded) return configured.value ? t('sm.notLoaded') : t('sm.notConfigured');
+  if (!s.spoolsLoaded) return t('sm.notLoaded');
   const n = s.spools.length;
-  return s.stock?.spooler.state === 'active' && s.stock.same_spoolman === true ? t('sm.same', { n }) : t('sm.count', { n });
+  return s.stock?.spooler.state === 'active' && (s.stock.same_spoolman === true || s.stock.same_spoolman === 'fallback') ? t('sm.same', { n }) : t('sm.count', { n });
 });
 const label = (sp: Spool) => t('pick.option', { id: sp.id, vendor: sp.vendor, name: sp.name, material: sp.material, grams: fmt.grams(sp.remaining) });
 const swatch = (sp: Spool | null) => (!sp ? 'transparent' : spoolPaint(sp.colour, sp.colours) || 'transparent');

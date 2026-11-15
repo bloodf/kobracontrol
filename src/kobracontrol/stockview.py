@@ -35,15 +35,22 @@ class StockMixin:
 
     @staticmethod
     def _usage_owner(target):
-        """Who records this printer's filament use in Spoolman, for the stock view's note."""
+        """Who records this printer's filament use in Spoolman, for the stock view's note: "kobracontrol", "off"
+        (the setting), "spooler" (Spooler books it in the same Spoolman, so Kobra Control does not)."""
         if target is None:
             return "unknown"
-        return "kobracontrol" if target.spoolman_report_usage else "off"
+        if target.spoolman_report_usage:
+            return "kobracontrol"
+        return "spooler" if getattr(target, "own_report_usage", False) else "off"
 
     @staticmethod
     def _origin_check(target, spooler_origin):
-        """True: same Spoolman; False: different; None: can't tell (no address set here, or Spooler's unknown)."""
-        mine = peers.normalize_origin(target.spoolman_url) if target else ""
+        """True: the Spoolman set here is Spooler's; False: a different one; None: can't tell; "fallback": none is
+        set here, so Spooler's is used (the same one by construction, which is not a comparison)."""
+        own = getattr(target, "own_spoolman_url", getattr(target, "spoolman_url", "")) if target is not None else ""
+        if target is not None and not own and spooler_origin and target.spoolman_url:
+            return "fallback"
+        mine = peers.normalize_origin(own) if target else ""
         if not mine or not spooler_origin:
             return None
         return mine == spooler_origin

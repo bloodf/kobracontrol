@@ -18,6 +18,13 @@ plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs th
 | `spoolman.py`, `peers.py`, `spooler_bridge.py`, `stockview.py`, `usage.py` | Spoolman, Spooler presence and stock, filament use | no |
 | `settings.py` | Settings store | no |
 | `connection.py` | One connection and one state per printer address, with the reconnect loop; certificate search | no |
+| `locate.py` | Where the printer is: Settings address, remembered printer, preset address, SSDP search; the address book (`addresses.json`) | no |
+| `locating.py` | The service side: locate threads, printer switch on a new address, identity and certificate checks, relocation limits | no |
+
+Filament use (`usage.py`) is booked by Kobra Control in its Spoolman, which is Spooler's when none is set
+here. Spooler 0.26 never books a Kobra X print: its Kobra link reads only slots (`kx_report` gives no print
+state, so `usage_track` never runs for it). A Spooler that does must list `"anycubic"` in its presence
+`provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
@@ -43,7 +50,9 @@ tab are two consumers of that one connection and one state. The scripts use it t
 never opens a second MQTT session to a printer. This is the plugin's own choice; on firmware 2.0.2.8
 the printer accepted a second client (Kobralink) at the same time. When the connection drops the service reconnects
 with a growing delay (2 s doubling to 60 s, reset only after a session has lasted 30 s), recovering
-the credentials again each time.
+the credentials again each time. Only the user's Retry, Find certificate and a print job cut that delay short; the
+page's statuses and hellos never do. The certificate comes from the plugin's data folder or the copy bundled with it;
+Anycubic Slicer Next's folders are read only when the user runs Find certificate.
 
 On connect the plugin sends three status queries and nothing else. After that it polls status. The
 one thing it sends without a user command is the "feed finished" acknowledgement the printer waits
@@ -60,7 +69,7 @@ Page to plugin:
 
 | type | fields | effect |
 |---|---|---|
-| `hello` | `id` | resolve the printer, connect, send `config`; with no usable printer the error reply has `no_target: true`; with no certificate it has `no_certificate: true` |
+| `hello` | `id`, `retry` | resolve the printer, connect, send `config`; a connection that already failed answers its last error at once and keeps its retry delay, unless `retry` is `true` (the page's Retry button), which tries again now and answers at that attempt's result; the result carries `source` (`override`, `remembered`, `preset`, `discovered`) and `note` (one line when the preset's address was not the printer); when no Kobra X is found the error reply has `no_target: true` and `candidates` (`[{ip, name, model}]`, when several answered: the page offers them and sends `cmd choose_printer {host}`) and `pending` (addresses found that OrcaSlicer does not let the plugin reach yet: the page sends `allow_hosts {id, hosts}` once, which the plugin handles on the UI thread so OrcaSlicer's dialog shows at once and a Yes is saved, then says hello again); `cmd search_printer` searches again; with no certificate it has `no_certificate: true`. The `offline` message carries `retry_at` (unix s of the next automatic attempt, 0 when none is planned) |
 | `lease` | `camera`, `stock` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen |
 | `cmd` | `id`, `cmd`, `args`, `gen` | run `Service.cmd_<cmd>(**args)` for printer generation `gen` |
 | `frame_ack` | | the page has shown the last camera frame |
@@ -160,9 +169,16 @@ OrcaSlicer audits what plugin code does. Off the main thread it denies file read
 granted and every temp-file creation, and it matches a `urllib` request by its full URL. The plugin
 is written around that:
 
-- It asks at load for: threads; read access to the trees where Anycubic Slicer Next is installed
-  (`certs.grant_targets()`); read access to OrcaSlicer's own temp tree, where the sliced `.3mf`
-  lives (`plugin.slicer_temp_root()`); network access to the printer addresses it already knows.
+- It asks at load for: threads; read access to OrcaSlicer's own temp tree, where the sliced `.3mf`
+  lives (`plugin.slicer_temp_root()`); network access to the printer addresses it already knows (the
+  Settings address, the Kobra X preset's address and the addresses found before, `addresses.json`) and to
+  the SSDP multicast group `239.255.255.250` for the network search (a canonical `http://host` grant also
+  covers raw sockets, docs/HLSD/plugin-permissions.md). Nothing for Anycubic Slicer Next: the bundled
+  certificate is read from the plugin's own package (inside `data_dir()`, no grant needed). Find
+  certificate reads Anycubic Slicer Next only when the user asks; OrcaSlicer then asks about that one file.
+- No `chmod` and no `open()` of a file descriptor: OrcaSlicer's audit sees no path in those events and
+  asks for an event grant (`os.chmod`, `open`). Private files are created 0600 by path and renamed into
+  place (`certs._write_private`).
 - It creates files only inside its storage folder. The certificate copy is in `<storage>/tls`
   (OrcaSlicer refuses folders named `cert`, `certs`, `config` or `secret`).
 - Print and Send stream the plate G-code out of the `.3mf` straight to the printer; no temp file.
@@ -170,6 +186,25 @@ is written around that:
   credential calls, the upload and MQTT.
 - A printer address entered after load is not granted yet: OrcaSlicer shows its dialog on the first
   attempt, and the connection error says to allow it and retry.
+- A printer address found by the search is not probed from the search thread until granted: off the UI
+  thread every refused attempt would queue one more OrcaSlicer dialog (`request_permission`,
+  PluginAuditManager.cpp, posts a prompt per denied event with no de-duplication). The page asks the
+  plugin (`allow_hosts`) to raise the audited event on the UI thread instead (`socket.getaddrinfo` of the
+  numeric address, no network I/O): the dialog shows at once, a Yes is saved, and the tab connects. Checked
+  against OrcaSlicer 2.5.0: page messages arrive on the UI thread (PluginHostUi.cpp, the WebKit backends
+  deliver script messages from the native callback; PluginPages.cpp:148 calls `on_message`), inside an audit
+  scope (PagesPluginCapabilityTrampoline.hpp, `ORCA_PY_AUDIT_SCOPE`); CPython raises `socket.getaddrinfo`
+  before any lookup; PluginAuditManager.cpp maps it to the Socket category with the host as target (lines
+  110, 1181), prompts inline on the UI thread and saves the Yes (1764-1765, 1842) to `network_socket`, which
+  `has_network_permission` (1450) and `network_permission_matches` (313, bare host and address tuple, 356)
+  also apply to the later `http.client.connect` and `socket.connect` to that host. Not yet seen in a real
+  OrcaSlicer; if no Yes comes back, the page says to allow the address and press Search again. Without a
+  click the page raises that dialog at most once per session, and only for a single new printer with none
+  remembered for the preset.
+- OrcaSlicer's network grants are exact hosts: `network_permission_matches` (PluginAuditManager.cpp:313)
+  compares one host per entry, and the Plugins dialog refuses wildcards (docs/HLSD/plugin-permissions.md,
+  "Persistence and editing"). There is no CIDR or "local network" grant, so the found printer's address
+  cannot be declared at load before it is known.
 - The tab's camera starts `ffmpeg`, which OrcaSlicer matches by its full command line.
 
 `tests/audit_guard.py` models these checks so the tests run Print, Send, Find certificate and

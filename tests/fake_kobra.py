@@ -53,6 +53,11 @@ from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import aes
+import locate
+
+# The tests never search the real network: every SSDP search goes to a closed loopback port unless a test
+# points it at a FakeSsdp.
+locate.SSDP_ADDR = ("127.0.0.1", 9)
 
 TlsFiles = namedtuple("TlsFiles", "server_cert server_key client_cert client_key")
 
@@ -411,3 +416,57 @@ class FakeKobra:
                     self.answer(404, {"code": 404})
 
         return Handler
+
+
+class FakeSsdp:
+    """An SSDP responder on 127.0.0.1 standing in for the printer's: answers every M-SEARCH it gets with
+    `reply` (bytes; None = stay silent), `count` times. By default it answers like a real Kobra X on firmware
+    2.0.2.8 (measured 2026-11-15): one EMPTY datagram per search, whatever the ST. `only_st`: answer only a
+    search with this ST. Recorded: `searches` (the raw packets).
+
+        with FakeSsdp() as ssdp:
+            locate.search(addr=ssdp.addr, interfaces=[])
+    """
+    KOBRA_X = b""
+
+    @staticmethod
+    def printer_reply(http_port=18910, ip="127.0.0.1"):
+        # A text reply with the fields Anycubic Slicer Next's libssdplib reads (USN with "ac:3dprinter:",
+        # modelId, ctrlType, cn), for firmware or models that answer in text.
+        return ("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nST: ac:3dprinter:\r\n"
+                "USN: uuid:fake::ac:3dprinter:20030\r\nLOCATION: http://%s:%d/info\r\nmodelId: 20030\r\n"
+                "ctrlType: lan\r\ncn: FAKECN\r\n\r\n" % (ip, http_port)).encode()
+
+    def __init__(self, reply=KOBRA_X, count=1, only_st=None):
+        self.reply, self.count, self.only_st, self.searches = reply, count, only_st, []
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.addr = self.sock.getsockname()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while True:
+            try:
+                data, sender = self.sock.recvfrom(4096)
+            except OSError:
+                return
+            self.searches.append(data)
+            st = next((line[4:] for line in data.split(b"\r\n") if line.upper().startswith(b"ST: ")), b"")
+            if self.only_st is not None and st != self.only_st:
+                continue
+            if self.reply is not None and data.startswith(b"M-SEARCH"):
+                try:
+                    for _ in range(self.count):
+                        self.sock.sendto(self.reply, sender)
+                except OSError:
+                    return
+
+    def stop(self):
+        self.sock.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()

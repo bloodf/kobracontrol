@@ -23,7 +23,8 @@ const sp = computed(() => s.stock?.spooler);
 const sk = computed(() => s.stock?.stock);
 const usable = stockVisible;
 /** Notes shown above the list. */
-const notes = computed(() => (s.stock!.same_spoolman === false ? [{ sev: 'error', text: t('stock.otherSpoolman') }] : []));
+const notes = computed(() => (s.stock!.same_spoolman === false ? [{ sev: 'error', text: t('stock.otherSpoolman') }]
+  : s.stock!.same_spoolman === 'fallback' ? [{ sev: 'info', text: t('stock.fallback') }] : []));
 const rows = computed<Spool[]>(() => sk.value?.rows ?? []);
 const materials = computed(() => [...new Set(rows.value.map(r => r.material).filter(Boolean))].sort().map(m => ({ value: m, label: m })));
 const slotList = computed(() => s.status?.slots ?? []);
@@ -116,7 +117,12 @@ async function link(r: Spool) {
 .sc-notes:empty { display: none; }
 .sc-filters { margin-bottom: 8px; }
 .sc-q { min-width: 240px; }
-.sc-wrap { max-height: 360px; overflow: auto; }
+.sc-wrap { max-height: 360px; overflow: auto; contain: paint; }
+/* Compact rows at any width: a narrow page scrolls the table sideways inside its area instead of wrapping each
+   cell into a tall row. */
+.sc-wrap table { min-width: 640px; }
+.sc-wrap td { padding-block: 6px; }
+.sc-wrap td .p-button { white-space: nowrap; }
 .sc-wrap thead th { position: sticky; top: 0; background: var(--oui-surface); z-index: 1; }
 .sc-nm { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
 .sc-chip { font-size: 12px; margin-left: 4px; }

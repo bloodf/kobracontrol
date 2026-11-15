@@ -105,9 +105,13 @@ kobracontrol connects to the printer over HTTP on port 18910 and MQTT over mutua
 The printer must have LAN mode enabled. The printer only accepts the TLS client certificate that
 Anycubic Slicer Next carries. This is a shared client identity, the same in every copy of Anycubic
 Slicer Next, not a per-user secret; kobracontrol bundles it so the plugin connects out of the box.
-If a future firmware stops accepting the bundled copy, **Find certificate** replaces it with the one
-from your own Anycubic Slicer Next install. The protocol is described in
-[docs/protocol.md](docs/protocol.md).
+If a future firmware stops accepting the bundled copy, **Find certificate** (Settings, under the
+certificate's advanced option) replaces it with the one from your own Anycubic Slicer Next install.
+
+The tab finds the printer by itself: the address in Settings if you set one, else the address it found
+before for the selected printer preset, else the preset's own address if a Kobra X answers there, else
+a search of the local network (SSDP, the way Anycubic Slicer Next finds printers). The protocol is
+described in [docs/protocol.md](docs/protocol.md).
 
 ## Features
 
@@ -183,19 +187,22 @@ The **Kobra Control** tab appears next to Prepare, Preview and Device.
 
 ## Setup
 
-Full steps are in [docs/setup.md](docs/setup.md). In short:
+Full steps are in [docs/setup.md](docs/setup.md). There are two ways to run it:
 
-1. **Preference:** in OrcaSlicer, tick **Preferences > Developer > Experimental Features > Use
-   printer agents**.
-2. **Printer preset:** set the address to the printer's IP and **Printer Agent** to `kobracontrol`.
+- **Kobra Control tab only**, for example next to Kobralink or another Moonraker bridge that your
+  printer preset already uses: nothing to set up. The tab finds the printer on the network and works on
+  its own; OrcaSlicer's Print, Send and Device tab keep using the preset's own agent.
+- **As OrcaSlicer's printer agent** as well, so Print, Send and the Device tab go through kobracontrol:
+  tick **Preferences > Developer > Experimental Features > Use printer agents**, then set the printer
+  preset's **Printer Agent** to `kobracontrol` and its address to the printer's IP.
 
-The certificate is bundled, so there is no certificate step; **Find certificate** is only for
-replacing it.
+The certificate is bundled, so there is no certificate step.
 
 ## Privacy and security
 
-kobracontrol connects only to the printer address you set and, if you set one up, your Spoolman
-server. It has no cloud service. Use it on a network you trust: the printer hands out its MQTT
+kobracontrol connects only to the Kobra X (the address you set, or one it found on your local
+network and confirmed as a Kobra X in LAN mode) and to your Spoolman server. It has no cloud service.
+The network search sends SSDP queries to the local multicast group 239.255.255.250 only. Use it on a network you trust: the printer hands out its MQTT
 credentials to anyone on the network, and its TLS certificate is self-signed and not verified, so
 the connection is protected against passive reading only. The client certificate copy and the MQTT
 credentials are never sent to the page or written to logs. See [SECURITY.md](SECURITY.md).

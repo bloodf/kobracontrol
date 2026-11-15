@@ -7,7 +7,7 @@ import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
 import Icon from './Icon.vue';
 import MotionPanel from './MotionPanel.vue';
-import { s, run, tracker, controlsOff, printing, printerName, reported } from '../app/store';
+import { s, run, tracker, controlsOff, link, printing, printerName, reported } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
 import { parseTarget, parseWhole, finishAt } from '../core/logic';
@@ -15,6 +15,8 @@ import { parseTarget, parseWhole, finishAt } from '../core/logic';
 const st = computed(() => s.status);
 const stateText = computed(() => {
   const d = st.value;
+  if (link.value === 'connecting') return t('link.connecting');   // the badge and the banner say the same
+  if (link.value === 'offline') return t('status.state.offline');
   if (!d) return t('status.noStatus');
   const name = tMaybe(`status.state.${d.state}`, d.state);
   // While the printer works on one slot (feeding, retracting, purging) it says which one: ACE 1 · Slot 2.

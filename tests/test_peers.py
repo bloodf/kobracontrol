@@ -175,6 +175,18 @@ class SpoolerLinkTests(unittest.TestCase):
         root.write(peers.STOCK_FILE, "{broken")
         self.assertEqual(link.stock()[1]["code"], "unreadable")
 
+    def test_spooler_declares_whether_it_books_anycubic_prints(self):
+        """M-C contract: Spooler's presence says which printer kinds it books itself (provides.books); without
+        "anycubic" there (Spooler 0.26 says nothing), Kobra Control books Kobra X prints."""
+        root = Root(self)
+        link = self.link(root)
+        root.write(peers.PRESENCE_FILE, spooler_presence())
+        self.assertFalse(link.spooler()["books_anycubic"])
+        root.write(peers.PRESENCE_FILE, spooler_presence(provides={"stock": peers.STOCK_VERSION, "books": ["anycubic"]}))
+        self.assertTrue(link.spooler()["books_anycubic"])
+        root.write(peers.PRESENCE_FILE, spooler_presence(provides={"stock": peers.STOCK_VERSION, "books": "anycubic"}))
+        self.assertFalse(link.spooler()["books_anycubic"])   # only a list counts
+
     def test_want_stock_counts_requests(self):
         link = self.link(Root(self))
         link.want_stock()

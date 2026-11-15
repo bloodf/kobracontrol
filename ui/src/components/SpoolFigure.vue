@@ -24,20 +24,24 @@ const props = defineProps<{
 const files = import.meta.glob('../assets/spool/*.webp', { eager: true, import: 'default' }) as Record<string, string>;
 const src = (name: string) => files[`../assets/spool/${name}.webp`];
 const level = computed(() => spoolLevel(props.fraction));
+// Plain pixels on the element itself: the box never depends on a custom property or aspect-ratio being supported.
+const px = computed(() => `${props.size ?? 64}px`);
 const body = computed(() => src(`n${level.value}-corpo`));
 const wind = computed(() => (level.value < 8 ? src(`n${level.value}-fio`) : ''));
 </script>
 
 <template>
-  <span class="sf" :data-level="level" :style="{ '--sf-size': (size ?? 64) + 'px', '--sf-paint': paint || '#9a9a9a' }" aria-hidden="true">
+  <span class="sf" :data-level="level" :style="{ width: px, height: px, '--sf-paint': paint || '#9a9a9a' }" aria-hidden="true">
     <img class="sf-body" :src="body" alt="" width="160" height="160" draggable="false" />
     <span v-if="wind" class="sf-wind" :style="{ '--sf-map': `url(${wind})` }"><img :src="wind" alt="" width="160" height="160" draggable="false" /></span>
   </span>
 </template>
 
 <style scoped>
-.sf { position: relative; display: block; flex: none; width: var(--sf-w, var(--sf-size)); aspect-ratio: 1; isolation: isolate; }
-.sf img { display: block; width: 100%; height: 100%; user-select: none; }
+/* A fixed square box (width and height set inline in px), images contained inside it: never a tall narrow strip that
+   sets the row height and spills out of the table, whatever the web view supports. */
+.sf { position: relative; display: block; flex: none; overflow: hidden; isolation: isolate; }
+.sf img { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; }
 .sf-wind { position: absolute; inset: 0; background: var(--sf-paint);
   -webkit-mask: var(--sf-map) center / 100% 100% no-repeat; mask: var(--sf-map) center / 100% 100% no-repeat; }
 .sf-wind img { mix-blend-mode: hard-light; }

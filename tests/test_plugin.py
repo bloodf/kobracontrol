@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests")]
@@ -87,8 +88,8 @@ class Registration(unittest.TestCase):
                                            plugin.FindCertificate])
         perms = orca.permissions[-1]
         self.assertTrue(perms["threading"])
-        self.assertEqual(perms["network"], ["http://127.0.0.1"])
-        self.assertEqual(perms["fs_read"], certs.grant_targets() + plugin.job_read_grants())
+        self.assertEqual(perms["network"], ["http://127.0.0.1", "http://239.255.255.250"])   # + the SSDP group
+        self.assertEqual(perms["fs_read"], plugin.job_read_grants())   # no Anycubic Slicer Next folder by default
         self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
 
     def test_agent_info(self):
@@ -324,6 +325,37 @@ class Page(Base):
         self.assertEqual(config["limits"], {"nozzle_max": 320, "bed_max": 120})
         self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})   # the bundled certificate
         self.assertEqual(config["version"], plugin.VERSION)
+        self.assertEqual(set(config["located"]), {"address", "source", "preset_host", "preset_agent", "spoolman_url",
+                                                  "spoolman_source"})
+
+    def test_allow_hosts_is_answered_on_the_calling_thread(self):
+        page = self.page()
+        page.on_message({"type": "allow_hosts", "id": 9, "hosts": ["8.8.8.8"]})   # not a pending LAN printer
+        self.assertEqual(page.posted[-1], {"type": "reply", "id": 9, "result": {"allowed": [], "refused": []}})
+
+    def test_moonraker_preset_is_a_hint_parsed_to_its_bare_host(self):
+        """The owner's preset: printer_agent moonraker, print_host http://10.25.16.41:7125 (Kobralink)."""
+        preset = orca.host.preset_bundle().current_printer_preset()
+        old = type(preset).config_value
+        values = {"printer_model": "Anycubic Kobra X", "printer_agent": "moonraker", "print_host": "http://10.25.16.41:7125"}
+        type(preset).config_value = lambda self, key: values.get(key)
+        try:
+            self.assertEqual(plugin.preset_hints()[0::2], ("10.25.16.41", "moonraker"))
+            target = plugin._target()
+            self.assertEqual((target.host, target.preset_host, target.preset_agent), ("", "10.25.16.41", "moonraker"))
+        finally:
+            type(preset).config_value = old
+
+    def test_only_retry_hello_asks_for_a_retry(self):
+        """The page says hello on open and on selection changes; only its Retry button may cut the backoff short."""
+        page = self.page()
+        svc = plugin.service(page.post_message)
+        with mock.patch.object(svc, "submit") as submit:
+            page.on_message({"type": "hello", "id": 1})
+            page.on_message({"type": "hello", "id": 2, "retry": True})
+            page.on_message({"type": "hello", "id": 3, "retry": "yes"})
+        self.assertEqual([c.args[1:3] for c in submit.call_args_list],
+                         [("connect", {"retry": False}), ("connect", {"retry": True}), ("connect", {"retry": False})])
 
     def test_certificate_state_matches_the_one_in_use(self):
         """A saved pair that does not load is not used (connection.tls_from falls back to the bundled one), so the
@@ -342,10 +374,12 @@ class Page(Base):
         type(preset).config_value = lambda self, key: {"printer_model": "Bambu Lab X1 Carbon"}.get(key)
         try:
             page = self.page()
-            page.on_message({"type": "hello", "id": 2})
-            self.assertTrue(page.posted[-1]["no_target"])
+            page.on_message({"type": "hello", "id": 2})   # no Kobra X preset: the network search finds none
+            reply = wait(lambda: next((m for m in page.posted if m.get("id") == 2), None), 15)
+            self.assertTrue(reply["no_target"])
+            self.assertIn("No Kobra X answered the network search", reply["error"])
             plugin.get_store().update({"host": "http://127.0.0.1:1234"})
-            self.assertEqual(plugin.selected_host(), "127.0.0.1")   # the host setting overrides the preset
+            self.assertEqual(plugin._target().host, "127.0.0.1")   # the host setting overrides the preset
         finally:
             type(preset).name, type(preset).config_value = old
 
@@ -509,19 +543,30 @@ class Guarded(Base):
                 with open(part, "rb") as src:
                     f.write(os.urandom(300) + src.read())
 
+    def grant_slicer(self):
+        """What the user's Yes in OrcaSlicer's prompt amounts to: a read grant for the slicer's folder."""
+        audit_guard.enable({**self.perms, "fs_read": self.perms["fs_read"] + [os.path.realpath(self.slicer) + "/*"]},
+                           self.tmp)
+
     @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed")
     def test_find_certificate_page_command(self):   # C3
+        self.slicer = self.ungranted_dir("anycubic-")   # on Windows the system temp folder is granted (job folder)
         self.write_slicer()
         published = []
         plugin._service.publish = published.append
-        plugin._service.submit("f", "find_certificate", {})
+        plugin._service.submit("f", "find_certificate", {})   # nothing granted at load: refused, and says so
         reply = wait(lambda: next((m for m in published if m.get("id") == "f"), None), 20)
+        self.assertIn("OrcaSlicer did not let kobracontrol read", reply.get("error", ""))
+        self.grant_slicer()
+        plugin._service.submit("f2", "find_certificate", {})
+        reply = wait(lambda: next((m for m in published if m.get("id") == "f2"), None), 20)
         self.assertTrue(reply.get("result", {}).get("found"), reply)
         self.assertEqual(audit_guard.denials(), [])
 
     @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed")
     def test_find_certificate_script(self):   # C3
         self.write_slicer()
+        self.grant_slicer()
         result = run_off_main(lambda: plugin.FindCertificate().execute())
         self.assertEqual(result.status, "success", result.message)
         self.assertEqual(audit_guard.denials(), [])

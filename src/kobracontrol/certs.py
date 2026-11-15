@@ -13,8 +13,10 @@ Whole-component matching means this module file `certs.py` is reachable, but a f
 is not. Saved files are therefore `anycubic_slicer.pem` and `anycubic_slicer_key.pem`, and callers
 must pass a folder whose components avoid the words above.
 
-Key file handling: `save` makes the folder 0700 and each file 0600 (fchmod before any byte is
-written, O_NOFOLLOW where available, so a symlink planted at the key path is refused). On Windows
+Key file handling: `save` makes a new folder 0700 and writes each file as a fresh 0600 file (O_EXCL,
+O_NOFOLLOW where available) that is then renamed into place, so a symlink planted at the key path is
+replaced, never written through. It never calls chmod or opens a file descriptor with open(): OrcaSlicer's
+audit cannot judge those by path and asks the user for an event grant. On Windows
 these modes have no effect; the files are then protected only by the user profile's ACLs. `find`
 writes candidate PEMs to a private 0700 folder that is removed even when matching fails: with
 `workdir` (inside OrcaSlicer: the plugin's storage folder) a `match-<8 hex>` sub-folder made with
@@ -51,6 +53,9 @@ OVERLAP = 64 * 1024  # far larger than a PEM certificate or RSA key block
 CERT_RE = re.compile(rb"-----BEGIN CERTIFICATE-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
 KEY_RE = re.compile(rb"-----BEGIN ((?:RSA |EC )?PRIVATE KEY)-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END \1-----")
 
+DENIED = ("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
+          "Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.")
+
 Found = namedtuple("Found", "cert_pem key_pem source key_source")
 
 
@@ -59,42 +64,61 @@ class CertError(Exception):
 
 
 def default_locations(platform=None, env=None):
-    """The install folders of Anycubic Slicer Next on `platform`, joined with that platform's separators (so the
-    answer does not depend on the OS this runs on)."""
+    """Where Anycubic Slicer Next keeps its client certificate and key on `platform`, joined with that platform's
+    separators (so the answer does not depend on the OS this runs on). On macOS that is the one library holding
+    both (Frameworks/libcloud_mqtt.dylib), so Find certificate reads one file, which OrcaSlicer asks the user
+    about once, instead of walking the whole application; elsewhere the install folders."""
     platform = platform or sys.platform
     env = os.environ if env is None else env
     if platform == "darwin":
         apps = ["/Applications", posixpath.join(env.get("HOME", "~"), "Applications")]
-        return [posixpath.join(a, "AnycubicSlicerNext.app", "Contents", sub) for a in apps for sub in ("Frameworks", "MacOS")]
+        return [posixpath.join(a, "AnycubicSlicerNext.app", "Contents", "Frameworks", "libcloud_mqtt.dylib") for a in apps]
     if platform.startswith("win"):
         roots = [env.get(k) for k in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")]
         local = env.get("LOCALAPPDATA")
-        out = [ntpath.join(r, "AnycubicSlicerNext") for r in roots if r]
+        out = [ntpath.join(r, "AnycubicSlicerNext") for r in roots if r]   # where cloud_mqtt.dll sits is unchecked
         return out + ([ntpath.join(local, "Programs", "AnycubicSlicerNext")] if local else [])
-    home = env.get("HOME", "~")  # guesses: no official Linux build path is documented
+    home = env.get("HOME", "~")  # guesses: no official Linux build path is documented, so whole folders
     return ["/opt/AnycubicSlicerNext", "/usr/lib/AnycubicSlicerNext", "/usr/share/AnycubicSlicerNext",
             posixpath.join(home, "AnycubicSlicerNext"), posixpath.join(home, ".local", "share", "AnycubicSlicerNext")]
 
 
-def _files(paths):
-    seen = 0
+def _files(paths, denied):
+    """Files to scan under `paths`; folders and files OrcaSlicer refuses to list are added to `denied`."""
     for path in paths:
+        try:   # os.path.isdir would answer False for a refused folder, as for a missing one
+            os.stat(path)
+        except PermissionError:
+            denied.append(path)
+            continue
+        except (OSError, ValueError):
+            continue
         if os.path.isfile(path):
             yield path
         elif os.path.isdir(path):
-            base = path.rstrip(os.sep).count(os.sep)
-            for folder, dirs, names in os.walk(path):  # followlinks=False: symlinked folders are skipped
-                if folder.count(os.sep) - base > MAX_DEPTH:
-                    raise CertError("%s is nested deeper than %d folders; point to the slicer's library folder"
-                                    % (path, MAX_DEPTH))
-                dirs.sort()
-                seen += len(names)
-                if seen > MAX_FILES:
-                    raise CertError("more than %d files under %s; point to the slicer's library folder"
-                                    % (MAX_FILES, path))
-                for name in sorted(names):
-                    if os.path.splitext(name)[1].lower() in SCAN_EXT:
-                        yield os.path.join(folder, name)
+            try:
+                yield from _walk(path, denied)
+            except PermissionError:   # the audit hook refuses os.walk itself, before any listing
+                denied.append(path)
+
+
+def _walk(path, denied):
+    seen, base = 0, path.rstrip(os.sep).count(os.sep)
+
+    def refused(error):
+        if isinstance(error, PermissionError):
+            denied.append(error.filename or path)
+    for folder, dirs, names in os.walk(path, onerror=refused):  # followlinks=False: symlinked folders are skipped
+        if folder.count(os.sep) - base > MAX_DEPTH:
+            raise CertError("%s is nested deeper than %d folders; point to the slicer's library folder"
+                            % (path, MAX_DEPTH))
+        dirs.sort()
+        seen += len(names)
+        if seen > MAX_FILES:
+            raise CertError("more than %d files under %s; point to the slicer's library folder" % (MAX_FILES, path))
+        for name in sorted(names):
+            if os.path.splitext(name)[1].lower() in SCAN_EXT:
+                yield os.path.join(folder, name)
 
 
 def _chunks(path):
@@ -121,9 +145,10 @@ def _normalize(block):
     return "\n".join([text[:head_end], *lines, text[foot_start:].strip()]) + "\n"
 
 
-def _scan(paths):
+def _scan(paths, denied=None):
+    denied = [] if denied is None else denied
     cert_found, key_found, scanned = {}, {}, 0
-    for path in _files(paths):
+    for path in _files(paths, denied):
         try:
             if os.path.getsize(path) > MAX_SIZE:
                 continue
@@ -132,6 +157,9 @@ def _scan(paths):
                     cert_found.setdefault(_normalize(m.group(0)), path)
                 for m in KEY_RE.finditer(data):
                     key_found.setdefault(_normalize(m.group(0)), path)
+        except PermissionError:
+            denied.append(path)
+            continue
         except OSError:
             continue
         scanned += 1
@@ -179,8 +207,11 @@ def _match(cert_pems, key_pems, workdir=None):
         written = []
         for i, pem in enumerate(cert_pems + key_pems):
             path = os.path.join(tmp, "%d.pem" % i)
-            with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
-                f.write(pem)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:   # os.write, not open(fd): see the module doc
+                os.write(fd, pem.encode("ascii"))
+            finally:
+                os.close(fd)
             written.append(path)
         cert_paths, key_paths = written[:len(cert_pems)], written[len(cert_pems):]
         for ci, cp in enumerate(cert_paths):
@@ -196,8 +227,10 @@ def _match(cert_pems, key_pems, workdir=None):
 def find(paths, workdir=None):
     """Scan files/folders for the AnycubicSlicer certificate and its private key -> Found.
     workdir: an existing folder the candidates may be written to for matching (see the module doc)."""
-    paths = list(paths)
-    cert_found, key_found, scanned = _scan(paths)
+    paths, denied = list(paths), []
+    cert_found, key_found, scanned = _scan(paths, denied)
+    if not scanned and denied:   # OrcaSlicer's sandbox, not a missing slicer: say so, or the user keeps retrying
+        raise CertError(DENIED % ", ".join(paths))
     if not scanned:
         raise CertError("no slicer files to scan in: %s" % ", ".join(paths))
     counts = "%d certificates, %d keys" % (len(cert_found), len(key_found))
@@ -208,17 +241,6 @@ def find(paths, workdir=None):
     if not pair:
         raise CertError("AnycubicSlicer certificate found but no matching private key (%s)" % counts)
     return Found(pair[0], pair[1], cert_found[pair[0]], key_found[pair[1]])
-
-
-def grant_targets():
-    """default_locations() as OrcaSlicer tree grants: realpath + "/*", plus the given form when it differs."""
-    out = []
-    for folder in default_locations():
-        for form in (os.path.realpath(folder), folder):
-            target = form.rstrip("/\\") + "/*"
-            if target not in out:
-                out.append(target)
-    return out
 
 
 def paths(folder):
@@ -236,27 +258,60 @@ def bundled():
     return None
 
 
-def _write_private(path, text):
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
+def _write_temp(path, text):
+    """A fresh 0600 temporary file next to `path` holding text; its name. Removed again if the write fails.
+    No chmod and no file-descriptor open(): in OrcaSlicer a chmod by descriptor or an open() of a descriptor
+    has no path to judge and asks for an audit event grant ("event=os.chmod reason=audit permission
+    required"); a path-based create and rename inside the plugin's storage folder need none. O_EXCL refuses
+    anything already at the temporary name."""
+    tmp = "%s.%s.tmp" % (path, secrets.token_hex(4))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)  # an existing file keeps its old mode through O_CREAT: tighten it first
-    except OSError:
-        os.close(fd)
+        try:
+            data = text.encode("ascii")
+            while data:
+                data = data[os.write(fd, data):]
+        finally:
+            os.close(fd)
+    except BaseException:
+        _remove_quietly(tmp)
         raise
-    with open(fd, "w", encoding="ascii") as f:
-        f.write(text)
+    return tmp
+
+
+def _remove_quietly(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _write_private(path, text):
+    """Write text to path as a fresh 0600 file moved into place (the rename replaces a symlink at `path` instead
+    of following it)."""
+    tmp = _write_temp(path, text)
+    try:
+        os.replace(tmp, path)
+    except BaseException:
+        _remove_quietly(tmp)
+        raise
 
 
 def save(folder, cert_pem, key_pem):
+    """Save the pair. Both are written to temporary files first, so a failure leaves the old pair as it was;
+    were the second rename to fail after the first, the mixed pair does not load (load_cert_chain refuses a key
+    of another certificate) and connection.tls_from falls back to the bundled pair."""
     out = paths(folder)
+    temps = []
     try:
         os.makedirs(folder, 0o700, exist_ok=True)
-        os.chmod(folder, 0o700)  # makedirs leaves an existing folder as it was
         for path, text in zip(out, (cert_pem, key_pem)):
-            _write_private(path, text)
+            temps.append(_write_temp(path, text))
+        for tmp, path in zip(temps, out):
+            os.replace(tmp, path)
     except OSError as e:
+        for tmp in temps:
+            _remove_quietly(tmp)
         raise CertError("cannot save the client certificate in %s (%s)" % (folder, e.strerror or e)) from None
     return out
 
@@ -284,7 +339,8 @@ def context(cert_path, key_path):
 
 
 class Pins:
-    """The certificate each printer address presented last time (SHA-256 hex), in a JSON file. The printer's
+    """A small {key: text} JSON file. Here: the certificate each printer address presented last time (SHA-256
+    hex); service.py also keeps the address found for each printer preset in one. The printer's
     certificate is self-signed and is never verified (see SECURITY.md); this only notices when it changes.
     check() never refuses anything: it remembers the new fingerprint and returns the old one so the caller
     can warn. A file that cannot be read starts over; a write that fails raises OSError."""
@@ -301,6 +357,10 @@ class Pins:
         printers = data.get("printers") if isinstance(data, dict) else None
         return {k: v for k, v in printers.items() if isinstance(v, str)} if isinstance(printers, dict) else {}
 
+    def get(self, key):
+        with self._lock:
+            return self._read().get(key)
+
     def check(self, key, fingerprint):
         """None when `fingerprint` is the one remembered for `key` or the first one seen; else the old one."""
         with self._lock:
@@ -310,8 +370,5 @@ class Pins:
                 return None
             known[key] = fingerprint
             os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"printers": known}, f, indent=1, sort_keys=True)
-            os.replace(tmp, self.path)
+            _write_private(self.path, json.dumps({"printers": known}, indent=1, sort_keys=True))   # unique temp name
             return previous

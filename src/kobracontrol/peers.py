@@ -306,8 +306,13 @@ class SpoolerLink:
         provides = (doc or {}).get("provides") if isinstance((doc or {}).get("provides"), dict) else {}
         if state == "active" and provides.get("stock") != STOCK_VERSION:
             state, detail = "incompatible", "stock list version %r" % (provides.get("stock"),)
+        books = provides.get("books") if state == "active" else None
         return {"state": state, "text": STATE_TEXT[state], "detail": detail,
                 "version": _text((doc or {}).get("plugin_version")),
+                # Printer kinds whose filament use Spooler itself books in Spoolman, when its presence says so.
+                # Spooler 0.26 never books an Anycubic printer (its Kobra link reads slots only, no print state),
+                # and does not say so; a version that does book one must list "anycubic" here.
+                "books_anycubic": isinstance(books, list) and "anycubic" in books,
                 "session": (doc or {}).get("session") if state == "active" else "",
                 "origin": normalize_origin(spoolman.get("origin")) if state == "active" else ""}
 

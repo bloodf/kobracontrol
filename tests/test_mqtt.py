@@ -199,8 +199,9 @@ class ConnectTests(BrokerCase):
 
     def test_not_authorized_is_auth_error(self):
         self.fake.connack_code = 5
-        with self.assertRaises(mqtt.MqttAuthError):
+        with self.assertRaises(mqtt.MqttAuthError) as cm:
             self.client()
+        self.assertIn("refused the MQTT login (code 5", str(cm.exception))
 
     def test_other_refusal(self):
         self.fake.connack_code = 3
@@ -221,18 +222,29 @@ class ConnectTests(BrokerCase):
         free = port.getsockname()[1]
         port.close()
         c = mqtt.Client("127.0.0.1", free, "x", timeout=1)
-        with self.assertRaises(mqtt.MqttError):
+        with self.assertRaises(mqtt.MqttError) as cm:
             c.connect()
         self.assertFalse(c.connected)
+        self.assertIn("no answer on the printer's MQTT port", str(cm.exception))
 
     def test_silent_server_times_out(self):
         server = socket.create_server(("127.0.0.1", 0))
         self.addCleanup(server.close)
         c = mqtt.Client("127.0.0.1", server.getsockname()[1], "x", timeout=0.3)
         start = time.monotonic()
-        with self.assertRaises(mqtt.MqttError):
+        with self.assertRaises(mqtt.MqttError) as cm:
             c.connect()
         self.assertLess(time.monotonic() - start, 2)
+        self.assertIn("accepted the connection", str(cm.exception))   # what failed, not only "timed out"
+
+    def test_closed_during_login_says_so(self):
+        server = socket.create_server(("127.0.0.1", 0))
+        self.addCleanup(server.close)
+        threading.Thread(target=lambda: server.accept()[0].close(), daemon=True).start()
+        c = mqtt.Client("127.0.0.1", server.getsockname()[1], "x", timeout=2)
+        with self.assertRaises(mqtt.MqttError) as cm:
+            c.connect()
+        self.assertEqual(str(cm.exception), mqtt.CLOSED_IN_LOGIN)
 
 
 class TrafficTests(BrokerCase):

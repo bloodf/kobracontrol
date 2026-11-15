@@ -16,13 +16,18 @@ export interface Status {
   /** The printer's TLS certificate (SHA-256 hex); changed_from is the one seen before when it changed, else "". */
   tls?: { fingerprint: string; changed_from: string } | null;
 }
-export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string }
+export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string;
+  source?: AddressSource; note?: string }
+/** Where the address in use came from (service.ORIGIN_TEXT). */
+export type AddressSource = 'override' | 'preset' | 'remembered' | 'discovered' | '';
+export interface Located { address: string; source: AddressSource; preset_host: string; preset_agent: string;
+  spoolman_url: string; spoolman_source: 'settings' | 'spooler' | '' }
 export interface Spool { id: number; name: string; vendor: string; material: string; colour?: string; colours?: string[];
   remaining?: number | null; initial?: number | null; location?: string; filament_id?: number; low?: boolean; use_first?: boolean; bound_slot?: number | null }
 export interface StockView {
   spooler: { state: string; text: string; detail?: string; version?: string };
   stock: { state: string; code?: string; text: string; detail?: string; rows: Spool[]; key: string; ts?: number };
-  same_spoolman: boolean | null; usage: string; bindings: Record<string, number>;
+  same_spoolman: boolean | 'fallback' | null; usage: string; bindings: Record<string, number>;
   /** true when the list is usable; otherwise `reason` says why (absent, stale, waiting, unsupported, or a stock state code). */
   available: boolean; reason: string | null;
 }
@@ -37,7 +42,7 @@ export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
-  version: string; limits: Limits;
+  version: string; limits: Limits; located?: Located | null; agent_id?: string;
 }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;

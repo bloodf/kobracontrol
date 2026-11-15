@@ -103,6 +103,9 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
     storage = bool(view.get("connected"))   # the Kobra X always has its internal storage while it answers
     p = {
         "command": "push_status", "msg": 0, "support_mqtt_alive": True,           # MRA:2134-2136
+        # DM:4650 hands every "print" message to DevFan::command_handle_response, which logs "error reponse."
+        # for one without a sequence_id; "0" is below START_SEQ_ID, so it matches no pending command.
+        "sequence_id": "0",
         # A print still in its preparation phase (heating, levelling, ...) is PREPARE, which DM:2549-2556
         # is_in_printing_status() counts as printing, so OrcaSlicer still refuses a new print.
         # A filament change mid-print (layer > 0) is still RUNNING.

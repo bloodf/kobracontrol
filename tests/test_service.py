@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import ssl
 import sys
 import tempfile
@@ -23,6 +24,7 @@ import certs  # noqa: E402
 import connection  # noqa: E402
 import jobs  # noqa: E402
 import kobra  # noqa: E402
+import locate  # noqa: E402
 import service  # noqa: E402
 from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
 
@@ -613,6 +615,53 @@ class PrinterCertificate(unittest.TestCase):
         self.assertEqual(data["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
         self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
 
+    def test_the_agent_path_checks_the_pin_of_a_known_printer_warn_only(self):
+        """N2: Print/Send/Device tab (service.call with no tab target) at an address in the address book: the pin is
+        checked under that printer's identity; a different certificate is logged and shown, the session kept."""
+        locate.Addresses(os.path.join(self.tmp, "addresses.json")).put("P", self.fake.host, "SERIAL-A", "")
+        with open(os.path.join(self.tmp, certs.PINS_FILE), "w") as f:
+            json.dump({"printers": {"id:SERIAL-A": "ab" * 32}}, f)
+        logs = []
+        svc = service.Service(lambda m: None, logs.append, cert_dir=self.tmp, tls=self.ctx, http_port=self.fake.http_port,
+                              mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera,
+                              addresses_path=os.path.join(self.tmp, "addresses.json"))
+        self.addCleanup(svc.close)
+        conn = svc.ready(self.fake.host, timeout=15)   # what the printer agent does
+        self.assertEqual(conn.identity, "SERIAL-A")
+        self.assertEqual(svc._data(conn)["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
+        self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
+
+    def located_after_the_agent(self, pin):
+        """The reviewer's case: the printer agent opens the session first (identity from the address book, no pin
+        enforced); then the tab locates the same remembered printer with `pin` as its pinned certificate."""
+        locate.Addresses(os.path.join(self.tmp, "addresses.json")).put("P", self.fake.host, "SERIAL-A", pin)
+        published = []
+        svc = service.Service(published.append, lambda m: None, cert_dir=self.tmp, tls=self.ctx,
+                              http_port=self.fake.http_port, mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera,
+                              addresses_path=os.path.join(self.tmp, "addresses.json"),
+                              probe=lambda ip: {"ip": ip, "name": "KX", "model": "", "id": "SERIAL-A"})
+        self.addCleanup(svc.close)
+        conn = svc.ready(self.fake.host, timeout=15)   # the agent's Print/Send path
+        svc.set_target(service.Target("", preset_key="P"))
+        svc._join_locators(30)
+        return svc, conn, published
+
+    def test_a_pin_given_to_an_open_session_that_does_not_match_closes_it(self):
+        svc, conn, published = self.located_after_the_agent("ab" * 32)
+        wait(lambda: svc.target.host == "" and getattr(svc.locate_error, "candidates", None), 15)
+        self.assertEqual(conn.mismatch, self.fingerprint)
+        wait(lambda: not conn.connected and not conn._thread.is_alive(), 15)
+        self.assertNotIn(self.fake.host, svc.connections)
+        self.assertEqual(svc.generation, 2)   # the tab's selection, then the impostor refused
+        self.assertTrue(svc.locate_error.candidates[0]["different"])
+        wait(lambda: {"type": "selection_changed"} in published, 15)   # published right after the offer is set
+
+    def test_a_pin_given_to_an_open_session_that_matches_keeps_it(self):
+        svc, conn, _ = self.located_after_the_agent(self.fingerprint)
+        self.assertIs(svc.connections[self.fake.host], conn)
+        self.assertTrue(conn.connected)
+        self.assertEqual((conn.mismatch, svc.target.host, svc.generation), ("", self.fake.host, 1))
+
     def test_plain_session_reports_none(self):
         self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
 
@@ -768,20 +817,28 @@ class PrintStartLock(Base):
 
 
 class SlowCamera(FakeCamera):
+    """A camera whose stop() blocks until the test releases it."""
+    gate = None
+
     def stop(self):
-        time.sleep(1.0)
+        self.gate.wait(30)
 
 
 class NoJoinsOnCallers(Base):
     """M4: page messages and agent callbacks never wait for teardown."""
 
     def test_fast(self):
+        gate = threading.Event()
+        self.addCleanup(gate.set)
         self.svc.camera = SlowCamera(None, None)
+        self.svc.camera.gate = gate   # stop() blocks until the end of the test
         for call in (lambda: self.svc.touch(camera=False), self.svc.clear_target,
                      lambda: self.svc.set_target(service.Target("127.0.0.2")), lambda: self.svc.release("127.0.0.2")):
-            started = time.monotonic()
-            call()
-            self.assertLess(time.monotonic() - started, 0.3)
+            caller = threading.Thread(target=call)
+            caller.start()
+            caller.join(20)
+            self.assertFalse(caller.is_alive())   # returned while the camera's stop() is still blocked
+            self.assertFalse(gate.is_set())
 
 
 class ReconnectStorm(unittest.TestCase):
@@ -808,10 +865,88 @@ class ReconnectStorm(unittest.TestCase):
         svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
                               http_port=fake.http_port, mqtt_port=fake.mqtt_port, camera_factory=FakeCamera)
         self.addCleanup(svc.close)
-        svc.connection(fake.host)
+        conn = svc.connection(fake.host)
         time.sleep(5)
         self.assertLessEqual(len(fake.client_ids), 3)   # waits of 2 s then 4 s, never a tight loop
         self.assertGreaterEqual(len(fake.client_ids), 2)
+        self.assertIn("another app connected to the printer", conn.error)   # says what happened, not only "lost"
+
+
+class CannotConnect(unittest.TestCase):
+    """The printer's HTTP side answers (credentials come back) but its MQTT port does not: the page's hello and
+    its once-a-second status must not cut the retry delay short; only the user's Retry does, and it answers at
+    that attempt's failure instead of after CONNECT_WAIT."""
+
+    def setUp(self):
+        self.fake = FakeKobra().start()
+        self.addCleanup(self.fake.stop)
+        closed = socket.create_server(("127.0.0.1", 0))
+        self.mqtt_port = closed.getsockname()[1]
+        closed.close()
+        self.attempts, self.published = [], []
+
+        def fetch(host, port):
+            self.attempts.append(time.monotonic())
+            return kobra.fetch_credentials(host, port=port)
+        self.fetch = fetch
+
+    def service(self, **kw):
+        # A first retry delay far longer than any test: an attempt beyond the first one can only come from a
+        # reset of the backoff, never from the clock (no wall-clock assertions).
+        patcher = mock.patch.object(connection, "RETRY_FIRST", 60.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(),
+                              http_port=self.fake.http_port, mqtt_port=self.mqtt_port, fetch=self.fetch,
+                              camera_factory=FakeCamera, **{"tls": lambda: None, **kw})
+        self.addCleanup(svc.close)
+        svc.set_target(service.Target(self.fake.host))
+        return svc, svc.connections[self.fake.host]
+
+    def connect(self, svc, timeout=3.0, **args):
+        rid = "c%d" % len(self.published)
+        svc.submit(rid, "connect", args)
+        return wait(lambda: next((m for m in self.published if m.get("id") == rid), None), timeout)
+
+    def test_hello_answers_the_last_error_at_once_and_keeps_the_backoff(self):
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        for _ in range(10):   # the 0.2.0 page said hello again on every status
+            reply = self.connect(svc, timeout=3.0)
+            self.assertIn("no answer on the printer's MQTT port", reply["error"])
+            svc.touch(camera=False)
+        self.assertEqual(len(self.attempts), 1)   # still in the first (60 s) wait: nothing reset it
+
+    def test_retry_tries_now_and_answers_at_its_failure(self):
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        reply = self.connect(svc, timeout=service.CONNECT_WAIT - 1, retry=True)   # answered at the failure
+        self.assertEqual(len(self.attempts), 2)   # at once, not after the 60 s delay
+        self.assertIn("no answer on the printer's MQTT port", reply["error"])
+
+    def test_status_and_hellos_do_not_reset_the_growing_delay(self):
+        svc, conn = self.service()
+        wait(lambda: conn.failures)
+        for _ in range(10):
+            self.connect(svc, timeout=3.0)
+            svc.touch(camera=False)
+            svc._push_status(svc.target, svc.generation)
+        self.assertEqual(len(self.attempts), 1)
+        self.assertEqual([m.get("type") for m in self.published if m.get("type") == "notice"], [])
+
+    def test_failed_attempts_never_search_the_slicer_install(self):
+        """Every attempt loads the saved or bundled certificate; only Find certificate reads Anycubic Slicer
+        Next's folders (each read there can be an OrcaSlicer sandbox block or prompt)."""
+        with mock.patch.object(certs, "find", side_effect=AssertionError("scan")) as find, \
+                mock.patch.object(certs, "default_locations", side_effect=AssertionError("scan")) as where:
+            _, conn = self.service(tls=connection.tls_from(tempfile.mkdtemp()))
+            for count in range(1, 4):
+                wait(lambda n=count: conn.failures >= n)
+                conn.retry()
+        self.assertGreaterEqual(len(self.attempts), 3)
+        self.assertIn("no answer on the printer's MQTT port", conn.error)
+        find.assert_not_called()
+        where.assert_not_called()
 
 
 class DeniedExplained(unittest.TestCase):
@@ -834,6 +969,128 @@ class DeniedExplained(unittest.TestCase):
         wait(lambda: calls)
         conn.retry()
         wait(lambda: len(calls) >= 2, 1.0)   # not after the 2 s backoff
+
+
+class NameChangeMidPrint(Base):
+    """MEDIUM-1: printer name and Spoolman address are not part of what selects the printer: saving them during a
+    print keeps the connection, the session and the generation."""
+    state = "printing"
+
+    def test_name_and_spoolman_change_apply_in_place(self):
+        gen, conn, sessions = self.svc.generation, self.conn, len(self.fake.client_ids)
+        self.svc.set_target(service.Target(self.fake.host, name="Lab KX", spoolman_url="http://other:7912"), retry=True)
+        self.assertEqual((self.svc.target.name, self.svc.target.spoolman_url), ("Lab KX", "http://other:7912"))
+        self.assertIs(self.svc.connections[self.fake.host], conn)
+        self.assertEqual(self.svc.generation, gen)
+        time.sleep(0.5)
+        self.assertTrue(conn.connected)
+        self.assertEqual(len(self.fake.client_ids), sessions)
+        self.svc.set_target(service.Target("localhost"))   # the address does select the printer
+        self.assertEqual(self.svc.generation, gen + 1)
+
+
+class RefusedInfoPort(unittest.TestCase):
+    """The owner's case with the address in Settings: something answers at the address, but port 18910 is refused
+    at once. Every attempt fails in microseconds, so only the backoff keeps it calm."""
+
+    def setUp(self):
+        closed = socket.create_server(("127.0.0.1", 0))
+        self.port = closed.getsockname()[1]
+        closed.close()
+        self.attempts, self.published = [], []
+
+        def fetch(host, port):
+            self.attempts.append(time.monotonic())
+            return kobra.fetch_credentials(host, port=port, timeout=10)   # Windows: a refused connect takes ~2 s
+        self.delays = []
+        real = connection.Connection._backoff
+
+        def backoff(conn, delay):   # the delays the loop waits, recorded instead of timed
+            self.delays.append(delay[0])
+            return real(conn, delay)
+        for patcher in (mock.patch.object(connection.Connection, "_backoff", backoff),
+                        mock.patch.object(connection, "RETRY_FIRST", 0.05)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                                   http_port=self.port, mqtt_port=self.port, fetch=fetch, camera_factory=FakeCamera)
+        self.addCleanup(self.svc.close)
+
+    def test_says_what_answers_and_where_the_address_came_from_and_backs_off(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        conn = self.svc.connections["127.0.0.1"]
+        wait(lambda: conn.failures)
+        self.assertIn("Something answers at 127.0.0.1, but it is not a Kobra X in LAN mode", conn.error)
+        self.assertIn("not a bridge such as Kobralink", conn.error)
+        self.assertIn("LAN mode", conn.error)
+        self.assertIn("The address comes from Settings > Printer address.", conn.error)
+        self.assertTrue(conn.http_failed)
+        waiting = conn._retry.wait
+
+        def push_while_waiting(timeout):   # a status published during the backoff wait, whatever the timing
+            self.svc._push_status(self.svc.target, self.svc.generation)
+            return waiting(timeout)
+        conn._retry.wait = push_while_waiting
+        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline" and m.get("retry_at")), None), 60)
+        self.assertGreater(offline["retry_at"], 0)   # the page shows when the next try is
+        wait(lambda: len(self.delays) >= 5, 60)
+        self.assertEqual(self.delays[:5], [0.05, 0.1, 0.2, 0.4, 0.8])   # each failure doubles the wait: never a spin
+
+    def test_save_retries_at_once_with_a_fresh_delay(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        conn = self.svc.connections["127.0.0.1"]
+        wait(lambda: len(self.delays) >= 5, 60)
+        with mock.patch.object(connection, "RETRY_FIRST", 0.07):   # a value only a fresh start can produce
+            before = len(self.delays)
+            self.svc.set_target(service.Target("127.0.0.1"), retry=True)   # Save with the same address
+            wait(lambda: 0.07 in self.delays[before:], 60)
+        self.assertTrue(conn._thread.is_alive())
+
+    def test_save_with_a_new_address_stops_the_old_loop(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        old = self.svc.connections["127.0.0.1"]
+        self.svc.set_target(service.Target("localhost"), retry=True)
+        wait(lambda: "127.0.0.1" not in self.svc.connections and not old._thread.is_alive(), 5)
+        self.assertIn("localhost", self.svc.connections)
+
+
+class SpoolmanFromSpooler(unittest.TestCase):
+    def test_usage_is_booked_unless_spooler_books_this_printer_in_the_same_spoolman(self):
+        """M-C. Spooler 0.26 reads only slots from a Kobra X (no print state), so it never books its prints, and
+        Kobra Control books them, also in Spooler's Spoolman. A Spooler that declares it books Anycubic prints
+        (presence provides.books contains "anycubic") makes Kobra Control stand down in that Spoolman."""
+        books = []
+        target = service.Target("10.0.0.5")
+        target.spooler_origin, target.spooler_books = (lambda: "http://box:7912"), (lambda: bool(books))
+        self.assertTrue(target.spoolman_report_usage)                     # fallback, Spooler does not book
+        books.append("anycubic")
+        self.assertFalse(target.spoolman_report_usage)                    # same Spoolman, Spooler books
+        own = service.Target("10.0.0.5", spoolman_url="http://other:7912")
+        own.spooler_origin, own.spooler_books = (lambda: "http://box:7912"), (lambda: True)
+        self.assertTrue(own.spoolman_report_usage)                        # another Spoolman: no double count
+        self.assertEqual(service.Service._usage_owner(target), "spooler")
+        self.assertEqual(service.Service._origin_check(target, "http://box:7912"), "fallback")
+        self.assertIs(service.Service._origin_check(own, "http://box:7912"), False)   # the real comparison
+
+
+    def test_spooler_address_is_used_when_none_is_set_here(self):
+        class Peers:
+            origin = "http://box:7912"
+
+            def spooler(self):
+                return {"origin": self.origin}
+        svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              camera_factory=FakeCamera)
+        self.addCleanup(svc.close)
+        svc.peers = Peers()
+        with mock.patch.object(svc, "connection"):
+            svc.set_target(service.Target("10.0.0.5"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("http://box:7912", "spooler"))
+            svc.set_target(service.Target("10.0.0.5", spoolman_url="http://mine:7912"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("http://mine:7912", "settings"))
+            Peers.origin = ""
+            svc.set_target(service.Target("10.0.0.5"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("", ""))
 
 
 class Features(Base):
@@ -1049,9 +1306,8 @@ class ReviewTwo(Base):
         printer = self.conn.printer
         printer.move_axis = lambda *a, **k: gate.wait(10) and None
         self.svc.submit("h", "home", {"axes": "xyz"})
-        started = time.monotonic()
-        self.assertTrue(self.run_cmd("set_light", on=True)["result"])
-        self.assertLess(time.monotonic() - started, 3)
+        self.assertTrue(self.run_cmd("set_light", on=True, timeout=20)["result"])   # answered while home waits
+        self.assertFalse(gate.is_set())
         self.svc.submit("h2", "home", {"axes": "z"})
         reply = wait(lambda: next((m for m in self.published if m.get("id") == "h2"), None))
         self.assertIn("already running", reply["error"])

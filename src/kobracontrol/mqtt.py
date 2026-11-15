@@ -14,6 +14,7 @@ follow Kobralink's mqtt.js usage.
 import logging
 import select
 import socket
+import ssl
 import threading
 import time
 
@@ -24,6 +25,10 @@ MAX_LENGTH = 268435455
 MAX_PACKET = 4 * 1024 * 1024  # printer packets are a few KB; refuse more before buffering it
 POLL = 0.25
 EMPTY_READS_EOF = 5  # KX-Bridge: Windows TLS sockets can return b"" briefly without a real EOF
+
+
+CLOSED_IN_LOGIN = ("the printer closed the connection during the TLS/MQTT login; another app connected to the "
+                   "printer may be the cause")
 
 
 class MqttError(Exception):
@@ -148,7 +153,7 @@ class Client:
         try:
             raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as e:
-            raise MqttError("cannot reach %s:%s (%s)" % (self.host, self.port, e)) from None
+            raise MqttError("no answer on the printer's MQTT port %s:%s (%s)" % (self.host, self.port, e)) from None
         enable_tcp_keepalive(raw)
         try:
             sock = self.ssl_context.wrap_socket(raw) if self.ssl_context else raw
@@ -162,6 +167,15 @@ class Client:
             self._sock = None
             if isinstance(e, MqttError):
                 raise
+            if isinstance(e, TimeoutError):
+                raise MqttError("the printer accepted the connection on %s:%s but did not answer the TLS/MQTT login "
+                                "within %g s" % (self.host, self.port, self.timeout)) from None
+            if isinstance(e, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, ConnectionAbortedError,
+                              BrokenPipeError)):   # ConnectionAbortedError: Windows (WinError 10053)
+                raise MqttError(CLOSED_IN_LOGIN) from None
+            if isinstance(e, ssl.SSLError):
+                raise MqttError("TLS handshake with %s:%s failed (%s), most likely a certificate problem: check the Anycubic "
+                                "certificate in Settings" % (self.host, self.port, e)) from None
             if isinstance(e, OSError):
                 raise MqttError("MQTT handshake with %s:%s failed (%s)" % (self.host, self.port, e)) from None
             raise
@@ -189,17 +203,19 @@ class Client:
             if packets:
                 break
             if time.monotonic() >= deadline:
-                raise MqttError("no CONNACK from %s:%s" % (self.host, self.port))
+                raise MqttError("the printer did not answer the MQTT login on %s:%s within %g s"
+                                % (self.host, self.port, self.timeout))
             data = sock.recv(65536)
             if not data:
-                raise MqttError("connection closed during the MQTT handshake")
+                raise MqttError(CLOSED_IN_LOGIN)
             self._buf += data
         ptype, _, body = packets[0]
         if ptype != CONNACK or len(body) < 2:
             raise MqttError("protocol error: expected CONNACK")
         code = body[1]
         if code in (4, 5):
-            raise MqttAuthError("MQTT login refused (code %d): wrong user name or password" % code, code)
+            raise MqttAuthError("the printer refused the MQTT login (code %d). The login comes from the "
+                                "printer itself; another app connected to the printer may be the cause" % code, code)
         if code:
             raise MqttError("MQTT connection refused (code %d)" % code, code)
         # Anything after CONNACK goes back in front of the buffer for the reader thread.

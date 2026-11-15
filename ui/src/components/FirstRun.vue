@@ -2,8 +2,12 @@
 import Button from 'primevue/button';
 import Icon from './Icon.vue';
 import CertFinder from './CertFinder.vue';
-import { s, hello } from '../app/store';
+import { s, searchAgain, choosePrinter, tracker } from '../app/store';
 import { t } from '../core/i18n';
+import { computed } from 'vue';
+
+// A printer other than the remembered one answered: it is offered, never used by itself.
+const different = computed(() => s.candidates.some(c => c.different));
 </script>
 
 <!-- First-run states: each is one clear task with its recovery. -->
@@ -22,14 +26,22 @@ import { t } from '../core/i18n';
   <section v-else-if="s.phase === 'noTarget'" class="kc-card fr" aria-labelledby="fr-h" data-test="first-run-target">
     <div class="fr-top"><Icon name="spot/not-connected" :size="96" />
       <div class="fr-text">
-        <h2 id="fr-h">{{ t('fr.target.title') }}</h2>
-        <p>{{ t('fr.target.body') }}</p>
-        <ol class="fr-steps"><li>{{ t('fr.target.step1') }}</li><li>{{ t('fr.target.step2') }}</li></ol>
+        <h2 id="fr-h">{{ different ? t('fr.pick.different') : s.candidates.length ? t('fr.pick.title') : t('fr.target.title') }}</h2>
+        <p data-test="fr-target-why">{{ s.error }}</p>
+        <p v-if="!s.candidates.length">{{ t('fr.target.body') }}</p>
       </div>
     </div>
-    <div class="kc-row"><Button :label="t('common.openSettings')" @click="s.tab = 'settings'" />
-      <Button severity="secondary" outlined :label="t('common.retry')" @click="hello()" /></div>
-    <p class="oui-meta fr-detail">{{ t('target.detail', { error: s.error }) }}</p>
+    <!-- Several Kobra X answered: pick one once; the plugin remembers it for this printer preset. -->
+    <ul v-if="s.candidates.length" class="fr-pick" data-test="fr-candidates">
+      <li v-for="c in s.candidates" :key="c.ip" class="kc-row">
+        <span><strong>{{ c.name || t('app.printer') }}</strong> <span class="oui-meta">{{ c.model }} · {{ c.ip }}</span></span>
+        <span class="kc-spacer" />
+        <Button size="small" :label="c.needs_allow ? t('fr.pick.allow') : t('fr.pick.use')" :loading="tracker.isBusy('choose')"
+                :data-pick-ip="c.ip" @click="choosePrinter(c)" />
+      </li>
+    </ul>
+    <div class="kc-row"><Button :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" data-test="search-again" @click="searchAgain()" />
+      <Button severity="secondary" outlined :label="t('common.openSettings')" @click="s.tab = 'settings'" /></div>
   </section>
 </template>
 
@@ -39,6 +51,6 @@ import { t } from '../core/i18n';
 .fr-text { flex: 1 1 320px; min-width: 0; }
 .fr-text h2 { margin: 0 0 8px; }
 .fr-text p { margin: 0 0 8px; }
-.fr-steps { margin: 0; padding-left: 20px; }
+.fr-pick { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .fr-detail { margin: 0; overflow-wrap: anywhere; }
 </style>

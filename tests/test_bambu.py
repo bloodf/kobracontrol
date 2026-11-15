@@ -45,6 +45,7 @@ class PushStatus(unittest.TestCase):
                            nozzle_temp=219.5, nozzle_target=220, bed_temp=59, bed_target=60, fan_pct=50,
                            filename="cube.gcode", speed_mode=3, light_on=True))
         self.assertEqual(p["command"], "push_status")
+        self.assertEqual(p["sequence_id"], "0")   # else OrcaSlicer logs "command_handle_response, error reponse." per push
         self.assertEqual(p["gcode_state"], "RUNNING")
         self.assertEqual(p["mc_percent"], 42)
         self.assertEqual(p["mc_remaining_time"], 12)

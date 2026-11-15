@@ -74,7 +74,7 @@ async function skip() {
     <div class="kc-row" role="group" :aria-label="t('motion.step')">
       <span class="oui-meta">{{ t('motion.step') }}</span>
       <Button v-for="n in STEPS" :key="n" size="small" :severity="step === n ? undefined : 'secondary'" :outlined="step !== n" :aria-pressed="step === n"
-              :label="`${fmt.number(n, n < 1 ? 1 : 0)} mm`" :data-step="n" @click="step = n" />
+              :label="`${fmt.number(n, n < 1 ? 1 : 0)} mm`" :data-step="n" :disabled="!!controlsOff" @click="step = n" />
     </div>
     <div class="mp-axes">
       <template v-for="a in AXES" :key="a">

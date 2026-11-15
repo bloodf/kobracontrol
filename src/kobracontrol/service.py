@@ -29,9 +29,12 @@ import certs
 import connection
 from connection import camera_url_for, find_and_save_certificate  # noqa: F401  (plugin.py imports them here)
 import kobra
+import locate
+import peers
 import settings
 import spoolman as sm
 import usage
+from locating import ORIGIN_TEXT, RELOCATE_EVERY, LocatingMixin  # noqa: F401  (tests read RELOCATE_EVERY here)
 from jobs import CONNECT_WAIT, JobsMixin, plate_source, remote_name, supported_task  # noqa: F401  (re-exported for callers)
 from files import FilesMixin
 from stockview import StockMixin
@@ -40,7 +43,7 @@ from usage import UsageMixin
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
-BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
@@ -63,21 +66,56 @@ FEED_ACK_DELAY = 2.0            # Kobralink: feedFilament type 3 two seconds aft
 DRY_TEMP, DRY_MINUTES = (30, 80), (10, 24 * 60)   # ace.sanitize_ace_dry_presets bounds
 
 
+
+
 class Target:
-    """The tab's printer, resolved by the plugin on the UI thread."""
+    """The tab's printer as the plugin sees it on the UI thread. host: the address in Settings (used as given), else
+    "" until the service has located the printer from preset_host, the address remembered for preset_key and a
+    network search (locate.py). preset_agent: the printer agent of the selected preset."""
 
     def __init__(self, host, name=settings.DEFAULT_PRINTER_NAME, spoolman_url="", spoolman_auto=True,
-                 spoolman_report_usage=True, ffmpeg_path="", camera_enabled=True):
-        self.host, self.name = host, name or settings.DEFAULT_PRINTER_NAME
-        self.spoolman_url, self.spoolman_auto = spoolman_url, spoolman_auto
-        self.spoolman_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
+                 spoolman_report_usage=True, ffmpeg_path="", camera_enabled=True, preset_host="", preset_key="",
+                 preset_agent=""):
+        self.host, self.override, self.name = host, host, name or settings.DEFAULT_PRINTER_NAME
+        self.own_spoolman_url, self.spoolman_auto = spoolman_url, spoolman_auto
+        self.own_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
+        self.preset_host, self.preset_key, self.preset_agent = preset_host, preset_key, preset_agent
+        self.source = "override" if host else ""
+        self.identity = ""                 # the located printer's /info identity
+        self.spooler_origin = lambda: ""   # the service links this to Spooler's Spoolman address
+        self.spooler_books = lambda: False  # ... and to whether Spooler books Anycubic prints itself
+
+    @property
+    def spoolman_url(self):
+        """The Spoolman address set in Kobra Control, else the one Spooler uses."""
+        return self.own_spoolman_url or self.spooler_origin() or ""
+
+    @property
+    def spoolman_source(self):
+        return "settings" if self.own_spoolman_url else "spooler" if self.spooler_origin() else ""
+
+    @property
+    def spoolman_report_usage(self):
+        """Book filament use: the setting, except when Spooler books this printer's prints in the same Spoolman
+        (it would count every print twice)."""
+        if not self.own_report_usage:
+            return False
+        url = self.spoolman_url
+        same = bool(url) and peers_origin(url) == peers_origin(self.spooler_origin())
+        return not (same and self.spooler_books())
 
     def key(self):
-        return (self.host, self.name, self.spoolman_url)
+        """What selects the printer. Name, Spoolman and camera options are not part of it: changing them applies
+        to the live target without touching the connection."""
+        return (self.override, self.preset_host, self.preset_key)
 
     @property
     def ident(self):
         return usage.printer_ident(self.host)
+
+
+def peers_origin(url):
+    return peers.normalize_origin(url) if url else ""
 
 
 def can_flags(view):
@@ -114,10 +152,10 @@ def _background(fn, name):
     threading.Thread(target=fn, name="kobracontrol-" + name, daemon=True).start()
 
 
-class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
+class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
-                 spoolman_factory=sm.Spoolman):
+                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
@@ -129,6 +167,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.connections = {}
         self.target, self.generation = None, 0
         self.closed = False
+        self._init_locating(addresses_path, search, probe, granted)
         self._closing = threading.Event()
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
@@ -149,23 +188,56 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         t.start()
         return t
 
-    def _reset_printer_state(self):   # caller holds self.lock (or is __init__)
+    def _reset_printer_state(self):   # caller holds self.lock (or is __init__): a printer switch
         self.spools, self.bindings, self._last_slots = [], {}, None
         self._stock_missing_since = None
+        self._units, self._feed_acks, self._capture = {}, {}, None
+        if hasattr(self, "_details"):   # FilesMixin's per-printer file details
+            self._details = {}
 
     # ------------------------------------------------------------------ connections
 
-    def connection(self, host):
-        """The shared Connection for a printer address, started on first use (its thread does the I/O)."""
+    def connection(self, host, origin=None, expect_fp=None, identity=None):
+        """The shared Connection for a printer address, started on first use (its thread does the I/O). KobraError
+        once the service is closed: nothing may start a connection after close(). origin, expect_fp and identity
+        (when given) are set before the connection's thread starts, so its first attempt already names where the
+        address came from and already checks the certificate pin."""
         with self.lock:
+            if self.closed:
+                raise kobra.KobraError("Kobra Control is shutting down")
             conn = self.connections.get(host)
-            if conn is None:
+            fresh = conn is None
+            if fresh:
                 conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
                                              pins=self.pins)
+                if identity is None and self.addresses is not None:
+                    # Any path (the printer agent's too): an address known in the address book has its printer's
+                    # pin checked under that identity. Warn-only there, as for every address the user gave.
+                    known = next((r for r in self.addresses.records() if r["ip"] == host and r["id"]), None)
+                    identity = known["id"] if known else None
                 conn.add_listener(self._on_change)
                 self.connections[host] = conn
+            for name, value in (("origin", origin), ("expect_fp", expect_fp), ("identity", identity)):
+                if value is not None:
+                    setattr(conn, name, value)
+            impostor = ""
+            if not fresh and expect_fp and conn.connected:
+                # A session already open (say by the printer agent, warn-only) and now a pin to enforce: the session
+                # must have presented that certificate, or it is closed now, not at its next reconnect.
+                seen = (conn.server_cert or {}).get("fingerprint", "")
+                if seen != expect_fp:
+                    impostor = seen or "none"
+                    del self.connections[host]   # whoever else listens: this session is not used any more
+            if fresh:
                 conn.start()
-            return conn
+        if impostor:
+            conn.mismatch = impostor
+            conn._stop.set()
+            conn._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used." % host, False)
+            _background(conn.stop, "impostor-stop")
+            _background(lambda: self._refuse_impostor(conn), "impostor")
+        return conn
 
     def release(self, host):
         """Close the connection to `host` unless the tab or a listener still uses it."""
@@ -178,6 +250,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def _on_change(self, conn):   # a connection's reader or loop thread: no I/O here
         self._changed.set()
+        self._note_connection(conn)
 
     def view_for(self, host):
         conn = self.connections.get(host)
@@ -185,17 +258,45 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     # ------------------------------------------------------------------ page plumbing
 
-    def set_target(self, target):
+    def set_target(self, target, retry=False):
+        """Select the tab's printer (UI thread: no I/O). Without an address in Settings the printer is located on
+        a thread of its own; cmd_connect waits for it. The same target again keeps the address found for it;
+        retry (Save) tries a failed connection or search again at once, with a fresh retry delay."""
+        target.spooler_origin, target.spooler_books = self._spooler_origin, self._spooler_books
         with self.lock:
+            if self.closed:
+                return
             changed = self.target is None or self.target.key() != target.key()
             previous = self.target.host if self.target else None
+            if not changed and not target.host:
+                target.host, target.source, target.identity = self.target.host, self.target.source, self.target.identity
             if changed:
                 self.generation += 1
                 self._reset_printer_state()
-            self.target = target
-        self.connection(target.host)
+                self.locate_error = None
+            self.target, gen = target, self.generation
+        if target.host:
+            conn = self.connection(target.host, origin=ORIGIN_TEXT.get(target.source, ""))
+            if retry and not changed and not conn.connected:
+                conn.retry()
+        elif changed or retry:
+            self._start_locate(gen)
         if previous and previous != target.host:
             self.release(previous)
+
+    def _spooler_books(self):
+        peers = self.peers
+        try:
+            return bool(peers.spooler().get("books_anycubic")) if peers is not None and hasattr(peers, "spooler") else False
+        except Exception:
+            return False
+
+    def _spooler_origin(self):
+        peers = self.peers
+        try:
+            return peers.spooler()["origin"] if peers is not None and hasattr(peers, "spooler") else ""
+        except Exception:   # an unreadable presence file is "no Spooler", never a failed command
+            return ""
 
     def clear_target(self):
         with self.lock:
@@ -251,7 +352,12 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 self._busy.discard(command)
 
     def close(self):
-        self.closed = True
+        """Stop everything; safe to call more than once. A locate thread still running finds the service closed
+        and starts nothing (connection() refuses), so no connection outlives close()."""
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = True
         self._closing.set()
         self.jobs.put(None)
         self._changed.set()
@@ -259,6 +365,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         for t in (self.worker, self.monitor, self.tracker):
             if t is not threading.current_thread():
                 t.join(1.0)
+        self._join_locators()
         with self.lock:
             conns, self.connections = list(self.connections.values()), {}
         for conn in conns:
@@ -288,6 +395,12 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             reply = {"type": "reply", "id": request_id, "error": str(e)}
             if getattr(e, "no_certificate", False):
                 reply["no_certificate"] = True
+            if getattr(e, "no_target", False):
+                reply["no_target"] = True
+                reply["candidates"] = [{"ip": c.get("ip", ""), "name": c.get("name", ""), "model": c.get("model", ""),
+                                        "needs_allow": bool(c.get("needs_allow")), "different": bool(c.get("different"))}
+                                       for c in e.candidates]
+                reply["pending"] = list(e.pending)
             self.publish(reply)
         except Exception as e:  # never kill the worker; details go to the log only
             self.log("kobracontrol: %s failed: %s\n%s" % (command, e, traceback.format_exc()))
@@ -392,7 +505,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.publish({"type": "status", "data": data, "gen": gen})
             if not data["connected"]:
                 self.publish({"type": "offline", "error": conn.error or "connecting to %s" % target.host,
-                              **({"no_certificate": True} if conn.no_certificate else {})})
+                              "retry_at": conn.next_try, **({"no_certificate": True} if conn.no_certificate else {})})
 
     def _camera_url(self):
         with self.lock:
@@ -505,17 +618,41 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     # ------------------------------------------------------------------ commands
 
-    def cmd_connect(self):
-        gen, conn, target = self._ctx()
+    def cmd_connect(self, retry=False):
+        """The tab's hello. Only the user's Retry (retry=True) cuts the connection's backoff short; otherwise a
+        connection that already failed answers its error at once and keeps its retry delay. Without an address
+        it first waits for the printer to be located (a NotFound names the candidates, if any)."""
+        with self.lock:   # check and reset together: a locate thread may set a new error at the same moment
+            gen, target = self.generation, self.target
+            again = retry is True and target is not None and not target.host and self.locate_error is not None
+            if again:
+                self.locate_error = None
+        if again:
+            self._start_locate(gen)
+        target = self.wait_located(CONNECT_WAIT + 2 * (locate.SEARCH_SECONDS + locate.SEND_GAP) + 2 * locate.PROBE_TIMEOUT)
+        if not self._current(gen):
+            raise kobra.KobraError(STALE)
+        conn = self.connection(target.host)
         if not conn.connected:
-            conn.retry()
-            conn.wait_connected(CONNECT_WAIT)
+            failures = conn.failures
+            if retry is True:
+                conn.retry()
+            if retry is True or not conn.error:
+                conn.wait_attempt(CONNECT_WAIT, failures)
         if not conn.connected:
+            with self.lock:
+                offer = self.locate_error if gen == self.generation else None
+            if getattr(offer, "candidates", None):
+                # The known printer is down and another Kobra X answered: the reply carries that offer, so the
+                # page keeps showing "Use it?" while the known address keeps being retried.
+                raise locate.NotFound("%s %s" % (conn.error or "The known printer does not answer.", offer),
+                                      offer.candidates, rejected=offer.rejected)
             cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
             raise cls(conn.error or "the printer at %s did not answer yet" % target.host)
         view = conn.view()
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
-                "firmware": view["firmware"], "limits": LIMITS}
+                "firmware": view["firmware"], "limits": LIMITS, "source": target.source,
+                "note": self.locate_note if target.source in ("discovered", "chosen") else ""}
 
     def _task_id(self):
         return self._conn().view()["task_id"] or "-1"

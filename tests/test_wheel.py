@@ -98,6 +98,39 @@ class WheelTests(unittest.TestCase):
         self.assertNotIn("__BOOT__", page)
         self.assertNotIn("__ICONS__", page)
 
+    def test_installed_wheel_uses_its_bundled_certificate_without_writing(self):
+        """A fresh install (OrcaSlicer unpacks the wheel into its plugin folder): the bundled pair is found next to the
+        modules and loads, so no first-run certificate card and no Find certificate are needed, and nothing is
+        written, chmod-ed or read outside the package for it."""
+        import importlib
+        import os
+        from unittest import mock
+        folder = tempfile.mkdtemp()
+        self.zip.extractall(folder)
+        fake_orca.install_orca()
+        for name in [n for n in sys.modules if n == "kobracontrol" or n.startswith("kobracontrol.")]:
+            del sys.modules[name]
+        sys.path.insert(0, folder)
+        self.addCleanup(sys.path.remove, folder)
+        importlib.invalidate_caches()
+        pkg = importlib.import_module("kobracontrol")
+        certs, connection = pkg.certs, pkg.connection
+        self.assertEqual(os.path.dirname(certs.bundled()[0]), os.path.join(folder, "kobracontrol"))
+        storage = tempfile.mkdtemp()
+        opened = []
+        real_open = open
+
+        def reads_only(file, mode="r", *a, **kw):
+            opened.append((str(file), mode))
+            return real_open(file, mode, *a, **kw)
+        with mock.patch.object(os, "chmod", side_effect=AssertionError("chmod")), \
+                mock.patch.object(os, "open", side_effect=AssertionError("os.open")), \
+                mock.patch("builtins.open", reads_only):
+            ctx = connection.tls_from(os.path.join(storage, "tls"))()   # nothing saved: the bundled pair
+        self.assertEqual(ctx.__class__.__name__, "SSLContext")
+        self.assertTrue(all("w" not in m and "a" not in m for _, m in opened), opened)
+        self.assertFalse(os.path.exists(os.path.join(storage, "tls")))
+
     def test_reproducible(self):
         again = build.build(out_dir=Path(tempfile.mkdtemp()))
         self.assertEqual(again.read_bytes(), self.path.read_bytes())
