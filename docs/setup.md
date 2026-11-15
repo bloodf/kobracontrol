@@ -2,7 +2,7 @@
 
 Four things have to be in place before OrcaSlicer prints to a Kobra X through kobracontrol: LAN mode
 on the printer, the client certificate, the "Use printer agents" preference and a printer preset.
-kobracontrol is in development and not released. The connection, status, files, camera stream and
+kobracontrol is in development. The connection, status, files, camera stream and
 printing were checked on a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer. These setup steps,
 and everything inside OrcaSlicer (Device tab, Print dialog, permissions dialog), have not been
 confirmed on a real printer yet.

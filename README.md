@@ -31,12 +31,11 @@ Everything stays on your local network. The plugin needs no extra Python package
   <img src="assets/features/feature-secure.svg" width="72" alt="Secure local connection">
 </p>
 
-> **Status: in development, not released.** The plugin's service layer was run against a real Kobra X
+> **Status: in development.** The plugin's service layer was run against a real Kobra X
 > (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing,
 > jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract,
 > drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the
-> printer, and nothing has been tested inside OrcaSlicer itself. There is no release and no Orca
-> Cloud listing.
+> printer, and nothing has been tested inside OrcaSlicer itself.
 
 After a print starts, the printer can spend many minutes in preparation (heating, levelling, and
 cycling through the ACE slots) before the first layer. In one test that took about 11 minutes for a
@@ -156,7 +155,7 @@ to replace the bundled certificate with your own copy.
 
 ## Install
 
-There is no release yet. Build the wheel and install it:
+Download `kobracontrol_any.whl` from the [latest release](https://github.com/bloodf/kobracontrol/releases/latest), or build it:
 
 ```sh
 python3 scripts/build.py     # writes dist/kobracontrol_any.whl

@@ -2,9 +2,9 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-14
 
-Nothing is released yet. The plugin is in development.
+The first release. The plugin is in development.
 
 ### Added
 

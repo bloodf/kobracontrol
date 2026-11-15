@@ -1,7 +1,7 @@
 # Contributing
 
 Thanks for helping. Bug reports, logs and pull requests are all welcome. The plugin is in
-development and has not been released yet.
+development.
 
 ## Reporting a problem
 
