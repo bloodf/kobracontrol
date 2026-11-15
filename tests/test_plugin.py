@@ -133,6 +133,18 @@ class Agent(Base):
         wait(lambda: self.events["message"])
         self.assertTrue(self.agent._pusher.is_alive())
 
+    def test_print_a_file_on_the_printer(self):
+        """start_sdcard_print: the file already on the printer, with both print options and a finished stage."""
+        self.connect()
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "a.gcode", "size": 1, "timestamp": 1}]}, code=200)
+        stages = []
+        params = pa.PrintParams(dst_file="/a.gcode", task_bed_leveling=True, task_vibration_cali=True)
+        self.assertEqual(self.agent.start_sdcard_print(params, lambda *a: stages.append(a), lambda: False), 0)
+        start = wait(lambda: self.sent("print", "start"))[0]["data"]
+        self.assertEqual(start["filename"], "a.gcode")
+        self.assertEqual((start["task_settings"]["auto_leveling"], start["task_settings"]["vibration_compensation"]), (1, 1))
+        self.assertEqual(stages[-1][0], plugin.STAGE_FINISHED)
+
     def test_switching_printer_releases_the_old_connection(self):
         """connect_printer for another address closes the session to the previous one (disconnect_printer does)."""
         self.connect()

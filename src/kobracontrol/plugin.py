@@ -767,9 +767,12 @@ class KobraAgent(pa.PrinterAgentBase):
         name = os.path.basename(clean(getattr(params, "dst_file", "")) or clean(params.filename))
         try:
             service().call(self._job_host(params), "file_print", name=name,
-                           auto_leveling=bool(getattr(params, "task_bed_leveling", False)))
+                           auto_leveling=bool(getattr(params, "task_bed_leveling", False)),
+                           vibration_compensation=bool(getattr(params, "task_vibration_cali", False)))
         except Exception as e:
             return self._fail(update_fn, ERR_LP_PUBLISH, e)
+        if update_fn:
+            update_fn(STAGE_FINISHED, 100, "Print started")
         return OK
 
     # no binding or certificates on this printer -------------------------------------------------------------
