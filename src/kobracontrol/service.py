@@ -29,6 +29,7 @@ import certs
 import connection
 from connection import camera_url_for, find_and_save_certificate  # noqa: F401  (plugin.py imports them here)
 import kobra
+import locate
 import settings
 import spoolman as sm
 import usage
@@ -40,7 +41,7 @@ from usage import UsageMixin
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
-BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
@@ -63,17 +64,38 @@ FEED_ACK_DELAY = 2.0            # Kobralink: feedFilament type 3 two seconds aft
 DRY_TEMP, DRY_MINUTES = (30, 80), (10, 24 * 60)   # ace.sanitize_ace_dry_presets bounds
 
 
+ORIGIN_TEXT = {"override": "Settings > Printer address", "preset": "the printer preset",
+               "remembered": "the address found earlier for this printer preset",
+               "discovered": "a search of the local network"}
+RELOCATE_EVERY = 60.0           # s: at most one new search while a found address stops answering
+
+
 class Target:
-    """The tab's printer, resolved by the plugin on the UI thread."""
+    """The tab's printer as the plugin sees it on the UI thread. host: the address in Settings (used as given), else
+    "" until the service has located the printer from preset_host, the address remembered for preset_key and a
+    network search (locate.py). preset_agent: the printer agent of the selected preset."""
 
     def __init__(self, host, name=settings.DEFAULT_PRINTER_NAME, spoolman_url="", spoolman_auto=True,
-                 spoolman_report_usage=True, ffmpeg_path="", camera_enabled=True):
-        self.host, self.name = host, name or settings.DEFAULT_PRINTER_NAME
-        self.spoolman_url, self.spoolman_auto = spoolman_url, spoolman_auto
+                 spoolman_report_usage=True, ffmpeg_path="", camera_enabled=True, preset_host="", preset_key="",
+                 preset_agent=""):
+        self.host, self.override, self.name = host, host, name or settings.DEFAULT_PRINTER_NAME
+        self.own_spoolman_url, self.spoolman_auto = spoolman_url, spoolman_auto
         self.spoolman_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
+        self.preset_host, self.preset_key, self.preset_agent = preset_host, preset_key, preset_agent
+        self.source = "override" if host else ""
+        self.spooler_origin = lambda: ""   # the service links this to Spooler's Spoolman address
+
+    @property
+    def spoolman_url(self):
+        """The Spoolman address set in Kobra Control, else the one Spooler uses."""
+        return self.own_spoolman_url or self.spooler_origin() or ""
+
+    @property
+    def spoolman_source(self):
+        return "settings" if self.own_spoolman_url else "spooler" if self.spooler_origin() else ""
 
     def key(self):
-        return (self.host, self.name, self.spoolman_url)
+        return (self.override, self.preset_host, self.preset_key, self.name, self.own_spoolman_url)
 
     @property
     def ident(self):
@@ -117,7 +139,7 @@ def _background(fn, name):
 class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
-                 spoolman_factory=sm.Spoolman):
+                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
@@ -127,6 +149,11 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.lock = threading.RLock()
         self._op = threading.local()
         self.connections = {}
+        self.addresses = certs.Pins(addresses_path) if addresses_path else None   # preset -> address that worked
+        self.search = search
+        self.probe = probe or (lambda ip: locate.probe(ip, self.http_port))
+        self._locating = threading.Lock()
+        self.locate_error, self.located_at, self.locate_note = None, 0.0, ""
         self.target, self.generation = None, 0
         self.closed = False
         self._closing = threading.Event()
@@ -178,6 +205,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def _on_change(self, conn):   # a connection's reader or loop thread: no I/O here
         self._changed.set()
+        if conn.http_failed and not conn.connected:
+            self._relocate_if_lost(conn)
 
     def view_for(self, host):
         conn = self.connections.get(host)
@@ -185,17 +214,107 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     # ------------------------------------------------------------------ page plumbing
 
-    def set_target(self, target):
+    def set_target(self, target, retry=False):
+        """Select the tab's printer (UI thread: no I/O). Without an address in Settings the printer is located on
+        a thread of its own; cmd_connect waits for it. The same target again keeps the address found for it;
+        retry (Save) tries a failed connection or search again at once, with a fresh retry delay."""
+        target.spooler_origin = self._spooler_origin
         with self.lock:
             changed = self.target is None or self.target.key() != target.key()
             previous = self.target.host if self.target else None
+            if not changed and not target.host:
+                target.host, target.source = self.target.host, self.target.source
             if changed:
                 self.generation += 1
                 self._reset_printer_state()
-            self.target = target
-        self.connection(target.host)
+                self.locate_error = None
+            self.target, gen = target, self.generation
+        if target.host:
+            conn = self.connection(target.host)
+            conn.origin = ORIGIN_TEXT.get(target.source, "")
+            if retry and not changed and not conn.connected:
+                conn.retry()
+        elif changed or retry:
+            _background(lambda: self._locate(gen), "locate")
         if previous and previous != target.host:
             self.release(previous)
+
+    def _spooler_origin(self):
+        peers = self.peers
+        try:
+            return peers.spooler()["origin"] if peers is not None and hasattr(peers, "spooler") else ""
+        except Exception:   # an unreadable presence file is "no Spooler", never a failed command
+            return ""
+
+    def _locate(self, gen, search_only=False):
+        """Find the printer for the target of generation gen (locate.locate), then connect to it. One at a time."""
+        with self._locating:
+            with self.lock:
+                target = self.target if gen == self.generation else None
+            if target is None or target.override:
+                return
+            remembered = ""
+            if self.addresses is not None and not search_only:
+                remembered = self.addresses.get(target.preset_key or "*") or ""
+            try:
+                found = locate.locate("", "" if search_only else target.preset_host, remembered,
+                                      probe=self.probe, search=self.search,
+                                      own_agent=target.preset_agent == "kobracontrol")
+            except locate.NotFound as e:
+                with self.lock:
+                    if gen == self.generation:
+                        self.locate_error, self.located_at = e, time.monotonic()
+                self.log("kobracontrol: %s" % e)
+                return
+            self._use_address(gen, target, found)
+
+    def _use_address(self, gen, target, found):
+        if self.addresses is not None:
+            try:
+                self.addresses.check(target.preset_key or "*", found.host)
+            except OSError as e:
+                self.log("kobracontrol: the printer's address could not be remembered (%s)" % e)
+        with self.lock:
+            if gen != self.generation:
+                return
+            previous, moved = target.host, target.host and target.host != found.host
+            target.host, target.source = found.host, found.source
+            self.locate_error, self.located_at, self.locate_note = None, time.monotonic(), found.note
+        conn = self.connection(found.host)
+        conn.origin = ORIGIN_TEXT.get(found.source, "")
+        if found.note:
+            self.log("kobracontrol: " + found.note)
+        if moved:
+            self.log("kobracontrol: the printer moved from %s to %s" % (previous, found.host))
+            self.release(previous)
+            self.publish({"type": "selection_changed"})   # the page says hello again for the new address
+
+    def _relocate_if_lost(self, conn):
+        """A found address whose /info stops answering (a new DHCP lease): search again, at most every
+        RELOCATE_EVERY seconds. An address set in Settings is never replaced."""
+        with self.lock:
+            target, gen = self.target, self.generation
+            due = (target is not None and not target.override and target.host == conn.host and conn.http_failed
+                   and not self._locating.locked() and time.monotonic() - self.located_at >= RELOCATE_EVERY)
+            if due:
+                self.located_at = time.monotonic()
+        if due:
+            _background(lambda: self._locate(gen), "relocate")
+
+    def wait_located(self, timeout):
+        """The located target, or raises the NotFound of the last search (or KobraError after timeout)."""
+        def settled():
+            with self.lock:
+                target = self.target
+                return target is None or target.host or self.locate_error is not None
+        connection.wait_until(settled, timeout)
+        with self.lock:
+            target, error = self.target, self.locate_error
+        if target is None:
+            raise kobra.KobraError(NO_PRINTER)
+        if not target.host:
+            raise error or kobra.KobraError("still searching the network for the Kobra X")
+        return target
 
     def clear_target(self):
         with self.lock:
@@ -288,6 +407,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             reply = {"type": "reply", "id": request_id, "error": str(e)}
             if getattr(e, "no_certificate", False):
                 reply["no_certificate"] = True
+            if getattr(e, "no_target", False):
+                reply["no_target"] = True
+                reply["candidates"] = [{k: c.get(k, "") for k in ("ip", "name", "model")} for c in e.candidates]
             self.publish(reply)
         except Exception as e:  # never kill the worker; details go to the log only
             self.log("kobracontrol: %s failed: %s\n%s" % (command, e, traceback.format_exc()))
@@ -392,7 +514,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.publish({"type": "status", "data": data, "gen": gen})
             if not data["connected"]:
                 self.publish({"type": "offline", "error": conn.error or "connecting to %s" % target.host,
-                              **({"no_certificate": True} if conn.no_certificate else {})})
+                              "retry_at": conn.next_try, **({"no_certificate": True} if conn.no_certificate else {})})
 
     def _camera_url(self):
         with self.lock:
@@ -507,8 +629,17 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def cmd_connect(self, retry=False):
         """The tab's hello. Only the user's Retry (retry=True) cuts the connection's backoff short; otherwise a
-        connection that already failed answers its error at once and keeps its retry delay."""
-        gen, conn, target = self._ctx()
+        connection that already failed answers its error at once and keeps its retry delay. Without an address
+        it first waits for the printer to be located (a NotFound names the candidates, if any)."""
+        with self.lock:
+            gen, target, unlocated = self.generation, self.target, self.target is not None and not self.target.host
+        if retry is True and unlocated and self.locate_error is not None:
+            self.locate_error = None
+            _background(lambda: self._locate(gen), "locate")
+        target = self.wait_located(CONNECT_WAIT + locate.SEARCH_SECONDS + 2 * locate.PROBE_TIMEOUT)
+        if not self._current(gen):
+            raise kobra.KobraError(STALE)
+        conn = self.connection(target.host)
         if not conn.connected:
             failures = conn.failures
             if retry is True:
@@ -520,7 +651,34 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             raise cls(conn.error or "the printer at %s did not answer yet" % target.host)
         view = conn.view()
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
-                "firmware": view["firmware"], "limits": LIMITS}
+                "firmware": view["firmware"], "limits": LIMITS, "source": target.source,
+                "note": self.locate_note if target.source == "discovered" else ""}
+
+    def cmd_search_printer(self):
+        """Settings > Search again: search the network for the printer of the selected preset; the page says
+        hello again afterwards. The address set in Settings, if any, is still the one used."""
+        with self.lock:
+            gen, target = self.generation, self.target
+        if target is None:
+            raise kobra.KobraError(NO_PRINTER)
+        if target.override:
+            return {"address": target.host, "source": "override"}
+        self._locate(gen, search_only=True)
+        with self.lock:
+            error = self.locate_error if gen == self.generation else None
+        if error is not None:
+            raise error
+        return {"address": target.host, "source": target.source}
+
+    def cmd_choose_printer(self, host):
+        """The user picked one of several printers found: remember it for this preset and use it."""
+        with self.lock:
+            gen, target, error = self.generation, self.target, self.locate_error
+        offered = {c["ip"] for c in getattr(error, "candidates", [])}
+        if target is None or host not in offered:
+            raise ValueError("that printer was not among the ones found; search again")
+        self._use_address(gen, target, locate.Found(host, "discovered"))
+        return {"address": host}
 
     def _task_id(self):
         return self._conn().view()["task_id"] or "-1"

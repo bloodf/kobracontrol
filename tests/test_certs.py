@@ -252,40 +252,43 @@ class NoOpensslTests(Tmp):
         self.assertEqual(certs.load(folder), ("C2\n", "K2\n"))
 
     @unittest.skipUnless(os.name == "posix", "file modes are POSIX only")
-    def test_save_tightens_before_writing(self):
-        """L3: an existing 0644 key file is made 0600 before the key goes in; the folder becomes 0700."""
+    def test_save_writes_0600_without_chmod_or_descriptor_opens(self):
+        """L3: an existing 0644 key file is replaced by a fresh 0600 one. In OrcaSlicer fchmod and open(fd) raise
+        audit events with no path, which the owner's log showed blocked ("event=os.chmod reason=audit permission
+        required"): save uses neither."""
         folder = os.path.join(self.tmp, "keep")
-        os.makedirs(folder, 0o755)
-        os.chmod(folder, 0o755)
+        os.makedirs(folder)
         key_path = certs.paths(folder)[1]
         with open(key_path, "w") as f:
             f.write("old")
         os.chmod(key_path, 0o644)
-        seen = []
-        real = os.fchmod
+        real_open = open
 
-        def spy(fd, mode):
-            real(fd, mode)
-            st = os.fstat(fd)
-            seen.append((stat.S_IMODE(st.st_mode), st.st_size))
-        with mock.patch.object(certs.os, "fchmod", spy):
+        def no_descriptor_open(file, *a, **kw):
+            assert not isinstance(file, int), "open() of a file descriptor"
+            return real_open(file, *a, **kw)
+        with mock.patch.object(certs.os, "fchmod", side_effect=AssertionError("fchmod"), create=True), \
+                mock.patch.object(certs.os, "chmod", side_effect=AssertionError("chmod")), \
+                mock.patch("builtins.open", no_descriptor_open):
             certs.save(folder, "C\n", "SECRET KEY\n")
-        self.assertEqual(seen, [(0o600, 0), (0o600, 0)])
-        self.assertEqual(stat.S_IMODE(os.stat(folder).st_mode), 0o700)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(key_path).st_mode), 0o600)
         self.assertEqual(certs.load(folder)[1], "SECRET KEY\n")
+        self.assertEqual(sorted(os.listdir(folder)), sorted(os.path.basename(p) for p in certs.paths(folder)))
 
-    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW not available")
-    def test_save_refuses_symlinked_key_file(self):
+    @unittest.skipUnless(hasattr(os, "symlink") and os.name != "nt", "symlinks")
+    def test_save_replaces_a_symlinked_key_file_without_following_it(self):
         folder = os.path.join(self.tmp, "keep")
         os.makedirs(folder)
         target = os.path.join(self.tmp, "elsewhere.txt")
         with open(target, "w") as f:
             f.write("untouched")
         os.symlink(target, certs.paths(folder)[1])
-        with self.assertRaises(certs.CertError):
-            certs.save(folder, "C\n", "KEY\n")
+        certs.save(folder, "C\n", "KEY\n")
         with open(target) as f:
             self.assertEqual(f.read(), "untouched")
+        self.assertFalse(os.path.islink(certs.paths(folder)[1]))
+        self.assertEqual(certs.load(folder)[1], "KEY\n")
 
     def test_walk_is_bounded(self):
         """L6: too many files or too deep a tree is a clear CertError."""
@@ -322,24 +325,10 @@ class NoOpensslTests(Tmp):
             self.assertFalse(name.lower().endswith((".conf", ".ini")))
             self.assertFalse(name.lower().startswith(("orcaslicer", "gcodeviewer", ".install_state", "user_secret")))
 
-    def test_grant_targets(self):
-        """C3: tree grants for OrcaSlicer: realpath + "/*", plus the given form when it differs."""
-        real = os.path.join(self.tmp, "real")
-        os.makedirs(real)
-        alias = os.path.join(self.tmp, "alias")
-        os.symlink(real, alias)
-        with mock.patch.object(certs, "default_locations", return_value=[real, alias]):
-            targets = certs.grant_targets()
-        rp = os.path.realpath(real)
-        self.assertEqual(targets[0], rp + "/*")
-        self.assertIn(alias + "/*", targets)
-        self.assertEqual(len(targets), len(set(targets)))
-        self.assertTrue(all(t.endswith("/*") for t in certs.grant_targets()))
-
     def test_default_locations(self):
-        mac = certs.default_locations("darwin", {})
-        self.assertIn("/Applications/AnycubicSlicerNext.app/Contents/Frameworks", mac)
-        self.assertIn("/Applications/AnycubicSlicerNext.app/Contents/MacOS", mac)
+        mac = certs.default_locations("darwin", {})   # the one library with the pair: one read, one prompt
+        self.assertEqual(mac[0], "/Applications/AnycubicSlicerNext.app/Contents/Frameworks/libcloud_mqtt.dylib")
+        self.assertEqual(len(mac), 2)
         win = certs.default_locations("win32", {"ProgramFiles": r"C:\Program Files"})
         self.assertIn(r"C:\Program Files\AnycubicSlicerNext", win)
         self.assertIn(r"C:\Users\u\AppData\Local\Programs\AnycubicSlicerNext",

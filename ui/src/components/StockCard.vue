@@ -116,7 +116,12 @@ async function link(r: Spool) {
 .sc-notes:empty { display: none; }
 .sc-filters { margin-bottom: 8px; }
 .sc-q { min-width: 240px; }
-.sc-wrap { max-height: 360px; overflow: auto; }
+.sc-wrap { max-height: 360px; overflow: auto; contain: paint; }
+/* Compact rows at any width: a narrow page scrolls the table sideways inside its area instead of wrapping each
+   cell into a tall row. */
+.sc-wrap table { min-width: 640px; }
+.sc-wrap td { padding-block: 6px; }
+.sc-wrap td .p-button { white-space: nowrap; }
 .sc-wrap thead th { position: sticky; top: 0; background: var(--oui-surface); z-index: 1; }
 .sc-nm { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
 .sc-chip { font-size: 12px; margin-left: 4px; }

@@ -914,6 +914,77 @@ class DeniedExplained(unittest.TestCase):
         wait(lambda: len(calls) >= 2, 1.0)   # not after the 2 s backoff
 
 
+class RefusedInfoPort(unittest.TestCase):
+    """The owner's case with the address in Settings: something answers at the address, but port 18910 is refused
+    at once. Every attempt fails in microseconds, so only the backoff keeps it calm."""
+
+    def setUp(self):
+        closed = socket.create_server(("127.0.0.1", 0))
+        self.port = closed.getsockname()[1]
+        closed.close()
+        self.attempts, self.published = [], []
+
+        def fetch(host, port):
+            self.attempts.append(time.monotonic())
+            return kobra.fetch_credentials(host, port=port, timeout=2)
+        self.svc = service.Service(self.published.append, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                                   http_port=self.port, mqtt_port=self.port, fetch=fetch, camera_factory=FakeCamera)
+        self.addCleanup(self.svc.close)
+
+    def test_says_what_answers_and_where_the_address_came_from_and_backs_off(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        conn = self.svc.connections["127.0.0.1"]
+        wait(lambda: conn.failures)
+        self.assertIn("Something answers at 127.0.0.1, but it is not a Kobra X in LAN mode", conn.error)
+        self.assertIn("not a bridge such as Kobralink", conn.error)
+        self.assertIn("LAN mode", conn.error)
+        self.assertIn("The address comes from Settings > Printer address.", conn.error)
+        self.assertTrue(conn.http_failed)
+        self.svc.touch(camera=False)
+        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline"), None))
+        self.assertGreater(offline["retry_at"], time.time())   # the page shows when the next try is
+        time.sleep(3.5)
+        self.assertEqual(len(self.attempts), 2)   # at 0 and 2 s, then 4 s later: never a spin
+
+    def test_save_retries_at_once_with_a_fresh_delay(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        conn = self.svc.connections["127.0.0.1"]
+        wait(lambda: len(self.attempts) >= 3, 12)   # waits 2 s, then 4 s
+        before = len(self.attempts)
+        self.svc.set_target(service.Target("127.0.0.1"), retry=True)   # Save with the same address
+        wait(lambda: len(self.attempts) == before + 1, 1)
+        wait(lambda: len(self.attempts) == before + 2, 3.5)   # the delay starts again from 2 s, not 16 s
+        self.assertTrue(conn._thread.is_alive())
+
+    def test_save_with_a_new_address_stops_the_old_loop(self):
+        self.svc.set_target(service.Target("127.0.0.1"))
+        old = self.svc.connections["127.0.0.1"]
+        self.svc.set_target(service.Target("localhost"), retry=True)
+        wait(lambda: "127.0.0.1" not in self.svc.connections and not old._thread.is_alive(), 5)
+        self.assertIn("localhost", self.svc.connections)
+
+
+class SpoolmanFromSpooler(unittest.TestCase):
+    def test_spooler_address_is_used_when_none_is_set_here(self):
+        class Peers:
+            origin = "http://box:7912"
+
+            def spooler(self):
+                return {"origin": self.origin}
+        svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              camera_factory=FakeCamera)
+        self.addCleanup(svc.close)
+        svc.peers = Peers()
+        with mock.patch.object(svc, "connection"):
+            svc.set_target(service.Target("10.0.0.5"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("http://box:7912", "spooler"))
+            svc.set_target(service.Target("10.0.0.5", spoolman_url="http://mine:7912"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("http://mine:7912", "settings"))
+            Peers.origin = ""
+            svc.set_target(service.Target("10.0.0.5"))
+            self.assertEqual((svc.target.spoolman_url, svc.target.spoolman_source), ("", ""))
+
+
 class Features(Base):
     """Print options the printer says it does not support (info/report features) are never sent as on."""
 

@@ -72,7 +72,7 @@ class Spoolman:
 
     def connect(self):
         if not self.url:
-            raise SpoolmanError("Spoolman not configured: set its URL in the Kobra Control settings")
+            raise SpoolmanError("no address set: enter one under Settings, or use Spooler with Spoolman")
         self.call("GET", "/v1/health")
         return {"via": "direct"}
 

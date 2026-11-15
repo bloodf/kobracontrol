@@ -14,6 +14,7 @@ import orca
 import ace
 import bambu
 import certs
+import locate
 import kobra
 import peers
 import settings
@@ -27,6 +28,7 @@ AGENT_NAME = "Anycubic Kobra X (kobracontrol)"
 MODEL = "Anycubic Kobra X"
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
+ADDRESSES_FILE = "addresses.json"   # printer preset -> the Kobra X address that answered for it (locate.py)
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
 ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010, -6010
@@ -198,7 +200,9 @@ def service(publish=None):
         if _service is None:
             folder = _storage()
             _service = Service(publish or (lambda m: None), log, cert_dir=cert_dir(),
-                               ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None, **_service_options)
+                               ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None,
+                               addresses_path=os.path.join(folder, ADDRESSES_FILE) if folder else None,
+                               **_service_options)
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
@@ -259,29 +263,31 @@ def certificate_state():
         return {"found": False}
 
 
-def selected_host():
-    """The printer address for the tab: the `host` setting, else the selected printer preset when it uses this
-    agent or names a Kobra X (print_host, scheme and port stripped). ValueError when there is none."""
-    host = host_of(get_store().effective().get("host"))
-    if host:
-        return host
+def preset_hints():
+    """(address, preset name, printer agent) of the selected printer preset, or ("", name, agent) when it is not a
+    Kobra X: its print_host stripped of scheme, port and path. The address is only a hint (locate.py): a preset
+    made for another agent (Kobralink's Moonraker bridge, say) often points to that bridge, not the printer."""
     bundle = orca.host.preset_bundle()
     preset = bundle.current_printer_preset()
     agent = clean(preset.config_value("printer_agent")) or clean(bundle.full_config_value("printer_agent"))
     if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
                                             preset.config_value("inherits")):
-        raise ValueError("Select an Anycubic Kobra X printer, or set the printer address in Kobra Control's settings.")
+        return "", preset.name, agent
     host = host_of(preset.config_value("print_host")) or host_of(bundle.full_config_value("print_host"))
-    if not host:
-        raise ValueError("The selected Kobra X has no address: click the Wi-Fi icon next to the printer and enter its IP.")
-    return host
+    return host, preset.name, agent
 
 
 def _target():
     cfg = get_store().effective()
-    return Target(selected_host(), settings.printer_label(cfg.get("printer_name")), clean(cfg.get("spoolman_url")),
-                  bool(cfg["spoolman_auto"]), bool(cfg["spoolman_report_usage"]), clean(cfg.get("ffmpeg_path")),
-                  bool(cfg["camera_enabled"]))
+    try:
+        preset_host, preset_name, agent = preset_hints()
+    except Exception as e:   # no preset bundle yet: the network search still runs
+        log("printer preset not readable (%s)" % e)
+        preset_host, preset_name, agent = "", "", ""
+    return Target(host_of(cfg.get("host")), settings.printer_label(cfg.get("printer_name")),
+                  clean(cfg.get("spoolman_url")), bool(cfg["spoolman_auto"]), bool(cfg["spoolman_report_usage"]),
+                  clean(cfg.get("ffmpeg_path")), bool(cfg["camera_enabled"]), preset_host=preset_host,
+                  preset_key=preset_name, preset_agent=agent)
 
 
 def slicer_temp_root():
@@ -306,19 +312,21 @@ def job_read_grants():
 
 
 def known_hosts():
-    """Printer addresses known at load, for the network permission request."""
+    """Printer addresses known at load, for the network permission request: the Settings address, the Kobra X
+    preset's address (a hint the tab tries once) and the addresses found for presets before."""
     hosts = set()
     try:
         hosts.add(host_of(get_store().effective().get("host")))
     except Exception as e:
         log("settings not readable at load (%s)" % e)
     try:
-        preset = orca.host.preset_bundle().current_printer_preset()
-        if clean(preset.config_value("printer_agent")) == AGENT_ID or is_kobra_x(
-                preset.config_value("printer_model"), preset.name, preset.config_value("inherits")):
-            hosts.add(host_of(preset.config_value("print_host")))
+        hosts.add(preset_hints()[0])
     except Exception as e:
         log("printer preset not readable at load (%s)" % e)
+    folder = _storage()
+    if folder:
+        found = certs.Pins(os.path.join(folder, ADDRESSES_FILE))._read().values()
+        hosts.update(h for h in found if locate.lan_address(h))
     return sorted(h for h in hosts if h)
 
 
@@ -360,12 +368,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         svc = service(self.post_message)
         try:
             if kind == "hello":
-                try:
-                    svc.set_target(_target())   # starts the connection's own thread; the first contact is made there
-                except Exception as e:
-                    svc.clear_target()
-                    self.post_message({"type": "reply", "id": data.get("id"), "error": str(e), "no_target": True})
-                    return
+                svc.set_target(_target())   # locates the printer and starts its connection on their own threads
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
                 self.post_message(self._config_message())
@@ -382,12 +385,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 get_store(self).update({"ui_language": data.get("value")})
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
+                svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
-                try:
-                    svc.set_target(_target())
-                except Exception as e:
-                    svc.clear_target()
-                    result["connect_error"] = str(e)
                 self.post_message(self._config_message())
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
         except Exception as e:
@@ -397,8 +396,12 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         cfg = get_store(self).effective()
         spooler = spooler_state()
         spooler["dismissed"] = bool(cfg["spooler_hint_dismissed"])
+        target = _service.target if _service is not None else None
+        located = {"address": target.host, "source": target.source, "preset_host": target.preset_host,
+                   "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
+                   "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS)}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (
@@ -829,8 +832,11 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
 
     def execute(self):
         try:
-            host = selected_host()
-            conn = service().ready(host, timeout=15)
+            svc = service()
+            if svc.target is None:
+                svc.set_target(_target())
+            host = svc.wait_located(30).host
+            conn = svc.ready(host, timeout=15)
         except Exception as e:
             return orca.ExecutionResult.skipped("Couldn't reach the Kobra X: %s" % e)
         view = conn.view()
@@ -863,12 +869,14 @@ class KobraControl(orca.base):
     def register_capabilities(self):
         _storage()
         hosts = known_hosts()
-        # Network I/O runs on the plugin's own threads. fs_read: the Anycubic Slicer Next install folders (as
-        # trees: a bare folder grant covers only that path) and OrcaSlicer's per-user temp folder, where Print
-        # and Send hand over the sliced .3mf; network: every printer address known now (a new one is asked
-        # for on first contact).
-        orca.request_permissions(threading=True, fs_read=certs.grant_targets() + job_read_grants(),
-                                 network=["http://%s" % h for h in hosts])
+        # Network I/O runs on the plugin's own threads. fs_read: OrcaSlicer's per-user temp folder, where Print and
+        # Send hand over the sliced .3mf (the certificate is read from the plugin's own package, which needs no
+        # grant; Anycubic Slicer Next's folders are read only when the user asks, and asked for then). network:
+        # every printer address known now and the SSDP multicast group the network search sends to (a canonical
+        # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
+        # contact.
+        orca.request_permissions(threading=True, fs_read=job_read_grants(),
+                                 network=["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP])
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)
         orca.register_capability(CheckConnection)

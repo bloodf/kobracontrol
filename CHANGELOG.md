@@ -4,8 +4,45 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+Checked against the repository's test fakes and page tests only; not yet tried on a printer or in OrcaSlicer.
+
+### Added
+
+- The Kobra Control tab finds the printer by itself. With no address under Settings it tries the address found
+  before for the selected printer preset, then the preset's own address if a Kobra X answers there, then searches
+  the local network with SSDP (the search Anycubic Slicer Next sends). One printer found is used and remembered
+  per preset; several are listed once to choose from. A found address that stops answering is searched again, at
+  most once a minute. When the preset's address is not a Kobra X (a Kobralink or Moonraker bridge, say), the tab
+  says so in one line and uses the printer it found. Settings shows the address in use, how it was found, and
+  Search again.
+- The tab says once when the selected preset uses another printer agent (Kobralink's `moonraker`, say), and how to
+  switch it to `kobracontrol`; the tab works on its own either way.
+- With no Spoolman address set in Kobra Control, the one Spooler uses is taken, and Settings says so. An address
+  set in Kobra Control always wins.
+- `scripts/discover.py`: a read-only network search that prints what printers answer, with secrets masked.
+
+### Changed
+
+- The certificate is the built-in one, with no setup step: the plugin no longer asks at load for read access to
+  Anycubic Slicer Next's folders and never reads them on its own. Settings shows "Certificate: built in"; using
+  the copy from your own Anycubic Slicer Next install is an advanced option, and on macOS reads only
+  `libcloud_mqtt.dylib`, so OrcaSlicer asks about one file.
+- Saving a certificate no longer uses chmod or opens a file descriptor, which OrcaSlicer's audit cannot judge by
+  path and blocked ("event=os.chmod reason=audit permission required").
+
 ### Fixed
 
+- An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
+  "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
+  what to check, and every attempt follows the growing delay.
+- Badge, banner, Status card and camera show one connection state; the banner says when the next automatic try
+  is. While the printer is not connected every printer control is off, including the jog step buttons, and the
+  camera gives the same reason instead of "Select a printer first".
+- Saving Settings tries the connection again at once with a fresh retry delay; a new address stops the old
+  address's connection.
+- Stock table: the spool pictures are fixed 40 px squares that never set the row height, rows stay compact at any
+  width (a narrow page scrolls the table sideways in its own area), and nothing runs onto the note below.
+- The Spoolman card says "No Spoolman address" instead of "Spoolman: Spoolman not configured: ...".
 - A printer that answers on its address but whose MQTT session cannot be opened no longer sends the tab into a
   loop. Each status the plugin publishes every second made the page say hello again, the hello cut the retry delay
   short, and the page went "Connecting" and back to "unreachable" every 10 s with a new connection attempt each time,

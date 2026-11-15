@@ -12,7 +12,7 @@ import TargetBanner from './components/TargetBanner.vue';
 import Dashboard from './components/Dashboard.vue';
 import FilesView from './components/FilesView.vue';
 import SettingsView from './components/SettingsView.vue';
-import { s, start, lease } from './app/store';
+import { s, start, lease, link } from './app/store';
 import { installSettings } from './app/settings';
 import { t } from './core/i18n';
 
@@ -22,16 +22,8 @@ onBeforeUnmount(stopSettings);
 onBeforeUnmount(stop);
 watch(() => s.tab, () => lease());
 
-const linkText = computed(() => {
-  switch (s.phase) {
-    case 'connecting': return t('link.connecting');
-    case 'noCertificate': return t('link.noCertificate');
-    case 'noTarget': return t('link.noTarget');
-    case 'unreachable': return t('link.offline');
-    default: return s.offline ? t('link.offline') : t('link.connected');
-  }
-});
-const linkOk = computed(() => s.phase === 'connected' && !s.offline);
+const linkText = computed(() => t(`link.${link.value}`));
+const linkOk = computed(() => link.value === 'connected');
 const sections = [
   { value: 'dash', icon: 'icon/dashboard', label: 'nav.dash' },
   { value: 'files', icon: 'icon/files', label: 'nav.files' },

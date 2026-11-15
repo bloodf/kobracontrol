@@ -49,13 +49,25 @@ def tls_from(cert_dir):
     return load
 
 
-def _explain(host, error):
-    """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do."""
+def _explain(host, error, origin="", http=False):
+    """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do; a
+    refused /info (http) means something else answers at this address. origin: where the address came from."""
     if getattr(error, "code", None) == "denied" or isinstance(error, PermissionError):
         return ("OrcaSlicer has not let kobracontrol reach %s yet. Allow kobracontrol to reach %s in the dialog "
                 "OrcaSlicer just showed, then press Retry. If no dialog appeared, restart OrcaSlicer once so the "
                 "saved address is granted when the plugin loads." % (host, host))
-    return str(error)
+    text = str(error)
+    if http and refused(text):
+        return ("Something answers at %s, but it is not a Kobra X in LAN mode: port 18910 refused the connection. "
+                "Check that %s is the printer itself (not a bridge such as Kobralink or Moonraker) and that LAN mode "
+                "is on at the printer.%s" % (host, host, " The address comes from %s." % origin if origin else ""))
+    return text
+
+
+def refused(text):
+    """True for a connection refused at once (errno 61 macOS, 111 Linux, 10061 Windows)."""
+    text = text.lower()
+    return "refused" in text or any("errno %d]" % n in text for n in (61, 111, 10061))
 
 
 class Connection:
@@ -68,6 +80,10 @@ class Connection:
         self.printer = None
         self.error, self.no_certificate = "", False
         self.failures = 0                   # failed attempts so far: lets a waiter return at the next failure
+        self.http_failed = False            # the last attempt failed at the HTTP step (/info, /ctrl), before MQTT
+        self.next_try = 0.0                 # time.time() of the next automatic attempt while waiting, else 0
+        self.origin = ""                    # where the address came from, for the error text (service sets it)
+        self._fresh = False                 # retry(): start the delay again from RETRY_FIRST
         self.firmware_name = ""
         self._listeners = []
         self._lock = threading.Lock()
@@ -100,8 +116,10 @@ class Connection:
             thread.join(3)
 
     def retry(self):
-        """Try again now (the user pressed Retry, or a certificate was just saved)."""
+        """Try again now (the user pressed Retry or Save, or a certificate was just saved); the retry delay
+        starts again from RETRY_FIRST."""
         self.start()
+        self._fresh = True
         self._retry.set()
         self._wake.set()
 
@@ -153,9 +171,14 @@ class Connection:
 
     def _backoff(self, delay):
         """Wait delay[0] (cut short only by retry() or stop()), then double it up to RETRY_MAX."""
+        self.next_try = time.time() + delay[0]
         self._retry.wait(delay[0])
         self._retry.clear()
-        delay[0] = min(delay[0] * 2, RETRY_MAX)
+        self.next_try = 0.0
+        if self._fresh:
+            self._fresh, delay[0] = False, RETRY_FIRST
+        else:
+            delay[0] = min(delay[0] * 2, RETRY_MAX)
 
     def _step(self, delay):
         """One turn: reconnect with backoff when not connected, else wait and poll."""
@@ -180,21 +203,24 @@ class Connection:
         old, self.printer, printer = self.printer, None, None
         if old:
             old.close()
+        self.http_failed = False
         try:
             ssl_context = self.tls()
+            self.http_failed = True
             creds = self.fetch(self.host, port=self.http_port)
+            self.http_failed = False
             printer = kobra.Printer(creds, ssl_context=ssl_context, mqtt_port=self.mqtt_port, http_port=self.http_port,
                                     on_report=self._report, on_disconnect=self._dropped)
             printer.connect()
         except kobra.KobraError as e:
             if printer:
                 printer.close()
-            self._fail(_explain(self.host, e), getattr(e, "no_certificate", False))
+            self._fail(_explain(self.host, e, self.origin, self.http_failed), getattr(e, "no_certificate", False))
             return False
         except OSError as e:   # e.g. the plugin sandbox refusing a socket before kobra wraps it
             if printer:
                 printer.close()
-            self._fail(_explain(self.host, e), False)
+            self._fail(_explain(self.host, e, self.origin, self.http_failed), False)
             return False
         except Exception as e:   # anything else a hostile or broken answer can raise (RecursionError, ...)
             if printer:

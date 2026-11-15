@@ -53,6 +53,11 @@ from collections import namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import aes
+import locate
+
+# The tests never search the real network: every SSDP search goes to a closed loopback port unless a test
+# points it at a FakeSsdp.
+locate.SSDP_ADDR = ("127.0.0.1", 9)
 
 TlsFiles = namedtuple("TlsFiles", "server_cert server_key client_cert client_key")
 
@@ -411,3 +416,51 @@ class FakeKobra:
                     self.answer(404, {"code": 404})
 
         return Handler
+
+
+class FakeSsdp:
+    """An SSDP responder on 127.0.0.1 standing in for the printer's: answers every M-SEARCH it gets with
+    `reply` (bytes; None = stay silent), `count` times. Recorded: `searches` (the raw packets).
+
+        with FakeSsdp(reply=FakeSsdp.printer_reply(http_port)) as ssdp:
+            locate.search(addr=ssdp.addr)
+    """
+
+    @staticmethod
+    def printer_reply(http_port=18910, ip="127.0.0.1"):
+        # The fields Anycubic Slicer Next's libssdplib reads (USN with "ac:3dprinter:", modelId, ctrlType, cn);
+        # the exact layout of a real printer's reply is not known yet (scripts/discover.py prints it).
+        return ("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nST: ac:3dprinter:\r\n"
+                "USN: uuid:fake::ac:3dprinter:20030\r\nLOCATION: http://%s:%d/info\r\nmodelId: 20030\r\n"
+                "ctrlType: lan\r\ncn: FAKECN\r\n\r\n" % (ip, http_port)).encode()
+
+    def __init__(self, reply=None, count=1):
+        self.reply, self.count, self.searches = reply, count, []
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.addr = self.sock.getsockname()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while True:
+            try:
+                data, sender = self.sock.recvfrom(4096)
+            except OSError:
+                return
+            self.searches.append(data)
+            if self.reply is not None and data.startswith(b"M-SEARCH"):
+                try:
+                    for _ in range(self.count):
+                        self.sock.sendto(self.reply, sender)
+                except OSError:
+                    return
+
+    def stop(self):
+        self.sock.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()

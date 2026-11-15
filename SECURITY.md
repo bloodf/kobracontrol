@@ -26,15 +26,25 @@ and kobracontrol cannot add any:
 
 ## What it touches
 
-- **Printer:** HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set.
-  Addresses the printer reports about itself are ignored, redirects are refused, and the camera is
-  streamed only from the printer's own address.
+- **Printer:** HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or, when
+  you set none, at the one the plugin found. Addresses the printer reports about itself are ignored
+  (also `ctrlInfoUrl` in `/info`: `/ctrl` is always asked of the same address), redirects are refused,
+  and the camera is streamed only from the printer's own address.
+- **Finding the printer:** with no address set, the plugin tries the address it found before and the
+  printer preset's address, then sends SSDP searches to the local multicast group 239.255.255.250 (port
+  1900). Replies are untrusted: only the address a reply came from is used, never an address or URL
+  inside it; it must be a private, link-local or loopback IPv4 address; at most 64 replies of at most
+  2048 bytes are read, for 3 seconds; and an address counts as a printer only when its own `/info`
+  answers with a LAN token. A found address is remembered per printer preset in the plugin's storage
+  folder (`addresses.json`). Anyone on your network can answer a search and pretend to be a printer, as
+  they can already answer at the printer's address: use a network you trust (see above).
 - **Client certificate:** the printer accepts only the certificate (`CN=AnycubicSlicer`) that
   Anycubic Slicer Next carries. This is a shared client identity, identical in every copy of Anycubic
   Slicer Next, not a per-user secret; kobracontrol **bundles it** (in the package and the wheel) so
   the plugin connects without a setup step. Anyone who has the wheel has this certificate and its
-  key. You can override the bundled copy with the one from your own Anycubic Slicer Next install:
-  **Find certificate** saves it in the plugin's storage folder and uses it instead. On macOS and
+  key. The plugin never reads Anycubic Slicer Next on its own. You can override the bundled copy with
+  the one from your own install: **Find certificate** (an advanced option in Settings) reads that
+  install, after OrcaSlicer asks you, and saves the copy in the plugin's storage folder. On macOS and
   Linux a saved copy is readable only by you (mode 0600); on Windows it is protected only by the
   permissions of your user profile. While searching, candidate keys are written to a private
   temporary folder and removed afterwards. Neither the bundled key nor a saved key is ever sent to

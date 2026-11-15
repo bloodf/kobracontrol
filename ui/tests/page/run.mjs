@@ -435,8 +435,21 @@ test('Spoolman without an address says where to set it', `
   await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
   await post({type: 'status', data: VIEW()});
   await until(() => last('cmd', 'spools'), 'spools asked');
-  await fail(last('cmd', 'spools'), 'Spoolman is not set up');
-  assert(text(byTest('spool-source')).includes('Spoolman is not set up'), 'error shown: ' + text(byTest('spool-source')));
+  await fail(last('cmd', 'spools'), 'Spoolman: no address set: enter one under Settings, or use Spooler with Spoolman');
+  eq(text(byTest('spool-source')), 'No Spoolman address', 'one short line, not the error three times');
+  assert(text(byTest('spoolman-card')).includes('Set a Spoolman address under Settings') && btn('Open Settings', byTest('spoolman-card')), 'where to set it');
+`);
+
+test('Spoolman: the address Spooler uses is taken when none is set here, and Settings says so', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}, located: {address: '10.0.0.5', source: 'discovered', preset_host: '', preset_agent: '',
+    spoolman_url: 'http://box:7912', spoolman_source: 'spooler'}}));
+  await post({type: 'status', data: VIEW()});
+  await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
+  eq(text(byTest('spool-source')), '2 spools in Spoolman', 'the slot pickers work from the Spoolman of Spooler');
+  assert(!text(byTest('spoolman-card')).includes('Set a Spoolman address'), 'no contradiction with the Stock card');
+  await tab('settings');
+  assert(text(byTest('sm-from')).includes('Spooler’s Spoolman is used: http://box:7912'), 'source: ' + text(byTest('sm-from')));
 `);
 
 test('stock card: link a spool to a slot', `
@@ -604,7 +617,7 @@ test('first run: no certificate is one clear task, and Find certificate recovers
   const box = byTest('first-run-cert');
   assert(box, 'certificate panel');
   const t = text(box);
-  assert(t.includes('only accepts the certificate carried by Anycubic Slicer Next') && t.includes('your own Anycubic Slicer Next installation'), 'explains: ' + t);
+  assert(t.includes('only accepts the certificate carried by Anycubic Slicer Next') && t.includes('has that certificate built in, but here it did not load'), 'explains: ' + t);
   assert(!q('[data-test="pause"]') && !byTest('ace-card'), 'no empty cards');
   assert(text(byTest('link')) === 'No certificate', 'pill');
   await click(byTest('find-cert'));
@@ -640,18 +653,20 @@ test('first run: a failed search shows the error and keeps the form', `
 
 test('first run: no usable printer says how to select one', `
   await until(() => last('hello'));
-  await fail(last('hello'), 'Select a Kobra X printer', {no_target: true});
+  await fail(last('hello'), 'No Kobra X answered the network search. Enter the printer’s own address under Settings > Printer address', {no_target: true, candidates: []});
   const box = byTest('first-run-target');
-  assert(box && text(box).includes('Kobra X printer preset') && text(box).includes('address'), 'explains: ' + text(box));
-  assert(text(byTest('link')) === 'No printer selected', 'pill');
+  assert(box && text(box).includes('No Kobra X answered the network search') && text(box).includes('looks for the printer by itself'), 'explains: ' + text(box));
+  assert(text(byTest('link')) === 'No printer found', 'pill');
   await click(btn('Open Settings', box));
   assert(q('#c-host'), 'goes to the address field');
   await tab('files');
-  assert(text(byTest('files-why')).includes('Select a Kobra X printer'), 'Files says what is missing');
+  assert(text(byTest('files-why')).includes('No Kobra X found yet'), 'Files says what is missing');
   eq(cmds('files'), [], 'no file request without a printer');
   await tab('dash');
-  await click(btn('Try again', byTest('first-run-target')));
-  eq(sent().filter(m => m.type === 'hello').length, 2, 'retry says hello again');
+  await click(byTest('search-again'));
+  eq(cmds('search_printer').length, 1, 'Search again searches');
+  await fail(last('cmd', 'search_printer'), 'still nothing', {no_target: true});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'then says hello again');
 `);
 
 test('offline: unreachable printer, retry, and recovery when it answers again', `
@@ -692,6 +707,82 @@ test('cannot connect: statuses of a disconnected printer keep one steady error a
   await post({type: 'status', data: VIEW()});
   await until(() => sent().filter(m => m.type === 'hello').length === 3, 'a connected status says hello');
   eq(last('hello').retry, false, 'not a Retry');
+`);
+
+test('offline: badge, banner, Status card, camera and every control agree, and the next try is shown', `
+  await connect();
+  await post(CONFIG());
+  await post({type: 'status', data: VIEW({connected: false, state: 'offline'})});
+  await post({type: 'offline', error: 'Something answers at 10.25.16.41, but it is not a Kobra X in LAN mode', retry_at: Date.now() / 1000 + 32});
+  eq(text(byTest('link')), 'Offline', 'badge');
+  const banner = text(byTest('target-banner'));
+  assert(banner.includes('unreachable') && banner.includes('not a Kobra X in LAN mode') && !banner.includes('Connecting'), 'banner: ' + banner);
+  assert(/tries again by itself in (29|3[0-3]) s/.test(text(byTest('retry-in'))), 'next try: ' + text(byTest('retry-in')));
+  eq(text(byTest('state')), 'Offline', 'Status card');
+  assert(text(byTest('cam-why')).includes('doesn’t answer'), 'camera gives the same reason: ' + text(byTest('cam-why')));
+  assert(!text(document.body).includes('Select a printer first'), 'no "no printer" text while one is selected');
+  const card = q('[aria-labelledby="status-h"]');
+  const live = qa('button, input, [role="checkbox"]', card).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
+    && !el.closest('.p-disabled') && !el.closest('details:not([open])'));
+  eq(live.map(el => (el.textContent || el.getAttribute('aria-label') || el.outerHTML).trim().slice(0, 60)), [], 'every printer control is off');
+  for (const b of qa('button.p-button', card)) {
+    const st = getComputedStyle(b);
+    assert(parseFloat(st.opacity) <= 0.7 || st.cursor === 'not-allowed', 'looks disabled: ' + text(b) + ' opacity ' + st.opacity);
+  }
+`);
+
+test('first run: several printers found, pick one', `
+  await until(() => last('hello'));
+  await fail(last('hello'), '2 Kobra X printers answer on this network: choose one.', {no_target: true,
+    candidates: [{ip: '10.0.0.2', name: 'Left KX', model: 'Anycubic Kobra X'}, {ip: '10.0.0.3', name: 'Right KX', model: 'Anycubic Kobra X'}]});
+  const box = byTest('first-run-target');
+  assert(text(box).includes('Several Kobra X found') && text(box).includes('Right KX') && text(box).includes('10.0.0.3'), 'picker: ' + text(box));
+  await click(q('[data-pick-ip="10.0.0.3"]'));
+  eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.3'}], 'choice sent');
+  await reply(last('cmd', 'choose_printer'), {address: '10.0.0.3'});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'connects to it');
+`);
+
+test('settings: the address in use, how it was found, Search again, and the other printer agent', `
+  await until(() => last('hello'));
+  await post(CONFIG({located: {address: '', source: '', preset_host: '10.25.16.41', preset_agent: 'moonraker', spoolman_url: '', spoolman_source: ''}}));
+  await reply(last('hello'), {address: '10.25.7.41', printer: 'Bench Kobra', generation: 1, source: 'discovered',
+    note: 'The printer preset points to 10.25.16.41, which is not a Kobra X in LAN mode; found the Kobra X at 10.25.7.41 and using that.'});
+  await post({type: 'status', data: VIEW()});
+  assert(text(q('.notices')).includes('points to 10.25.16.41'), 'one quiet line: ' + text(q('.notices')));
+  assert(text(q('.notices')).includes('“moonraker” printer agent'), 'agent note once: ' + text(q('.notices')));
+  await tab('settings');
+  eq(text(byTest('in-use')), 'In use: 10.25.7.41 (found on the network).', 'in use');
+  assert(text(byTest('other-agent')).includes('Printer Agent > kobracontrol'), 'how to switch: ' + text(byTest('other-agent')));
+  await click(byTest('search-again-settings'));
+  eq(cmds('search_printer').length, 1, 'search again');
+  await type(q('#c-host'), '10.25.7.50');
+  assert(byTest('search-again-settings').disabled, 'no search while an address is typed here');
+`);
+
+test('stock table: thumbnails stay small and nothing overlaps, with many spools, at wide and narrow widths', `
+  const many = Array.from({length: 55}, (_, i) => ({...ROWS[i % 2], id: 100 + i, name: 'Spool ' + i}));
+  await ready(VIEW());
+  await reply(last('cmd', 'stock'), STOCK({stock: {...STOCK().stock, rows: many}}));
+  await until(() => byTest('stock-card'), 'stock card');
+  // the owner's web view drew each spool as a tall narrow strip; without aspect-ratio support it must still be a square
+  const style = document.createElement('style'); style.textContent = '.sf { aspect-ratio: auto !important; }'; document.head.appendChild(style);
+  for (const width of ['', '380px']) {
+    q('.kc-shell').style.width = width; q('.kc-shell').style.maxWidth = width || '';
+    await settle();
+    const wrap = q('[data-test="stock-card"] .sc-wrap');
+    for (const fig of qa('.sf', wrap).slice(0, 6)) {
+      const r = fig.getBoundingClientRect();
+      assert(Math.abs(r.width - 40) < 1 && Math.abs(r.height - 40) < 1, 'thumbnail 40x40 at ' + (width || 'wide') + ', got ' + r.width + 'x' + r.height);
+    }
+    const rows = qa('tbody tr', wrap).slice(0, 6).map(tr => tr.getBoundingClientRect().height);
+    assert(Math.max(...rows) < 90, 'compact rows at ' + (width || 'wide') + ': ' + rows.join(','));
+    const box = wrap.getBoundingClientRect(), next = wrap.nextElementSibling || q('[data-test="stock-card"] .sc-tabs');
+    assert(box.height <= 361, 'the table scrolls in its own area: ' + box.height);
+    assert(!next || next.getBoundingClientRect().top >= box.bottom - 0.5, 'nothing runs onto what follows');
+    assert(wrap.scrollHeight > wrap.clientHeight, 'many spools scroll inside');
+  }
+  style.remove();
 `);
 
 test('stale status shows its age', `
@@ -914,9 +1005,14 @@ test('settings: a save that could not connect says so', `
 test('settings: certificate status and Find certificate', `
   await ready(VIEW());
   await tab('settings');
-  assert(text(byTest('cert-status')).includes('Certificate found (Anycubic Slicer Next)'), 'status: ' + text(byTest('cert-status')));
+  eq(text(byTest('cert-status')), 'Certificate: built in.', 'the normal state');
+  assert(text(q('#cert-h').closest('section')).includes('Anycubic Slicer Next is not needed'), 'no install needed');
+  assert(!byTest('cert-advanced').open, 'reading the Anycubic install is an advanced, closed action');
+  await post(CONFIG({certificate: {found: true, source: 'saved'}}));
+  eq(text(byTest('cert-status')), 'Certificate: copied from your Anycubic Slicer Next install.', 'saved copy');
   await post(CONFIG({certificate: {found: false, source: ''}}));
   assert(text(byTest('cert-status')).includes('No certificate found yet'), 'missing: ' + text(byTest('cert-status')));
+  await click(q('[data-test="cert-advanced"] summary'));
   await type(q('#set-cert-path'), '/opt/anycubic');
   await click(byTest('find-cert'));
   eq(cmds('find_certificate').map(m => m.args), [{path: '/opt/anycubic'}], 'optional path');

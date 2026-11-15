@@ -52,8 +52,9 @@ docs/                  reference documentation
 - **Only `plugin.py` imports `orca`.** Keep everything else testable without OrcaSlicer.
 - **No printer traffic on OrcaSlicer's threads.** Use the service worker or `run_off_thread`.
 - **Anything that moves the printer, heats it or deletes files asks first** in the UI.
-- **No certificate or key in the repo or the wheel.** The client certificate comes from the user's
-  own Anycubic Slicer Next installation.
+- **The only certificate in the repo and the wheel is Anycubic's shared client certificate**
+  (`src/kobracontrol/anycubic_slicer*.pem`), bundled on purpose (SECURITY.md). Nothing reads the user's
+  Anycubic Slicer Next installation unless they press Find certificate.
 - **Protocol facts come from a source.** Check a topic or endpoint against
   [Kobralink](https://github.com/NatHacks/Kobralink) or the printer before using it, and list it in
   `docs/protocol.md`. Do not copy code from projects with an incompatible licence (the plugin is
