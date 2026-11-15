@@ -298,6 +298,16 @@ class Page(Base):
         self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})   # the bundled certificate
         self.assertEqual(config["version"], plugin.VERSION)
 
+    def test_certificate_state_matches_the_one_in_use(self):
+        """A saved pair that does not load is not used (connection.tls_from falls back to the bundled one), so the
+        page must not call it "saved"."""
+        folder = plugin.cert_dir()
+        os.makedirs(folder, exist_ok=True)
+        for path in certs.paths(folder):
+            with open(path, "w") as f:
+                f.write("not a pem")
+        self.assertEqual(plugin.certificate_state(), {"found": True, "source": "bundled"})
+
     def test_hello_without_kobra_preset(self):
         preset = orca.host.preset_bundle().current_printer_preset()
         old = type(preset).name, type(preset).config_value

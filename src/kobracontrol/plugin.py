@@ -250,8 +250,8 @@ def spooler_state():
 
 
 def certificate_state():
-    try:
-        certs.load(cert_dir())
+    try:   # as connection.tls_from: a saved pair counts only when it loads
+        certs.context(*certs.paths(cert_dir()))
         return {"found": True, "source": "saved"}
     except certs.CertError:
         if certs.bundled():
