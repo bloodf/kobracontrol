@@ -170,7 +170,8 @@ class Client:
             if isinstance(e, TimeoutError):
                 raise MqttError("the printer accepted the connection on %s:%s but did not answer the TLS/MQTT login "
                                 "within %g s" % (self.host, self.port, self.timeout)) from None
-            if isinstance(e, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, BrokenPipeError)):
+            if isinstance(e, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, ConnectionAbortedError,
+                              BrokenPipeError)):   # ConnectionAbortedError: Windows (WinError 10053)
                 raise MqttError(CLOSED_IN_LOGIN) from None
             if isinstance(e, ssl.SSLError):
                 raise MqttError("TLS handshake with %s:%s failed (%s), most likely a certificate problem: check the Anycubic "

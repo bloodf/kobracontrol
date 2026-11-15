@@ -109,6 +109,12 @@ def _search_once(sock, target, addr, interfaces, timeout):
             data, (ip, _port) = sock.recvfrom(MAX_REPLY)
         except TimeoutError:
             break
+        except OSError:
+            # Windows reports a datagram larger than the buffer (WinError 10040) and an ICMP "port unreachable"
+            # for an earlier send (WinError 10054, ConnectionResetError) as errors on recvfrom; elsewhere the
+            # first is truncated and the second never shows. Either way it is one useless reply, not the end.
+            replies += 1
+            continue
         replies += 1
         # Only answers from the port the search went to: the real printer replied from its port 1900, and a
         # datagram from any other port is not an answer to this search.

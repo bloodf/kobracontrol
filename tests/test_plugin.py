@@ -550,6 +550,7 @@ class Guarded(Base):
 
     @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed")
     def test_find_certificate_page_command(self):   # C3
+        self.slicer = self.ungranted_dir("anycubic-")   # on Windows the system temp folder is granted (job folder)
         self.write_slicer()
         published = []
         plugin._service.publish = published.append

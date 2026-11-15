@@ -113,6 +113,32 @@ class Search(unittest.TestCase):
             found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
         self.assertEqual(found, [("10.25.7.42", {})])
 
+    def test_a_bad_datagram_does_not_end_the_search(self):
+        """Windows raises on recvfrom for an oversized datagram (WinError 10040) or an ICMP port unreachable
+        (WinError 10054): one bad reply, the search goes on."""
+        class Sock:
+            replies = [OSError(10040, "message too long"), ConnectionResetError(10054, "reset"), (b"", ("10.25.7.41", 1900))]
+
+            def sendto(self, data, addr):
+                pass
+
+            def settimeout(self, t):
+                pass
+
+            def setsockopt(self, *a):
+                pass
+
+            def recvfrom(self, n):
+                if not self.replies:
+                    raise TimeoutError
+                item = self.replies.pop(0)
+                if isinstance(item, Exception):
+                    raise item
+                return item
+        with mock.patch.object(locate.time, "sleep"):
+            found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
+        self.assertEqual(found, [("10.25.7.41", {})])
+
     def test_candidates_per_search_are_capped(self):
         class Sock:
             replies = [(b"", ("10.25.0.%d" % i, 1900)) for i in range(1, 20)]
@@ -158,7 +184,7 @@ class Probe(unittest.TestCase):
         port = closed.getsockname()[1]
         closed.close()
         with self.assertRaises(kobra.KobraError) as cm:
-            locate.probe("127.0.0.1", port, timeout=1)
+            locate.probe("127.0.0.1", port, timeout=10)   # Windows retries a refused connect for about 2 s
         self.assertIn("refused", str(cm.exception).lower())
 
 

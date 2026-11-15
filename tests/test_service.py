@@ -945,7 +945,7 @@ class RefusedInfoPort(unittest.TestCase):
 
         def fetch(host, port):
             self.attempts.append(time.monotonic())
-            return kobra.fetch_credentials(host, port=port, timeout=2)
+            return kobra.fetch_credentials(host, port=port, timeout=10)   # Windows: a refused connect takes ~2 s
         self.delays = []
         real = connection.Connection._backoff
 
@@ -972,17 +972,17 @@ class RefusedInfoPort(unittest.TestCase):
         self.svc.touch(camera=False)
         offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline" and m.get("retry_at")), None))
         self.assertGreater(offline["retry_at"], 0)   # the page shows when the next try is
-        wait(lambda: len(self.delays) >= 5)
+        wait(lambda: len(self.delays) >= 5, 60)
         self.assertEqual(self.delays[:5], [0.05, 0.1, 0.2, 0.4, 0.8])   # each failure doubles the wait: never a spin
 
     def test_save_retries_at_once_with_a_fresh_delay(self):
         self.svc.set_target(service.Target("127.0.0.1"))
         conn = self.svc.connections["127.0.0.1"]
-        wait(lambda: len(self.delays) >= 5)
+        wait(lambda: len(self.delays) >= 5, 60)
         with mock.patch.object(connection, "RETRY_FIRST", 0.07):   # a value only a fresh start can produce
             before = len(self.delays)
             self.svc.set_target(service.Target("127.0.0.1"), retry=True)   # Save with the same address
-            wait(lambda: 0.07 in self.delays[before:])
+            wait(lambda: 0.07 in self.delays[before:], 60)
         self.assertTrue(conn._thread.is_alive())
 
     def test_save_with_a_new_address_stops_the_old_loop(self):
