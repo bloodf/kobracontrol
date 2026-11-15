@@ -654,7 +654,7 @@ class PrinterCertificate(unittest.TestCase):
         self.assertNotIn(self.fake.host, svc.connections)
         self.assertEqual(svc.generation, 2)   # the tab's selection, then the impostor refused
         self.assertTrue(svc.locate_error.candidates[0]["different"])
-        self.assertIn({"type": "selection_changed"}, published)
+        wait(lambda: {"type": "selection_changed"} in published, 15)   # published right after the offer is set
 
     def test_a_pin_given_to_an_open_session_that_matches_keeps_it(self):
         svc, conn, _ = self.located_after_the_agent(self.fingerprint)
@@ -1025,8 +1025,13 @@ class RefusedInfoPort(unittest.TestCase):
         self.assertIn("LAN mode", conn.error)
         self.assertIn("The address comes from Settings > Printer address.", conn.error)
         self.assertTrue(conn.http_failed)
-        self.svc.touch(camera=False)
-        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline" and m.get("retry_at")), None))
+        waiting = conn._retry.wait
+
+        def push_while_waiting(timeout):   # a status published during the backoff wait, whatever the timing
+            self.svc._push_status(self.svc.target, self.svc.generation)
+            return waiting(timeout)
+        conn._retry.wait = push_while_waiting
+        offline = wait(lambda: next((m for m in self.published if m.get("type") == "offline" and m.get("retry_at")), None), 60)
         self.assertGreater(offline["retry_at"], 0)   # the page shows when the next try is
         wait(lambda: len(self.delays) >= 5, 60)
         self.assertEqual(self.delays[:5], [0.05, 0.1, 0.2, 0.4, 0.8])   # each failure doubles the wait: never a spin

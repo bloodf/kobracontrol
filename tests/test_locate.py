@@ -428,7 +428,7 @@ class ServiceLocates(unittest.TestCase):
         self.assertEqual(svc.target.host, "")
         wait(lambda: "127.0.0.1" not in svc.connections)
         self.assertEqual(self.book.get("Anycubic Kobra X")["fp"], "ab" * 32)   # the known printer stays remembered
-        self.assertIn({"type": "selection_changed"}, published)
+        wait(lambda: {"type": "selection_changed"} in published, 15)   # published after the release
 
     def test_a_switch_of_address_is_a_printer_switch(self):
         """HIGH-1: a new address bumps the generation and resets the per-printer state; a command queued for the old
