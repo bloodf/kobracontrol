@@ -35,7 +35,8 @@ MARKERS = ("ac:3dprinter", ":18910/")
 SEARCH_SECONDS = 2.5            # per search target
 SEND_GAP = 0.3                  # s between the two copies of a search
 MAX_REPLIES = 64
-MAX_REPLY = 2048
+MAX_REPLY = 2048                # bytes of a reply that are read; the rest is dropped
+RECV_BUFFER = 65535             # the largest UDP datagram: received whole on every OS, then cut to MAX_REPLY
 MAX_CANDIDATES = 4             # Kobra X-looking senders kept per search (each may need an OrcaSlicer grant)
 PROBE_TIMEOUT = 3.0
 
@@ -106,7 +107,8 @@ def _search_once(sock, target, addr, interfaces, timeout):
             break
         sock.settimeout(left)
         try:
-            data, (ip, _port) = sock.recvfrom(MAX_REPLY)
+            data, (ip, _port) = sock.recvfrom(RECV_BUFFER)   # Windows drops (and raises on) a datagram larger
+            data = data[:MAX_REPLY]                            # than the buffer instead of truncating it
         except TimeoutError:
             break
         except OSError:

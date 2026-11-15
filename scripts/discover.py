@@ -47,7 +47,8 @@ def listen(seconds, show_all, out):
             break
         sock.settimeout(left)
         try:
-            data, (ip, port) = sock.recvfrom(locate.MAX_REPLY)
+            data, (ip, port) = sock.recvfrom(locate.RECV_BUFFER)
+            data = data[:locate.MAX_REPLY]
         except TimeoutError:
             break
         printer = locate.is_printer_reply(data)
