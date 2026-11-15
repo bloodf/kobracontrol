@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "kobracontrol"
-MODULES = ("aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "camera", "spoolman", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "jobs", "service")  # dependency order
+MODULES = ("aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "camera", "spoolman", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "jobs", "locating", "service")  # dependency order
 ASSETS = {"APP_HTML": "app.html", "ICON_SVG": "icon.svg"}   # app.html: the compiled Vue page (ui/, npm run build)
 ICON_DIRS = {"icon": "icons"}   # ui/<dir>/<name>.svg -> key "<prefix>/<name>"; spot-*.svg -> "spot/*"
 PLACEHOLDER = "__ICONS__"

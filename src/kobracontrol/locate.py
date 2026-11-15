@@ -19,6 +19,9 @@ LAN token.
 """
 
 import ipaddress
+import json
+import os
+import threading
 import socket
 import time
 
@@ -32,7 +35,7 @@ SEARCH_SECONDS = 2.5            # per search target
 SEND_GAP = 0.3                  # s between the two copies of a search
 MAX_REPLIES = 64
 MAX_REPLY = 2048
-MAX_CANDIDATES = 16
+MAX_CANDIDATES = 4             # Kobra X-looking senders kept per search (each may need an OrcaSlicer grant)
 PROBE_TIMEOUT = 3.0
 
 
@@ -106,7 +109,9 @@ def _search_once(sock, target, addr, interfaces, timeout):
         except TimeoutError:
             break
         replies += 1
-        if ip in seen or not lan_address(ip) or not is_printer_reply(data):
+        # Only answers from the port the search went to: the real printer replied from its port 1900, and a
+        # datagram from any other port is not an answer to this search.
+        if _port != addr[1] or ip in seen or not lan_address(ip) or not is_printer_reply(data):
             continue
         seen.add(ip)
         found.append((ip, headers(data)))
@@ -133,8 +138,9 @@ def search(timeout=SEARCH_SECONDS, addr=None, interfaces=None):
 
 
 def probe(ip, port=18910, timeout=PROBE_TIMEOUT):
-    """{"ip", "name", "model"} when a Kobra X in LAN mode answers /info at ip; KobraError otherwise. Nothing in
-    the answer is followed: /ctrl is always asked of this same address (kobra.fetch_credentials)."""
+    """{"ip", "name", "model", "id"} when a Kobra X in LAN mode answers /info at ip; KobraError otherwise. "id" is
+    the printer's identity: /info "cn" (its serial, the same at every address), else "usn". Nothing in the answer
+    is followed: /ctrl is always asked of this same address (kobra.fetch_credentials)."""
     info = kobra._http_json(ip, port, "/info", timeout, "/info")
     token = info.get("token") if isinstance(info, dict) else None
     if not isinstance(token, str) or len(token) < 32:
@@ -142,70 +148,160 @@ def probe(ip, port=18910, timeout=PROBE_TIMEOUT):
 
     def text(*keys):
         return next((str(info[k])[:80] for k in keys if isinstance(info.get(k), (str, int)) and info.get(k) != ""), "")
-    return {"ip": ip, "name": text("deviceName", "name", "printerName"), "model": text("modelName", "modelId")}
+    return {"ip": ip, "name": text("deviceName", "name", "printerName"), "model": text("modelName", "modelId"),
+            "id": text("cn", "usn")}
+
+
+class Addresses:
+    """The Kobra X found for each printer preset, in a JSON file in the plugin's storage folder:
+    {"printers": {preset: {"ip", "id", "fp"}}}: its address, its /info identity and the SHA-256 fingerprint of
+    the TLS certificate it presented. Read defensively: an oversized or malformed file, or an entry that is not
+    a LAN IPv4 address with text fields of bounded size, reads as nothing."""
+    MAX_BYTES, MAX_ENTRIES = 64 * 1024, 64
+
+    def __init__(self, path):
+        self.path, self._lock = path, threading.Lock()
+
+    def _read(self):
+        try:
+            with open(self.path, "rb") as f:
+                raw = f.read(self.MAX_BYTES + 1)
+            data = json.loads(raw) if len(raw) <= self.MAX_BYTES else None
+        except (OSError, ValueError):
+            return {}
+        printers = data.get("printers") if isinstance(data, dict) else None
+        out = {}
+        for key, rec in list(printers.items())[:self.MAX_ENTRIES] if isinstance(printers, dict) else []:
+            if not (isinstance(key, str) and len(key) <= 200 and isinstance(rec, dict)):
+                continue
+            ip, ident, fp = rec.get("ip"), rec.get("id", ""), rec.get("fp", "")
+            if (isinstance(ip, str) and lan_address(ip) and isinstance(ident, str) and len(ident) <= 200
+                    and isinstance(fp, str) and len(fp) <= 64 and all(c in "0123456789abcdef" for c in fp)):
+                out[key] = {"ip": ip, "id": ident, "fp": fp}
+        return out
+
+    def get(self, key):
+        with self._lock:
+            return self._read().get(key)
+
+    def hosts(self):
+        with self._lock:
+            return sorted({r["ip"] for r in self._read().values()})
+
+    def put(self, key, ip, ident="", fp=""):
+        """Remember ip for preset `key`. ValueError when another preset already has that address for a printer
+        with another identity (two presets never end up pointing at one printer by accident)."""
+        with self._lock:
+            known = self._read()
+            for other, rec in known.items():
+                if other != key and rec["ip"] == ip and rec["id"] and ident and rec["id"] != ident:
+                    raise ValueError("%s is already remembered for the printer preset %r" % (ip, other))
+            known[key] = {"ip": ip, "id": ident, "fp": fp}
+            os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"printers": known}, f, indent=1, sort_keys=True)
+            os.replace(tmp, self.path)
 
 
 class Found:
-    def __init__(self, host, source, note="", name=""):
+    """The address to use. identity: the printer's /info identity; expect_fp: the TLS fingerprint the connection
+    must see there (a remembered printer), "" when there is nothing to compare with (first contact)."""
+
+    def __init__(self, host, source, note="", name="", identity="", expect_fp="", model=""):
         self.host, self.source, self.note, self.name = host, source, note, name
+        self.identity, self.expect_fp, self.model = identity, expect_fp, model
 
 
 class NotFound(kobra.KobraError):
-    """No Kobra X to connect to: the page shows the message, any `candidates` to choose from, and Search again."""
+    """No Kobra X to use by itself: the page shows the message and `candidates` ({ip, name, model, needs_allow,
+    different}) to choose from, and Search again. pending: the one address the page may have OrcaSlicer allow
+    without asking first; rejected: addresses that are not a Kobra X, not asked about again this session."""
     no_target = True
 
-    def __init__(self, message, candidates=(), pending=()):
+    def __init__(self, message, candidates=(), pending=(), rejected=()):
         super().__init__(message, code="not_found")
-        self.candidates, self.pending = list(candidates), list(pending)
+        self.candidates, self.pending, self.rejected = list(candidates), list(pending), list(rejected)
 
 
-def locate(override, preset_host, remembered="", probe=probe, search=search, own_agent=False, allowed=None):
-    """Found or raises NotFound. override: the Settings address, used as given. remembered: the address that
-    worked last time for this preset (or the one the user picked among several). allowed(ip): False for an
-    address OrcaSlicer has not granted yet; such a candidate is not probed from this (worker) thread, where
-    every refused attempt would queue another OrcaSlicer dialog, but returned in NotFound.pending so the page
-    can have it granted once on the UI thread."""
+def _found_note(found, preset_host):
+    where = "%s%s at %s" % (found["name"] or "a Kobra X", " (%s)" % found["model"] if found["model"] else "", found["ip"])
+    note = "Connected to %s, found on the network." % where
+    if preset_host and preset_host != found["ip"]:
+        note = ("The printer preset points to %s, which is not a Kobra X in LAN mode. %s" % (preset_host, note))
+    return note
+
+
+def locate(override, preset_host, record=None, probe=probe, search=search, own_agent=False, allowed=None, skip=()):
+    """Found, or raises NotFound. override: the Settings address, used as given. record: {"ip", "id", "fp"}
+    remembered for this preset. A remembered printer is only ever used again at an address whose /info gives
+    its identity (and the connection then checks its certificate fingerprint); any other Kobra X is offered,
+    never adopted by itself. With nothing remembered, the preset's address is used if a Kobra X answers there,
+    else the one Kobra X the search finds. allowed(ip): False for an address OrcaSlicer has not granted yet: it
+    is not probed (from this worker thread each refused attempt queues another OrcaSlicer dialog) but offered;
+    skip: addresses already found not to be a Kobra X this session."""
     if override:
         return Found(override, "override")
-    tried, errors = [], {}
-    for host, source in ((remembered, "remembered"), (preset_host, "preset")):
+    record = record or {}
+    tried, errors, different = [], {}, []
+
+    def mine(info):
+        return bool(record.get("id")) and info.get("id") == record["id"]
+    for host, source in ((record.get("ip"), "remembered"), (preset_host, "preset")):
         if not host or host in tried:
             continue
         tried.append(host)
         try:
             info = probe(host)
-            return Found(host, source, name=info.get("name", ""))
         except kobra.KobraError as e:
             errors[host] = e
+            continue
+        if mine(info) or not record:
+            return Found(host, source, name=info["name"], identity=info.get("id", ""), model=info.get("model", ""),
+                         expect_fp=record.get("fp", "") if mine(info) else "")
+        different.append(info)
     try:
         replies = search()
     except OSError as e:
         replies, errors["search"] = [], e
-    printers, denied = [], []
+    printers, ungranted, rejected = [], [], []
     for ip, _ in replies:
-        if ip in tried:
+        if ip in tried or ip in skip:
             continue
         if allowed is not None and not allowed(ip):
-            denied.append(ip)
+            ungranted.append(ip)
             continue
         try:
-            printers.append(probe(ip))
+            info = probe(ip)
         except kobra.KobraError as e:
-            if getattr(e, "code", None) == "denied":
-                denied.append(ip)
-    if len(printers) == 1:
+            if getattr(e, "code", None) != "denied":
+                rejected.append(ip)
+            continue
+        if mine(info):
+            return Found(ip, "discovered", "Found %s again at %s." % (info["name"] or "the Kobra X", ip), info["name"],
+                         info.get("id", ""), record.get("fp", ""), info.get("model", ""))
+        (different if record else printers).append(info)
+    offered = [{**c, "needs_allow": False, "different": bool(record)} for c in different + printers]
+    offered += [{"ip": ip, "name": "", "model": "", "id": "", "needs_allow": True, "different": bool(record)}
+                for ip in ungranted]
+    if len(printers) == 1 and not different and not ungranted:
         found = printers[0]
-        note = ""
-        if preset_host and preset_host != found["ip"]:
-            note = ("The printer preset points to %s, which is not a Kobra X in LAN mode; found the Kobra X at %s "
-                    "and using that." % (preset_host, found["ip"]))
-        return Found(found["ip"], "discovered", note, found["name"])
-    if printers:
-        raise NotFound("%d Kobra X printers answer on this network: choose one." % len(printers), printers)
-    if denied:   # a new address: OrcaSlicer must allow it first (the page asks for that on the UI thread)
+        return Found(found["ip"], "discovered", _found_note(found, preset_host), found["name"], found.get("id", ""),
+                     model=found.get("model", ""))
+    if record and record.get("ip") and not offered:
+        # The remembered printer does not answer and nothing else does: keep its address (the connection retries
+        # it with its growing delay), never another printer.
+        return Found(record["ip"], "remembered", expect_fp=record.get("fp", ""), identity=record.get("id", ""))
+    if different:
+        raise NotFound("A different Kobra X answered at %s. Use it? Kobra Control does not switch to another printer "
+                       "by itself." % ", ".join(c["ip"] for c in different), offered, rejected=rejected)
+    if len(offered) > 1:
+        raise NotFound("%d possible Kobra X printers answer on this network: choose one." % len(offered), offered,
+                       rejected=rejected)
+    if ungranted:   # exactly one: the page has OrcaSlicer ask about it once
         raise NotFound("Found a printer at %s. Allow Kobra Control to reach it in OrcaSlicer's dialog; it connects "
-                       "by itself afterwards." % ", ".join(denied), pending=denied)
-    raise NotFound(_nothing(preset_host, own_agent, errors))
+                       "by itself afterwards." % ungranted[0], offered, pending=ungranted, rejected=rejected)
+    raise NotFound(_nothing(preset_host, own_agent, errors), rejected=rejected)
 
 
 def _nothing(preset_host, own_agent, errors):

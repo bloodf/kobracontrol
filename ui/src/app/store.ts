@@ -122,12 +122,12 @@ export async function hello(retry = false): Promise<void> {
  *  its dialog now (on its UI thread, so a Yes is saved at once), then connect. Clicking Allow is the only action;
  *  each address is asked about once per page load, so a No is not asked again in a loop. */
 const askedHosts = new Set<string>();
-async function allowFound(hosts: string[]): Promise<void> {
-  const fresh = hosts.filter(h => !askedHosts.has(h));
+async function allowFound(hosts: string[], user = false): Promise<void> {
+  const fresh = user ? hosts : hosts.filter(h => !askedHosts.has(h)).slice(0, 1);   // by itself: one address
   if (!fresh.length) return;
   fresh.forEach(h => askedHosts.add(h));
   try {
-    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh });
+    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh, user });
     if (r?.allowed?.length) void hello();
   } catch (e) {
     tracker.notify('error', t('msg.plugin', { error: message(e) }));
@@ -141,9 +141,10 @@ export async function searchAgain(): Promise<void> {
   if (r.ok || s.phase !== 'connected') void hello();   // a failed search: hello shows its message
 }
 
-/** The user picked one of several printers found. */
-export async function choosePrinter(ip: string): Promise<void> {
-  const r = await run({ key: 'choose', label: t('act.choose'), cmd: 'choose_printer', args: { host: ip } });
+/** The user picked one of the printers offered: one OrcaSlicer may not reach yet is allowed first (its dialog). */
+export async function choosePrinter(c: bridge.Candidate): Promise<void> {
+  if (c.needs_allow) { await allowFound([c.ip], true); return; }
+  const r = await run({ key: 'choose', label: t('act.choose'), cmd: 'choose_printer', args: { host: c.ip } });
   if (r.ok) void hello();
 }
 
@@ -197,7 +198,8 @@ function onMessage(m: any): void {
       // Statuses come every second, connected or not: only one that says connected means it answers again.
       if (m.data?.connected === true && (s.phase === 'unreachable' || s.phase === 'noCertificate') && !helloInFlight) void hello();
       break;
-    case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; break;
+    // s.now too: the countdown is retry_at minus now, and the 1 s clock can lag behind in a throttled tab.
+    case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; s.now = Date.now(); break;
     case 'frame': s.frame = m.image; s.camError = ''; s.camReason = ''; break;
     case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; } break;
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;

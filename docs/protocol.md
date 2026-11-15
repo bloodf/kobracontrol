@@ -46,11 +46,11 @@ From two other sources (not observed):
   `anycubic_lan.py`), tested by its author on a Kobra S1 and a Kobra 3: it sends one `M-SEARCH` with
   `ST: ssdp:all` and `MX: 2`, listens 2.5 s and keeps replies containing `18910/info` or `ac:3dprinter`.
 
-kobracontrol sends `ST: ac:3dprinter:` twice, 0.3 s apart, from the local address the system routes the
+The reply came from the printer's port 1900. kobracontrol sends `ST: ac:3dprinter:` twice, 0.3 s apart, from the local address the system routes the
 multicast group through, and listens 2.5 s; only when that finds nothing does it do the same with
 `ssdp:all`. A sender is a candidate when it answers with an empty datagram (the Kobra X above) or with a
-text reply containing `ac:3dprinter` or `:18910/`; any other text reply (a TV, a router) is ignored and
-never probed. It uses only the address the reply came from (never an address or URL inside it), only
+text reply containing `ac:3dprinter` or `:18910/`, from port 1900; any other text reply (a TV, a router)
+is ignored and never probed. At most 4 senders are kept per search. It uses only the address the reply came from (never an address or URL inside it), only
 when it is a private, link-local or loopback IPv4 address, reads at most 64 replies of at most 2048
 bytes, and counts the sender as a printer only when its own `GET /info` answers with a LAN token.
 `/ctrl` is always asked of that same address; a `ctrlInfoUrl` in `/info` is never followed.

@@ -33,11 +33,23 @@ and kobracontrol cannot add any:
 - **Finding the printer:** with no address set, the plugin tries the address it found before and the
   printer preset's address, then sends SSDP searches to the local multicast group 239.255.255.250 (port
   1900). Replies are untrusted: only the address a reply came from is used, never an address or URL
-  inside it; it must be a private, link-local or loopback IPv4 address; at most 64 replies of at most
-  2048 bytes are read, for 3 seconds; and an address counts as a printer only when its own `/info`
-  answers with a LAN token. A found address is remembered per printer preset in the plugin's storage
-  folder (`addresses.json`). Anyone on your network can answer a search and pretend to be a printer, as
-  they can already answer at the printer's address: use a network you trust (see above).
+  inside it; it must be a private, link-local or loopback IPv4 address and the reply must come from
+  port 1900; at most 64 replies of at most 2048 bytes are read per search and at most 4 senders kept;
+  and an address counts as a printer only when its own `/info` answers with a LAN token. OrcaSlicer is
+  asked by itself about at most one new address per search, at most once a minute; with several, you
+  pick. An address that is not a Kobra X, or that you refused, is not asked about again until you press
+  Search again. A search the plugin starts by itself, when a found printer stops answering, runs at
+  most once a minute.
+- **Which printer is used:** the printer found for a preset is remembered in the plugin's storage folder
+  (`addresses.json`) with its identity (`cn` from `/info`, its serial) and the fingerprint of the TLS
+  certificate it presented at the first connection. Later it is used only at an address whose `/info`
+  gives that identity, and the session must present that certificate; otherwise it is not used, the
+  remembered printer stays, and the tab asks "A different Kobra X answered at X. Use it?". A different
+  printer is never taken by itself, even when it is the only one answering, and the plugin never looks
+  for the printer elsewhere while it was printing. Any change of the address in use is handled as a
+  printer switch: pending commands for the old one are refused. The first connection to a printer found
+  on the network says which printer it is (name, model, address).
+
 - **Client certificate:** the printer accepts only the certificate (`CN=AnycubicSlicer`) that
   Anycubic Slicer Next carries. This is a shared client identity, identical in every copy of Anycubic
   Slicer Next, not a per-user secret; kobracontrol **bundles it** (in the package and the wheel) so
@@ -60,6 +72,23 @@ and kobracontrol cannot add any:
 - **Files:** the plugin keeps its settings and its print ledger in its own storage folder. It
   uploads the G-code you print to the printer. It downloads nothing.
 - **Spooler:** it reads Spooler's files and never writes them.
+
+### Someone on your network answering the search
+
+The printer's certificate is self-signed, so the first contact with a printer is trust on first use:
+on a network where another device answers the search before the real printer, and you allow that
+address in OrcaSlicer's dialog, Kobra Control connects to that device. What it could then obtain:
+
+- the print files you send and the commands you give (start, pause, temperatures, moves), and the
+  status the tab would show;
+- not the client certificate in any meaningful sense: it is Anycubic's shared one, public by design and
+  in the wheel;
+- not your printer's MQTT credentials: they come from the printer itself, never from Kobra Control;
+- not your Spoolman credentials or files on your computer.
+
+Once the real printer is remembered, its identity and certificate pin, together with the explicit
+choice above, stop a device that answers later from taking its place unnoticed. A device that copies
+the printer's `/info` identity is still refused if it cannot present the printer's certificate.
 
 ## What asks first
 

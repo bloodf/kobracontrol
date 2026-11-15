@@ -18,7 +18,8 @@ plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs th
 | `spoolman.py`, `peers.py`, `spooler_bridge.py`, `stockview.py`, `usage.py` | Spoolman, Spooler presence and stock, filament use | no |
 | `settings.py` | Settings store | no |
 | `connection.py` | One connection and one state per printer address, with the reconnect loop; certificate search | no |
-| `locate.py` | Where the printer is: Settings address, remembered address, preset address, SSDP search | no |
+| `locate.py` | Where the printer is: Settings address, remembered printer, preset address, SSDP search; the address book (`addresses.json`) | no |
+| `locating.py` | The service side: locate threads, printer switch on a new address, identity and certificate checks, relocation limits | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |

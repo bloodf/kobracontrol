@@ -4,7 +4,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
-Checked against the repository's test fakes and page tests only; not yet tried on a printer or in OrcaSlicer.
+## [0.3.0] - 2026-11-15
+
+Checked against the repository's test fakes and page tests. How a real Kobra X (firmware 2.0.2.8) answers the
+network search was measured on the printer; the plugin itself has not been tried in OrcaSlicer yet.
 
 ### Added
 
@@ -22,6 +25,10 @@ Checked against the repository's test fakes and page tests only; not yet tried o
 - With no Spoolman address set in Kobra Control, the one Spooler uses is taken, and Settings says so. An address
   set in Kobra Control always wins.
 - `scripts/discover.py`: a read-only network search that prints what printers answer, with secrets masked.
+- The printer found for a preset is remembered with its identity (`cn` from `/info`) and its TLS certificate
+  fingerprint. It is used again only where both match; any other Kobra X, even the only one answering, is
+  offered as "A different Kobra X answered at X. Use it?" and never taken by itself. The first connection to a
+  printer found on the network names it (name, model, address).
 
 ### Changed
 
@@ -34,6 +41,14 @@ Checked against the repository's test fakes and page tests only; not yet tried o
 
 ### Fixed
 
+- A change of the printer address in use is a printer switch: new generation, per-printer state reset, and
+  commands queued for the old printer refused as stale. No search for the printer elsewhere while it was last
+  seen printing or a print is tracked on it. Two presets can no longer be recorded for one printer.
+- Closing the plugin while a network search runs no longer leaves a connection running afterwards.
+- Changing the printer name or the Spoolman address in Settings no longer restarts the connection.
+- The network search keeps only answers from port 1900, at most 4 per search, asks OrcaSlicer by itself about at
+  most one new address (once a minute), and does not ask again about an address that is not a Kobra X or was
+  refused until Search again.
 - An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
   "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
   what to check, and every attempt follows the growing delay.

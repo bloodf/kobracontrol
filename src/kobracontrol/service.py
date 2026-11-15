@@ -19,7 +19,6 @@ import contextlib
 import os
 import queue
 import re
-import socket
 import threading
 import time
 import traceback
@@ -34,6 +33,7 @@ import locate
 import settings
 import spoolman as sm
 import usage
+from locating import ORIGIN_TEXT, RELOCATE_EVERY, LocatingMixin  # noqa: F401  (tests read RELOCATE_EVERY here)
 from jobs import CONNECT_WAIT, JobsMixin, plate_source, remote_name, supported_task  # noqa: F401  (re-exported for callers)
 from files import FilesMixin
 from stockview import StockMixin
@@ -65,10 +65,6 @@ FEED_ACK_DELAY = 2.0            # Kobralink: feedFilament type 3 two seconds aft
 DRY_TEMP, DRY_MINUTES = (30, 80), (10, 24 * 60)   # ace.sanitize_ace_dry_presets bounds
 
 
-ORIGIN_TEXT = {"override": "Settings > Printer address", "preset": "the printer preset",
-               "remembered": "the address found earlier for this printer preset",
-               "discovered": "a search of the local network"}
-RELOCATE_EVERY = 60.0           # s: at most one new search while a found address stops answering
 
 
 class Target:
@@ -84,6 +80,7 @@ class Target:
         self.spoolman_report_usage, self.ffmpeg_path, self.camera_enabled = spoolman_report_usage, ffmpeg_path, camera_enabled
         self.preset_host, self.preset_key, self.preset_agent = preset_host, preset_key, preset_agent
         self.source = "override" if host else ""
+        self.identity = ""                 # the located printer's /info identity
         self.spooler_origin = lambda: ""   # the service links this to Spooler's Spoolman address
 
     @property
@@ -96,7 +93,9 @@ class Target:
         return "settings" if self.own_spoolman_url else "spooler" if self.spooler_origin() else ""
 
     def key(self):
-        return (self.override, self.preset_host, self.preset_key, self.name, self.own_spoolman_url)
+        """What selects the printer. Name, Spoolman and camera options are not part of it: changing them applies
+        to the live target without touching the connection."""
+        return (self.override, self.preset_host, self.preset_key)
 
     @property
     def ident(self):
@@ -137,7 +136,7 @@ def _background(fn, name):
     threading.Thread(target=fn, name="kobracontrol-" + name, daemon=True).start()
 
 
-class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
+class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
                  spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
@@ -150,16 +149,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.lock = threading.RLock()
         self._op = threading.local()
         self.connections = {}
-        self.addresses = certs.Pins(addresses_path) if addresses_path else None   # preset -> address that worked
-        self.search = search
-        self.probe = probe or (lambda ip: locate.probe(ip, self.http_port))
-        # Addresses OrcaSlicer already lets the plugin reach (declared at load, or allowed since); None outside
-        # OrcaSlicer, where every address may be probed.
-        self.granted = granted
-        self._locating = threading.Lock()
-        self.locate_error, self.located_at, self.locate_note = None, 0.0, ""
         self.target, self.generation = None, 0
         self.closed = False
+        self._init_locating(addresses_path, search, probe, granted)
         self._closing = threading.Event()
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
@@ -180,15 +172,21 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         t.start()
         return t
 
-    def _reset_printer_state(self):   # caller holds self.lock (or is __init__)
+    def _reset_printer_state(self):   # caller holds self.lock (or is __init__): a printer switch
         self.spools, self.bindings, self._last_slots = [], {}, None
         self._stock_missing_since = None
+        self._units, self._feed_acks, self._capture = {}, {}, None
+        if hasattr(self, "_details"):   # FilesMixin's per-printer file details
+            self._details = {}
 
     # ------------------------------------------------------------------ connections
 
     def connection(self, host):
-        """The shared Connection for a printer address, started on first use (its thread does the I/O)."""
+        """The shared Connection for a printer address, started on first use (its thread does the I/O). KobraError
+        once the service is closed: nothing may start a connection after close()."""
         with self.lock:
+            if self.closed:
+                raise kobra.KobraError("Kobra Control is shutting down")
             conn = self.connections.get(host)
             if conn is None:
                 conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
@@ -209,8 +207,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def _on_change(self, conn):   # a connection's reader or loop thread: no I/O here
         self._changed.set()
-        if conn.http_failed and not conn.connected:
-            self._relocate_if_lost(conn)
+        self._note_connection(conn)
 
     def view_for(self, host):
         conn = self.connections.get(host)
@@ -224,10 +221,12 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         retry (Save) tries a failed connection or search again at once, with a fresh retry delay."""
         target.spooler_origin = self._spooler_origin
         with self.lock:
+            if self.closed:
+                return
             changed = self.target is None or self.target.key() != target.key()
             previous = self.target.host if self.target else None
             if not changed and not target.host:
-                target.host, target.source = self.target.host, self.target.source
+                target.host, target.source, target.identity = self.target.host, self.target.source, self.target.identity
             if changed:
                 self.generation += 1
                 self._reset_printer_state()
@@ -239,7 +238,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if retry and not changed and not conn.connected:
                 conn.retry()
         elif changed or retry:
-            _background(lambda: self._locate(gen), "locate")
+            self._start_locate(gen)
         if previous and previous != target.host:
             self.release(previous)
 
@@ -249,107 +248,6 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             return peers.spooler()["origin"] if peers is not None and hasattr(peers, "spooler") else ""
         except Exception:   # an unreadable presence file is "no Spooler", never a failed command
             return ""
-
-    def _locate(self, gen, search_only=False):
-        """Find the printer for the target of generation gen (locate.locate), then connect to it. One at a time."""
-        with self._locating:
-            with self.lock:
-                target = self.target if gen == self.generation else None
-            if target is None or target.override:
-                return
-            remembered = ""
-            if self.addresses is not None and not search_only:
-                remembered = self.addresses.get(target.preset_key or "*") or ""
-            try:
-                found = locate.locate("", "" if search_only else target.preset_host, remembered,
-                                      probe=self.probe, search=self.search,
-                                      allowed=None if self.granted is None else self.granted.__contains__,
-                                      own_agent=target.preset_agent == "kobracontrol")
-            except locate.NotFound as e:
-                with self.lock:
-                    if gen == self.generation:
-                        self.locate_error, self.located_at = e, time.monotonic()
-                self.log("kobracontrol: %s" % e)
-                return
-            self._use_address(gen, target, found)
-
-    def allow(self, hosts):
-        """UI thread (the page's allow_hosts): let OrcaSlicer ask about each printer address the search found but
-        may not reach yet. On the UI thread its dialog is shown at once and a Yes is saved; on a worker thread
-        the attempt would only be refused and a dialog queued per attempt. getaddrinfo of a numeric address
-        is the audited event and does no network I/O. Then the printer is located again."""
-        with self.lock:
-            gen, pending = self.generation, list(getattr(self.locate_error, "pending", []))
-        allowed, refused = [], []
-        for host in hosts if isinstance(hosts, list) else []:
-            if host not in pending or not locate.lan_address(host):
-                continue
-            try:
-                socket.getaddrinfo(host, self.http_port, socket.AF_INET, socket.SOCK_STREAM)
-            except PermissionError:
-                refused.append(host)
-                continue
-            except OSError:
-                pass
-            allowed.append(host)
-            if self.granted is not None:
-                self.granted.add(host)
-        if allowed:
-            with self.lock:
-                if gen == self.generation:
-                    self.locate_error = None
-            _background(lambda: self._locate(gen), "locate")
-        return {"allowed": allowed, "refused": refused}
-
-    def _use_address(self, gen, target, found):
-        if self.granted is not None:
-            self.granted.add(found.host)
-        if self.addresses is not None:
-            try:
-                self.addresses.check(target.preset_key or "*", found.host)
-            except OSError as e:
-                self.log("kobracontrol: the printer's address could not be remembered (%s)" % e)
-        with self.lock:
-            if gen != self.generation:
-                return
-            previous, moved = target.host, target.host and target.host != found.host
-            target.host, target.source = found.host, found.source
-            self.locate_error, self.located_at, self.locate_note = None, time.monotonic(), found.note
-        conn = self.connection(found.host)
-        conn.origin = ORIGIN_TEXT.get(found.source, "")
-        if found.note:
-            self.log("kobracontrol: " + found.note)
-        if moved:
-            self.log("kobracontrol: the printer moved from %s to %s" % (previous, found.host))
-            self.release(previous)
-            self.publish({"type": "selection_changed"})   # the page says hello again for the new address
-
-    def _relocate_if_lost(self, conn):
-        """A found address whose /info stops answering (a new DHCP lease): search again, at most every
-        RELOCATE_EVERY seconds. An address set in Settings is never replaced."""
-        with self.lock:
-            target, gen = self.target, self.generation
-            due = (target is not None and not target.override and target.host == conn.host and conn.http_failed
-                   and not self._locating.locked() and time.monotonic() - self.located_at >= RELOCATE_EVERY)
-            if due:
-                self.located_at = time.monotonic()
-        if due:
-            _background(lambda: self._locate(gen), "relocate")
-
-    def wait_located(self, timeout):
-        """The located target, or raises the NotFound of the last search (or KobraError after timeout)."""
-        def settled():
-            with self.lock:
-                target = self.target
-                return target is None or target.host or self.locate_error is not None
-        connection.wait_until(settled, timeout)
-        with self.lock:
-            target, error = self.target, self.locate_error
-        if target is None:
-            raise kobra.KobraError(NO_PRINTER)
-        if not target.host:
-            raise error or kobra.KobraError("still searching the network for the Kobra X")
-        return target
 
     def clear_target(self):
         with self.lock:
@@ -405,7 +303,12 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 self._busy.discard(command)
 
     def close(self):
-        self.closed = True
+        """Stop everything; safe to call more than once. A locate thread still running finds the service closed
+        and starts nothing (connection() refuses), so no connection outlives close()."""
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = True
         self._closing.set()
         self.jobs.put(None)
         self._changed.set()
@@ -413,6 +316,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         for t in (self.worker, self.monitor, self.tracker):
             if t is not threading.current_thread():
                 t.join(1.0)
+        self._join_locators()
         with self.lock:
             conns, self.connections = list(self.connections.values()), {}
         for conn in conns:
@@ -444,7 +348,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 reply["no_certificate"] = True
             if getattr(e, "no_target", False):
                 reply["no_target"] = True
-                reply["candidates"] = [{k: c.get(k, "") for k in ("ip", "name", "model")} for c in e.candidates]
+                reply["candidates"] = [{"ip": c.get("ip", ""), "name": c.get("name", ""), "model": c.get("model", ""),
+                                        "needs_allow": bool(c.get("needs_allow")), "different": bool(c.get("different"))}
+                                       for c in e.candidates]
                 reply["pending"] = list(e.pending)
             self.publish(reply)
         except Exception as e:  # never kill the worker; details go to the log only
@@ -671,7 +577,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             gen, target, unlocated = self.generation, self.target, self.target is not None and not self.target.host
         if retry is True and unlocated and self.locate_error is not None:
             self.locate_error = None
-            _background(lambda: self._locate(gen), "locate")
+            self._start_locate(gen)
         target = self.wait_located(CONNECT_WAIT + 2 * (locate.SEARCH_SECONDS + locate.SEND_GAP) + 2 * locate.PROBE_TIMEOUT)
         if not self._current(gen):
             raise kobra.KobraError(STALE)
@@ -688,33 +594,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         view = conn.view()
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
                 "firmware": view["firmware"], "limits": LIMITS, "source": target.source,
-                "note": self.locate_note if target.source == "discovered" else ""}
-
-    def cmd_search_printer(self):
-        """Settings > Search again: search the network for the printer of the selected preset; the page says
-        hello again afterwards. The address set in Settings, if any, is still the one used."""
-        with self.lock:
-            gen, target = self.generation, self.target
-        if target is None:
-            raise kobra.KobraError(NO_PRINTER)
-        if target.override:
-            return {"address": target.host, "source": "override"}
-        self._locate(gen, search_only=True)
-        with self.lock:
-            error = self.locate_error if gen == self.generation else None
-        if error is not None:
-            raise error
-        return {"address": target.host, "source": target.source}
-
-    def cmd_choose_printer(self, host):
-        """The user picked one of several printers found: remember it for this preset and use it."""
-        with self.lock:
-            gen, target, error = self.generation, self.target, self.locate_error
-        offered = {c["ip"] for c in getattr(error, "candidates", [])}
-        if target is None or host not in offered:
-            raise ValueError("that printer was not among the ones found; search again")
-        self._use_address(gen, target, locate.Found(host, "discovered"))
-        return {"address": host}
+                "note": self.locate_note if target.source in ("discovered", "chosen") else ""}
 
     def _task_id(self):
         return self._conn().view()["task_id"] or "-1"

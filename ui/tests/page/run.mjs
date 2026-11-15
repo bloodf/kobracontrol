@@ -717,7 +717,9 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   eq(text(byTest('link')), 'Offline', 'badge');
   const banner = text(byTest('target-banner'));
   assert(banner.includes('unreachable') && banner.includes('not a Kobra X in LAN mode') && !banner.includes('Connecting'), 'banner: ' + banner);
-  assert(/tries again by itself in (29|3[0-3]) s/.test(text(byTest('retry-in'))), 'next try: ' + text(byTest('retry-in')));
+  // Derived from retry_at and the time the message was posted, not a fixed window: the page's 1 s clock may lag.
+  const n = +(/tries again by itself in ([0-9]+) s/.exec(text(byTest('retry-in'))) || [])[1];
+  assert(n >= 1 && n <= 32, 'next try within retry_at: ' + text(byTest('retry-in')));
   eq(text(byTest('state')), 'Offline', 'Status card');
   assert(text(byTest('cam-why')).includes('doesn’t answer'), 'camera gives the same reason: ' + text(byTest('cam-why')));
   assert(!text(document.body).includes('Select a printer first'), 'no "no printer" text while one is selected');
@@ -737,12 +739,28 @@ test('a found printer OrcaSlicer must allow first: the page asks once, then conn
     {no_target: true, candidates: [], pending: ['10.25.7.41']});
   await until(() => last('allow_hosts'), 'asks the plugin to show the dialog');
   eq(last('allow_hosts').hosts, ['10.25.7.41'], 'that address');
+  eq(last('allow_hosts').user, false, 'asked by the page itself');
   assert(text(byTest('first-run-target')).includes('connects by itself'), 'says what to do: ' + text(byTest('first-run-target')));
   await reply(last('allow_hosts'), {allowed: ['10.25.7.41'], refused: []});
   await until(() => sent().filter(m => m.type === 'hello').length === 2, 'connects without another click');
   await fail(last('hello'), 'Found a printer at 10.25.7.41.', {no_target: true, pending: ['10.25.7.41']});
   await settle();
   eq(sent().filter(m => m.type === 'allow_hosts').length, 1, 'never asks twice for the same address in a loop');
+`);
+
+test('a different Kobra X is offered as a choice, and one OrcaSlicer must allow is allowed on the click', `
+  await until(() => last('hello'));
+  await fail(last('hello'), 'A different Kobra X answered at 10.0.0.3. Use it? Kobra Control does not switch to another printer by itself.',
+    {no_target: true, candidates: [{ip: '10.0.0.3', name: 'Right KX', model: 'Anycubic Kobra X', needs_allow: false, different: true},
+      {ip: '10.0.0.4', name: '', model: '', needs_allow: true, different: true}], pending: []});
+  const box = byTest('first-run-target');
+  assert(text(box).includes('A different Kobra X answered') && text(box).includes('does not switch to another printer by itself'), 'says so: ' + text(box));
+  eq(sent().filter(m => m.type === 'allow_hosts').length, 0, 'no OrcaSlicer dialog by itself for a choice');
+  await click(q('[data-pick-ip="10.0.0.4"]'));
+  eq(last('allow_hosts').hosts, ['10.0.0.4'], 'allow on the click');
+  eq(last('allow_hosts').user, true, 'the user chose it');
+  await click(q('[data-pick-ip="10.0.0.3"]'));
+  eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.3'}], 'an explicit choice');
 `);
 
 test('first run: several printers found, pick one', `

@@ -481,6 +481,8 @@ export const en = {
   'cert.advanced': 'Use the certificate from my own Anycubic Slicer Next install',
   'cert.advancedHelp': 'Only needed if a printer update stops accepting the built-in certificate. OrcaSlicer asks you once before Kobra Control may read that program.',
 
+  'fr.pick.different': 'A different Kobra X answered',
+  'fr.pick.allow': 'Allow and use',
   'age.seconds': '{n} s ago',
   'age.minutes': '{n} min ago',
   'age.at': 'at {time}',
@@ -969,6 +971,8 @@ export const ptBR: Record<MessageKey, string> = {
   'cert.advanced': 'Usar o certificado da minha instalação do Anycubic Slicer Next',
   'cert.advancedHelp': 'Só é preciso se uma atualização da impressora deixar de aceitar o certificado incluído. O OrcaSlicer pergunta uma vez antes de o Kobra Control poder ler esse programa.',
 
+  'fr.pick.different': 'Outra Kobra X respondeu',
+  'fr.pick.allow': 'Permitir e usar',
   'age.seconds': 'há {n} s',
   'age.minutes': 'há {n} min',
   'age.at': 'às {time}',

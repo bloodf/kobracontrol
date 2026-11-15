@@ -29,7 +29,7 @@ MODEL = "Anycubic Kobra X"
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
 ADDRESSES_FILE = "addresses.json"
-_granted = set()   # printer addresses declared at load or allowed since: the search probes only these by itself   # printer preset -> the Kobra X address that answered for it (locate.py)
+_granted = set()   # printer addresses declared at load or allowed since: the search probes only these by itself
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
 ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010, -6010
@@ -326,8 +326,7 @@ def known_hosts():
         log("printer preset not readable at load (%s)" % e)
     folder = _storage()
     if folder:
-        found = certs.Pins(os.path.join(folder, ADDRESSES_FILE))._read().values()
-        hosts.update(h for h in found if locate.lan_address(h))
+        hosts.update(locate.Addresses(os.path.join(folder, ADDRESSES_FILE)).hosts())
     return sorted(h for h in hosts if h)
 
 
@@ -383,7 +382,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.submit(data.get("id"), data.get("cmd"), data.get("args") or {},
                            gen if isinstance(gen, int) and not isinstance(gen, bool) else None)
             elif kind == "allow_hosts":   # UI thread: OrcaSlicer's dialog for a printer the search found
-                result = svc.allow(data.get("hosts"))
+                result = svc.allow(data.get("hosts"), user=data.get("user") is True)
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})

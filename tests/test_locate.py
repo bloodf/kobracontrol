@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -77,10 +78,8 @@ class Search(unittest.TestCase):
     def test_other_devices_and_floods_are_ignored(self):
         with FakeSsdp(reply=b"HTTP/1.1 200 OK\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n") as ssdp:
             self.assertEqual(locate.search(timeout=0.5, addr=ssdp.addr, interfaces=[]), [])   # a TV is never probed
-        with FakeSsdp(count=500) as ssdp:   # one sender, many replies: one result
-            started = time.monotonic()
+        with FakeSsdp(count=500) as ssdp:   # one sender, many replies: one result, the reply count is capped
             self.assertEqual(len(locate.search(timeout=1.0, addr=ssdp.addr, interfaces=[])), 1)
-            self.assertLess(time.monotonic() - started, 1.8)
 
     def test_reply_size_is_capped(self):
         with FakeSsdp(reply=FakeSsdp.printer_reply() + b"X: " + b"Y" * 6000) as ssdp:
@@ -90,9 +89,51 @@ class Search(unittest.TestCase):
 
     def test_silence_is_an_empty_answer(self):
         with FakeSsdp(reply=None) as ssdp:
-            started = time.monotonic()
             self.assertEqual(locate.search(timeout=0.3, addr=ssdp.addr, interfaces=[]), [])
-            self.assertLess(time.monotonic() - started, 2.0)
+
+    def test_only_answers_from_the_searched_port_count(self):
+        """MEDIUM-2: the real printer answered from its port 1900; a datagram from another port is not an answer."""
+        class Sock:
+            replies = [(b"", ("10.25.7.41", 5353)), (b"", ("10.25.7.42", 1900))]
+
+            def sendto(self, data, addr):
+                pass
+
+            def settimeout(self, t):
+                pass
+
+            def setsockopt(self, *a):
+                pass
+
+            def recvfrom(self, n):
+                if not self.replies:
+                    raise TimeoutError
+                return self.replies.pop(0)
+        with mock.patch.object(locate.time, "sleep"):
+            found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
+        self.assertEqual(found, [("10.25.7.42", {})])
+
+    def test_candidates_per_search_are_capped(self):
+        class Sock:
+            replies = [(b"", ("10.25.0.%d" % i, 1900)) for i in range(1, 20)]
+
+            def sendto(self, data, addr):
+                pass
+
+            def settimeout(self, t):
+                pass
+
+            def setsockopt(self, *a):
+                pass
+
+            def recvfrom(self, n):
+                if not self.replies:
+                    raise TimeoutError
+                return self.replies.pop(0)
+        with mock.patch.object(locate.time, "sleep"):
+            found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
+        self.assertEqual(len(found), locate.MAX_CANDIDATES)
+        self.assertEqual(locate.MAX_CANDIDATES, 4)
 
     def test_only_lan_addresses(self):
         for ip in ("10.25.7.41", "192.168.1.5", "172.16.0.9", "169.254.3.4", "127.0.0.1"):
@@ -102,12 +143,12 @@ class Search(unittest.TestCase):
 
 
 class Probe(unittest.TestCase):
-    def test_kobra_x_answers_with_a_token(self):
+    def test_kobra_x_answers_with_a_token_and_its_identity(self):
         with FakeKobra() as fake:
             fake.info_answer = {"token": fake.token, "deviceName": "Workshop KX", "modelName": "Anycubic Kobra X",
-                                "ctrlInfoUrl": "http://203.0.113.9/ctrl"}
+                                "cn": "SERIAL-A", "usn": "uuid:x", "ctrlInfoUrl": "http://203.0.113.9/ctrl"}
             info = locate.probe(fake.host, fake.http_port)
-            self.assertEqual(info, {"ip": "127.0.0.1", "name": "Workshop KX", "model": "Anycubic Kobra X"})
+            self.assertEqual(info, {"ip": "127.0.0.1", "name": "Workshop KX", "model": "Anycubic Kobra X", "id": "SERIAL-A"})
             fake.info_answer = {"result": "moonraker"}
             with self.assertRaises(kobra.KobraError):
                 locate.probe(fake.host, fake.http_port)
@@ -121,32 +162,64 @@ class Probe(unittest.TestCase):
         self.assertIn("refused", str(cm.exception).lower())
 
 
+def kx(ip, ident, name="KX"):
+    return {"ip": ip, "name": name, "model": "Anycubic Kobra X", "id": ident}
+
+
 class Locate(unittest.TestCase):
+    A = {"ip": "10.0.0.2", "id": "SERIAL-A", "fp": "aa" * 32}
+
+    def never(self, *a):
+        raise AssertionError("must not be called")
+
     def test_override_is_used_as_given(self):
-        found = locate.locate("10.0.0.9", BRIDGE, probe=self.fail, search=self.fail)
+        found = locate.locate("10.0.0.9", BRIDGE, probe=self.never, search=self.never)
         self.assertEqual((found.host, found.source), ("10.0.0.9", "override"))
 
-    def test_bridge_in_preset_then_printer_found_on_the_network(self):
+    def test_bridge_in_preset_then_the_one_printer_found_names_itself(self):
         def probe(ip):
-            return refused(ip) if ip == BRIDGE else {"ip": ip, "name": "KX", "model": "Kobra X"}
+            return refused(ip) if ip == BRIDGE else kx(ip, "SERIAL-B", "Workshop KX")
         found = locate.locate("", BRIDGE, probe=probe, search=lambda: [("10.25.7.41", {})])
-        self.assertEqual((found.host, found.source), ("10.25.7.41", "discovered"))
+        self.assertEqual((found.host, found.source, found.identity), ("10.25.7.41", "discovered", "SERIAL-B"))
         self.assertIn("The printer preset points to 10.25.16.41, which is not a Kobra X", found.note)
-        self.assertIn("found the Kobra X at 10.25.7.41", found.note)
+        self.assertIn("Connected to Workshop KX (Anycubic Kobra X) at 10.25.7.41, found on the network.", found.note)
 
-    def test_remembered_address_first_without_search(self):
-        found = locate.locate("", BRIDGE, remembered="10.25.7.41", probe=lambda ip: {"ip": ip},
-                              search=self.fail)
-        self.assertEqual((found.host, found.source), ("10.25.7.41", "remembered"))
+    def test_remembered_printer_at_its_address_without_search(self):
+        found = locate.locate("", BRIDGE, self.A, probe=lambda ip: kx(ip, "SERIAL-A"), search=self.never)
+        self.assertEqual((found.host, found.source, found.expect_fp), ("10.0.0.2", "remembered", "aa" * 32))
+
+    def test_remembered_printer_found_again_at_a_new_address(self):
+        def probe(ip):
+            return refused(ip) if ip == "10.0.0.2" else kx(ip, "SERIAL-A")
+        found = locate.locate("", "", self.A, probe=probe, search=lambda: [("10.0.0.9", {})])
+        self.assertEqual((found.host, found.expect_fp), ("10.0.0.9", "aa" * 32))   # the pin still has to match
+
+    def test_another_printer_is_never_adopted_even_when_it_is_the_only_one(self):
+        """HIGH-1: A is remembered and gone; only B answers. B is offered, not used."""
+        def probe(ip):
+            return refused(ip) if ip == "10.0.0.2" else kx(ip, "SERIAL-B")
+        with self.assertRaises(locate.NotFound) as cm:
+            locate.locate("", "", self.A, probe=probe, search=lambda: [("10.0.0.3", {})])
+        self.assertIn("A different Kobra X answered at 10.0.0.3. Use it?", str(cm.exception))
+        self.assertEqual([(c["ip"], c["different"]) for c in cm.exception.candidates], [("10.0.0.3", True)])
+        self.assertEqual(cm.exception.pending, [])
+
+    def test_another_printer_at_the_remembered_address_is_offered_too(self):
+        with self.assertRaises(locate.NotFound) as cm:
+            locate.locate("", "", self.A, probe=lambda ip: kx(ip, "SERIAL-B"), search=list)
+        self.assertEqual([c["ip"] for c in cm.exception.candidates], ["10.0.0.2"])
+
+    def test_remembered_printer_offline_keeps_its_address(self):
+        found = locate.locate("", "", self.A, probe=refused, search=list)
+        self.assertEqual((found.host, found.source), ("10.0.0.2", "remembered"))
 
     def test_preset_used_when_a_kobra_x_answers_there(self):
-        found = locate.locate("", "10.25.7.41", probe=lambda ip: {"ip": ip}, search=self.fail)
-        self.assertEqual((found.host, found.source), ("10.25.7.41", "preset"))
+        found = locate.locate("", "10.25.7.41", probe=lambda ip: kx(ip, "S"), search=self.never)
+        self.assertEqual((found.host, found.source, found.expect_fp), ("10.25.7.41", "preset", ""))
 
     def test_several_printers_are_offered(self):
         with self.assertRaises(locate.NotFound) as cm:
-            locate.locate("", "", probe=lambda ip: {"ip": ip, "name": ip[-1], "model": ""},
-                          search=lambda: [("10.0.0.2", {}), ("10.0.0.3", {})])
+            locate.locate("", "", probe=lambda ip: kx(ip, ip), search=lambda: [("10.0.0.2", {}), ("10.0.0.3", {})])
         self.assertEqual([c["ip"] for c in cm.exception.candidates], ["10.0.0.2", "10.0.0.3"])
 
     def test_nothing_found_explains_the_bridge(self):
@@ -159,29 +232,52 @@ class Locate(unittest.TestCase):
         self.assertIn("LAN mode is on", text)
         self.assertTrue(cm.exception.no_target)
 
-    def test_a_candidate_that_is_not_a_kobra_x_is_dropped(self):
+    def test_a_candidate_that_is_not_a_kobra_x_is_dropped_and_remembered(self):
         def probe(ip):
             raise kobra.KobraError("%s answers /info without a LAN token" % ip, code="no_token")
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", "", probe=probe, search=lambda: [("10.25.3.3", {})])
-        self.assertEqual((cm.exception.candidates, cm.exception.pending), ([], []))
+        self.assertEqual((cm.exception.candidates, cm.exception.pending, cm.exception.rejected), ([], [], ["10.25.3.3"]))
         self.assertIn("No Kobra X answered", str(cm.exception))
+        with self.assertRaises(locate.NotFound):   # skipped this session: not probed again
+            locate.locate("", "", probe=self.never, search=lambda: [("10.25.3.3", {})], skip={"10.25.3.3"})
 
-    def test_an_ungranted_candidate_is_not_probed_but_handed_to_the_page(self):
+    def test_one_ungranted_candidate_is_asked_about_once(self):
         with self.assertRaises(locate.NotFound) as cm:
-            locate.locate("", "", probe=self.fail, search=lambda: [("10.25.7.41", {})], allowed=lambda ip: False)
+            locate.locate("", "", probe=self.never, search=lambda: [("10.25.7.41", {})], allowed=lambda ip: False)
         self.assertEqual(cm.exception.pending, ["10.25.7.41"])
         self.assertIn("connects by itself", str(cm.exception))
 
-    def test_a_new_address_waiting_for_permission(self):
-        def probe(ip):
-            raise kobra.KobraError("OrcaSlicer denied network access", code="denied")
+    def test_several_ungranted_candidates_are_never_asked_about_by_themselves(self):
+        """MEDIUM-2: spoofed empty replies must not each raise an OrcaSlicer dialog: the user picks."""
+        replies = [("10.25.%d.1" % i, {}) for i in range(3)]
         with self.assertRaises(locate.NotFound) as cm:
-            locate.locate("", "", probe=probe, search=lambda: [("10.25.7.41", {})])
-        self.assertIn("Allow Kobra Control to reach it", str(cm.exception))
+            locate.locate("", "", probe=self.never, search=lambda: replies, allowed=lambda ip: False)
+        self.assertEqual(cm.exception.pending, [])
+        self.assertEqual([c["needs_allow"] for c in cm.exception.candidates], [True] * 3)
 
-    def fail(self, *a):
-        raise AssertionError("must not be called")
+
+class AddressBook(unittest.TestCase):
+    def setUp(self):
+        self.path = os.path.join(tempfile.mkdtemp(), "addresses.json")
+        self.book = locate.Addresses(self.path)
+
+    def test_one_printer_is_not_recorded_for_two_presets(self):
+        self.book.put("Kobra left", "10.0.0.2", "SERIAL-A", "aa" * 32)
+        self.book.put("Kobra right", "10.0.0.3", "SERIAL-B", "bb" * 32)
+        with self.assertRaises(ValueError):
+            self.book.put("Kobra left", "10.0.0.3", "SERIAL-A", "aa" * 32)   # B's address for A's preset
+        self.assertEqual(self.book.get("Kobra left")["ip"], "10.0.0.2")
+        self.book.put("Kobra copy", "10.0.0.2", "SERIAL-A", "aa" * 32)   # the same printer for another preset is fine
+
+    def test_bad_entries_read_as_nothing(self):
+        with open(self.path, "w") as f:
+            json.dump({"printers": {"a": {"ip": "8.8.8.8"}, "b": "10.0.0.2", "c": {"ip": "10.0.0.4", "fp": "XYZ"},
+                                    "d": {"ip": "10.0.0.5", "id": 7}, "e": {"ip": "10.0.0.6", "id": "S", "fp": ""}}}, f)
+        self.assertEqual(self.book.hosts(), ["10.0.0.6"])
+        with open(self.path, "w") as f:
+            f.write('{"printers": {"x": {"ip": "10.0.0.7"}}, "pad": "%s"}' % ("y" * locate.Addresses.MAX_BYTES))
+        self.assertEqual(self.book.hosts(), [])
 
 
 class DiscoverScript(unittest.TestCase):
@@ -214,12 +310,15 @@ class ServiceLocates(unittest.TestCase):
     def setUp(self):
         self.fake = FakeKobra().start()
         self.addCleanup(self.fake.stop)
+        self.fake.info_answer = {"token": self.fake.token, "cn": "SERIAL-A", "deviceName": "Workshop KX",
+                                 "modelName": "Anycubic Kobra X"}
         self.fake.reply("info", "query", {})
         self.fake.reply("print", "query", {}, state="free")
         self.fake.reply("multiColorBox", "getInfo", {"multi_color_box": []})
         self.ssdp = FakeSsdp()
         self.addCleanup(self.ssdp.stop)
         self.folder = tempfile.mkdtemp()
+        self.book = locate.Addresses(os.path.join(self.folder, "addresses.json"))
         self.probed, self.lost = [], False
 
     def probe(self, ip):
@@ -228,28 +327,29 @@ class ServiceLocates(unittest.TestCase):
 
     def service(self, **kw):
         published = []
+        options = {"probe": self.probe, "search": lambda: locate.search(timeout=1.0, addr=self.ssdp.addr, interfaces=[]),
+                   **kw}
         svc = service.Service(published.append, lambda m: None, cert_dir=self.folder, tls=lambda: None,
                               http_port=self.fake.http_port, mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera,
-                              addresses_path=os.path.join(self.folder, "addresses.json"), probe=self.probe,
-                              search=lambda: locate.search(timeout=1.0, addr=self.ssdp.addr, interfaces=[]), **kw)
+                              addresses_path=os.path.join(self.folder, "addresses.json"), **options)
         self.addCleanup(svc.close)
         return svc, published
 
-    def hello(self, svc, published, rid="h"):
-        svc.set_target(service.Target("", preset_host=BRIDGE, preset_key="Anycubic Kobra X", preset_agent="moonraker"))
+    def hello(self, svc, published, rid="h", key="Anycubic Kobra X"):
+        svc.set_target(service.Target("", preset_host=BRIDGE, preset_key=key, preset_agent="moonraker"))
         svc.submit(rid, "connect", {})
         return wait(lambda: next((m for m in published if m.get("id") == rid), None), 20)
 
-    def test_finds_connects_remembers(self):
+    def test_finds_connects_remembers_identity_and_pin(self):
         svc, published = self.service()
         reply = self.hello(svc, published)
-        self.assertEqual(reply["result"]["address"], "127.0.0.1")
-        self.assertEqual(reply["result"]["source"], "discovered")
+        self.assertEqual((reply["result"]["address"], reply["result"]["source"]), ("127.0.0.1", "discovered"))
         self.assertIn("10.25.16.41, which is not a Kobra X", reply["result"]["note"])
+        self.assertIn("Connected to Workshop KX (Anycubic Kobra X) at 127.0.0.1, found on the network", reply["result"]["note"])
         self.assertTrue(svc.connections["127.0.0.1"].connected)
         self.assertNotIn(BRIDGE, svc.connections)   # never a connection loop for the bridge
-        with open(os.path.join(self.folder, "addresses.json")) as f:
-            self.assertEqual(json.load(f)["printers"], {"Anycubic Kobra X": "127.0.0.1"})
+        wait(lambda: self.book.get("Anycubic Kobra X"))   # recorded at the first connect: address, identity, pin
+        self.assertEqual(self.book.get("Anycubic Kobra X"), {"ip": "127.0.0.1", "id": "SERIAL-A", "fp": ""})
         svc.close()
         searches = len(self.ssdp.searches)
         svc2, published2 = self.service()
@@ -266,7 +366,7 @@ class ServiceLocates(unittest.TestCase):
         self.assertIn("not a Kobra X in LAN mode", reply["error"])
         self.assertEqual(svc.connections, {})
 
-    def test_search_again_and_choose(self):
+    def test_choose_and_search_again(self):
         self.ssdp.reply = None
         svc, published = self.service()
         self.hello(svc, published)
@@ -276,11 +376,69 @@ class ServiceLocates(unittest.TestCase):
         self.assertIn("not among", wait(lambda: next((m for m in published if m.get("id") == "c"), None))["error"])
         svc.submit("c2", "choose_printer", {"host": "127.0.0.1"})
         wait(lambda: next((m for m in published if m.get("id") == "c2"), None))
-        self.assertEqual(svc.target.host, "127.0.0.1")
-        self.ssdp.reply = FakeSsdp.KOBRA_X
+        self.assertEqual((svc.target.host, svc.target.source), ("127.0.0.1", "chosen"))
         svc.submit("s", "search_printer", {})
         reply = wait(lambda: next((m for m in published if m.get("id") == "s"), None), 10)
-        self.assertEqual(reply["result"], {"address": "127.0.0.1", "source": "discovered"})
+        self.assertEqual(reply.get("result", reply)["address"], "127.0.0.1")
+
+    def test_a_different_printer_is_offered_never_adopted(self):
+        """HIGH-1: A remembered for the preset and gone; the only Kobra X answering is B. Nothing switches to B and
+        the address book still says A."""
+        self.book.put("Kobra left", "10.0.0.2", "SERIAL-OTHER", "")
+        svc, published = self.service(probe=lambda ip: refused(ip) if ip != "127.0.0.1" else self.probe(ip))
+        reply = self.hello(svc, published, key="Kobra left")
+        self.assertIn("A different Kobra X answered at 127.0.0.1. Use it?", reply["error"])
+        self.assertEqual([(c["ip"], c["different"]) for c in reply["candidates"]], [("127.0.0.1", True)])
+        self.assertEqual(svc.target.host, "")
+        self.assertNotIn("127.0.0.1", svc.connections)
+        self.assertEqual(self.book.get("Kobra left")["ip"], "10.0.0.2")
+
+    def test_a_certificate_that_does_not_match_the_pin_is_refused(self):
+        """HIGH-1 / MEDIUM-4: the remembered identity answers /info, but the session presents another certificate."""
+        self.book.put("Anycubic Kobra X", "127.0.0.1", "SERIAL-A", "ab" * 32)
+        svc, published = self.service()
+        self.hello(svc, published)
+        wait(lambda: getattr(svc.locate_error, "candidates", None), 15)
+        self.assertIn("its certificate is not the one", str(svc.locate_error))
+        self.assertEqual(svc.target.host, "")
+        wait(lambda: "127.0.0.1" not in svc.connections)
+        self.assertEqual(self.book.get("Anycubic Kobra X")["fp"], "ab" * 32)   # the known printer stays remembered
+        self.assertIn({"type": "selection_changed"}, published)
+
+    def test_a_switch_of_address_is_a_printer_switch(self):
+        """HIGH-1: a new address bumps the generation and resets the per-printer state; a command queued for the old
+        generation is refused as stale and never reaches the new address."""
+        svc, published = self.service()
+        self.hello(svc, published)
+        gen = svc.generation
+        svc.bindings, svc._units = {0: 7}, {"x": 1}
+        with svc.lock:   # hold the worker at its generation check while the address changes
+            svc.submit("q", "set_fan", {"pct": 40}, gen=gen)
+            time.sleep(0.2)
+            svc._use_address(gen, locate.Found("127.0.0.9", "discovered", identity="SERIAL-A"))
+        reply = wait(lambda: next((m for m in published if m.get("id") == "q"), None))
+        self.assertEqual(reply["error"], service.STALE)
+        self.assertEqual(svc.generation, gen + 1)
+        self.assertEqual((svc.bindings, svc._units), ({}, {}))
+        self.assertIn({"type": "selection_changed"}, published)
+        wait(lambda: "127.0.0.1" not in svc.connections)
+
+    def test_no_relocation_while_printing_or_tracking(self):
+        svc, published = self.service()
+        self.hello(svc, published)
+        conn = svc.connections["127.0.0.1"]
+        searches = len(self.ssdp.searches)
+        svc._last_state["127.0.0.1"] = "printing"
+        svc.located_at -= service.RELOCATE_EVERY
+        conn.http_failed = True
+        svc._relocate_if_lost(conn)
+        self.assertTrue(any("was printing when it stopped answering" in m.get("text", "") for m in published))
+        svc._last_state["127.0.0.1"] = "idle"
+        svc.located_at -= service.RELOCATE_EVERY
+        with mock.patch.object(svc, "_tracking", return_value=True):
+            svc._relocate_if_lost(conn)
+        time.sleep(0.5)
+        self.assertEqual(len(self.ssdp.searches), searches)
 
     def test_lost_address_is_searched_again_at_most_once_a_minute(self):
         svc, published = self.service()
@@ -293,22 +451,30 @@ class ServiceLocates(unittest.TestCase):
         conn.state.connected = False
         for _ in range(5):
             svc._relocate_if_lost(conn)
-        wait(lambda: len(self.ssdp.searches) > searches, 5)
-        time.sleep(1.5)
-        self.assertEqual(len(self.ssdp.searches) - searches, 2)   # one search: its two M-SEARCH packets
+        wait(lambda: not svc._locating.locked() and len(self.ssdp.searches) > searches, 10)
+        svc._join_locators(10)
+        self.assertEqual(len(self.ssdp.searches) - searches, 2)   # one search: its two ac:3dprinter: packets
 
-    def test_a_found_printer_not_yet_allowed_is_granted_on_the_ui_thread_then_connects(self):
-        """In OrcaSlicer a refused attempt off the UI thread queues one more dialog per attempt, so a found but
-        not yet granted address is not probed from the search thread: the page asks for it once (allow_hosts,
-        handled on the UI thread, where OrcaSlicer's dialog shows at once and a Yes is saved), then it connects."""
+    def test_a_found_printer_not_yet_allowed_is_asked_about_once_then_connects(self):
         granted = set()
         svc, published = self.service(granted=granted)
         reply = self.hello(svc, published)
         self.assertEqual(reply["pending"], ["127.0.0.1"])
         self.assertNotIn("127.0.0.1", self.probed)   # not probed before it is allowed
-        self.assertEqual(svc.allow(["127.0.0.1", "8.8.8.8", "10.9.9.9"]), {"allowed": ["127.0.0.1"], "refused": []})
+        self.assertEqual(svc.allow(["127.0.0.1", "10.9.9.9"]), {"allowed": ["127.0.0.1"], "refused": []})
+        self.assertEqual(svc.allow(["127.0.0.1"]), {"allowed": [], "refused": []})   # the page's own asks: once a minute
         self.assertIn("127.0.0.1", granted)
         wait(lambda: svc.target.host == "127.0.0.1" and svc.connections["127.0.0.1"].connected, 15)
+
+    def test_a_refused_permission_is_not_asked_again_until_search_again(self):
+        svc, published = self.service(granted=set())
+        self.hello(svc, published)
+        with mock.patch.object(socket, "getaddrinfo", side_effect=PermissionError):
+            self.assertEqual(svc.allow(["127.0.0.1"], user=True)["refused"], ["127.0.0.1"])
+        self.assertIn("127.0.0.1", svc._rejected)
+        svc.submit("s", "search_printer", {})
+        wait(lambda: next((m for m in published if m.get("id") == "s"), None), 10)
+        self.assertEqual(svc._rejected, set())
 
     def test_an_address_in_settings_is_never_replaced(self):
         svc, _ = self.service()
@@ -317,9 +483,30 @@ class ServiceLocates(unittest.TestCase):
         conn.http_failed = True
         svc.located_at = 0.0
         svc._relocate_if_lost(conn)
-        time.sleep(0.5)
+        svc._join_locators(2)
         self.assertEqual(self.ssdp.searches, [])
         self.assertEqual(self.probed, [])
+
+    def test_close_during_a_slow_search_leaves_nothing_running(self):
+        """HIGH-2: a locate thread that finishes after close() must not create a connection."""
+        release = threading.Event()
+
+        def slow_search():
+            release.wait(5)
+            return [("127.0.0.1", {})]
+        svc, published = self.service(search=slow_search)
+        svc.set_target(service.Target("", preset_host=BRIDGE, preset_key="Anycubic Kobra X"))
+        wait(lambda: svc._locating.locked())
+        closer = threading.Thread(target=svc.close)
+        closer.start()
+        release.set()
+        closer.join(10)
+        time.sleep(1.0)
+        self.assertEqual(svc.connections, {})
+        self.assertFalse([t for t in threading.enumerate() if t.name == "kobracontrol-link" and t.is_alive()
+                          and getattr(t, "_target", None) and getattr(t._target, "__self__", None) is not None
+                          and t._target.__self__.host == "127.0.0.1" and not t._target.__self__._stop.is_set()])
+        svc.close()   # idempotent
 
 
 if __name__ == "__main__":

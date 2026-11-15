@@ -2,7 +2,7 @@
 // {type:"cmd", id, cmd, args, gen} → {type:"reply", id, result|error}.
 type Handler = (m: any) => void;
 /** A Kobra X the plugin found on the network when there was more than one. */
-export interface Candidate { ip: string; name: string; model: string }
+export interface Candidate { ip: string; name: string; model: string; needs_allow?: boolean; different?: boolean }
 interface Waiter { resolve: (v: any) => void; reject: (e: unknown) => void }
 
 const listeners = new Set<Handler>();

@@ -83,6 +83,9 @@ class Connection:
         self.http_failed = False            # the last attempt failed at the HTTP step (/info, /ctrl), before MQTT
         self.next_try = 0.0                 # time.time() of the next automatic attempt while waiting, else 0
         self.origin = ""                    # where the address came from, for the error text (service sets it)
+        # A remembered printer's certificate fingerprint (service sets it): a session that presents another one is
+        # closed at once and `mismatch` holds what it presented; "" = nothing to compare with (first contact).
+        self.expect_fp, self.mismatch = "", ""
         self._fresh = False                 # retry(): start the delay again from RETRY_FIRST
         self.firmware_name = ""
         self._listeners = []
@@ -229,6 +232,13 @@ class Connection:
             return False
         if self._stop.is_set():
             printer.close()
+            return False
+        if self.expect_fp and printer.tls_fingerprint != self.expect_fp:
+            printer.close()
+            self.mismatch = printer.tls_fingerprint or "none"
+            self._stop.set()   # never retried: the service offers this printer as a choice instead
+            self._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used." % self.host, False)
             return False
         self._note_certificate(printer.tls_fingerprint)
         self.printer = printer
