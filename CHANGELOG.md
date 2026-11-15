@@ -52,3 +52,6 @@ Found in a code audit (tests only, not yet tried on the printer):
 - Switching the Device tab to another printer closes the connection to the previous one.
 - Printing a file already on the printer from OrcaSlicer passes vibration compensation and reports the
   finished stage.
+- A bundled certificate that cannot be loaded (and no saved one) is reported as a missing certificate
+  with the Find certificate prompt, not as an unexpected answer from the printer.
+- Settings show the certificate source actually in use: a saved copy that does not load is not "saved".
