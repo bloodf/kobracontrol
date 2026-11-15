@@ -10,7 +10,7 @@ body:
     attributes:
       label: kobracontrol version
       description: Settings page of the Kobra Control tab.
-      placeholder: "0.2.0"
+      placeholder: "0.1.0"
     validations:
       required: true
   - type: input
