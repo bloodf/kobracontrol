@@ -16,6 +16,7 @@ command the state does not allow is refused whatever the page shows.
 
 import base64
 import contextlib
+import os
 import queue
 import re
 import threading
@@ -120,6 +121,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
+        self.pins = certs.Pins(os.path.join(cert_dir, certs.PINS_FILE)) if cert_dir else None
         self.http_port, self.mqtt_port, self.fetch = http_port, mqtt_port, fetch
         self.spoolman_factory = spoolman_factory
         self.lock = threading.RLock()
@@ -158,7 +160,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         with self.lock:
             conn = self.connections.get(host)
             if conn is None:
-                conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch)
+                conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
+                                             pins=self.pins)
                 conn.add_listener(self._on_change)
                 self.connections[host] = conn
                 conn.start()
@@ -347,6 +350,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             bindings = dict(self.bindings) if self.target and self.target.host == conn.host else {}
             before = self._units.get(conn.host, [])
         data, units = status_data(conn.view(), before, bindings)
+        data["tls"] = dict(conn.server_cert) if conn.server_cert else None
         with self.lock:
             self._units[conn.host] = units
         return data

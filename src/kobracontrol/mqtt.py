@@ -127,6 +127,7 @@ class Client:
         self._acks, self._next_id = {}, 0
         self._last_in = self._last_out = 0.0
         self._empty_reads = 0
+        self.peer_cert = None             # the server's certificate (DER) of a TLS session, else None
 
     def __repr__(self):
         return "<mqtt.Client %s:%s id=%s>" % (self.host, self.port, self.client_id)
@@ -154,6 +155,7 @@ class Client:
             self._sock = sock
             sock.sendall(self._connect_packet())
             self._await_connack(sock)
+            self.peer_cert = sock.getpeercert(binary_form=True) if self.ssl_context else None
         except BaseException as e:
             for s in {raw, self._sock} - {None}:
                 s.close()

@@ -1,5 +1,6 @@
 """Client certificate discovery in slicer binaries, saving/loading, TLS context."""
 
+import json
 import os
 import shutil
 import ssl
@@ -286,6 +287,35 @@ class NoOpensslTests(Tmp):
         win = certs.default_locations("win32", {"ProgramFiles": r"C:\Program Files"})
         self.assertIn(os.path.join(r"C:\Program Files", "AnycubicSlicerNext"), win)
         self.assertTrue(certs.default_locations("linux", {"HOME": "/home/u"}))
+
+
+class PinTests(unittest.TestCase):
+    """The printer's TLS certificate, remembered per address: a change is reported, never refused."""
+
+    def setUp(self):
+        self.path = os.path.join(tempfile.mkdtemp(), "printers.json")
+
+    def test_first_same_and_changed(self):
+        pins = certs.Pins(self.path)
+        self.assertEqual(pins.check("10.0.0.5", "aa"), None)
+        self.assertEqual(pins.check("10.0.0.5", "aa"), None)
+        self.assertEqual(certs.Pins(self.path).check("10.0.0.5", "bb"), "aa")   # survives a restart
+        self.assertEqual(certs.Pins(self.path).check("10.0.0.5", "bb"), None)    # the new one is remembered
+        self.assertEqual(pins.check("10.0.0.6", "aa"), None)                   # per address
+
+    def test_unreadable_file_starts_over(self):
+        with open(self.path, "w") as f:
+            f.write("{not json")
+        self.assertEqual(certs.Pins(self.path).check("h", "aa"), None)
+        with open(self.path) as f:
+            self.assertEqual(json.load(f)["printers"], {"h": "aa"})
+
+    def test_bad_entries_are_ignored(self):
+        with open(self.path, "w") as f:
+            json.dump({"printers": {"h": 5, "g": "cc"}}, f)
+        pins = certs.Pins(self.path)
+        self.assertEqual(pins.check("h", "aa"), None)
+        self.assertEqual(pins.check("g", "dd"), "cc")
 
 
 class BundledTests(unittest.TestCase):

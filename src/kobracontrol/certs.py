@@ -27,15 +27,18 @@ seen), symlinked folders never followed.
 
 import base64
 import contextlib
+import json
 import os
 import re
 import secrets
 import ssl
 import sys
 import tempfile
+import threading
 from collections import namedtuple
 
 CERT_FILE, KEY_FILE = "anycubic_slicer.pem", "anycubic_slicer_key.pem"
+PINS_FILE = "printers.json"
 EXPECTED_CN = b"AnycubicSlicer"
 SCAN_EXT = {".dll", ".exe", ".so", ".dylib", ""}
 MAX_SIZE = 200 * 1024 * 1024
@@ -266,3 +269,37 @@ def context(cert_path, key_path):
     except (ssl.SSLError, OSError) as e:
         raise CertError("cannot load the client certificate and key (%s)" % (getattr(e, "reason", None) or type(e).__name__)) from None
     return ctx
+
+
+class Pins:
+    """The certificate each printer address presented last time (SHA-256 hex), in a JSON file. The printer's
+    certificate is self-signed and is never verified (see SECURITY.md); this only notices when it changes.
+    check() never refuses anything: it remembers the new fingerprint and returns the old one so the caller
+    can warn. A file that cannot be read starts over; a write that fails raises OSError."""
+
+    def __init__(self, path):
+        self.path, self._lock = path, threading.Lock()
+
+    def _read(self):
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return {}
+        printers = data.get("printers") if isinstance(data, dict) else None
+        return {k: v for k, v in printers.items() if isinstance(v, str)} if isinstance(printers, dict) else {}
+
+    def check(self, key, fingerprint):
+        """None when `fingerprint` is the one remembered for `key` or the first one seen; else the old one."""
+        with self._lock:
+            known = self._read()
+            previous = known.get(key)
+            if previous == fingerprint:
+                return None
+            known[key] = fingerprint
+            os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"printers": known}, f, indent=1, sort_keys=True)
+            os.replace(tmp, self.path)
+            return previous

@@ -294,6 +294,12 @@ class Printer:
         return bool(client and client.connected)
 
     @property
+    def tls_fingerprint(self):
+        """SHA-256 (hex) of the certificate the printer presented on this session; "" without TLS or a session."""
+        der = getattr(self._client, "peer_cert", None)
+        return hashlib.sha256(der).hexdigest() if der else ""
+
+    @property
     def last_rx(self):
         """time.monotonic() of the last MQTT bytes from the printer, 0.0 when never connected."""
         client = self._client

@@ -3,9 +3,11 @@
 import base64
 import copy
 import dataclasses
+import hashlib
 import json
 import os
 import shutil
+import ssl
 import sys
 import tempfile
 import threading
@@ -933,6 +935,18 @@ class TlsPrinterTests(unittest.TestCase):
         self.addCleanup(p.close)
         p.connect()
         self.assertEqual(p.query_info()["data"]["version"], "1.0")
+        with open(tls.server_cert) as f:
+            der = ssl.PEM_cert_to_DER_cert(f.read())
+        self.assertEqual(p.tls_fingerprint, hashlib.sha256(der).hexdigest())
+
+    def test_plain_session_has_no_fingerprint(self):
+        fake = FakeKobra().start()
+        self.addCleanup(fake.stop)
+        p = kobra.Printer(kobra.fetch_credentials(fake.host, port=fake.http_port), mqtt_port=fake.mqtt_port)
+        self.addCleanup(p.close)
+        self.assertEqual(p.tls_fingerprint, "")
+        p.connect()
+        self.assertEqual(p.tls_fingerprint, "")
 
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl CLI needed to generate throwaway certificates")
