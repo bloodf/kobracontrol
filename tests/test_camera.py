@@ -32,12 +32,55 @@ out.write(b"garbage"); out.flush()
 if mode == "burst":
     for n in range(30):
         emit(frame(n)); time.sleep(0.01)
+    with open(os.environ["FAKE_PIDS"] + ".done", "w") as f:   # every frame of the burst is written
+        f.write("%d\n" % os.getpid())
 else:
     n = 0
     while True:
         emit(frame(n)); n += 1; time.sleep(0.02)
 time.sleep(60)
 '''
+
+
+def open_handles():
+    """This process's open file descriptors (POSIX) or kernel handles (Windows, which has no /dev/fd)."""
+    if os.name != "nt":
+        return len(os.listdir("/dev/fd"))
+    import ctypes
+    from ctypes import wintypes
+    count = wintypes.DWORD()
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    if not kernel32.GetProcessHandleCount(kernel32.GetCurrentProcess(), ctypes.byref(count)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return count.value
+
+
+def process_exists(pid):
+    """POSIX: os.kill(pid, 0), where an exited but unreaped child (a zombie) still exists, so a camera that kills
+    without wait() is caught. Windows has no zombies and no signal 0: os.kill(pid, 0) there is CTRL_C_EVENT,
+    delivered to every process on the console, the test runner included (CI run 43670339285 ended in
+    KeyboardInterrupt), and an exited pid raises OSError, not ProcessLookupError. So ask the kernel instead."""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False                                     # no such process (any more)
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return code.value == 259                         # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def wait_for(cond, timeout=5.0):
@@ -91,15 +134,7 @@ class Base(unittest.TestCase):
             lines = self.pid_lines()
         except OSError:
             return []
-        alive = []
-        for line in lines:
-            if line:
-                try:
-                    os.kill(int(line.split()[0]), 0)   # a zombie still answers; a reaped process does not
-                    alive.append(int(line.split()[0]))
-                except ProcessLookupError:
-                    pass
-        return alive
+        return [int(line.split()[0]) for line in lines if line and process_exists(int(line.split()[0]))]
 
 
 class ArgvTests(unittest.TestCase):
@@ -159,7 +194,12 @@ class RunTests(Base):
         cam = self.make()
         cam.start()
         self.assertTrue(wait_for(lambda: len(self.frames) == 1))
-        time.sleep(0.6)                                   # burst is over; nothing new without an ack
+        # The burst's end is waited for, never assumed after a fixed sleep: on a slow runner the fake was still
+        # writing (frame 23 was the latest at the ack, CI run 43670339285, macOS). Then the reader must hold the
+        # last frame: only that makes "the latest" frame 29.
+        self.assertTrue(wait_for(lambda: os.path.exists(self.pids + ".done"), 10))
+        self.assertTrue(wait_for(lambda: cam._latest == b"\xff\xd8F29\xff\xd9"))
+        time.sleep(0.3)                                   # well past the 0.2 s frame interval: still held for the ack
         self.assertEqual(len(self.frames), 1)
         self.assertTrue(self.frames[0].startswith(b"\xff\xd8F") and self.frames[0].endswith(b"\xff\xd9"))
         cam.ack()
@@ -241,8 +281,7 @@ class RunTests(Base):
         self.assertEqual([t for t in threading.enumerate() if t.name.startswith("kobracontrol-camera")], [])
 
     def test_pipes_are_closed_on_every_restart_and_stop(self):
-        def fds():
-            return len(os.listdir("/dev/fd"))
+        fds = open_handles
         self.url = "rtsp://127.0.0.1:1/live?mode=die"
         cam = self.make()
         cam.start()
