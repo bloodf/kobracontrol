@@ -459,6 +459,15 @@ class Guarded(Base):
         audit_guard.enable(self.perms, self.tmp)
         self.addCleanup(audit_guard.disable)
 
+    def ungranted_dir(self, prefix):
+        """A folder no grant covers on any OS. Not under the system temp folder: on Windows OrcaSlicer's job
+        folder is that temp folder itself (plugin.slicer_temp_root), so the plugin is granted all of it."""
+        folder = tempfile.mkdtemp(prefix=prefix, dir=ROOT)
+        self.addCleanup(shutil.rmtree, folder, True)
+        root = os.path.realpath(plugin.slicer_temp_root())
+        self.assertFalse(os.path.realpath(folder).startswith(root.rstrip(os.sep) + os.sep))
+        return folder
+
     def job_dir(self):
         folder = os.path.join(plugin.slicer_temp_root(), "kobracontrol-test")
         os.makedirs(folder, exist_ok=True)
@@ -486,7 +495,7 @@ class Guarded(Base):
     def test_denied_read_is_reported_plainly(self):   # C1: never "not a zip"
         self.connect()
         stages = []
-        params = pa.PrintParams(project_name="cube", filename=make_3mf(tempfile.mkdtemp()), ams_mapping="[0]")
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.ungranted_dir("job-")), ams_mapping="[0]")
         code = run_off_main(lambda: self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False))
         self.assertNotEqual(code, 0)
         self.assertIn("did not let kobracontrol read the sliced file", stages[-1][2])
@@ -518,7 +527,7 @@ class Guarded(Base):
         self.assertEqual(audit_guard.denials(), [])
 
     def test_find_certificate_ungranted_path(self):   # C3
-        outside = tempfile.mkdtemp(prefix="elsewhere-")
+        outside = self.ungranted_dir("elsewhere-")
         published = []
         plugin._service.publish = published.append
         plugin._service.submit("g", "find_certificate", {"path": outside})

@@ -42,15 +42,30 @@ time.sleep(60)
 '''
 
 
+def _kernel32():
+    """kernel32 with the signatures these tests call. Without argtypes/restype ctypes passes and returns C int,
+    and a HANDLE is pointer-sized: GetCurrentProcess's pseudo-handle (-1) comes back as a 64-bit value that
+    overflows the int argument (Windows CI: "ctypes.ArgumentError: int too long to convert")."""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    for name, args, res in (("GetCurrentProcess", [], wintypes.HANDLE),
+                            ("GetProcessHandleCount", [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
+                            ("OpenProcess", [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+                            ("GetExitCodeProcess", [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
+                            ("CloseHandle", [wintypes.HANDLE], wintypes.BOOL)):
+        fn = getattr(k, name)
+        fn.argtypes, fn.restype = args, res
+    return k
+
+
 def open_handles():
     """This process's open file descriptors (POSIX) or kernel handles (Windows, which has no /dev/fd)."""
     if os.name != "nt":
         return len(os.listdir("/dev/fd"))
     import ctypes
     from ctypes import wintypes
-    count = wintypes.DWORD()
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32, count = _kernel32(), wintypes.DWORD()
     if not kernel32.GetProcessHandleCount(kernel32.GetCurrentProcess(), ctypes.byref(count)):
         raise ctypes.WinError(ctypes.get_last_error())
     return count.value
@@ -69,8 +84,7 @@ def process_exists(pid):
         return True
     import ctypes
     from ctypes import wintypes
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32 = _kernel32()
     handle = kernel32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         return False                                     # no such process (any more)
