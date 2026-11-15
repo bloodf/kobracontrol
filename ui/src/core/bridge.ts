@@ -11,7 +11,8 @@ let seq = 0;
 let attached = false;
 
 export class ReplyError extends Error {
-  constructor(message: string, readonly noTarget = false, readonly noCertificate = false, readonly candidates: Candidate[] = []) { super(message); }
+  constructor(message: string, readonly noTarget = false, readonly noCertificate = false, readonly candidates: Candidate[] = [],
+              readonly pending: string[] = []) { super(message); }
 }
 
 function host(): OrcaHostBridge {
@@ -27,7 +28,8 @@ export function attach(): void {
     if (m.type === 'reply' && typeof m.id === 'number' && waiters.has(m.id)) {
       const w = waiters.get(m.id)!;
       waiters.delete(m.id);
-      if ('error' in m) w.reject(new ReplyError(String(m.error), m.no_target === true, m.no_certificate === true, Array.isArray(m.candidates) ? m.candidates : []));
+      if ('error' in m) w.reject(new ReplyError(String(m.error), m.no_target === true, m.no_certificate === true, Array.isArray(m.candidates) ? m.candidates : [],
+        Array.isArray(m.pending) ? m.pending.map(String) : []));
       else w.resolve(m.result);
       return;
     }

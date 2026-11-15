@@ -15,15 +15,27 @@ the LAN are not supported.
 
 | Port | Protocol | Use |
 |---|---|---|
-| 1900 (UDP multicast 239.255.255.250) | SSDP | Finding the printer on the network (not verified on a printer yet) |
+| 1900 (UDP multicast 239.255.255.250) | SSDP | Finding the printer on the network |
 | 18910 | HTTP | Token, credential recovery, G-code upload |
 | 9883 | MQTT 3.1.1 over mutual TLS | Status reports and commands |
 
 ## Finding the printer (SSDP)
 
-Kobralink and KX-Bridge take the printer's IP from the user and have no discovery. The facts below come
-from two other sources and have **not been checked on a printer yet** (`scripts/discover.py` prints what a
-real one answers):
+Kobralink and KX-Bridge take the printer's IP from the user and have no discovery.
+
+**Observed** on a Kobra X, firmware 2.0.2.8, 2026-11-15, with `scripts/discover.py` and hand-made searches
+from a Mac on the same flat network:
+
+- The printer answers every `M-SEARCH` with exactly **one empty UDP datagram** (0 bytes) sent from its own
+  address: for `ST: ac:3dprinter:`, `ac:3dprinter:20030`, `ssdp:all` and `upnp:rootdevice`, sent to the
+  multicast group or unicast to its port 1900, with `MX: 1` or `MX: 2`.
+- It sent no `NOTIFY` during 40 s of listening on the group.
+- Its `GET /info` answers with `cn`, `ctrlInfoUrl` (`http://<its own ip>:18910/ctrl`), `ctrlType` (`lan`),
+  `deviceName` (`Anycubic Kobra X`), `deviceType` (`fdm`), `env`, `ip`, `modelId` (`20030`), `modelName`,
+  `token` (32 characters), `usn` and `zone`.
+- Other devices on the same network answer `ssdp:all` with ordinary `HTTP/1.1 200 OK` text replies.
+
+From two other sources (not observed):
 
 - Anycubic Slicer Next 1.x, `libssdplib.dylib` (strings in the binary, macOS): the search it sends is
   `M-SEARCH * HTTP/1.1`, `Host: 239.255.255.250:1900`, `ST: ac:3dprinter:{}`, `Man: "ssdp:discover"`,
@@ -34,12 +46,14 @@ real one answers):
   `anycubic_lan.py`), tested by its author on a Kobra S1 and a Kobra 3: it sends one `M-SEARCH` with
   `ST: ssdp:all` and `MX: 2`, listens 2.5 s and keeps replies containing `18910/info` or `ac:3dprinter`.
 
-kobracontrol sends two searches, `ST: ac:3dprinter:` and `ST: ssdp:all`, listens 3 s and keeps replies
-containing `ac:3dprinter` or `:18910/`. It uses only the address the reply came from (never an address
-or URL inside it), only when it is a private, link-local or loopback IPv4 address, reads at most 64
-replies of at most 2048 bytes, and counts the sender as a printer only when its own `GET /info` answers
-with a LAN token. `/ctrl` is always asked of that same address; a `ctrlInfoUrl` in `/info` is never
-followed.
+kobracontrol sends `ST: ac:3dprinter:` twice, 0.3 s apart, from the local address the system routes the
+multicast group through, and listens 2.5 s; only when that finds nothing does it do the same with
+`ssdp:all`. A sender is a candidate when it answers with an empty datagram (the Kobra X above) or with a
+text reply containing `ac:3dprinter` or `:18910/`; any other text reply (a TV, a router) is ignored and
+never probed. It uses only the address the reply came from (never an address or URL inside it), only
+when it is a private, link-local or loopback IPv4 address, reads at most 64 replies of at most 2048
+bytes, and counts the sender as a printer only when its own `GET /info` answers with a LAN token.
+`/ctrl` is always asked of that same address; a `ctrlInfoUrl` in `/info` is never followed.
 
 ## Credential recovery
 

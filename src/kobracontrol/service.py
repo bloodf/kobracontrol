@@ -19,6 +19,7 @@ import contextlib
 import os
 import queue
 import re
+import socket
 import threading
 import time
 import traceback
@@ -139,7 +140,7 @@ def _background(fn, name):
 class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
-                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None):
+                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
@@ -152,6 +153,9 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.addresses = certs.Pins(addresses_path) if addresses_path else None   # preset -> address that worked
         self.search = search
         self.probe = probe or (lambda ip: locate.probe(ip, self.http_port))
+        # Addresses OrcaSlicer already lets the plugin reach (declared at load, or allowed since); None outside
+        # OrcaSlicer, where every address may be probed.
+        self.granted = granted
         self._locating = threading.Lock()
         self.locate_error, self.located_at, self.locate_note = None, 0.0, ""
         self.target, self.generation = None, 0
@@ -259,6 +263,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             try:
                 found = locate.locate("", "" if search_only else target.preset_host, remembered,
                                       probe=self.probe, search=self.search,
+                                      allowed=None if self.granted is None else self.granted.__contains__,
                                       own_agent=target.preset_agent == "kobracontrol")
             except locate.NotFound as e:
                 with self.lock:
@@ -268,7 +273,37 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 return
             self._use_address(gen, target, found)
 
+    def allow(self, hosts):
+        """UI thread (the page's allow_hosts): let OrcaSlicer ask about each printer address the search found but
+        may not reach yet. On the UI thread its dialog is shown at once and a Yes is saved; on a worker thread
+        the attempt would only be refused and a dialog queued per attempt. getaddrinfo of a numeric address
+        is the audited event and does no network I/O. Then the printer is located again."""
+        with self.lock:
+            gen, pending = self.generation, list(getattr(self.locate_error, "pending", []))
+        allowed, refused = [], []
+        for host in hosts if isinstance(hosts, list) else []:
+            if host not in pending or not locate.lan_address(host):
+                continue
+            try:
+                socket.getaddrinfo(host, self.http_port, socket.AF_INET, socket.SOCK_STREAM)
+            except PermissionError:
+                refused.append(host)
+                continue
+            except OSError:
+                pass
+            allowed.append(host)
+            if self.granted is not None:
+                self.granted.add(host)
+        if allowed:
+            with self.lock:
+                if gen == self.generation:
+                    self.locate_error = None
+            _background(lambda: self._locate(gen), "locate")
+        return {"allowed": allowed, "refused": refused}
+
     def _use_address(self, gen, target, found):
+        if self.granted is not None:
+            self.granted.add(found.host)
         if self.addresses is not None:
             try:
                 self.addresses.check(target.preset_key or "*", found.host)
@@ -410,6 +445,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if getattr(e, "no_target", False):
                 reply["no_target"] = True
                 reply["candidates"] = [{k: c.get(k, "") for k in ("ip", "name", "model")} for c in e.candidates]
+                reply["pending"] = list(e.pending)
             self.publish(reply)
         except Exception as e:  # never kill the worker; details go to the log only
             self.log("kobracontrol: %s failed: %s\n%s" % (command, e, traceback.format_exc()))
@@ -636,7 +672,7 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if retry is True and unlocated and self.locate_error is not None:
             self.locate_error = None
             _background(lambda: self._locate(gen), "locate")
-        target = self.wait_located(CONNECT_WAIT + locate.SEARCH_SECONDS + 2 * locate.PROBE_TIMEOUT)
+        target = self.wait_located(CONNECT_WAIT + 2 * (locate.SEARCH_SECONDS + locate.SEND_GAP) + 2 * locate.PROBE_TIMEOUT)
         if not self._current(gen):
             raise kobra.KobraError(STALE)
         conn = self.connection(target.host)

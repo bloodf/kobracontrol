@@ -110,6 +110,7 @@ export async function hello(retry = false): Promise<void> {
       : e instanceof bridge.ReplyError && e.noTarget ? 'noTarget' : 'unreachable';
     s.error = message(e);
     s.candidates = e instanceof bridge.ReplyError ? e.candidates : [];
+    if (e instanceof bridge.ReplyError && e.pending.length) void allowFound(e.pending);
     s.offline = '';   // the answer is newer than any 'offline' message that came while it was awaited
   } finally {
     helloInFlight = false;
@@ -117,8 +118,25 @@ export async function hello(retry = false): Promise<void> {
   }
 }
 
+/** The search found a printer OrcaSlicer does not let the plugin reach yet: ask the plugin to have OrcaSlicer show
+ *  its dialog now (on its UI thread, so a Yes is saved at once), then connect. Clicking Allow is the only action;
+ *  each address is asked about once per page load, so a No is not asked again in a loop. */
+const askedHosts = new Set<string>();
+async function allowFound(hosts: string[]): Promise<void> {
+  const fresh = hosts.filter(h => !askedHosts.has(h));
+  if (!fresh.length) return;
+  fresh.forEach(h => askedHosts.add(h));
+  try {
+    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh });
+    if (r?.allowed?.length) void hello();
+  } catch (e) {
+    tracker.notify('error', t('msg.plugin', { error: message(e) }));
+  }
+}
+
 /** Settings > Search again, and the first-run card: look for the printer on the network again. */
 export async function searchAgain(): Promise<void> {
+  askedHosts.clear();   // the user asked: a printer refused before may be allowed now
   const r = await run({ key: 'search', label: t('act.search'), cmd: 'search_printer', timeoutMs: 30000, quiet: true });
   if (r.ok || s.phase !== 'connected') void hello();   // a failed search: hello shows its message
 }

@@ -731,6 +731,20 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   }
 `);
 
+test('a found printer OrcaSlicer must allow first: the page asks once, then connects', `
+  await until(() => last('hello'));
+  await fail(last('hello'), 'Found a printer at 10.25.7.41. Allow Kobra Control to reach it in OrcaSlicer’s dialog; it connects by itself afterwards.',
+    {no_target: true, candidates: [], pending: ['10.25.7.41']});
+  await until(() => last('allow_hosts'), 'asks the plugin to show the dialog');
+  eq(last('allow_hosts').hosts, ['10.25.7.41'], 'that address');
+  assert(text(byTest('first-run-target')).includes('connects by itself'), 'says what to do: ' + text(byTest('first-run-target')));
+  await reply(last('allow_hosts'), {allowed: ['10.25.7.41'], refused: []});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'connects without another click');
+  await fail(last('hello'), 'Found a printer at 10.25.7.41.', {no_target: true, pending: ['10.25.7.41']});
+  await settle();
+  eq(sent().filter(m => m.type === 'allow_hosts').length, 1, 'never asks twice for the same address in a loop');
+`);
+
 test('first run: several printers found, pick one', `
   await until(() => last('hello'));
   await fail(last('hello'), '2 Kobra X printers answer on this network: choose one.', {no_target: true,

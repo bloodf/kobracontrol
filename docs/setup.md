@@ -43,8 +43,8 @@ a minute. Settings shows the address in use and how it was found, with **Search 
 preset's address is not a Kobra X (a Moonraker bridge such as Kobralink at port 7125, say), the tab says
 so in one line and uses the printer it found.
 
-The first time the tab reaches a printer it found on the network, OrcaSlicer asks once whether
-kobracontrol may connect to that address.
+The first time the tab finds a printer on the network, OrcaSlicer asks once whether kobracontrol may
+connect to that address. Allow it; the tab connects by itself.
 
 ## 3. Certificate (built in)
 

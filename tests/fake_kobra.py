@@ -420,22 +420,25 @@ class FakeKobra:
 
 class FakeSsdp:
     """An SSDP responder on 127.0.0.1 standing in for the printer's: answers every M-SEARCH it gets with
-    `reply` (bytes; None = stay silent), `count` times. Recorded: `searches` (the raw packets).
+    `reply` (bytes; None = stay silent), `count` times. By default it answers like a real Kobra X on firmware
+    2.0.2.8 (measured 2026-11-15): one EMPTY datagram per search, whatever the ST. `only_st`: answer only a
+    search with this ST. Recorded: `searches` (the raw packets).
 
-        with FakeSsdp(reply=FakeSsdp.printer_reply(http_port)) as ssdp:
-            locate.search(addr=ssdp.addr)
+        with FakeSsdp() as ssdp:
+            locate.search(addr=ssdp.addr, interfaces=[])
     """
+    KOBRA_X = b""
 
     @staticmethod
     def printer_reply(http_port=18910, ip="127.0.0.1"):
-        # The fields Anycubic Slicer Next's libssdplib reads (USN with "ac:3dprinter:", modelId, ctrlType, cn);
-        # the exact layout of a real printer's reply is not known yet (scripts/discover.py prints it).
+        # A text reply with the fields Anycubic Slicer Next's libssdplib reads (USN with "ac:3dprinter:",
+        # modelId, ctrlType, cn), for firmware or models that answer in text.
         return ("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nST: ac:3dprinter:\r\n"
                 "USN: uuid:fake::ac:3dprinter:20030\r\nLOCATION: http://%s:%d/info\r\nmodelId: 20030\r\n"
                 "ctrlType: lan\r\ncn: FAKECN\r\n\r\n" % (ip, http_port)).encode()
 
-    def __init__(self, reply=None, count=1):
-        self.reply, self.count, self.searches = reply, count, []
+    def __init__(self, reply=KOBRA_X, count=1, only_st=None):
+        self.reply, self.count, self.only_st, self.searches = reply, count, only_st, []
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("127.0.0.1", 0))
         self.addr = self.sock.getsockname()
@@ -449,6 +452,9 @@ class FakeSsdp:
             except OSError:
                 return
             self.searches.append(data)
+            st = next((line[4:] for line in data.split(b"\r\n") if line.upper().startswith(b"ST: ")), b"")
+            if self.only_st is not None and st != self.only_st:
+                continue
             if self.reply is not None and data.startswith(b"M-SEARCH"):
                 try:
                     for _ in range(self.count):

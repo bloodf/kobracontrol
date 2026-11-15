@@ -32,9 +32,14 @@ def mask(name, value):
 def listen(seconds, show_all, out):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-    for target in locate.SEARCH_TARGETS:
-        sock.sendto(locate.search_packet(target), locate.SSDP_ADDR)
-    out("sent M-SEARCH for %s to %s:%d, listening %g s" % (", ".join(locate.SEARCH_TARGETS), *locate.SSDP_ADDR, seconds))
+    interfaces = locate.local_addresses() if locate.SSDP_ADDR[0] == locate.SSDP_GROUP else []
+    for local in interfaces or [None]:
+        if local:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local))
+        for target in locate.SEARCH_TARGETS:
+            sock.sendto(locate.search_packet(target), locate.SSDP_ADDR)
+    out("sent M-SEARCH for %s to %s:%d from %s, listening %g s" % (", ".join(locate.SEARCH_TARGETS), *locate.SSDP_ADDR,
+                                                                 ", ".join(interfaces) or "the default route", seconds))
     found, deadline = [], time.monotonic() + seconds
     while True:
         left = deadline - time.monotonic()
@@ -48,8 +53,11 @@ def listen(seconds, show_all, out):
         printer = locate.is_printer_reply(data)
         if not (printer or show_all):
             continue
-        first = data.decode("utf-8", "replace").splitlines()[:1]
-        out("\nreply from %s:%d%s  %s" % (ip, port, "  [Anycubic]" if printer else "", first[0] if first else ""))
+        if not data:
+            out("\nreply from %s:%d: empty datagram [Kobra X signature]" % (ip, port))
+        else:
+            first = data.decode("utf-8", "replace").splitlines()[:1]
+            out("\nreply from %s:%d%s  %s" % (ip, port, "  [Anycubic]" if printer else "", first[0] if first else ""))
         for name, value in locate.headers(data).items():
             out("    %s: %s" % (name, mask(name, value)))
         if printer and ip not in found:

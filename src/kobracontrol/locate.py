@@ -5,13 +5,17 @@ printer preset and then the preset's own address, each only if a Kobra X answers
 the local network. A search that finds exactly one Kobra X uses it; several are offered to the user.
 
 Search: SSDP, as Anycubic Slicer Next does it (its libssdplib: "M-SEARCH * HTTP/1.1", "Host:
-239.255.255.250:1900", "ST: ac:3dprinter:{}", "Man: \"ssdp:discover\"", "MX: 5"; replies are read for
-"ac:3dprinter:", USN, modelId, ctrlType "lan" and cn). The {} in that search target is filled by the slicer
-with a value we do not know, so two searches go out: the slicer's prefix with nothing after it and
-"ssdp:all" (what ianloic/anycubic-orca-plugin sends; it keeps replies naming "18910/info" or
-"ac:3dprinter"). A reply is untrusted: only its sender's address is used (never a URL or address inside
-it), that address must be a private, link-local or loopback IPv4 address, at most MAX_REPLIES replies of
-at most MAX_REPLY bytes are read, and a candidate counts only when its own /info answers with a LAN token.
+239.255.255.250:1900", "ST: ac:3dprinter:{}", "Man: \"ssdp:discover\"", "MX: 5"). Measured on a Kobra X
+(firmware 2.0.2.8, 2026-11-15): the printer answers every M-SEARCH (ST "ac:3dprinter:", "ac:3dprinter:20030",
+"ssdp:all", "upnp:rootdevice"; multicast or unicast) with one EMPTY UDP datagram from its own address and
+sends no NOTIFY. An empty reply is therefore the Kobra X's signature; a text reply counts only when it names
+"ac:3dprinter" or ":18910/" (other firmware or models may answer in text), so ordinary UPnP devices (TVs,
+routers) are never probed. The search goes out first with ST "ac:3dprinter:" only (other devices ignore an ST
+they do not serve), twice SEND_GAP apart against UDP loss, on every local address it is given; "ssdp:all"
+follows only when that finds nothing. A reply is untrusted: only its sender's address is used (never a URL or
+address inside it), that address must be a private, link-local or loopback IPv4 address, at most MAX_REPLIES
+replies of at most MAX_REPLY bytes are read, and a candidate counts only when its own /info answers with a
+LAN token.
 """
 
 import ipaddress
@@ -22,9 +26,10 @@ import kobra
 
 SSDP_GROUP = "239.255.255.250"
 SSDP_ADDR = (SSDP_GROUP, 1900)
-SEARCH_TARGETS = ("ac:3dprinter:", "ssdp:all")
+SEARCH_TARGETS = ("ac:3dprinter:", "ssdp:all")   # the second only when the first finds nothing
 MARKERS = ("ac:3dprinter", ":18910/")
-SEARCH_SECONDS = 3.0
+SEARCH_SECONDS = 2.5            # per search target
+SEND_GAP = 0.3                  # s between the two copies of a search
 MAX_REPLIES = 64
 MAX_REPLY = 2048
 MAX_CANDIDATES = 16
@@ -56,38 +61,75 @@ def headers(reply):
 
 
 def is_printer_reply(reply):
+    """An empty datagram (the Kobra X's answer) or a text reply naming an Anycubic printer."""
+    if not reply:
+        return True
     text = reply.decode("utf-8", "replace").lower()
     return any(m in text for m in MARKERS)
 
 
-def search(timeout=SEARCH_SECONDS, addr=None):
-    """Senders of Anycubic-looking SSDP replies -> [(ip, headers)], in reply order, LAN addresses only.
-    addr: where the search goes (default SSDP_ADDR, read at call time so tests can point it at loopback)."""
-    addr = addr or SSDP_ADDR
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+def local_addresses(addr=None):
+    """The local IPv4 address the system routes the search through. The standard library cannot list
+    interface addresses without a host-name lookup, which OrcaSlicer's audit would put to the user as a
+    prompt for this computer's own name; on one flat network that route reaches every printer."""
+    probe_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe_sock.connect(addr or SSDP_ADDR)   # UDP connect sends nothing; it only picks the route
+        ip = probe_sock.getsockname()[0]
+    except OSError:
+        return []
+    finally:
+        probe_sock.close()
+    return [ip] if ip and ip != "0.0.0.0" else []
+
+
+def _search_once(sock, target, addr, interfaces, timeout):
+    for attempt in range(2):
+        for local in interfaces or [None]:
+            if local:
+                try:
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local))
+                except OSError:
+                    continue
+            sock.sendto(search_packet(target), addr)
+        if attempt == 0:
+            time.sleep(SEND_GAP)
     found, seen, replies = [], set(), 0
+    deadline = time.monotonic() + timeout
+    while replies < MAX_REPLIES and len(found) < MAX_CANDIDATES:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        sock.settimeout(left)
+        try:
+            data, (ip, _port) = sock.recvfrom(MAX_REPLY)
+        except TimeoutError:
+            break
+        replies += 1
+        if ip in seen or not lan_address(ip) or not is_printer_reply(data):
+            continue
+        seen.add(ip)
+        found.append((ip, headers(data)))
+    return found
+
+
+def search(timeout=SEARCH_SECONDS, addr=None, interfaces=None):
+    """Senders of Kobra X-looking SSDP replies -> [(ip, headers)], in reply order, LAN addresses only.
+    addr: where the search goes (default SSDP_ADDR, read at call time so tests can point it at loopback);
+    interfaces: local addresses to send from (default local_addresses())."""
+    addr = addr or SSDP_ADDR
+    if interfaces is None:
+        interfaces = local_addresses(addr) if addr[0] == SSDP_GROUP else []
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     try:
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
         for target in SEARCH_TARGETS:
-            sock.sendto(search_packet(target), addr)
-        deadline = time.monotonic() + timeout
-        while replies < MAX_REPLIES and len(found) < MAX_CANDIDATES:
-            left = deadline - time.monotonic()
-            if left <= 0:
-                break
-            sock.settimeout(left)
-            try:
-                data, (ip, _port) = sock.recvfrom(MAX_REPLY)
-            except TimeoutError:
-                break
-            replies += 1
-            if ip in seen or not lan_address(ip) or not is_printer_reply(data):
-                continue
-            seen.add(ip)
-            found.append((ip, headers(data)))
+            found = _search_once(sock, target, addr, interfaces, timeout)
+            if found:
+                return found
+        return []
     finally:
         sock.close()
-    return found
 
 
 def probe(ip, port=18910, timeout=PROBE_TIMEOUT):
@@ -112,14 +154,17 @@ class NotFound(kobra.KobraError):
     """No Kobra X to connect to: the page shows the message, any `candidates` to choose from, and Search again."""
     no_target = True
 
-    def __init__(self, message, candidates=()):
+    def __init__(self, message, candidates=(), pending=()):
         super().__init__(message, code="not_found")
-        self.candidates = list(candidates)
+        self.candidates, self.pending = list(candidates), list(pending)
 
 
-def locate(override, preset_host, remembered="", probe=probe, search=search, own_agent=False):
+def locate(override, preset_host, remembered="", probe=probe, search=search, own_agent=False, allowed=None):
     """Found or raises NotFound. override: the Settings address, used as given. remembered: the address that
-    worked last time for this preset (or the one the user picked among several)."""
+    worked last time for this preset (or the one the user picked among several). allowed(ip): False for an
+    address OrcaSlicer has not granted yet; such a candidate is not probed from this (worker) thread, where
+    every refused attempt would queue another OrcaSlicer dialog, but returned in NotFound.pending so the page
+    can have it granted once on the UI thread."""
     if override:
         return Found(override, "override")
     tried, errors = [], {}
@@ -140,6 +185,9 @@ def locate(override, preset_host, remembered="", probe=probe, search=search, own
     for ip, _ in replies:
         if ip in tried:
             continue
+        if allowed is not None and not allowed(ip):
+            denied.append(ip)
+            continue
         try:
             printers.append(probe(ip))
         except kobra.KobraError as e:
@@ -154,9 +202,9 @@ def locate(override, preset_host, remembered="", probe=probe, search=search, own
         return Found(found["ip"], "discovered", note, found["name"])
     if printers:
         raise NotFound("%d Kobra X printers answer on this network: choose one." % len(printers), printers)
-    if denied:   # OrcaSlicer asks the user about a new address off the main thread: this first try is refused
-        raise NotFound("Found a printer at %s. Allow kobracontrol to reach it in the dialog OrcaSlicer shows, then "
-                       "press Try again." % ", ".join(denied))
+    if denied:   # a new address: OrcaSlicer must allow it first (the page asks for that on the UI thread)
+        raise NotFound("Found a printer at %s. Allow Kobra Control to reach it in OrcaSlicer's dialog; it connects "
+                       "by itself afterwards." % ", ".join(denied), pending=denied)
     raise NotFound(_nothing(preset_host, own_agent, errors))
 
 

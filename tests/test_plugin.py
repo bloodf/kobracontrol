@@ -328,6 +328,11 @@ class Page(Base):
         self.assertEqual(set(config["located"]), {"address", "source", "preset_host", "preset_agent", "spoolman_url",
                                                   "spoolman_source"})
 
+    def test_allow_hosts_is_answered_on_the_calling_thread(self):
+        page = self.page()
+        page.on_message({"type": "allow_hosts", "id": 9, "hosts": ["8.8.8.8"]})   # not a pending LAN printer
+        self.assertEqual(page.posted[-1], {"type": "reply", "id": 9, "result": {"allowed": [], "refused": []}})
+
     def test_moonraker_preset_is_a_hint_parsed_to_its_bare_host(self):
         """The owner's preset: printer_agent moonraker, print_host http://10.25.16.41:7125 (Kobralink)."""
         preset = orca.host.preset_bundle().current_printer_preset()

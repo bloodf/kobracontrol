@@ -10,7 +10,9 @@ Checked against the repository's test fakes and page tests only; not yet tried o
 
 - The Kobra Control tab finds the printer by itself. With no address under Settings it tries the address found
   before for the selected printer preset, then the preset's own address if a Kobra X answers there, then searches
-  the local network with SSDP (the search Anycubic Slicer Next sends). One printer found is used and remembered
+  the local network with SSDP (the search Anycubic Slicer Next sends; a Kobra X on firmware 2.0.2.8 answers it
+  with an empty datagram, which is what the search looks for). A printer found at an address OrcaSlicer does not
+  allow yet brings up OrcaSlicer's dialog once; Allow is the only click. One printer found is used and remembered
   per preset; several are listed once to choose from. A found address that stops answering is searched again, at
   most once a minute. When the preset's address is not a Kobra X (a Kobralink or Moonraker bridge, say), the tab
   says so in one line and uses the printer it found. Settings shows the address in use, how it was found, and
