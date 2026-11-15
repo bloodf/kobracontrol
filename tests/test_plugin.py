@@ -133,6 +133,14 @@ class Agent(Base):
         wait(lambda: self.events["message"])
         self.assertTrue(self.agent._pusher.is_alive())
 
+    def test_switching_printer_releases_the_old_connection(self):
+        """connect_printer for another address closes the session to the previous one (disconnect_printer does)."""
+        self.connect()
+        params = pa.PrinterConnectionParams(dev_id="other", host="127.0.0.2", password="")
+        self.assertEqual(self.agent.connect_printer(params), 0)
+        wait(lambda: "127.0.0.1" not in plugin._service.connections)
+        self.assertIn("127.0.0.2", plugin._service.connections)
+
     def test_discovery_announces_the_printer(self):
         self.connect()
         self.assertTrue(self.agent.start_discovery(True, False))

@@ -537,7 +537,7 @@ class KobraAgent(pa.PrinterAgentBase):
         host = host_of(getattr(params, "host", ""))
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
-        self._detach()
+        previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._filament_ids = self._generic_ids()
         self._was_connected = False
@@ -547,16 +547,22 @@ class KobraAgent(pa.PrinterAgentBase):
         self._pusher.start()
         _use("agent")
         service().connection(host).add_listener(self._on_change)
+        if previous != host:
+            self._release(previous)
         self._dirty.set()
         return OK
 
     def disconnect_printer(self):
         host = self._detach()
         self.dev_id = self.host = ""
+        self._release(host)
+        return OK
+
+    @staticmethod
+    def _release(host):
         svc = _service   # only the running service: never start a new one while the plugin unloads
         if host and svc is not None:
             threading.Thread(target=svc.release, args=(host,), name="kobracontrol-release", daemon=True).start()
-        return OK
 
     def on_load(self):
         _use("agent")
