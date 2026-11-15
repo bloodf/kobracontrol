@@ -1,0 +1,69 @@
+/* Kobra Control's own layout on top of the shared foundation (ui/shared): the page grid, rows inside a panel, plain
+   tables and the printer drawing. Colours are the foundation's --oui-* roles only; nothing here defines a colour. */
+html, body, #app { min-height: 100%; }
+
+/* Page-level messages, under the app bar on every tab. The live regions stay in the DOM while empty (what is added
+   later is then announced); only filled ones take space. */
+.kc-top { padding: 0 var(--oui-s4); }
+.kc-top .oui-banner { margin-top: var(--oui-s3); }
+.kc-live { display: grid; gap: var(--oui-s2); min-width: 0; }
+.kc-top .kc-live { gap: 0; }
+
+/* Dashboard: machine on the left, filament in the middle, stock on its own column when wide (DESIGN.md, Layout). */
+.kc-grid { display: grid; gap: var(--oui-s3); grid-template-columns: minmax(0, 1fr); align-items: start; }
+.kc-stock > .oui-panel { max-height: 640px; }
+@container oui-page (min-width: 900px) {
+  .kc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kc-stock { grid-column: 1 / -1; }
+}
+/* Wide: stock is a third column as tall as the two beside it and scrolls inside, so the whole machine is on one screen. */
+@container oui-page (min-width: 1500px) {
+  .kc-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(460px, 4fr); }
+  .kc-stock { grid-column: auto; position: relative; align-self: stretch; min-height: max(480px, calc(100vh - 138px)); }
+  .kc-stock > .oui-panel { position: absolute; inset: 0; max-height: none; height: auto; }
+  .kc-stock .sc-wrap { max-height: none; }
+}
+
+/* First run: one panel, one task. */
+.kc-first { justify-self: center; width: min(100%, 600px); margin-top: var(--oui-s8); }
+.kc-first .oui-empty { padding-block: var(--oui-s8) var(--oui-s5); }
+.kc-first .oui-empty-image { width: 176px; height: 176px; }
+
+/* Rows in one panel, separated by hairlines. */
+.kc-rows { display: grid; margin-block: calc(-1 * var(--oui-s2)); }
+.kc-rows > * + * { border-top: 1px solid var(--oui-border); }
+.kc-rows > * { padding-block: var(--oui-s1); }
+.kc-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--oui-s1) var(--oui-s2); min-height: 44px; }
+.kc-line-label { display: flex; align-items: center; gap: var(--oui-s2); margin-inline-end: auto; font-weight: 600; }
+.kc-inline { display: inline-flex; align-items: center; gap: var(--oui-s2); font-size: var(--oui-text-sm); color: var(--oui-muted); white-space: nowrap; }
+.kc-why { flex-basis: 100%; font-size: var(--oui-text-sm); color: var(--oui-muted); text-align: end; }
+.kc-why:empty { display: none; }
+.kc-why[data-tone] { color: var(--oui-tone); }
+.kc-pad { padding: var(--oui-s3) var(--oui-s4); }
+.kc-low { color: var(--oui-warning); font-weight: 600; }
+
+/* Plain tables (files, stock, filament use): the same measures as the foundation's small data table. */
+.kc-table { width: 100%; border-collapse: collapse; }
+.kc-table th { position: sticky; top: 0; z-index: 1; padding: 6px 12px; text-align: start; white-space: nowrap; font-size: var(--oui-text-xs); font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--oui-muted); background: var(--oui-raised); box-shadow: inset 0 -1px 0 var(--oui-border); }
+.kc-table td { padding: 5px 12px; vertical-align: middle; border-bottom: 1px solid var(--oui-border); }
+.kc-table tbody tr:last-child > td { border-bottom-width: 0; }
+.kc-table tbody tr:hover > td { background: var(--oui-raised); }
+.kc-table :is(th, td).oui-num, .kc-table :is(th, td).oui-end { text-align: end; }
+.kc-scroll { overflow: auto; }
+.kc-disclose summary { cursor: pointer; font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-primary); }
+.kc-disclose > :not(summary) { margin-top: var(--oui-s2); }
+
+/* The printer, drawn (DESIGN.md, Imagery): flat shapes on the palette, 1.5 px outlines, no text. */
+.art-printer { flex: none; display: block; }
+.art-body { fill: var(--oui-raised); stroke: var(--oui-control-border); stroke-width: 1.5; }
+.art-line { fill: none; stroke: var(--oui-control-border); stroke-width: 1.5; stroke-linecap: round; }
+.art-tube { fill: none; stroke: var(--oui-primary); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 2 3; }
+.art-head { fill: var(--oui-text); stroke: none; }
+.art-print { fill: var(--oui-primary); }
+.art-bed { fill: var(--oui-control-border); }
+.art-spool { fill: var(--oui-border); stroke: color-mix(in srgb, var(--oui-text) 45%, transparent); stroke-width: 1; }
+.art-spool[data-empty] { fill: none; stroke-dasharray: 2 2; }
+.art-hub { fill: var(--oui-surface); stroke: color-mix(in srgb, var(--oui-text) 45%, transparent); stroke-width: 1; }
+.art-printer[data-stale] .art-print { fill: var(--oui-control-border); }
+.art-printer[data-stale] .art-tube { stroke: var(--oui-control-border); }

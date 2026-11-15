@@ -53,8 +53,9 @@ async function pick(root, label) {
   assert(opt, 'option ' + label + ' in ' + qa('.p-select-overlay [role=option]').map(text).join('|'));
   opt.click(); await settle(); await until(() => !q('.p-select-overlay'), 'overlay closed'); await settle();
 }
-const alerts = () => qa('[role=alert] .p-message').map(text).join(' | ');
-const statusText = () => text(q('[data-test="state"]'));
+const alerts = () => qa('[role=alert] .oui-banner').map(text).join(' | ');
+// The job's state chip, then what the printer is doing in it (phase, pause or error reason).
+const statusText = () => [text(q('[data-test="state"]')), text(q('[data-test="state-detail"]'))].filter(Boolean).join(' · ');
 const ROWS = [{id: 7, filament_id: 70, name: 'Matte Black', vendor: 'Generic', material: 'ABS', colour: '#111111', colours: [], remaining: 500, initial: 1000, low: false, use_first: false, location: 'Shelf A'},
   {id: 11, filament_id: 110, name: 'White', vendor: 'Acme', material: 'PETG', colour: '#FAFAFA', colours: [], remaining: 40, initial: 1000, low: true, use_first: true, location: ''}];
 const STOCK = extra => ({spooler: {state: 'active', text: 'Spooler is running', detail: '', version: '0.21.0'},
@@ -89,14 +90,15 @@ test('connect: hello first, the status renders, blank numbers are not zero', `
   assert(text(byTest('link')) === 'Connected', 'connected pill');
   assert(text(q('.kc-addr')).includes('Bench Kobra') && text(q('.kc-addr')).includes('192.168.1.50'), 'printer and address shown');
   await post({type: 'status', data: VIEW({updated_at: 0, nozzle_temp: 0, bed_temp: 0, nozzle_target: 0, bed_target: 0, fan_pct: 0})});
-  assert(text(q('[data-heater-row="nozzle"] .st-read')).includes('—'), 'no report yet: nozzle is a dash, not 0: ' + text(q('[data-heater-row="nozzle"] .st-read')));
+  assert(text(q('[data-heater-row="nozzle"] .kc-heat-read')).includes('—'), 'no report yet: nozzle is a dash, not 0: ' + text(q('[data-heater-row="nozzle"] .kc-heat-read')));
   await post({type: 'status', data: PRINTING()});
   eq(statusText(), 'Printing', 'state');
-  assert(text(q('.st-file')).includes('benchy.gcode') && text(q('.st-file')).includes('37%'), 'file and progress');
-  assert(text(q('#status-h').parentElement).includes('Layer 142 / 380'), 'layers');
-  assert(text(q('.st-kv')).includes('1 h 8 min') && text(q('.st-kv')).includes('1 h 56 min'), 'elapsed and remaining: ' + text(q('.st-kv')));
-  assert(text(q('[data-heater-row="nozzle"] .st-read')).includes('219.6') && text(q('[data-heater-row="bed"] .st-read')).includes('59.8'), 'temperatures');
-  eq(q('.p-progressbar').getAttribute('aria-valuenow'), '37', 'progress bar');
+  const job = text(byTest('job-card'));
+  assert(job.includes('benchy.gcode') && job.includes('37%'), 'file and progress: ' + job);
+  assert(job.includes('Layer 142 / 380'), 'layers');
+  assert(job.includes('1 h 8 min') && job.includes('1 h 56 min'), 'elapsed and remaining: ' + job);
+  assert(text(q('[data-heater-row="nozzle"] .kc-heat-read')).includes('219.6') && text(q('[data-heater-row="bed"] .kc-heat-read')).includes('59.8'), 'temperatures');
+  eq(q('[data-test="job-card"] [role=progressbar]').getAttribute('aria-valuenow'), '37', 'progress bar');
 `);
 
 test('requests carry the printer generation', `
@@ -210,7 +212,9 @@ test('heating asks first; blank never sends 0; limits come from config; Off need
 test('heat is refused by the page when the printer does not allow it', `
   await ready(VIEW({can: {pause: false, resume: false, stop: false, move: false, heat: false, feed: false, print: false}}));
   assert(q('#temp-nozzle').disabled && q('[data-off="nozzle"]').disabled, 'heating off');
-  assert(text(q('#temp-why-nozzle')).includes('doesn’t allow heating'), 'says why: ' + text(q('#temp-why-nozzle')));
+  // said once for the panel, and the disabled field points at it
+  assert(text(byTest('heat-why')).includes('doesn’t allow heating'), 'says why: ' + text(byTest('heat-why')));
+  eq(q('#temp-nozzle').getAttribute('aria-describedby'), 'heat-why', 'the field points at the reason');
 `);
 
 test('confirmed:false shows "sent, waiting"; confirmed:true shows success; a second home while one runs shows the error', `
@@ -218,11 +222,11 @@ test('confirmed:false shows "sent, waiting"; confirmed:true shows success; a sec
   await click(q('[data-test="pause"]'));
   await reply(last('cmd', 'pause'), {confirmed: false});
   assert(text(q('.notices')).includes('Pause sent; waiting for the printer'), 'waiting text: ' + text(q('.notices')));
-  assert(!qa('.p-message-success').length, 'not shown as success');
+  assert(!qa('.notices .oui-banner[data-tone="success"]').length, 'not shown as success');
   await post({type: 'status', data: PRINTING({state: 'paused', can: {pause: false, resume: true, stop: true, move: true, heat: true, feed: true, print: false}})});
   await click(q('[data-test="resume"]'));
   await reply(last('cmd', 'resume'), {confirmed: true});
-  assert(text(q('.notices')).includes('Resume sent.') && qa('.p-message-success').length === 1, 'confirmed: plain success: ' + text(q('.notices')));
+  assert(text(q('.notices')).includes('Resume sent.') && qa('.notices .oui-banner[data-tone="success"]').length === 1, 'confirmed: plain success: ' + text(q('.notices')));
   await click(q('[data-move="x+"]'));
   await reply(last('cmd', 'move'), {confirmed: false});
   assert(text(q('.notices')).includes('Move sent; waiting'), 'move waits');
@@ -303,10 +307,10 @@ test('fan, light and speed mode', `
   eq(cmds('set_light').map(m => m.args), [{on: true}], 'light on');
   await reply(last('cmd', 'set_light'), true);
   await pick(byTest('speed'), 'Sport');
-  await click(btn('Apply', q('.st-line')));
+  await click(btn('Apply', byTest('temps')));
   eq(cmds('set_speed').map(m => m.args), [{mode: 3}], 'speed mode number');
   await post({type: 'status', data: VIEW()});
-  assert(text(q('.st-line .kc-why')).includes('No print is running'), 'speed needs a print, and says so');
+  assert(text(byTest('speed-why')).includes('No print is running'), 'speed needs a print, and says so');
 `);
 
 // ------------------------------------------------------------------ ACE
@@ -491,7 +495,7 @@ test('stock card shows only for a usable list; the lease flag follows; Settings 
     await until(() => cmds('stock').length > n, 'the page asks for the stock again', 8000);   // every 5 s
     await reply(last('cmd', 'stock'), view);
     assert(!byTest('stock-card'), what + ': no card at all');
-    assert(!qa('.kc-card').some(c => /stock/i.test(text(c.querySelector('h2')))), what + ': no stock heading');
+    assert(!/stock/i.test(text(q('#stock-h'))), what + ': no stock heading: ' + text(q('#stock-h')));
   }
   await until(() => last('lease').stock === false, 'lease: stock off when there is no usable list (renewed every 2 s)');
   await tab('settings');
@@ -518,7 +522,7 @@ test('filament use: a pending booking is shown with its slots and grams, and goe
   const t = text(card);
   for (const s of ['1 print is waiting to be booked', 'benchy.gcode', 'ACE 1 · Slot 1: 12.5 g', 'ACE 1 · Slot 2: 3.0 g']) assert(t.includes(s), 'shows ' + s + ': ' + t);
   assert(!q('[data-ack]'), 'nothing to acknowledge yet');
-  assert(!card.classList.contains('warn'), 'not a warning');
+  assert(!q('.oui-banner[data-tone="warn"]', card), 'not a warning');
 `);
 
 test('filament use: a failed booking lists its identity and reason; marking it checked is local and asks first', `
@@ -527,6 +531,9 @@ test('filament use: a failed booking lists its identity and reason; marking it c
   await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY], restore_notice: '2 unreadable unconfirmed entries were skipped'}));
   const card = byTest('usage-card');
   assert(card, 'card shown');
+  assert(text(byTest('usage-banner')).includes('1 filament use is not confirmed in Spoolman'), 'one banner says it: ' + text(byTest('usage-banner')));
+  assert(!q('[data-ack]'), 'the list is behind Review');
+  await click(byTest('usage-review'));
   const t = text(card);
   for (const s of ['1 unconfirmed use', 'benchy.gcode', 'Bench Kobra', 'ACE 1 · Slot 2', '12.5', '#7', 'time unknown', 'Spoolman timeout', 'never sends them again', 'unreadable'])
     assert(t.includes(s), 'shows ' + s + ': ' + t);
@@ -548,6 +555,7 @@ test('filament use: a failed acknowledgement keeps the entry and says why', `
   await until(() => last('cmd', 'usage'));
   await reply(last('cmd', 'usage'), USAGE({unconfirmed: [{...ENTRY, spool: null, at: 1794300000}]}));
   assert(text(byTest('usage-card')).includes('none linked'), 'unlinked spool said, not hidden');
+  await click(byTest('usage-review'));
   await click(btn('Mark the use on ACE 1 · Slot 2 of benchy.gcode as checked')); await yes();
   await fail(last('cmd', 'usage_ack'), "can't save the print ledger (disk full)");
   assert(alerts().includes('disk full') && text(byTest('usage-card')).includes('benchy.gcode'), 'entry kept, error shown: ' + alerts());
@@ -557,7 +565,7 @@ test('filament use: the error path of usage is shown with the reason; a ledger t
   await ready(VIEW());
   await until(() => last('cmd', 'usage'));
   await fail(last('cmd', 'usage'), 'ledger unreadable');
-  assert(byTest('usage-card') && text(byTest('usage-card')).includes('Couldn’t read the filament-use ledger: ledger unreadable'), 'load error shown: ' + text(q('.kc-main')));
+  assert(byTest('usage-card') && text(byTest('usage-card')).includes('Couldn’t read the filament-use ledger: ledger unreadable'), 'load error shown: ' + text(byTest('usage-card')));
   const n = cmds('usage').length;
   await until(() => cmds('usage').length > n, 'asked again later', 20000);   // every 10 s while the Dashboard is on screen
   await reply(last('cmd', 'usage'), USAGE({save_error: 'disk full'}));
@@ -568,6 +576,8 @@ test('filament use: pt-BR', `
   await ready(VIEW());
   await until(() => last('cmd', 'usage'));
   await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
+  assert(text(byTest('usage-review')) === 'Conferir', 'Review in Portuguese');
+  await click(byTest('usage-review'));
   const t = text(byTest('usage-card'));
   assert(t.includes('Consumo de filamento no Spoolman') && t.includes('1 consumo não confirmado') && t.includes('Já conferi no Spoolman'), 'Portuguese: ' + t);
 `, { lang: 'pt-BR' });
@@ -681,7 +691,9 @@ test('offline: unreachable printer, retry, and recovery when it answers again', 
   assert(!text(byTest('target-banner')).includes('unreachable'), 'cleared');
   await post({type: 'offline', error: 'mqtt lost'});
   assert(text(byTest('target-banner')).includes('mqtt lost'), 'offline message: ' + text(byTest('target-banner')));
-  assert(q('[data-test="pause"]').disabled && text(byTest('controls-why')).includes('doesn’t answer'), 'controls off, with the reason');
+  assert(q('[data-test="pause"]').disabled, 'controls off');
+  eq(q('[data-test="pause"]').getAttribute('aria-describedby'), 'kc-why', 'they point at the one reason');
+  assert(text(q('#kc-why')).includes('doesn’t answer'), 'which says the printer does not answer: ' + text(q('#kc-why')));
   await post({type: 'status', data: PRINTING()});
   assert(!q('[data-test="pause"]').disabled, 'a status brings controls back');
 `);
@@ -723,11 +735,11 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   eq(text(byTest('state')), 'Offline', 'Status card');
   assert(text(byTest('cam-why')).includes('doesn’t answer'), 'camera gives the same reason: ' + text(byTest('cam-why')));
   assert(!text(document.body).includes('Select a printer first'), 'no "no printer" text while one is selected');
-  const card = q('[aria-labelledby="status-h"]');
-  const live = qa('button, input, [role="checkbox"]', card).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
+  // every printer control in the printer's panels (job, temperatures, move, camera, filament) is off
+  const live = [byTest('machine'), byTest('filament')].flatMap(root => qa('button, input, [role="checkbox"]', root)).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
     && !el.closest('.p-disabled') && !el.closest('details:not([open])'));
   eq(live.map(el => (el.textContent || el.getAttribute('aria-label') || el.outerHTML).trim().slice(0, 60)), [], 'every printer control is off');
-  for (const b of qa('button.p-button', card)) {
+  for (const b of [byTest('machine'), byTest('filament')].flatMap(root => qa('button.p-button', root))) {
     const st = getComputedStyle(b);
     assert(parseFloat(st.opacity) <= 0.7 || st.cursor === 'not-allowed', 'looks disabled: ' + text(b) + ' opacity ' + st.opacity);
   }
@@ -835,12 +847,12 @@ test('stock table: thumbnails stay small and nothing overlaps, with many spools,
   await reply(last('cmd', 'stock'), STOCK({stock: {...STOCK().stock, rows: many}}));
   await until(() => byTest('stock-card'), 'stock card');
   // the owner's web view drew each spool as a tall narrow strip; without aspect-ratio support it must still be a square
-  const style = document.createElement('style'); style.textContent = '.sf { aspect-ratio: auto !important; }'; document.head.appendChild(style);
+  const style = document.createElement('style'); style.textContent = '.oui-spool { aspect-ratio: auto !important; }'; document.head.appendChild(style);
   for (const width of ['', '380px']) {
-    q('.kc-shell').style.width = width; q('.kc-shell').style.maxWidth = width || '';
+    q('#app').style.width = width; q('#app').style.maxWidth = width || '';
     await settle();
     const wrap = q('[data-test="stock-card"] .sc-wrap');
-    for (const fig of qa('.sf', wrap).slice(0, 6)) {
+    for (const fig of qa('.oui-spool', wrap).slice(0, 6)) {
       const r = fig.getBoundingClientRect();
       assert(Math.abs(r.width - 40) < 1 && Math.abs(r.height - 40) < 1, 'thumbnail 40x40 at ' + (width || 'wide') + ', got ' + r.width + 'x' + r.height);
     }
@@ -930,8 +942,8 @@ test('files: a list error says so and can be retried', `
   await ready(VIEW());
   await tab('files');
   await fail(last('cmd', 'files'), 'printer timed out');
-  assert(text(q('.p-message')).includes('printer timed out'), 'error shown');
-  await click(btn('Try again', q('.p-message')));
+  assert(text(q('.fv-error')).includes('printer timed out'), 'error shown');
+  await click(btn('Try again', q('.fv-error')));
   eq(cmds('files').length, 2, 'retry');
 `);
 
@@ -1015,7 +1027,7 @@ test('tls: a changed printer certificate is shown, the fingerprint is in Setting
 test('pt-BR: the new file, finish-time and certificate texts are translated', `
   const at = Math.floor(Date.now() / 1000);
   await ready(PRINTING({updated_at: at, remaining_s: 7000, tls: {fingerprint: 'ab'.repeat(32), changed_from: 'cd'.repeat(32)}}));
-  assert(text(q('.st-kv')).includes('Termina') && byTest('eta'), 'eta: ' + text(q('.st-kv')));
+  assert(text(byTest('job-card')).includes('Termina') && byTest('eta'), 'eta: ' + text(byTest('job-card')));
   assert(text(byTest('tls-changed')).includes('certificado da impressora mudou'), 'tls: ' + text(byTest('tls-changed')));
   await post({type: 'status', data: VIEW()});
   await tab('files');
@@ -1133,16 +1145,18 @@ test('the page never shows U1 wording', `
   const bad = /\\bU1\\b|toolhead|Snapmaker|Moonraker|Klipper|extended firmware|purifier|console/i;
   for (const name of ['dash', 'files', 'settings']) {
     await tab(name);
-    assert(!bad.test(text(q('.kc-main'))), name + ': ' + (text(q('.kc-main')).match(bad) || [''])[0]);
+    const shown = qa('main').filter(m => m.offsetParent).map(text).join(' ');
+    assert(!bad.test(shown), name + ': ' + (shown.match(bad) || [''])[0]);
   }
   assert(!q('[data-tab="console"]'), 'no Console tab');
-  assert(!bad.test(text(q('.kc-head'))), 'header');
+  assert(!bad.test(text(q('.oui-appbar'))), 'header');
 `);
 
-test('boot and icon blocks are the ones the code reads', `
-  assert(document.getElementById('kobra-boot') && document.getElementById('kobra-icons'), 'kobra-boot and kobra-icons exist');
+test('the boot block is the one the code reads; icons are compiled in, not injected', `
+  assert(document.getElementById('kobra-boot'), 'kobra-boot exists');
+  assert(!document.getElementById('kobra-icons'), 'no injected icon map');
   assert(!document.getElementById('u1-boot') && !document.getElementById('u1-icons'), 'no u1 ids');
-  assert(qa('.kc-icon svg').length > 3, 'icons are drawn from the injected map');
+  assert(qa('svg.oui-icon').length > 3, 'icons are drawn from the shared set');
 `);
 
 test('theme follows the host colour while the page runs', `
@@ -1151,7 +1165,7 @@ test('theme follows the host colour while the page runs', `
   await until(() => !root.classList.contains('orca-dark'), 'light', 15000);
   root.style.setProperty('--orca-bg', '#151515');
   await until(() => root.classList.contains('orca-dark'), 'dark after the host changed', 15000);
-  eq(getComputedStyle(document.body).backgroundColor, 'rgb(24, 28, 34)', 'dark palette background');
+  eq(getComputedStyle(document.body).backgroundColor, 'rgb(24, 21, 43)', 'dark violet palette background');
 `);
 
 test('keyboard focus and typed values survive status refreshes', `
@@ -1170,7 +1184,7 @@ test('the tabs switch panels and the lease follows the visible tab', `
   await ready(VIEW());
   await tab('files'); assert(q('#files-h'), 'files panel');
   await tab('settings'); assert(q('#conn-h'), 'settings panel');
-  await tab('dash'); assert(q('#status-h'), 'dashboard panel');
+  await tab('dash'); assert(byTest('job-card') && byTest('job-card').offsetParent, 'dashboard panel');
   assert(last('lease').stock !== undefined, 'lease has the stock flag');
 `);
 

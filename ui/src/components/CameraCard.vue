@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick } from 'vue';
 import Button from 'primevue/button';
-import Icon from './Icon.vue';
+import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
+import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, lease, controlsOff, link, printerName } from '../app/store';
 import { t } from '../core/i18n';
 
-function toggle() {
+async function toggle() {
   s.camOn = !s.camOn;
   if (!s.camOn) { s.frame = ''; s.camError = ''; s.camReason = ''; }
   lease();
+  await nextTick();   // Turn on and Turn off are different buttons: keep the keyboard on the one that replaced the other
+  if (document.activeElement === document.body) document.querySelector<HTMLElement>('[data-focus-key="camera"]')?.focus();
 }
 // A plain explanation per reason: what happened and what to do about it.
 const msg = computed(() => {
@@ -18,31 +21,39 @@ const msg = computed(() => {
   if (s.camReason === 'no_stream') return t('cam.reason.no_stream');
   return t('cam.reason.failed', { error: s.camError });
 });
+const off = computed(() => link.value !== 'connected' && !s.camOn);
 </script>
+
 <template>
-  <!-- Off: a compact strip so status and controls stay above the fold. -->
-  <section class="kc-card cam-card" :class="{ compact: !s.camOn }" aria-labelledby="cam-h">
-    <div class="kc-row">
-      <h2 id="cam-h" class="cam-h"><Icon name="icon/camera" /> {{ t('cam.title') }}</h2>
-      <span v-if="!s.camOn" class="oui-meta">{{ t('cam.off') }} · {{ t('cam.offHint') }}</span>
-      <span class="kc-spacer" />
-      <Button :severity="s.camOn ? 'secondary' : undefined" :outlined="s.camOn" :disabled="link !== 'connected' && !s.camOn"
-              data-focus-key="camera" data-test="camera" @click="toggle">
-        <Icon name="icon/live-stream" /><span>{{ s.camOn ? t('cam.stop') : t('cam.start') }}</span></Button>
-    </div>
+  <!-- Off: one row, not a 16:9 hole, so the printer's state stays above the fold. -->
+  <OuiPanel class="cam-card" :class="{ compact: !s.camOn }" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
+    <template #title><span id="cam-h">{{ t('cam.title') }}</span></template>
+    <template v-if="s.camOn" #actions>
+      <Button severity="secondary" size="small" :label="t('cam.stop')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="cameraOff" :size="14" /></template></Button>
+    </template>
     <!-- The same reason as every other control: the page shows one connection state. -->
-    <p v-if="link !== 'connected' && !s.camOn" class="kc-why" data-test="cam-why">{{ controlsOff || t('reason.waiting') }}</p>
-    <div v-if="s.camOn" class="cam-view">
+    <OuiEmpty v-if="!s.camOn" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
+      <span v-if="off" data-test="cam-why">{{ controlsOff || t('reason.waiting') }}</span><template v-else>{{ t('cam.offHint') }}</template>
+      <template #actions><Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && controlsOff ? 'kc-why' : undefined"
+                                 data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
+    </OuiEmpty>
+    <div v-else class="cam-view">
       <img v-if="s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
-      <div v-else class="cam-empty" role="status" :data-reason="s.camReason"><Icon :name="s.camError ? 'spot/camera-off' : 'spot/not-connected'" :size="96" /><span>{{ msg }}</span>
-        <Button v-if="s.camReason === 'no_ffmpeg'" size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="s.tab = 'settings'" /></div>
+      <div v-else class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
+        <OuiEmpty :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg">
+          <template v-if="s.camReason === 'no_ffmpeg'" #actions>
+            <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+          </template>
+        </OuiEmpty>
+      </div>
     </div>
-  </section>
+  </OuiPanel>
 </template>
-<style scoped>
-.cam-h { margin: 0; display: flex; align-items: center; gap: 8px; }
-.cam-card.compact { padding-block: 10px; }
-.cam-view { margin-top: 12px; position: relative; background: #000; border-radius: 6px; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+<style>
+/* The picture area: always black behind the picture, whatever the theme (it is the camera's frame, not a surface). */
+.cam-view { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; aspect-ratio: 16 / 9; background: #000;
+  border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); }
 .cam-view img { width: 100%; height: 100%; object-fit: contain; }
-.cam-empty { display: grid; justify-items: center; gap: 8px; color: #d5dbe3; padding: 16px; text-align: center; }
+.cam-view .cam-empty { background: none; max-width: 560px; text-align: center; }
 </style>

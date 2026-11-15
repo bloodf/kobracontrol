@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 
 const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
-for (const marker of ['__BOOT__', '__ICONS__']) {
+for (const marker of ['__BOOT__']) {
   if (html.split(marker).length !== 2) throw new Error(`built page must contain ${marker} exactly once`);
 }
 // "@import" alone also matches PrimeVue 5's CSS sanitizer regex; only a real @import url(...)/"..." counts.

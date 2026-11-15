@@ -24,12 +24,18 @@ const toSettings = (f: Form): Record<string, unknown> => ({
   auto_leveling: f.leveling, vibration_compensation: f.vibration, spoolman_url: f.spoolman.trim(),
   spoolman_auto: f.spoolmanAuto, spoolman_report_usage: f.usage });
 
-export const dirty = computed(() => {
+/** The settings typed here and not saved yet, by their plugin names. */
+export const changed = computed(() => {
   const c = config.value;
-  if (!c) return false;
+  if (!c) return [];
   const saved = toSettings(fromSettings(c.settings)), now = toSettings(form);
-  return Object.keys(now).some(k => now[k] !== saved[k]);
+  return Object.keys(now).filter(k => now[k] !== saved[k]);
 });
+export const dirty = computed(() => changed.value.length > 0);
+/** Back to the saved values (the save bar's Discard). */
+export function discard(): void {
+  if (config.value && !saving.value) Object.assign(form, fromSettings(config.value.settings));
+}
 
 function fill(m: Config): void {
   const keep = !saving.value && dirty.value;

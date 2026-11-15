@@ -2,38 +2,44 @@
 import { computed, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import Icon from './Icon.vue';
-import SpoolFigure from './SpoolFigure.vue';
-import LevelBar from './LevelBar.vue';
-import { spoolFraction } from '../core/spool-level';
-import { s, run, tracker, controlsOff, printerName } from '../app/store';
+import { OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '../../shared/src/components';
+import { s, run, tracker, controlsOff, printerName, loadSpools, stale } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
-import { hexOf } from '../core/logic';
-import type { Slot } from '../app/types';
+import { family, hexOf } from '../core/logic';
+import type { Slot, Spool } from '../app/types';
 
+// One slot as an object card: its filament colour across the top, the drawn spool, the amount left, the Spoolman spool
+// it books on (the per-slot picker, folded in here), then Edit, Feed and Retract. Feed and retract ask first; linking
+// and unlinking a spool ask first; an edit doesn't.
 const props = defineProps<{ slot: Slot; label: string }>();
 const TYPES = ['PLA', 'PLA+', 'PLA-CF', 'PETG', 'PETG-CF', 'ABS', 'ASA', 'TPU', 'PA', 'PA-CF', 'PC', 'PVA', 'HIPS'];
 const key = computed(() => props.slot.global_index);
 const ready = computed(() => props.slot.status === 5);
 const loaded = computed(() => s.status?.loaded_slot === key.value);
 const colour = computed(() => hexOf(props.slot.color));
-const stateText = computed(() => {
-  const a = props.slot.activity;
-  if (a === 'loading') return t('slot.loading');
-  if (a === 'unloading') return t('slot.unloading');
-  if (loaded.value) return t('slot.loadedHere');
-  return ready.value ? t('slot.ready') : t('slot.empty');
-});
 const linked = computed(() => (props.slot.spool_id != null ? s.spools.find(x => x.id === props.slot.spool_id) ?? null : null));
-// The level comes from the linked Spoolman spool, else from what the printer reports for the slot (percent), else full.
-const reported = computed(() => (typeof props.slot.percent === 'number' ? Math.max(0, Math.min(100, props.slot.percent)) : null));
-const fraction = computed(() => (!ready.value ? 0 : linked.value ? spoolFraction(linked.value.remaining, linked.value.initial) ?? 1 : reported.value !== null ? reported.value / 100 : 1));
-const pct = computed(() => (linked.value ? (() => { const f = spoolFraction(linked.value.remaining, linked.value.initial); return f === null ? null : Math.round(f * 100); })() : null));
+const typeName = computed(() => [props.slot.brand, props.slot.material_name || props.slot.type].filter(Boolean).join(' ') || t('slot.noType'));
+// The name is the Spoolman spool when one is linked, else what the printer reports for the slot.
+const name = computed(() => (!ready.value ? null : linked.value ? `${linked.value.vendor} ${linked.value.name}`.trim() : typeName.value));
+const meta = computed(() => (!ready.value ? null : linked.value ? [linked.value.material, `#${linked.value.id}`].join(' · ')
+  : [props.slot.type || t('slot.noType'), props.slot.spool_id != null ? t('pick.unknown', { id: props.slot.spool_id }) : t('slot.notLinked')].join(' · ')));
+// The level comes from the linked Spoolman spool, else from what the printer reports for the slot (percent), else unknown.
+const reportedPct = computed(() => (typeof props.slot.percent === 'number' ? Math.max(0, Math.min(100, props.slot.percent)) : null));
+const state = computed<{ state: OuiState; text: string } | null>(() => {
+  const a = props.slot.activity;
+  if (a === 'loading') return { state: 'busy', text: t('slot.loading') };
+  if (a === 'unloading') return { state: 'busy', text: t('slot.unloading') };
+  if (loaded.value) return { state: stale.value ? 'stale' : 'ok', text: t('slot.loadedHere') };
+  if (ready.value && linked.value?.low) return { state: 'warn', text: t('slot.low') };
+  return null;
+});
 
 const editWhy = computed(() => controlsOff.value || (s.status && !s.status.can.feed ? t('reason.noFeed') : ''));
 const feedWhy = computed(() => controlsOff.value || (s.status && !s.status.can.feed ? t('reason.noFeed')
   : !ready.value ? t('reason.slotEmpty') : tracker.isBusy(`feed:${key.value}`) ? t('reason.pending') : ''));
+// Disabled controls point at the reason: the page's (#kc-why), the panel's (#feed-why), or this slot's line.
+const whyId = (why: string) => (!why ? undefined : controlsOff.value ? 'kc-why' : s.status && !s.status.can.feed ? 'feed-why' : !ready.value ? `slot-why-${key.value}` : undefined);
 async function feed() {
   const n = props.label;
   if (!await ask({ title: t('confirm.feed.title', { slot: n }), text: t('confirm.feed.text', { slot: n, printer: printerName.value }),
@@ -60,67 +66,100 @@ async function saveEdit() {
     args: { slot: key.value, type: form.type, colour: form.colour }, okText: t('ok.slotSet', { slot: props.label }), timeoutMs: 30000 });
   if (r.ok) editing.value = false;
 }
+
+// ---------------------------------------------------------------- the Spoolman spool this slot books on
+const spoolLabel = (sp: Spool) => t('pick.option', { id: sp.id, vendor: sp.vendor, name: sp.name, material: sp.material, grams: fmt.grams(sp.remaining) });
+const find = (id: number | null) => (id == null ? null : s.spools.find(x => x.id === id) ?? null);
+const pickGroups = computed(() => {
+  const fam = ready.value && props.slot.type ? family(props.slot.type) : '';
+  const fit = s.spools.filter(sp => !fam || family(sp.material) === fam);
+  const rest = s.spools.filter(sp => !fit.includes(sp));
+  const opt = (sp: Spool) => ({ value: sp.id, label: spoolLabel(sp), sp });
+  return [
+    { label: t('pick.fit'), items: [{ value: 0, label: t('pick.none'), sp: null }, ...fit.map(opt)] },
+    ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : []),
+  ];
+});
+async function choose(id: number | null) {
+  const slotName = props.label, sl = props.slot;
+  if (!id) {
+    const was = sl.spool_id;
+    if (was == null) return;
+    if (!await ask({ title: t('act.unbind', { slot: slotName }), text: t('confirm.unbind.text', { id: was, slot: slotName }), yes: t('confirm.unbind.yes'), no: t('common.goBack') })) return;
+    const r = await run({ key: `bind:${sl.global_index}`, label: t('act.unbind', { slot: slotName }), cmd: 'unbind', args: { slot: sl.global_index }, okText: t('ok.unbind', { slot: slotName }) });
+    if (!r.ok) void loadSpools(true);
+    return;
+  }
+  if (!await ask({ title: t('act.bind', { slot: slotName }), text: t('confirm.bind.text', { slot: slotName, id }), yes: t('confirm.bind.yes', { slot: slotName }), no: t('common.goBack') })) return;
+  const r = await run({ key: `bind:${sl.global_index}`, label: t('act.bind', { slot: slotName }), cmd: 'bind', args: { slot: sl.global_index, spool_id: id },
+    okText: t('ok.bind', { slot: slotName, id }), timeoutMs: 60000 });
+  if (!r.ok) void loadSpools(true);
+}
 </script>
 
 <template>
-  <article class="sl" :class="{ loaded }" :aria-labelledby="`sl-${key}`" :data-slot="key">
-    <template v-if="!editing">
-      <div class="sl-top">
-        <SpoolFigure class="sl-spool" :paint="ready ? colour : ''" :fraction="fraction" :size="56" />
-        <div class="sl-name">
-          <strong :id="`sl-${key}`">{{ t('slot.name', { n: slot.index + 1 }) }}</strong>
-          <div class="sl-state" data-test="slot-state">{{ stateText }}</div>
-          <div class="sl-mat"><template v-if="ready"><span class="kc-sw" :style="{ background: colour || 'transparent' }" /> {{ [slot.brand, slot.material_name || slot.type].filter(Boolean).join(' ') || t('slot.noType') }}</template><template v-else>&nbsp;</template></div>
-        </div>
-      </div>
-      <div class="sl-level">
-        <template v-if="ready && linked">
-          <div class="kc-num"><strong :class="{ 'kc-warn': linked.low }">{{ fmt.grams(linked.remaining) }}</strong>
-            <span v-if="pct !== null" class="oui-muted"> · {{ pct }}%</span></div>
-          <LevelBar :pct="pct" :paint="colour || '#888'" :level="linked.low ? 'low' : ''" />
-        </template>
-        <template v-else-if="ready && reported !== null">
-          <div class="kc-num"><strong>{{ reported }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></div>
-          <LevelBar :pct="reported" :paint="colour || '#888'" />
-        </template>
-        <p v-else-if="!ready && !controlsOff" class="kc-why">{{ t('reason.slotEmpty') }}</p>
-      </div>
-      <div class="kc-row sl-actions">
-        <Button size="small" severity="secondary" outlined :label="t('slot.edit')" :aria-label="t('slot.editLabel', { slot: label })" :disabled="!!editWhy"
-                :data-focus-key="`edit:${key}`" :data-edit="key" @click="startEdit" />
-        <Button size="small" severity="secondary" outlined :aria-label="t('slot.feedLabel', { slot: label })" :disabled="!!feedWhy" :loading="tracker.isBusy(`feed:${key}`)"
-                :data-focus-key="`feed:${key}`" :data-feed="key" @click="feed"><Icon name="icon/load-filament" /><span>{{ t('slot.feed') }}</span></Button>
-        <Button size="small" severity="secondary" outlined :aria-label="t('slot.retractLabel', { slot: label })" :disabled="!!feedWhy" :loading="tracker.isBusy(`feed:${key}`)"
-                :data-focus-key="`retract:${key}`" :data-retract="key" @click="retract"><Icon name="icon/unload-filament" /><span>{{ t('slot.retract') }}</span></Button>
+  <OuiSlot class="kc-slot" :label="String(slot.index + 1)" :name="name" :material="meta" :color="ready ? colour || null : null"
+           :colors="ready && linked?.colours?.length ? linked.colours : null" :remaining="ready ? linked?.remaining ?? null : null" :initial="ready ? linked?.initial ?? null : null"
+           :low="!!linked?.low" :active="loaded && !stale" :empty-label="t('slot.empty')" :unknown-label="t('slot.weightUnknown')"
+           :aria-label="label" :data-slot="key">
+    <template v-if="state" #state><OuiStatus :state="state.state" :title="state.text" data-test="slot-state">{{ state.text }}</OuiStatus></template>
+    <template v-if="!linked && reportedPct !== null" #amount>
+      <div class="oui-slot-amount">
+        <p class="oui-num"><strong>{{ reportedPct }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></p>
+        <OuiLevel :fraction="reportedPct / 100" />
       </div>
     </template>
-    <form v-else class="sl-form" @submit.prevent="saveEdit">
-      <strong :id="`sl-${key}`">{{ t('slot.editTitle', { slot: label }) }}</strong>
+
+    <span class="oui-sr">{{ t('slot.name', { n: slot.index + 1 }) }}</span>
+    <p v-if="!ready && !controlsOff" :id="`slot-why-${key}`" class="oui-meta">{{ t('reason.slotEmpty') }}</p>
+
+    <form v-if="editing" class="sl-form" @submit.prevent="saveEdit">
+      <p class="oui-label">{{ t('slot.editTitle', { slot: label }) }}</p>
       <div class="sl-grid">
-        <label :id="`e${key}-tl`">{{ t('slot.material') }}</label><Select v-model="form.type" :options="types" :aria-labelledby="`e${key}-tl`" :data-edit-type="key" />
-        <label :for="`e${key}-c`">{{ t('slot.colour') }}</label><input :id="`e${key}-c`" v-model="form.colour" type="color" class="sl-colour">
+        <label :id="`e${key}-tl`">{{ t('slot.material') }}</label>
+        <Select v-model="form.type" :options="types" size="small" :aria-labelledby="`e${key}-tl`" :data-edit-type="key" />
+        <label :for="`e${key}-c`">{{ t('slot.colour') }}</label>
+        <span class="sl-colour-field"><input :id="`e${key}-c`" v-model="form.colour" type="color" class="sl-colour"><OuiSwatch :color="form.colour" /></span>
       </div>
-      <div class="kc-row">
-        <Button type="submit" :label="t('common.save')" :loading="tracker.isBusy(`edit:${key}`)" :disabled="!!editWhy" />
-        <Button severity="secondary" outlined :label="t('common.cancel')" @click="editing = false" />
+      <div class="oui-row">
+        <Button type="submit" size="small" :label="t('common.save')" :loading="tracker.isBusy(`edit:${key}`)" :disabled="!!editWhy" />
+        <Button severity="secondary" text size="small" :label="t('common.cancel')" @click="editing = false" />
       </div>
     </form>
-  </article>
+
+    <Select v-else-if="s.spools.length" :model-value="slot.spool_id ?? 0" :options="pickGroups" option-group-label="label" option-group-children="items"
+            option-label="label" option-value="value" filter :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
+            :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="controlsOff ? 'kc-why' : undefined" class="sl-pick"
+            :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)">
+      <template #value="{ value }">
+        <span class="sl-opt"><OuiSwatch v-if="find(value)" :color="find(value)!.colour ?? null" :colors="find(value)!.colours ?? null" />
+          <span class="oui-truncate">{{ value ? (find(value) ? spoolLabel(find(value)!) : t('pick.unknown', { id: value })) : t('pick.choose') }}</span></span>
+      </template>
+      <template #option="{ option }">
+        <span class="sl-opt"><OuiSwatch v-if="option.sp" :color="option.sp.colour ?? null" :colors="option.sp.colours ?? null" />
+          <span class="oui-truncate">{{ option.label }}</span></span>
+      </template>
+    </Select>
+
+    <template #actions>
+      <Button size="small" severity="secondary" text :label="t('slot.edit')" :aria-label="t('slot.editLabel', { slot: label })" :disabled="!!editWhy || editing"
+              :aria-describedby="whyId(editWhy)" :data-focus-key="`edit:${key}`" :data-edit="key" @click="startEdit" />
+      <Button size="small" severity="secondary" text :label="t('slot.feed')" :aria-label="t('slot.feedLabel', { slot: label })" :disabled="!!feedWhy" :aria-describedby="whyId(feedWhy)"
+              :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`feed:${key}`" :data-feed="key" @click="feed" />
+      <Button size="small" severity="secondary" text :label="t('slot.retract')" :aria-label="t('slot.retractLabel', { slot: label })" :disabled="!!feedWhy" :aria-describedby="whyId(feedWhy)"
+              :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`retract:${key}`" :data-retract="key" @click="retract" />
+    </template>
+  </OuiSlot>
 </template>
 
-<style scoped>
-.sl { min-width: 0; border: 1px solid var(--oui-border); border-radius: 12px; padding: 12px; background: var(--oui-surface); display: flex; flex-direction: column; gap: 8px; }
-.sl.loaded { border-color: var(--p-primary-color); }
-.sl-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 56px; }
-.sl-level { min-height: 38px; }
-.sl-level p { margin: 0; }
-.sl-mat { min-height: 1.4em; }
-.sl-actions { margin-top: auto; }
-.sl-spool { margin: -2px 0 0; }
-.sl-name { min-width: 0; overflow-wrap: anywhere; }
-.sl-state { color: var(--oui-muted); font-size: 12px; }
-.sl-actions :deep(.p-button) { gap: 4px; }
-.sl-form { display: grid; gap: 8px; }
-.sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
-.sl-colour { width: 44px; height: 32px; padding: 0; border: 1px solid var(--oui-control-border, var(--oui-border)); border-radius: 6px; background: none; }
+<style>
+.kc-slot .oui-slot-state { min-width: 0; }
+.kc-slot .oui-slot-state > .oui-status { max-width: 100%; }
+.kc-slot .oui-slot-state .oui-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-pick { width: 100%; min-width: 0; }
+.sl-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.sl-form { display: grid; gap: var(--oui-s2); padding: var(--oui-s2); border-radius: var(--oui-radius); background: var(--oui-inset); }
+.sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--oui-s2); align-items: center; }
+.sl-colour-field { display: inline-flex; align-items: center; gap: var(--oui-s2); }
+.sl-colour { width: 44px; height: 26px; padding: 0; border: 1px solid var(--oui-control-border); border-radius: var(--oui-radius-sm); background: none; }
 </style>

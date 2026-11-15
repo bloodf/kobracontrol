@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import Checkbox from 'primevue/checkbox';
-import Message from 'primevue/message';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import Icon from './Icon.vue';
+import ToggleSwitch from 'primevue/toggleswitch';
+import { OuiEmpty, OuiIcon, OuiKeyValue, OuiPanel, OuiSwatch, OuiThumb, OuiToolbar } from '../../shared/src/components';
+import { file as fileIcon, files as filesIcon, printer, refresh, trash, x } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, run, tracker, targetKnown, printerName, controlsOff } from '../app/store';
 import { config } from '../app/settings';
@@ -78,6 +78,19 @@ const problem = (m: FileMaterial) => (m.check === 'differs'
 // Read-only check of what the file needs against the slots the print would use (file_details, plugin side).
 const mismatch = computed(() => materials.value.map(problem).filter(Boolean).join('; '));
 const n0 = (v: number | null | undefined, d = 0) => (v == null ? '—' : fmt.number(v, d));
+const facts = computed(() => {
+  const i = info.value;
+  if (!i) return [];
+  return [
+    { label: t('files.info.time'), value: i.estimated_s != null ? fmt.duration(i.estimated_s) : '—' },
+    { label: t('files.info.layers'), value: n0(i.layers) },
+    { label: t('files.info.filament'), value: i.filament_g != null ? fmt.grams(i.filament_g) : '—' },
+    { label: t('files.info.layer'), value: i.layer_height != null ? `${n0(i.layer_height, 2)} mm` : '—' },
+    { label: t('files.info.temps'), value: t('files.info.tempsValue', { nozzle: n0(i.nozzle_temp), bed: n0(i.bed_temp) }) },
+    { label: t('files.info.nozzle'), value: i.nozzle != null ? `${n0(i.nozzle, 1)} mm` : '—' },
+  ];
+});
+const printWhyId = computed(() => (!printWhy.value ? undefined : controlsOff.value ? 'kc-why' : 'print-start-why'));
 const printWhy = computed(() => controlsOff.value || (s.status && !s.status.can.print ? t('reason.noPrintNow') : tracker.isBusy('print') ? t('reason.pending') : ''));
 async function print() {
   const name = selected.value;
@@ -98,102 +111,107 @@ async function del(name: string) {
 }
 </script>
 <template>
-  <section class="kc-card" aria-labelledby="files-h">
-    <div class="kc-row fv-bar">
-      <h2 id="files-h" class="fv-h"><Icon name="icon/files" /> {{ t('files.title') }}</h2>
-      <span class="oui-meta" data-test="disk">{{ disk }}</span><span class="kc-spacer" />
-      <Button severity="secondary" outlined :label="t('common.refresh')" :loading="state === 'loading'" :disabled="!targetKnown" data-test="refresh" @click="load" />
-    </div>
-    <p v-if="!targetKnown" class="oui-muted" data-test="files-why">{{ t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting') }}</p>
-    <p v-else-if="state === 'loading' && !files.length" class="oui-muted" role="status">{{ t('files.loading') }}</p>
-    <Message v-else-if="state === 'error'" severity="error">{{ t('files.error', { error }) }}
-      <div><Button size="small" severity="secondary" outlined :label="t('common.retry')" @click="load" /></div></Message>
-    <div v-if="state === 'ok' && files.length" class="kc-row fv-find">
-      <InputText v-model="query" type="search" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
-      <Select v-model="sort" :options="sortOptions" option-label="label" option-value="value" :aria-label="t('files.sort')" data-test="files-sort" />
-      <span v-if="query.trim()" class="oui-meta" role="status" data-test="files-count">{{ t('files.count', { shown: shown.length, total: files.length }) }}</span>
-    </div>
-    <div v-if="state === 'ok'" class="oui-table-wrap">
-      <table class="kc-table">
-        <thead><tr><th scope="col">{{ t('files.col.name') }}</th><th scope="col">{{ t('files.col.size') }}</th><th scope="col">{{ t('files.col.modified') }}</th>
-          <th scope="col">{{ t('files.col.actions') }}</th></tr></thead>
-        <tbody>
-          <tr v-for="f in shown" :key="f.name" :class="{ sel: selected === f.name }" :data-file="f.name">
-            <td class="fv-name">{{ f.name }}</td><td class="kc-num">{{ fmt.bytes(f.size) }}</td>
-            <td>{{ f.timestamp ? fmt.dateTime(seconds(f.timestamp)) : '' }}</td>
-            <td class="fv-acts">
-              <Button size="small" :aria-label="t('files.printLabel', { name: f.name })" :data-focus-key="`print:${f.name}`" data-print @click="openPanel(f.name)">
-                <Icon name="icon/print-setup" /><span>{{ t('files.print') }}</span></Button>
-              <Button size="small" severity="danger" outlined :aria-label="t('files.deleteLabel', { name: f.name })" :loading="tracker.isBusy(`del:${f.name}`)"
-                      :data-focus-key="`del:${f.name}`" data-delete @click="del(f.name)"><Icon name="icon/delete" /><span>{{ t('files.delete') }}</span></Button></td>
-          </tr>
-          <tr v-if="files.length && !shown.length"><td colspan="4" class="oui-muted" data-test="files-nomatch">{{ t('files.noMatch', { q: query.trim() }) }}</td></tr>
-          <tr v-if="!files.length"><td colspan="4"><div class="fv-empty"><Icon name="spot/no-files" :size="96" /><span>{{ t('files.empty') }}</span></div></td></tr>
-        </tbody>
-      </table>
-    </div>
+  <div class="fv" :data-detail="selected ? true : undefined">
+    <OuiPanel :icon="filesIcon" flush aria-labelledby="files-h" class="fv-list">
+      <template #title><span id="files-h">{{ t('files.title') }}</span></template>
+      <template #meta><span data-test="disk">{{ disk }}</span></template>
+      <template #actions>
+        <Button severity="secondary" size="small" :label="t('common.refresh')" :loading="state === 'loading'" :disabled="!targetKnown" data-test="refresh" @click="load">
+          <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+      </template>
+      <OuiToolbar v-if="state === 'ok' && files.length" class="fv-bar" :label="t('files.search')">
+        <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
+        <Select v-model="sort" :options="sortOptions" option-label="label" option-value="value" size="small" :aria-label="t('files.sort')" data-test="files-sort" />
+        <span v-if="query.trim()" class="oui-meta oui-num" role="status" data-test="files-count">{{ t('files.count', { shown: shown.length, total: files.length }) }}</span>
+      </OuiToolbar>
+      <OuiEmpty v-if="!targetKnown" state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
+      <OuiEmpty v-else-if="state === 'loading' && !files.length" state="loading" :title="t('files.loading')" role="status" />
+      <OuiEmpty v-else-if="state === 'error'" state="error" class="fv-error" :title="t('files.error', { error })">
+        <template #actions><Button size="small" severity="secondary" :label="t('common.retry')" @click="load"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button></template>
+      </OuiEmpty>
+      <OuiEmpty v-else-if="state === 'ok' && !files.length" class="fv-empty" :icon="fileIcon" :title="t('files.empty')" />
+      <div v-else-if="state === 'ok'" class="oui-table-wrap">
+        <table class="kc-table fv-table">
+          <thead><tr><th scope="col">{{ t('files.col.name') }}</th><th scope="col" class="oui-num fv-size">{{ t('files.col.size') }}</th>
+            <th scope="col" class="fv-date">{{ t('files.col.modified') }}</th><th scope="col" class="oui-end fv-act"><span class="oui-sr">{{ t('files.col.actions') }}</span></th></tr></thead>
+          <tbody>
+            <tr v-for="f in shown" :key="f.name" :class="{ sel: selected === f.name }" :data-file="f.name">
+              <td><span class="fv-name"><OuiIcon :icon="fileIcon" :size="14" tile soft /><span class="oui-strong">{{ f.name }}</span></span></td>
+              <td class="oui-num">{{ fmt.bytes(f.size) }}</td>
+              <td class="fv-date">{{ f.timestamp ? fmt.dateTime(seconds(f.timestamp)) : '' }}</td>
+              <td class="oui-end"><span class="fv-acts">
+                <Button size="small" severity="secondary" :label="t('files.print')" :aria-label="t('files.printLabel', { name: f.name })" :data-focus-key="`print:${f.name}`" data-print
+                        @click="openPanel(f.name)"><template #icon><OuiIcon :icon="printer" :size="14" /></template></Button>
+                <!-- Delete is the destructive one: red, last, a gap away from Print. It always asks first. -->
+                <Button size="small" severity="danger" text class="fv-del" :aria-label="t('files.deleteLabel', { name: f.name })" :title="t('files.delete')" :loading="tracker.isBusy(`del:${f.name}`)"
+                        :data-focus-key="`del:${f.name}`" data-delete @click="del(f.name)"><template #icon><OuiIcon :icon="trash" :size="14" /></template></Button>
+              </span></td>
+            </tr>
+            <tr v-if="files.length && !shown.length"><td colspan="4" class="oui-muted" data-test="files-nomatch">{{ t('files.noMatch', { q: query.trim() }) }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </OuiPanel>
 
-    <div v-if="selected" class="fv-panel" role="region" :aria-label="t('files.panel', { name: selected })" data-test="print-panel">
-      <div class="fv-panel-top">
-        <img v-if="thumb" :src="thumb" :alt="t('files.thumbAlt', { name: selected })" class="fv-thumb">
-        <div class="fv-panel-text">
-          <strong class="fv-name">{{ selected }}</strong>
-          <p v-if="detailsError" class="kc-why kc-err">{{ t('files.detailsError', { error: detailsError }) }}</p>
-          <p v-else-if="!details" class="kc-why" role="status">{{ t('files.detailsLoading') }}</p>
-          <template v-if="info">
-            <dl class="fv-info" :aria-label="t('files.info')" data-test="file-info">
-              <dt>{{ t('files.info.time') }}</dt><dd>{{ info.estimated_s != null ? fmt.duration(info.estimated_s) : '—' }}</dd>
-              <dt>{{ t('files.info.layers') }}</dt><dd>{{ n0(info.layers) }}</dd>
-              <dt>{{ t('files.info.filament') }}</dt><dd>{{ info.filament_g != null ? fmt.grams(info.filament_g) : '—' }}</dd>
-              <dt>{{ t('files.info.layer') }}</dt><dd>{{ info.layer_height != null ? `${n0(info.layer_height, 2)} mm` : '—' }}</dd>
-              <dt>{{ t('files.info.temps') }}</dt><dd>{{ t('files.info.tempsValue', { nozzle: n0(info.nozzle_temp), bed: n0(info.bed_temp) }) }}</dd>
-              <dt>{{ t('files.info.nozzle') }}</dt><dd>{{ info.nozzle != null ? `${n0(info.nozzle, 1)} mm` : '—' }}</dd>
-            </dl>
-            <p v-if="!info.model_ok" class="kc-why kc-warn" role="alert" data-test="model-warn">{{ t('files.modelOther', { model: info.printer_model }) }}</p>
-          </template>
-          <div v-if="materials.length" class="fv-mats">
-            <span class="oui-meta">{{ t('files.mat.title') }}</span>
-            <ul>
-              <li v-for="m in materials" :key="m.paint_index" :data-mat="m.paint_index" :class="{ 'kc-warn': m.check !== 'ok' }">
-                <span class="kc-sw" :style="{ background: m.colour || 'transparent' }" /> {{ t('files.mat.name', { n: m.paint_index + 1 }) }}: {{ m.material || t('slot.noType') }} · {{ fmt.grams(m.grams) }}
-                → <span class="kc-sw" :style="{ background: m.slot_colour || 'transparent' }" /> {{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template>
-              </li>
-            </ul>
-            <p v-if="mismatch" class="kc-why kc-warn" role="alert" data-test="mat-warn">{{ t('files.mat.warn', { list: mismatch }) }}</p>
+    <OuiPanel v-if="selected" :icon="printer" class="fv-detail" role="region" :aria-label="t('files.panel', { name: selected })" data-test="print-panel">
+      <template #title><span class="oui-truncate" :title="selected">{{ selected }}</span></template>
+      <template #actions>
+        <Button severity="secondary" text size="small" :aria-label="t('common.close')" :title="t('common.close')" @click="closePanel"><template #icon><OuiIcon :icon="x" :size="14" /></template></Button>
+      </template>
+      <div class="oui-stack">
+        <div class="fv-top">
+          <OuiThumb v-if="thumb" class="fv-thumb" :src="thumb" :alt="t('files.thumbAlt', { name: selected })" :size="132" />
+          <div class="fv-facts">
+            <p v-if="detailsError" class="kc-why" data-tone="danger">{{ t('files.detailsError', { error: detailsError }) }}</p>
+            <OuiEmpty v-else-if="!details" compact state="loading" :title="t('files.detailsLoading')" role="status" />
+            <OuiKeyValue v-if="info" :items="facts" :aria-label="t('files.info')" data-test="file-info" />
           </div>
-          <fieldset class="fv-opts">
-            <legend class="oui-meta">{{ t('files.options') }}</legend>
-            <span class="kc-row"><Checkbox v-model="options.leveling" binary input-id="opt-level" data-opt="auto_leveling" /><label for="opt-level">{{ t('files.autoLeveling') }}</label></span>
-            <span class="kc-row"><Checkbox v-model="options.vibration" binary input-id="opt-vib" data-opt="vibration_compensation" /><label for="opt-vib">{{ t('files.vibration') }}</label></span>
-          </fieldset>
         </div>
+        <p v-if="info && !info.model_ok" class="fv-warn" role="alert" data-test="model-warn">{{ t('files.modelOther', { model: info.printer_model }) }}</p>
+        <div v-if="materials.length" class="fv-mats">
+          <p class="oui-label">{{ t('files.mat.title') }}</p>
+          <ul>
+            <li v-for="m in materials" :key="m.paint_index" :data-mat="m.paint_index" :data-check="m.check">
+              <OuiSwatch :color="m.colour || null" /><span>{{ t('files.mat.name', { n: m.paint_index + 1 }) }}: {{ m.material || t('slot.noType') }} · {{ fmt.grams(m.grams) }}</span>
+              <span class="oui-muted" aria-hidden="true">→</span>
+              <OuiSwatch :color="m.slot_colour || null" /><span>{{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template></span>
+            </li>
+          </ul>
+          <p v-if="mismatch" class="fv-warn" role="alert" data-test="mat-warn">{{ t('files.mat.warn', { list: mismatch }) }}</p>
+        </div>
+        <fieldset class="fv-opts">
+          <legend class="oui-label">{{ t('files.options') }}</legend>
+          <label class="fv-opt" for="opt-level"><span>{{ t('files.autoLeveling') }}</span><ToggleSwitch v-model="options.leveling" input-id="opt-level" data-opt="auto_leveling" /></label>
+          <label class="fv-opt" for="opt-vib"><span>{{ t('files.vibration') }}</span><ToggleSwitch v-model="options.vibration" input-id="opt-vib" data-opt="vibration_compensation" /></label>
+        </fieldset>
       </div>
-      <div class="kc-row">
-        <Button :disabled="!!printWhy" :loading="tracker.isBusy('print')" data-test="print-start" data-focus-key="print-start" @click="print">
-          <Icon name="icon/print-setup" /><span>{{ t('files.startPrint') }}</span></Button>
-        <Button severity="secondary" outlined :label="t('common.cancel')" data-test="print-close" @click="closePanel" />
-        <span v-if="printWhy" class="kc-why">{{ printWhy }}</span>
-      </div>
-    </div>
-  </section>
+      <template #footer>
+        <Button :label="t('files.startPrint')" :disabled="!!printWhy" :aria-describedby="printWhyId" :loading="tracker.isBusy('print')" data-test="print-start" data-focus-key="print-start" @click="print">
+          <template #icon><OuiIcon :icon="printer" :size="14" /></template></Button>
+        <Button severity="secondary" text :label="t('common.cancel')" data-test="print-close" @click="closePanel" />
+        <span v-if="printWhy && !controlsOff" id="print-start-why" class="oui-meta">{{ printWhy }}</span>
+      </template>
+    </OuiPanel>
+  </div>
 </template>
-<style scoped>
-.fv-h { margin: 0; display: flex; align-items: center; gap: 8px; }
-.fv-bar { margin-bottom: 12px; }
-.fv-name { overflow-wrap: anywhere; }
-.fv-acts { display: flex; flex-wrap: wrap; gap: 6px; }
-.fv-empty { display: grid; justify-items: center; gap: 8px; padding: 16px; color: var(--oui-muted); }
-tr.sel td { background: color-mix(in srgb, var(--p-primary-color) 10%, transparent); }
-.fv-panel { margin-top: 16px; padding: 12px; border: 1px solid var(--p-primary-color); border-radius: 12px; display: grid; gap: 12px; }
-.fv-panel-top { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
-.fv-panel-text { display: grid; gap: 8px; flex: 1 1 260px; min-width: 0; }
-.fv-thumb { width: 160px; max-width: 100%; height: auto; border-radius: 8px; background: var(--oui-surface); border: 1px solid var(--oui-border); }
-.fv-find { margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
-.fv-q { flex: 1 1 200px; min-width: 0; }
-.fv-info { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
-.fv-info dt { color: var(--oui-muted); }
-.fv-info dd { margin: 0; }
-.fv-mats ul { margin: 4px 0 0; padding-left: 18px; }
-.fv-opts { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
-.fv-panel p { margin: 0; }
+
+<style>
+.fv { display: grid; gap: var(--oui-s3); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@container oui-page (min-width: 1160px) { .fv[data-detail] { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); } }
+.fv-bar { border-bottom: 1px solid var(--oui-border); }
+.fv-q { width: 240px; max-width: 100%; }
+.fv-table { table-layout: fixed; min-width: 520px; }
+.fv-size { width: 96px; } .fv-date { width: 150px; } .fv-act { width: 132px; }
+.fv-name { display: inline-flex; align-items: center; gap: var(--oui-s2); min-width: 0; overflow-wrap: anywhere; }
+.fv-acts { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--oui-s1); white-space: nowrap; }
+.fv-del { margin-inline-start: var(--oui-s3); }
+.fv-table tr.sel > td { background: var(--oui-primary-soft); }
+.fv-top { display: flex; flex-wrap: wrap; gap: var(--oui-s4); align-items: flex-start; }
+.fv-facts { flex: 1 1 200px; min-width: 0; }
+.fv-warn { font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-warning); }
+.fv-mats ul { list-style: none; margin: var(--oui-s1) 0 0; padding: 0; display: grid; gap: var(--oui-s1); }
+.fv-mats li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s2); }
+.fv-mats li[data-check='differs'], .fv-mats li[data-check='missing'] { color: var(--oui-warning); }
+.fv-opts { display: grid; gap: var(--oui-s1); margin: 0; padding: 0; border: 0; }
+.fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 36px; }
 </style>
