@@ -10,9 +10,15 @@ Resized copies of artwork and interface previews from the linked projects (mock 
 | [orca_print_calculator-preview.png](orca_print_calculator-preview.png) | [Original](https://github.com/bloodf/orca_print_calculator/blob/main/brand/hero.png) |
 | [spooler-icon.png](spooler-icon.png) | [Original](https://github.com/bloodf/spooler/blob/main/assets/spooler-icon.png) |
 | [spooler-preview.png](spooler-preview.png) | [Original](https://github.com/bloodf/spooler/blob/main/assets/orca-cloud/spooler-store-image-spool-list.png) |
+| [u1control-icon.png](u1control-icon.png) | [Original](https://github.com/bloodf/u1control/blob/main/assets/u1control-icon.svg) |
+| [u1control-preview.png](u1control-preview.png) | [Original](https://github.com/bloodf/u1control/blob/main/assets/readme/u1control-hero-light.png) |
+| [embedder-icon.png](embedder-icon.png) | [Original](https://github.com/bloodf/embedder/blob/main/assets/embedder-icon.png) |
+| [embedder-preview.png](embedder-preview.png) | [Original](https://github.com/bloodf/embedder/blob/main/assets/readme/embedder-hero-dark.png) |
 
 License texts:
 
 - [Organizer](orca_organizer-LICENSE.txt)
 - [Orca Print Calculator](orca_print_calculator-LICENSE.txt)
 - [Spooler](spooler-LICENSE.txt)
+- [U1 Control](u1control-LICENSE.txt)
+- [Embedder](embedder-LICENSE.txt)
