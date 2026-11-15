@@ -399,14 +399,14 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _camera_tick(self, target):
         """Ask the printer to start its stream (once per stream URL), then keep the reader running."""
         conn = self.connections.get(target.host)
-        if not conn or not conn.connected:
+        printer = conn.printer if conn else None   # read once: the loop may replace the session meanwhile
+        if printer is None or not conn.connected:
             return
         view = conn.view()
-        key = (target.host, view["camera_url_rev"], id(conn.printer))
+        key = (target.host, view["camera_url_rev"], id(printer))
         if key != self._capture:
             self._capture = key
-            printer = conn.printer
-            threading.Thread(target=lambda: printer.start_camera(), name="kobracontrol-capture", daemon=True).start()
+            threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
         self.camera.set_ffmpeg(target.ffmpeg_path)
         self.camera.start()
 

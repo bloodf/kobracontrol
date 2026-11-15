@@ -568,6 +568,28 @@ class LoopSurvives(unittest.TestCase):
         self.assertTrue(svc.monitor.is_alive())
 
 
+class CameraPrinterGone(Base):
+    """The session can be replaced (printer None) between the connected check and the capture thread."""
+
+    class Swapped:
+        host, connected, printer = "127.0.0.1", True, None
+
+        def view(self):
+            return {"camera_url_rev": 0, "connected": True, "camera_url": ""}
+
+    def test_camera_tick_with_no_printer(self):
+        errors = []
+        old = threading.excepthook
+        threading.excepthook = lambda args: errors.append(args.exc_value)
+        self.addCleanup(setattr, threading, "excepthook", old)
+        target = service.Target("swapped")
+        self.svc.connections["swapped"] = self.Swapped()
+        self.addCleanup(self.svc.connections.pop, "swapped", None)
+        self.svc._camera_tick(target)
+        time.sleep(0.2)
+        self.assertEqual(errors, [])
+
+
 class CameraHost(Base):
     """M2: a stream URL that does not point at the printer itself never reaches ffmpeg."""
 

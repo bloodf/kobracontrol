@@ -140,6 +140,26 @@ class Agent(Base):
         time.sleep(0.2)
         self.assertFalse(self.sent("multiColorBox", "feedFilament"))
 
+    def test_start_camera_with_no_printer(self):
+        """command_start_camera never starts a capture thread for a session that has just gone."""
+        self.connect()
+        conn = plugin._service.connections["127.0.0.1"]
+        errors = []
+        old = threading.excepthook
+        threading.excepthook = lambda args: errors.append(args.exc_value)
+        self.addCleanup(setattr, threading, "excepthook", old)
+
+        class Swapped:
+            connected, printer, host = True, None, "127.0.0.1"
+
+            def view(self):
+                return conn.view()
+        plugin._service.connections["127.0.0.1"] = Swapped()
+        self.addCleanup(plugin._service.connections.__setitem__, "127.0.0.1", conn)
+        self.assertEqual(self.agent.command_start_camera("127.0.0.1"), plugin.ERR_CONNECT)
+        time.sleep(0.2)
+        self.assertEqual(errors, [])
+
     def test_print_a_file_on_the_printer(self):
         """start_sdcard_print: the file already on the printer, with both print options and a finished stage."""
         self.connect()

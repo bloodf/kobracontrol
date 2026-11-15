@@ -811,12 +811,12 @@ class KobraAgent(pa.PrinterAgentBase):
     def command_start_camera(self, dev_id):
         """video/startCapture (Kobralink starts the stream before reading it), once per stream URL."""
         conn = service().connections.get(self.host) if self.host else None
-        if not conn or not conn.connected:
+        printer = conn.printer if conn else None   # read once: the loop may replace the session meanwhile
+        if printer is None or not conn.connected:
             return ERR_CONNECT
-        key = (self.host, conn.view()["camera_url_rev"], id(conn.printer))
+        key = (self.host, conn.view()["camera_url_rev"], id(printer))
         if key != self._camera_key:
             self._camera_key = key
-            printer = conn.printer
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
         return OK
 
