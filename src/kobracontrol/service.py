@@ -197,18 +197,25 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     # ------------------------------------------------------------------ connections
 
-    def connection(self, host):
+    def connection(self, host, origin=None, expect_fp=None, identity=None):
         """The shared Connection for a printer address, started on first use (its thread does the I/O). KobraError
-        once the service is closed: nothing may start a connection after close()."""
+        once the service is closed: nothing may start a connection after close(). origin, expect_fp and identity
+        (when given) are set before the connection's thread starts, so its first attempt already names where the
+        address came from and already checks the certificate pin."""
         with self.lock:
             if self.closed:
                 raise kobra.KobraError("Kobra Control is shutting down")
             conn = self.connections.get(host)
-            if conn is None:
+            fresh = conn is None
+            if fresh:
                 conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
                                              pins=self.pins)
                 conn.add_listener(self._on_change)
                 self.connections[host] = conn
+            for name, value in (("origin", origin), ("expect_fp", expect_fp), ("identity", identity)):
+                if value is not None:
+                    setattr(conn, name, value)
+            if fresh:
                 conn.start()
             return conn
 
@@ -249,8 +256,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 self.locate_error = None
             self.target, gen = target, self.generation
         if target.host:
-            conn = self.connection(target.host)
-            conn.origin = ORIGIN_TEXT.get(target.source, "")
+            conn = self.connection(target.host, origin=ORIGIN_TEXT.get(target.source, ""))
             if retry and not changed and not conn.connected:
                 conn.retry()
         elif changed or retry:

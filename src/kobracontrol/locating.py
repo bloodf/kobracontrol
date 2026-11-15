@@ -107,8 +107,8 @@ class LocatingMixin:
             self.locate_error, self.located_at, self.locate_note = None, time.monotonic(), found.note
             if self.granted is not None:
                 self.granted.add(found.host)
-            conn = self.connection(found.host)
-            conn.origin, conn.expect_fp, conn.identity = ORIGIN_TEXT.get(found.source, ""), found.expect_fp, found.identity
+            self.connection(found.host, origin=ORIGIN_TEXT.get(found.source, ""), expect_fp=found.expect_fp,
+                            identity=found.identity)
         if found.note:
             self.log("kobracontrol: " + found.note)
         if moved:
@@ -137,7 +137,7 @@ class LocatingMixin:
             if host not in offered or not locate.lan_address(host):
                 continue
             try:
-                socket.getaddrinfo(host, self.http_port, socket.AF_INET, socket.SOCK_STREAM)
+                self._ask_orcaslicer(host)
             except PermissionError:
                 refused.append(host)
                 continue
@@ -156,6 +156,11 @@ class LocatingMixin:
             else:
                 self._start_locate(gen, only=allowed)
         return {"allowed": allowed, "refused": refused}
+
+    def _ask_orcaslicer(self, host):
+        """The audited event that makes OrcaSlicer show its network permission dialog for host (on the UI thread a
+        Yes is saved at once); PermissionError when it is refused. No network I/O for a numeric address."""
+        socket.getaddrinfo(host, self.http_port, socket.AF_INET, socket.SOCK_STREAM)
 
     def _adopt(self, gen, host):
         """The user chose this printer: use it if a Kobra X answers there, whatever is remembered."""

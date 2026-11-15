@@ -469,7 +469,7 @@ class ServiceLocates(unittest.TestCase):
     def test_a_refused_permission_is_not_asked_again_until_search_again(self):
         svc, published = self.service(granted=set())
         self.hello(svc, published)
-        with mock.patch.object(socket, "getaddrinfo", side_effect=PermissionError):
+        with mock.patch.object(svc, "_ask_orcaslicer", side_effect=PermissionError):
             self.assertEqual(svc.allow(["127.0.0.1"], user=True)["refused"], ["127.0.0.1"])
         self.assertIn("127.0.0.1", svc._rejected)
         svc.submit("s", "search_printer", {})
@@ -481,14 +481,18 @@ class ServiceLocates(unittest.TestCase):
         session; later lone candidates are only offered."""
         self.ssdp.reply = None
         addresses = iter(["10.25.0.11", "10.25.0.12", "10.25.0.13"])
-        svc, published = self.service(granted=set(), search=lambda: [(next(addresses), {})])
+        # probe: nothing is ever contacted (these stand for spoofed LAN addresses); dialogs: recorded where the
+        # plugin raises them, not by patching the socket module (which the probe's own lookups would also hit).
+        svc, published = self.service(granted=set(), search=lambda: [(next(addresses), {})], probe=refused)
         dialogs = []
-        with mock.patch.object(socket, "getaddrinfo", side_effect=lambda *a, **k: dialogs.append(a[0]) or []):
+        with mock.patch.object(svc, "_ask_orcaslicer", dialogs.append):
             for i in range(3):
                 svc.set_target(service.Target("", preset_host="", preset_key="P%d" % i))
                 svc.submit("h%d" % i, "connect", {})
                 reply = wait(lambda: next((m for m in published if m.get("id") == "h%d" % i), None), 20)
-                svc.allow(reply["pending"] or [c["ip"] for c in reply["candidates"]])
+                for _ in range(2):   # the page asking again for the same address, or a repeated message
+                    svc.allow(reply["pending"] or [c["ip"] for c in reply["candidates"]])
+                svc._join_locators(10)
         self.assertEqual(dialogs, ["10.25.0.11"])
 
     def test_no_dialog_by_itself_when_a_printer_is_remembered_for_the_preset(self):
