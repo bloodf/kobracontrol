@@ -43,3 +43,12 @@ Found by running the plugin against a real Kobra X (firmware 2.0.2.8).
 - Camera: the Device tab stream mode follows the URL scheme, so the printer's HTTP-FLV URL works.
 - File details are matched to the requested file; file list timestamps are read as milliseconds.
 - The printer file name from a job name no longer keeps a `.gcode.3mf` suffix.
+
+Found in a code audit (tests only, not yet tried on the printer):
+
+- A multiColorBox report whose box, slot or feed/drying status is not an object no longer stops the
+  status updates; a bad slot reads as empty at its own position. Numbers such as `1e999` read as absent.
+- The Device tab's status updates no longer stop for the session after one failed update.
+- Switching the Device tab to another printer closes the connection to the previous one.
+- Printing a file already on the printer from OrcaSlicer passes vibration compensation and reports the
+  finished stage.
