@@ -18,7 +18,7 @@ import kobra
 import peers
 import settings
 import spooler_bridge
-from service import (BED_MAX, LIMITS, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
+from service import (BED_MAX, LIMITS, NOTHING_LOADED, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
                      find_and_save_certificate, status_data)
 
 VERSION = "0.0.0-dev"
@@ -659,6 +659,9 @@ class KobraAgent(pa.PrinterAgentBase):
                     "set_temp": "heat", "slot_feed": "feed", "slot_retract": "feed", "slot_set": "feed"}
         if kind in flag_for and not can_flags(view)[flag_for[kind]]:
             log("Device tab %s refused: the printer is %s" % (kind, view["state"]))
+            return ERR_INVALID_HANDLE
+        if kind == "slot_retract" and "tray" not in command and status_data(view)[0]["loaded_slot"] < 0:
+            log("Device tab unload refused: %s" % NOTHING_LOADED)
             return ERR_INVALID_HANDLE
         threading.Thread(target=self._run_command, args=(self.host, command, json_str), name="kobracontrol-device",
                          daemon=True).start()

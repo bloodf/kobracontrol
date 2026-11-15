@@ -44,6 +44,7 @@ DEDICATED = URGENT + BOUNDED                                    # own short-live
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
 NO_PRINTER = "no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address"
+NOTHING_LOADED = "no filament is loaded in the print head, so there is nothing to unload"
 # The Kobra X machine profile (OrcaSlicer resources/profiles/Anycubic/machine/Anycubic Kobra X 0.4 nozzle.json)
 # sets no temperature maxima; these are Kobralink's limits (packages/shared/src/control.ts setTemperature).
 NOZZLE_MAX, BED_MAX = 320, 120
@@ -644,6 +645,8 @@ class Service(FilesMixin, JobsMixin, StockMixin, UsageMixin):
         data = self._allowed("feed", "loading filament" if kind == 1 else "unloading filament")
         if kind == 2 and data["loaded_slot"] >= 0:   # Kobralink: retract unloads what is loaded
             slot = data["loaded_slot"]
+        elif kind == 2 and isinstance(slot, int) and slot < 0:   # "unload" without a slot and nothing loaded
+            raise kobra.KobraError(NOTHING_LOADED)
         found = self._slot(data, slot)
         if kind == 1 and found["status"] != 5:
             raise kobra.KobraError("slot %d is empty" % (slot + 1))

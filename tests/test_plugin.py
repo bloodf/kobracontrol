@@ -133,6 +133,13 @@ class Agent(Base):
         wait(lambda: self.events["message"])
         self.assertTrue(self.agent._pusher.is_alive())
 
+    def test_device_tab_unload_with_nothing_loaded_is_refused(self):
+        self.connect()
+        unload = {"print": {"command": "ams_change_filament", "ams_id": 255, "slot_id": 255, "target": 255}}
+        self.assertEqual(self.agent.send_message_to_printer("127.0.0.1", json.dumps(unload), 0, 0), plugin.ERR_INVALID_HANDLE)
+        time.sleep(0.2)
+        self.assertFalse(self.sent("multiColorBox", "feedFilament"))
+
     def test_print_a_file_on_the_printer(self):
         """start_sdcard_print: the file already on the printer, with both print options and a finished stage."""
         self.connect()

@@ -247,6 +247,12 @@ class IdleCommands(Base):
         self.assertIn("no print is running", self.run_cmd("objects")["error"])
         self.assertFalse(self.sent("file", "fileDetails"))
 
+    def test_retract_with_nothing_loaded_says_so(self):
+        """No slot given (the Device tab's unload) and nothing loaded: a plain reason, never "slot 0 does not exist"."""
+        error = self.run_cmd("slot_retract")["error"]
+        self.assertEqual(error, service.NOTHING_LOADED)
+        self.assertFalse(self.sent("multiColorBox", "feedFilament"))
+
     def test_slot_set_and_feed_with_ack(self):
         self.assertTrue(self.run_cmd("slot_set", slot=2, type="petg", colour="#00ff00")["result"])
         data = wait(lambda: self.sent("multiColorBox", "setInfo"))[0]["data"]
