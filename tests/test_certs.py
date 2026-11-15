@@ -36,7 +36,8 @@ class Tmp(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def write(self, rel, data):
-        path = os.path.join(self.tmp, rel)
+        """rel uses "/"; the file is written at, and its path returned in, this OS's own form."""
+        path = os.path.join(self.tmp, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             f.write(data)
@@ -84,6 +85,8 @@ class FindTests(Tmp):
         lib = self.write("Frameworks/libcloud_mqtt.dylib", self.blob())
         found = certs.find([os.path.join(self.tmp, "Frameworks")])
         self.assert_client_pair(found)
+        # find() walks the folder itself, so the path it reports (and Find certificate shows) is a native one
+        self.assertEqual(found.source, os.path.join(self.tmp, "Frameworks", "libcloud_mqtt.dylib"))
         self.assertEqual(found.source, lib)
 
     def test_crlf_and_single_file(self):
