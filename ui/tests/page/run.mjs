@@ -772,6 +772,34 @@ test('a different Kobra X is offered as a choice, and one OrcaSlicer must allow 
   eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.3'}], 'an explicit choice');
 `);
 
+test('a known printer lost and another one answering: the offer stays across hellos and statuses, and choosing it connects', `
+  await connect(3);
+  await post(CONFIG());
+  await post({type: 'status', data: VIEW()});
+  const offer = {no_target: true, pending: [], candidates: [{ip: '10.0.0.3', name: 'Right KX', model: 'Anycubic Kobra X', needs_allow: false, different: true}]};
+  await post({type: 'selection_changed'});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'hello again');
+  await fail(last('hello'), 'printer not reachable at 10.0.0.2. A different Kobra X answered at 10.0.0.3. Use it? Kobra Control does not switch to another printer by itself.', offer);
+  const card = () => text(byTest('first-run-target'));
+  assert(card().includes('A different Kobra X answered') && card().includes('Right KX'), 'offer: ' + card());
+  for (let i = 0; i < 3; i++) {
+    await post({type: 'status', data: VIEW({connected: false, state: 'offline'})});
+    await post({type: 'offline', error: 'printer not reachable at 10.0.0.2', retry_at: Date.now() / 1000 + 30});
+    assert(card().includes('Use it?') || card().includes('Right KX'), 'still offered after status ' + i + ': ' + card());
+  }
+  await post({type: 'selection_changed'});
+  await until(() => sent().filter(m => m.type === 'hello').length === 3, 'another hello');
+  assert(card().includes('Right KX'), 'still offered while the plugin is asked again: ' + card());
+  await fail(last('hello'), 'printer not reachable at 10.0.0.2. A different Kobra X answered at 10.0.0.3. Use it?', offer);
+  await click(q('[data-pick-ip="10.0.0.3"]'));
+  eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.3'}], 'chosen');
+  await reply(last('cmd', 'choose_printer'), {address: '10.0.0.3'});
+  await until(() => sent().filter(m => m.type === 'hello').length === 4, 'connects to it');
+  await reply(last('hello'), {address: '10.0.0.3', printer: 'Bench Kobra', generation: 4, source: 'chosen'});
+  eq(text(byTest('link')), 'Connected', 'connected');
+  assert(!byTest('first-run-target'), 'the offer is gone');
+`);
+
 test('first run: several printers found, pick one', `
   await until(() => last('hello'));
   await fail(last('hello'), '2 Kobra X printers answer on this network: choose one.', {no_target: true,

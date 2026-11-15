@@ -82,7 +82,7 @@ export const bindings = computed(() => boundSlots(
 function reset(): void {
   s.epoch++;
   Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
-    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0, candidates: [] });
+    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0 });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
@@ -92,8 +92,10 @@ let lastNote = '';
 /** Ask the plugin for the printer. `retry`: the user pressed Retry, so a failed connection tries again now
  *  instead of after its growing delay; otherwise its last error comes back at once. */
 export async function hello(retry = false): Promise<void> {
+  const offered = s.phase === 'noTarget' && s.candidates.length > 0;
   reset();
-  s.phase = 'connecting';
+  // A printer offered for a choice stays on screen while the plugin is asked again: no flicker to "Connecting".
+  if (!offered) s.phase = 'connecting';
   const epoch = s.epoch;
   helloInFlight = true;
   try {
@@ -101,6 +103,7 @@ export async function hello(retry = false): Promise<void> {
     if (epoch !== s.epoch) return;
     s.info = r;
     s.phase = 'connected';
+    s.candidates = [];
     if (r.note && r.note !== lastNote) { lastNote = r.note; tracker.notify('info', r.note); }   // once: how it was found
     if (otherAgent.value && !agentNoted) { agentNoted = true; tracker.notify('info', t('agent.other', { agent: otherAgent.value })); }
     void loadSpools(true);
@@ -147,7 +150,7 @@ export async function searchAgain(): Promise<void> {
 export async function choosePrinter(c: bridge.Candidate): Promise<void> {
   if (c.needs_allow) { await allowFound([c.ip], true); return; }
   const r = await run({ key: 'choose', label: t('act.choose'), cmd: 'choose_printer', args: { host: c.ip } });
-  if (r.ok) void hello();
+  if (r.ok) { s.candidates = []; void hello(); }   // chosen: the offer is answered
 }
 
 export async function loadSpools(quiet: boolean): Promise<void> {

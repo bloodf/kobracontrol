@@ -24,6 +24,7 @@ import certs  # noqa: E402
 import connection  # noqa: E402
 import jobs  # noqa: E402
 import kobra  # noqa: E402
+import locate  # noqa: E402
 import service  # noqa: E402
 from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
 
@@ -614,6 +615,22 @@ class PrinterCertificate(unittest.TestCase):
         self.assertEqual(data["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
         self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
 
+    def test_the_agent_path_checks_the_pin_of_a_known_printer_warn_only(self):
+        """N2: Print/Send/Device tab (service.call with no tab target) at an address in the address book: the pin is
+        checked under that printer's identity; a different certificate is logged and shown, the session kept."""
+        locate.Addresses(os.path.join(self.tmp, "addresses.json")).put("P", self.fake.host, "SERIAL-A", "")
+        with open(os.path.join(self.tmp, certs.PINS_FILE), "w") as f:
+            json.dump({"printers": {"id:SERIAL-A": "ab" * 32}}, f)
+        logs = []
+        svc = service.Service(lambda m: None, logs.append, cert_dir=self.tmp, tls=self.ctx, http_port=self.fake.http_port,
+                              mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera,
+                              addresses_path=os.path.join(self.tmp, "addresses.json"))
+        self.addCleanup(svc.close)
+        conn = svc.ready(self.fake.host, timeout=15)   # what the printer agent does
+        self.assertEqual(conn.identity, "SERIAL-A")
+        self.assertEqual(svc._data(conn)["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
+        self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
+
     def test_plain_session_reports_none(self):
         self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
 
@@ -769,20 +786,28 @@ class PrintStartLock(Base):
 
 
 class SlowCamera(FakeCamera):
+    """A camera whose stop() blocks until the test releases it."""
+    gate = None
+
     def stop(self):
-        time.sleep(1.0)
+        self.gate.wait(30)
 
 
 class NoJoinsOnCallers(Base):
     """M4: page messages and agent callbacks never wait for teardown."""
 
     def test_fast(self):
+        gate = threading.Event()
+        self.addCleanup(gate.set)
         self.svc.camera = SlowCamera(None, None)
+        self.svc.camera.gate = gate   # stop() blocks until the end of the test
         for call in (lambda: self.svc.touch(camera=False), self.svc.clear_target,
                      lambda: self.svc.set_target(service.Target("127.0.0.2")), lambda: self.svc.release("127.0.0.2")):
-            started = time.monotonic()
-            call()
-            self.assertLess(time.monotonic() - started, 0.3)
+            caller = threading.Thread(target=call)
+            caller.start()
+            caller.join(20)
+            self.assertFalse(caller.is_alive())   # returned while the camera's stop() is still blocked
+            self.assertFalse(gate.is_set())
 
 
 class ReconnectStorm(unittest.TestCase):
@@ -1245,9 +1270,8 @@ class ReviewTwo(Base):
         printer = self.conn.printer
         printer.move_axis = lambda *a, **k: gate.wait(10) and None
         self.svc.submit("h", "home", {"axes": "xyz"})
-        started = time.monotonic()
-        self.assertTrue(self.run_cmd("set_light", on=True)["result"])
-        self.assertLess(time.monotonic() - started, 3)
+        self.assertTrue(self.run_cmd("set_light", on=True, timeout=20)["result"])   # answered while home waits
+        self.assertFalse(gate.is_set())
         self.svc.submit("h2", "home", {"axes": "z"})
         reply = wait(lambda: next((m for m in self.published if m.get("id") == "h2"), None))
         self.assertIn("already running", reply["error"])

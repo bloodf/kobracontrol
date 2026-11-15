@@ -210,6 +210,11 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if fresh:
                 conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
                                              pins=self.pins)
+                if identity is None and self.addresses is not None:
+                    # Any path (the printer agent's too): an address known in the address book has its printer's
+                    # pin checked under that identity. Warn-only there, as for every address the user gave.
+                    known = next((r for r in self.addresses.records() if r["ip"] == host and r["id"]), None)
+                    identity = known["id"] if known else None
                 conn.add_listener(self._on_change)
                 self.connections[host] = conn
             for name, value in (("origin", origin), ("expect_fp", expect_fp), ("identity", identity)):
@@ -620,6 +625,13 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if retry is True or not conn.error:
                 conn.wait_attempt(CONNECT_WAIT, failures)
         if not conn.connected:
+            with self.lock:
+                offer = self.locate_error if gen == self.generation else None
+            if getattr(offer, "candidates", None):
+                # The known printer is down and another Kobra X answered: the reply carries that offer, so the
+                # page keeps showing "Use it?" while the known address keeps being retried.
+                raise locate.NotFound("%s %s" % (conn.error or "The known printer does not answer.", offer),
+                                      offer.candidates, rejected=offer.rejected)
             cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
             raise cls(conn.error or "the printer at %s did not answer yet" % target.host)
         view = conn.view()

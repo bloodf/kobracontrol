@@ -193,6 +193,10 @@ class Addresses:
         with self._lock:
             return self._read().get(key)
 
+    def records(self):
+        with self._lock:
+            return list(self._read().values())
+
     def hosts(self):
         with self._lock:
             return sorted({r["ip"] for r in self._read().values()})

@@ -7,7 +7,6 @@ import socket
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from unittest import mock
 
@@ -438,9 +437,8 @@ class ServiceLocates(unittest.TestCase):
         self.hello(svc, published)
         gen = svc.generation
         svc.bindings, svc._units = {0: 7}, {"x": 1}
-        with svc.lock:   # hold the worker at its generation check while the address changes
+        with svc.lock:   # the worker reaches its generation check only after the address has changed
             svc.submit("q", "set_fan", {"pct": 40}, gen=gen)
-            time.sleep(0.2)
             svc._use_address(gen, locate.Found("127.0.0.9", "discovered", identity="SERIAL-A"))
         reply = wait(lambda: next((m for m in published if m.get("id") == "q"), None))
         self.assertEqual(reply["error"], service.STALE)
@@ -453,18 +451,20 @@ class ServiceLocates(unittest.TestCase):
         svc, published = self.service()
         self.hello(svc, published)
         conn = svc.connections["127.0.0.1"]
-        searches = len(self.ssdp.searches)
         svc._last_state["127.0.0.1"] = "printing"
         svc.located_at -= service.RELOCATE_EVERY
         conn.http_failed = True
-        svc._relocate_if_lost(conn)
-        self.assertTrue(any("was printing when it stopped answering" in m.get("text", "") for m in published))
-        svc._last_state["127.0.0.1"] = "idle"
-        svc.located_at -= service.RELOCATE_EVERY
-        with mock.patch.object(svc, "_tracking", return_value=True):
+        with mock.patch.object(svc, "_start_locate") as start:   # the only way a search starts: asserted on calls
             svc._relocate_if_lost(conn)
-        time.sleep(0.5)
-        self.assertEqual(len(self.ssdp.searches), searches)
+            self.assertTrue(any("was printing when it stopped answering" in m.get("text", "") for m in published))
+            svc._last_state["127.0.0.1"] = "idle"
+            svc.located_at -= service.RELOCATE_EVERY
+            with mock.patch.object(svc, "_tracking", return_value=True):
+                svc._relocate_if_lost(conn)
+            start.assert_not_called()
+            svc.located_at -= service.RELOCATE_EVERY
+            svc._relocate_if_lost(conn)   # idle and nothing tracked: now it may search
+            start.assert_called_once()
 
     def test_lost_address_is_searched_again_at_most_once_a_minute(self):
         svc, published = self.service()
@@ -501,6 +501,39 @@ class ServiceLocates(unittest.TestCase):
         svc.submit("s", "search_printer", {})
         wait(lambda: next((m for m in published if m.get("id") == "s"), None), 10)
         self.assertEqual(svc._rejected, set())
+
+    def test_a_lost_printer_with_another_answering_keeps_the_offer_on_hello(self):
+        """N1: the known printer stops answering and another Kobra X answers: hello carries the offer while the known
+        address is down, and choosing it switches with a new generation."""
+        svc, published = self.service()
+        self.hello(svc, published)
+        gen = svc.generation
+        conn = svc.connections["127.0.0.1"]
+        self.fake.stop()   # A is gone
+        wait(lambda: not conn.connected, 15)
+        svc.locate_error = locate.NotFound("A different Kobra X answered at 10.0.0.3. Use it?",
+                                           [{"ip": "10.0.0.3", "name": "B", "model": "", "needs_allow": False,
+                                             "different": True}])
+        for rid in ("h2", "h3"):
+            svc.submit(rid, "connect", {})
+            reply = wait(lambda r=rid: next((m for m in published if m.get("id") == r), None), 20)
+            self.assertTrue(reply["no_target"])
+            self.assertEqual([c["ip"] for c in reply["candidates"]], ["10.0.0.3"])
+            self.assertIn("Use it?", reply["error"])
+        with mock.patch.object(svc, "probe", lambda ip: {"ip": ip, "name": "B", "model": "", "id": "SERIAL-B"}):
+            svc.submit("c", "choose_printer", {"host": "10.0.0.3"})
+            reply = wait(lambda: next((m for m in published if m.get("id") == "c"), None), 15)
+        self.assertEqual(reply["result"], {"address": "10.0.0.3"})
+        self.assertEqual((svc.target.host, svc.generation), ("10.0.0.3", gen + 1))
+
+    def test_the_record_keeps_the_values_of_the_moment_it_connected(self):
+        """N3: the record thread gets the identity at connect time, not the target's later state."""
+        svc, published = self.service()
+        recorded = []
+        with mock.patch.object(svc, "_record", lambda *a: recorded.append(a)):
+            self.hello(svc, published)
+            wait(lambda: recorded)
+        self.assertEqual(recorded[0][:3], ("Anycubic Kobra X", "127.0.0.1", "SERIAL-A"))
 
     def test_three_searches_with_new_spoofed_addresses_raise_one_dialog(self):
         """M-A: dialogs are counted, not addresses: the page may raise OrcaSlicer's dialog by itself once per
@@ -543,8 +576,9 @@ class ServiceLocates(unittest.TestCase):
         conn = svc.connections["127.0.0.1"]
         conn.http_failed = True
         svc.located_at = 0.0
-        svc._relocate_if_lost(conn)
-        svc._join_locators(2)
+        with mock.patch.object(svc, "_start_locate") as start:
+            svc._relocate_if_lost(conn)
+        start.assert_not_called()
         self.assertEqual(self.ssdp.searches, [])
         self.assertEqual(self.probed, [])
 
@@ -558,11 +592,15 @@ class ServiceLocates(unittest.TestCase):
         svc, published = self.service(search=slow_search)
         svc.set_target(service.Target("", preset_host=BRIDGE, preset_key="Anycubic Kobra X"))
         wait(lambda: svc._locating.locked())
+        locators = list(svc._locators)
         closer = threading.Thread(target=svc.close)
         closer.start()
-        release.set()
-        closer.join(10)
-        time.sleep(1.0)
+        wait(lambda: svc.closed)
+        release.set()   # the search ends only after close() has begun
+        closer.join(30)
+        for t in locators:   # every locate thread has finished: nothing more can happen after these asserts
+            t.join(30)
+            self.assertFalse(t.is_alive())
         self.assertEqual(svc.connections, {})
         self.assertFalse([t for t in threading.enumerate() if t.name == "kobracontrol-link" and t.is_alive()
                           and getattr(t, "_target", None) and getattr(t._target, "__self__", None) is not None

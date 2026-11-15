@@ -57,6 +57,10 @@ network search was measured on the printer; the plugin itself has not been tried
 - Filament use is not booked in Spooler's Spoolman when Spooler says it books Kobra X prints itself (Spooler 0.26
   never does). The Stock card says when Kobra Control uses Spooler's Spoolman because none is set here.
 - Check Kobra X connection takes at most 20 s.
+- When the known printer stops answering and another Kobra X answers, the tab keeps offering "Use it?" until you
+  choose, instead of only showing the known printer's connection error.
+- OrcaSlicer's Print, Send and Device tab check the certificate pin of a printer in the address book under its
+  identity too; a different certificate is logged and shown there, not refused (the address is the user's own).
 - An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
   "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
   what to check, and every attempt follows the growing delay.

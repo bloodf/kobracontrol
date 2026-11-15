@@ -197,7 +197,8 @@ class LocatingMixin:
                     self._recorded.add(key)
             if due:
                 fp = (conn.server_cert or {}).get("fingerprint", "")
-                _background(lambda: self._record(key[0], conn.host, target.identity, fp), "record")
+                preset, host, identity = key[0], conn.host, target.identity   # values now, not the target later
+                _background(lambda: self._record(preset, host, identity, fp), "record")
         elif conn.mismatch:
             _background(lambda: self._refuse_impostor(conn), "impostor")
         elif conn.http_failed:
