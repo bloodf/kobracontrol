@@ -4,6 +4,7 @@ page rows, name checks for print and delete, the print/start payload. Free of th
 There are no downloads: neither Kobralink nor KX-Bridge has a way to fetch a file back from the printer
 (the printer only lists, details, deletes and prints; a file's thumbnail comes inline in file_details)."""
 
+import math
 import re
 import threading
 
@@ -76,6 +77,62 @@ def print_payload(files, name, mapping, auto_leveling=False, vibration_compensat
     return kobra.print_file_payload(name, _number(found.get("size")), mapping, task)
 
 
+def _finite(value, digits=2):
+    """A finite, non-negative number rounded to `digits`, else None."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
+        return None
+    return round(value, digits) if digits else int(value)
+
+
+def _hex(rgb):
+    if not isinstance(rgb, (list, tuple)) or len(rgb) < 3:
+        return ""
+    try:
+        return "#%02X%02X%02X" % tuple(max(0, min(255, int(c))) for c in rgb[:3])
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+
+def _material(value):
+    return " ".join(value.split()).upper() if isinstance(value, str) else ""
+
+
+def plan(details, slots, mode, model=""):
+    """What a printer file needs, next to the slots a print of it from the Files page would use.
+
+    details: the printer's file_details; slots, mode: status.data. Returns {"info": {estimated_s, layers,
+    filament_g, layer_height, nozzle_temp, bed_temp, nozzle (None when unknown), printer_model, model_ok},
+    "materials": [{paint_index, material, colour, grams, slot (global index, None when the print maps no slot),
+    slot_type, slot_colour, check: "ok" | "differs" | "missing"}]}. Read-only: nothing is sent to the printer.
+    The slot of each filament follows ace.build_auto_ams_box_mapping, the mapping cmd_file_print sends: tool N
+    prints from the usable slot N, else from the highest usable slot; a tool above it has no entry."""
+    d = details if isinstance(details, dict) else {}
+    params = d.get("print_parameters") if isinstance(d.get("print_parameters"), dict) else {}
+    basic = params.get("basic_info") if isinstance(params.get("basic_info"), dict) else {}
+    temps = params.get("temperatures") if isinstance(params.get("temperatures"), dict) else {}
+    printer_model = d.get("printer_model") if isinstance(d.get("printer_model"), str) else ""
+    info = {"estimated_s": _finite(d.get("estimated_time_s"), 0), "layers": _finite(d.get("layer_count"), 0),
+            "filament_g": _finite(d.get("total_filament_used")), "layer_height": _finite(basic.get("layer_height")),
+            "nozzle_temp": _finite(temps.get("nozzle_temp"), 0), "bed_temp": _finite(temps.get("bed_temp"), 0),
+            "nozzle": _finite(d.get("nozzle_diameter")), "printer_model": printer_model,
+            "model_ok": not printer_model or bool(re.search(r"kobra[ _-]*x\b", printer_model, re.I))}
+    usable = {s["global_index"]: s for s in ace.select_loaded_slots_for_print(slots, mode)[0]}
+    top = max(usable) if usable else None
+    materials = []
+    for p in d.get("paint_infos") if isinstance(d.get("paint_infos"), list) else []:
+        index = p.get("paint_index") if isinstance(p, dict) else None
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            continue
+        slot = usable.get(index, usable.get(top)) if top is not None and index <= top else None
+        material = _material(p.get("material_type"))
+        check = "missing" if slot is None else ("differs" if material and _material(slot["type"]) != material else "ok")
+        materials.append({"paint_index": index, "material": material, "colour": _hex(p.get("paint_color")),
+                          "grams": _finite(p.get("filament_used")) or 0, "slot": slot["global_index"] if slot else None,
+                          "slot_type": slot["type"] if slot else "", "slot_colour": _hex(slot["color"]) if slot else "",
+                          "check": check})
+    return {"info": info, "materials": materials}
+
+
 class FilesMixin:
     """For service.Service: needs _printer() (a connected kobra.Printer), _view() (slots and mode) and _require_idle()."""
 
@@ -105,7 +162,9 @@ class FilesMixin:
         printer = self._printer()
         details = printer.file_details(valid_name(name))
         self._dcache(printer)[name] = details
-        return {"name": name, "thumbnail": _thumbnail(details)}
+        view = self._view()
+        return {"name": name, "thumbnail": _thumbnail(details),
+                **plan(details, view["slots"], view["mode"], view.get("model") or "")}
 
     def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False):
         self._require_idle()

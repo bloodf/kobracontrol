@@ -451,6 +451,7 @@ class Files(Base):
         self.assertEqual([r["name"] for r in self.run_cmd("files")["result"]["files"]], ["a.gcode", "b.gcode"])
         details = self.run_cmd("file_details", name="a.gcode")["result"]
         self.assertTrue(details["thumbnail"].startswith("data:image/png;base64,"))
+        self.assertEqual((details["materials"], details["info"]["model_ok"]), ([], True))   # no paint_infos in this fake
         self.assertTrue(self.run_cmd("file_print", name="a.gcode", auto_leveling=True)["result"])
         self.assertEqual(start_mapping(self), [0, 1, 3, 3])   # the loaded ACE slots, Kobralink's auto mapping
         start = wait(lambda: self.sent("print", "start"))[0]["data"]
