@@ -220,9 +220,24 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             for name, value in (("origin", origin), ("expect_fp", expect_fp), ("identity", identity)):
                 if value is not None:
                     setattr(conn, name, value)
+            impostor = ""
+            if not fresh and expect_fp and conn.connected:
+                # A session already open (say by the printer agent, warn-only) and now a pin to enforce: the session
+                # must have presented that certificate, or it is closed now, not at its next reconnect.
+                seen = (conn.server_cert or {}).get("fingerprint", "")
+                if seen != expect_fp:
+                    impostor = seen or "none"
+                    del self.connections[host]   # whoever else listens: this session is not used any more
             if fresh:
                 conn.start()
-            return conn
+        if impostor:
+            conn.mismatch = impostor
+            conn._stop.set()
+            conn._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used." % host, False)
+            _background(conn.stop, "impostor-stop")
+            _background(lambda: self._refuse_impostor(conn), "impostor")
+        return conn
 
     def release(self, host):
         """Close the connection to `host` unless the tab or a listener still uses it."""

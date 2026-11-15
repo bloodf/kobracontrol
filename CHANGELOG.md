@@ -61,6 +61,8 @@ network search was measured on the printer; the plugin itself has not been tried
   choose, instead of only showing the known printer's connection error.
 - OrcaSlicer's Print, Send and Device tab check the certificate pin of a printer in the address book under its
   identity too; a different certificate is logged and shown there, not refused (the address is the user's own).
+  When the tab then uses that remembered printer, a session that is already open must have presented the pinned
+  certificate, or it is closed at once and offered as a different printer.
 - An address where something answers but port 18910 refuses at once (a Kobralink bridge, say) is reported as
   "something answers at this address but it is not a Kobra X in LAN mode", with where the address came from and
   what to check, and every attempt follows the growing delay.

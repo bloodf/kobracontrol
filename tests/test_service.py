@@ -631,6 +631,37 @@ class PrinterCertificate(unittest.TestCase):
         self.assertEqual(svc._data(conn)["tls"], {"fingerprint": self.fingerprint, "changed_from": "ab" * 32})
         self.assertTrue(any("certificate" in line and "changed" in line for line in logs), logs)
 
+    def located_after_the_agent(self, pin):
+        """The reviewer's case: the printer agent opens the session first (identity from the address book, no pin
+        enforced); then the tab locates the same remembered printer with `pin` as its pinned certificate."""
+        locate.Addresses(os.path.join(self.tmp, "addresses.json")).put("P", self.fake.host, "SERIAL-A", pin)
+        published = []
+        svc = service.Service(published.append, lambda m: None, cert_dir=self.tmp, tls=self.ctx,
+                              http_port=self.fake.http_port, mqtt_port=self.fake.mqtt_port, camera_factory=FakeCamera,
+                              addresses_path=os.path.join(self.tmp, "addresses.json"),
+                              probe=lambda ip: {"ip": ip, "name": "KX", "model": "", "id": "SERIAL-A"})
+        self.addCleanup(svc.close)
+        conn = svc.ready(self.fake.host, timeout=15)   # the agent's Print/Send path
+        svc.set_target(service.Target("", preset_key="P"))
+        svc._join_locators(30)
+        return svc, conn, published
+
+    def test_a_pin_given_to_an_open_session_that_does_not_match_closes_it(self):
+        svc, conn, published = self.located_after_the_agent("ab" * 32)
+        wait(lambda: svc.target.host == "" and getattr(svc.locate_error, "candidates", None), 15)
+        self.assertEqual(conn.mismatch, self.fingerprint)
+        wait(lambda: not conn.connected and not conn._thread.is_alive(), 15)
+        self.assertNotIn(self.fake.host, svc.connections)
+        self.assertEqual(svc.generation, 2)   # the tab's selection, then the impostor refused
+        self.assertTrue(svc.locate_error.candidates[0]["different"])
+        self.assertIn({"type": "selection_changed"}, published)
+
+    def test_a_pin_given_to_an_open_session_that_matches_keeps_it(self):
+        svc, conn, _ = self.located_after_the_agent(self.fingerprint)
+        self.assertIs(svc.connections[self.fake.host], conn)
+        self.assertTrue(conn.connected)
+        self.assertEqual((conn.mismatch, svc.target.host, svc.generation), ("", self.fake.host, 1))
+
     def test_plain_session_reports_none(self):
         self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
 

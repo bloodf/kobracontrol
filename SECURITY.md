@@ -49,7 +49,12 @@ and kobracontrol cannot add any:
   remembered printer stays, and the tab asks "A different Kobra X answered at X. Use it?". A different
   printer is never taken by itself, even when it is the only one answering, and the plugin never looks
   for the printer elsewhere while it was printing. Any change of the address in use is handled as a
-  printer switch: pending commands for the old one are refused. The first connection to a printer found
+  printer switch: pending commands for the old one are refused. The certificate pin is enforced as soon as the
+  plugin uses a remembered printer, also on a session that was already open (for example opened first by
+  OrcaSlicer's Print or Device tab): a session that presented another certificate is closed at once.
+- **An address you typed** (Settings > Printer address, or the printer preset's address used by OrcaSlicer's
+  Print, Send and Device tab) is pinned per address and only warned about: a different certificate later is
+  logged and shown on every tab, and the connection is kept. The first connection to a printer found
   on the network says which printer it is (name, model, address).
 
 - **Client certificate:** the printer accepts only the certificate (`CN=AnycubicSlicer`) that

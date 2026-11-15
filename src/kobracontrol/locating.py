@@ -215,7 +215,7 @@ class LocatingMixin:
         address stays; the page offers this printer as an explicit choice."""
         with self.lock:
             target = self.target
-            if target is None or target.host != conn.host or conn.host not in self.connections:
+            if target is None or target.host != conn.host or self.connections.get(conn.host) not in (None, conn):
                 return
             self.generation += 1
             self._reset_printer_state()
