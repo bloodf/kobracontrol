@@ -66,13 +66,15 @@ def rows(files, details=None):
     return out
 
 
-def print_payload(files, name, mapping, auto_leveling=False, vibration_compensation=False, skip_parts=None):
+def print_payload(files, name, mapping, auto_leveling=False, vibration_compensation=False, skip_parts=None,
+                  flow_calibration=False, timelapse=False):
     """print/start data for a file that is on the printer (ValueError when it is not in `files`)."""
     valid_name(name)
     found = next((f for f in files or [] if isinstance(f, dict) and f.get("filename") == name), None)
     if found is None:
         raise ValueError("%s is not on the printer" % name)
     task = {"auto_leveling": bool(auto_leveling), "vibration_compensation": bool(vibration_compensation),
+            "flow_calibration": bool(flow_calibration), "timelapse": bool(timelapse),
             "skip_parts": [str(p) for p in skip_parts or []]}
     return kobra.print_file_payload(name, _number(found.get("size")), mapping, task)
 
@@ -166,13 +168,15 @@ class FilesMixin:
         return {"name": name, "thumbnail": _thumbnail(details),
                 **plan(details, view["slots"], view["mode"], view.get("model") or "")}
 
-    def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False):
+    def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False, flow_calibration=False,
+                       timelapse=False):
         self._require_idle()
         printer = self._printer()
         view = self._view()
         loaded, _ = ace.select_loaded_slots_for_print(view["slots"], view["mode"])
         mapping = ace.build_auto_ams_box_mapping(loaded, view["mode"])   # as Kobralink and KX-Bridge do
-        payload = print_payload(printer.list_files(), name, mapping, auto_leveling, vibration_compensation)
+        payload = print_payload(printer.list_files(), name, mapping, auto_leveling, vibration_compensation,
+                                flow_calibration=flow_calibration, timelapse=timelapse)
         printer.start_print(payload)
         return {"started": name}
 

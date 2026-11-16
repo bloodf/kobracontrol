@@ -126,6 +126,45 @@ ends the task with code 10111 ("abnormal end of task") about one second after th
 report alone is therefore no proof that the print runs: kobracontrol watches `print/report` for a
 few seconds after it.
 
+### Print options (`task_settings`)
+
+| Option | Field | Source | On the printer |
+|---|---|---|---|
+| Auto-leveling | `auto_leveling` 0/1 | Kobralink, KX-Bridge | verified |
+| Vibration (resonance) compensation | `vibration_compensation` 0/1 | Kobralink, KX-Bridge | sent, effect not checked |
+| Flow calibration | `flow_calibration` 0/1 | Anycubic Slicer Next 2.0.0.3 (`libmach_mqtt` PrintStart) | **not yet tried** |
+| Time-lapse | `timelapse` `{status: 0/1, count: 0, type: 64}` | the field: Anycubic Slicer Next; `type` 64: Kobralink and KX-Bridge | **not yet tried** |
+
+The printer echoes `bed_leveling`, `flow_calibration` and `time_lapse` in `buried/report` action
+`PrintStart`; that is how a test print can confirm them. `info/report` `features` says which options
+the printer has (`flow_calibration_support`, `camera_timelapse_support`, ...); the plugin drops an
+option the printer marks unsupported.
+
+OrcaSlicer's Print dialog: Flow Dynamics Calibration shows when bit 16 of the status push's `home_flag`
+is set (`DeviceManager.cpp` `parse_home_flag`, which overwrites `support_flow_calibration`).
+Timelapse always shows. Vibration compensation is never offered (`SelectMachine.cpp` passes false),
+so the plugin's own setting is used for OrcaSlicer prints.
+
+## Printer details and Print Assist
+
+From Anycubic Slicer Next 2.0.0.3's Workbench page (its web bundle in `libWorkbench.dylib`), sent on
+the `web` topic. **None of these answers has been captured from a Kobra X yet.**
+
+| Message | Data | Answer read |
+|---|---|---|
+| `info/net` | `{}` | `info/report` `mac` (or `machine_mac`) |
+| `info/statistic-query` | none | `info/report` `print_total_minutes`, `print_count`, `material_used_gram_value` (or `material_used_value`, grams); also pushed as action `statistic-reported` after a print (firmware 2.0.2.8 sent that action with no counters) |
+| `info/setPrinterName` | `{printerName}` | `info/report` |
+| `properties/read` | `["assistant_settings"]` | `properties/report` `assistant_settings: [{option, value}]`, maybe wrapped as `{value: [...]}` |
+| `properties/write` | `{assistant_settings: [{option, value}]}` | `properties/report` |
+| `print/update` | `{taskid, settings: {fan_speed_pct}}` | the part fan during a print (idle: `fan/setSpeed`) |
+
+Print Assist options: 0 belt detection, 1 lost step recovery, 3 filament break alert, 4 filament jam
+alert, 5 remaining filament detection. An option missing from the answer is not supported. Auto-feed
+(option 2 in Anycubic's page) is written with `multiColorBox/setAutoFeed`, one message per ACE.
+The camera light is `light/control {type: 3, status, brightness}` with brightness 100 on, 0 off, as
+Anycubic Slicer Next sends it.
+
 ### Job phases
 
 During a job the printer reports its phase on `print/report` with action `start`: `checking`,
@@ -187,7 +226,8 @@ detection, and filament usage tracking of the job.
 ## Not yet verified
 
 - On the printer: pause, resume, stop, filament feed and retract, drying start and stop, slot edit,
-  skip objects, speed mode and Spoolman booking.
+  skip objects, speed mode and Spoolman booking; flow calibration and time-lapse in `print/start`;
+  everything under "Printer details and Print Assist".
 - Inside OrcaSlicer itself: nothing has been tested there. That covers the Device tab, the Print
   dialog, the permissions dialog and the Device tab camera with OrcaSlicer's bundled ffmpeg.
 

@@ -130,6 +130,15 @@ class PushStatus(unittest.TestCase):
         self.assertIs(ams["calibrate_remain_flag"], True)
         self.assertIs(self.push(boxes=[ACE1])["ams"]["calibrate_remain_flag"], False)
 
+    def test_flow_calibration_bit_follows_features(self):
+        """home_flag bit 16 shows Flow Dynamics Calibration in OrcaSlicer's Print dialog (DM parse_home_flag)."""
+        on = lambda **f: self.push(view(features=f))["home_flag"] >> 16 & 1
+        self.assertEqual(on(flow_calibration_support=True), 1)
+        self.assertEqual(on(flow_calibration_support=False), 0)
+        self.assertEqual(self.push()["home_flag"] >> 16 & 1, 1)   # not reported yet: shown, the job drops it if unsupported
+        self.assertEqual(self.push(view(features={"flow_calibration_support": True}))["home_flag"] >> 8 & 3, 1)   # storage kept
+        self.assertNotIn("support_auto_flow_calibration", self.push())   # on/off, never "auto"
+
     def test_bed_leveling_follows_features(self):
         self.assertEqual(self.push(view(features={"auto_leveling_support": False}))["support_bed_leveling"], 0)
         self.assertEqual(self.push(view(features={"auto_leveling_support": True}))["support_bed_leveling"], 1)

@@ -41,6 +41,8 @@ export const s = reactive({
   located: null as Located | null,   // the address in use and where it came from (config)
   history: {} as Record<string, (number | null)[]>,   // recent nozzle/bed readings, oldest first (drawn, not used)
   historyAt: 0,
+  /** The printer's details and Print Assist were asked for (cmd device): '' not yet, 'asking', 'done'. */
+  device: '' as '' | 'asking' | 'done',
 });
 
 export const tracker = new Tracker(
@@ -86,7 +88,7 @@ export const bindings = computed(() => boundSlots(
 function reset(): void {
   s.epoch++;
   Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
-    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0 });   // candidates stay until an answer replaces them
+    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0, device: '' });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
@@ -111,6 +113,7 @@ export async function hello(retry = false): Promise<void> {
     if (r.note && r.note !== lastNote) { lastNote = r.note; tracker.notify('info', r.note); }   // once: how it was found
     if (otherAgent.value && !agentNoted) { agentNoted = true; tracker.notify('info', t('agent.other', { agent: otherAgent.value })); }
     void loadSpools(true);
+    void loadDevice();
   } catch (e) {
     if (epoch !== s.epoch) return;
     s.phase = e instanceof bridge.ReplyError && e.noCertificate ? 'noCertificate'
@@ -123,6 +126,15 @@ export async function hello(retry = false): Promise<void> {
     helloInFlight = false;
     if (epoch === s.epoch) { void loadStock(false); void loadUsage(); }
   }
+}
+
+/** Ask the printer for its network address, counters and Print Assist switches (read only; the answers come in the
+ *  status). A firmware that does not answer just leaves those parts out. */
+export async function loadDevice(): Promise<void> {
+  const epoch = s.epoch;
+  s.device = 'asking';
+  try { await bridge.command('device', {}, s.info?.generation); } catch { /* the panel shows only what was reported */ }
+  if (epoch === s.epoch) s.device = 'done';
 }
 
 /** The search found a printer OrcaSlicer does not let the plugin reach yet: ask the plugin to have OrcaSlicer show

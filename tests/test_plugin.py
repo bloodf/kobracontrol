@@ -173,6 +173,29 @@ class Agent(Base):
         self.assertEqual((start["task_settings"]["auto_leveling"], start["task_settings"]["vibration_compensation"]), (1, 1))
         self.assertEqual(stages[-1][0], plugin.STAGE_FINISHED)
 
+    def test_orca_print_options(self):
+        """OrcaSlicer's Print dialog never sends vibration compensation (SelectMachine.cpp passes false): the Kobra
+        Control setting is the default. Its Timelapse and Flow Dynamics Calibration choices go through."""
+        self.connect()
+        plugin.get_store().update({"vibration_compensation": True})
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]", task_flow_cali=True,
+                                task_record_timelapse=True)
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["vibration_compensation"], task["flow_calibration"], task["timelapse"]["status"]), (1, 1, 1))
+
+    def test_job_task(self):
+        params = pa.PrintParams(task_bed_leveling=True, task_record_timelapse=True)
+        self.assertEqual(plugin.job_task(params, {"vibration_compensation": True}),
+                         {"auto_leveling": True, "vibration_compensation": True, "flow_calibration": False, "timelapse": True})
+        self.assertFalse(plugin.job_task(params, {})["vibration_compensation"])
+        self.assertFalse(plugin.job_task(params, {"vibration_compensation": False})["vibration_compensation"])
+        self.assertTrue(plugin.job_task(pa.PrintParams(task_vibration_cali=True), {"vibration_compensation": False})["vibration_compensation"])
+
+    def test_status_shows_flow_dynamics_calibration(self):
+        msg = self.connect()["print"]
+        self.assertEqual(msg["home_flag"] >> 16 & 1, 1)
+
     def test_switching_printer_releases_the_old_connection(self):
         """connect_printer for another address closes the session to the previous one (disconnect_printer does)."""
         self.connect()

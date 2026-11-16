@@ -119,7 +119,8 @@ described in [docs/protocol.md](docs/protocol.md).
 
 The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with the Kobra X:
 
-- Print and Send, with the filament-to-slot mapping you pick in Orca's print dialog.
+- Print and Send, with the filament-to-slot mapping you pick in Orca's print dialog, auto-leveling, flow
+  calibration and time-lapse from that dialog, and vibration compensation from the plugin's settings.
 - Device tab: status, temperatures, pause, resume, stop, light, fan and speed.
 - ACE slots shown as filament slots, with sync and slot mapping in Orca's print dialog.
 - Device tab camera.
@@ -127,7 +128,8 @@ The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with
 ### Kobra Control tab
 
 - **Dashboard:** status and controls (with the clock time a running print should finish), camera, an ACE card (slots, feed, retract, auto-feed and
-  drying), Spoolman and Spooler stock.
+  drying), a Printer panel (name and Rename, firmware, network address, print counters, Print Assist switches),
+  Spoolman and Spooler stock.
 - **Files:** the printer's files, with search and sorting (newest, oldest, name, size). Before you print
   one, the print panel shows its estimated time, layers, filament, layer height and temperatures, and
   which ACE slot will print each of its filaments. It warns when a slot holds a different material than

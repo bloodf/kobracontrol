@@ -16,7 +16,9 @@ DEFAULTS = {
     "ffmpeg_path": "",                   # "" = look ffmpeg up on PATH
     "camera_enabled": False,
     "auto_leveling": True,               # print options default
-    "vibration_compensation": True,
+    "vibration_compensation": True,      # also the default of OrcaSlicer prints: its Print dialog has no such option
+    "flow_calibration": False,
+    "timelapse": False,
     "spoolman_url": "",
     "spoolman_auto": True,               # bind a spool when a slot changes
     "spoolman_report_usage": True,       # deduct each slot's grams when a print finishes

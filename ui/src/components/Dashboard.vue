@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import JobCard from './JobCard.vue';
 import TempPanel from './TempPanel.vue';
 import MotionPanel from './MotionPanel.vue';
+import PrinterPanel from './PrinterPanel.vue';
 import CameraCard from './CameraCard.vue';
 import AceCard from './AceCard.vue';
 import StockCard from './StockCard.vue';
@@ -27,6 +28,7 @@ const firstRun = computed(() => s.phase === 'noCertificate' || s.phase === 'noTa
         <JobCard />
         <TempPanel />
         <MotionPanel />
+        <PrinterPanel />
       </div>
       <div class="oui-stack" data-test="filament">
         <CameraCard />

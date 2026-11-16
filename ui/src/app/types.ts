@@ -15,6 +15,14 @@ export interface Status {
   mode: 'toolhead' | 'ace_direct' | 'ace_hub'; slots: Slot[]; loaded_slot: number; ace_units: AceUnit[]; can: Can;
   /** The printer's TLS certificate (SHA-256 hex); changed_from is the one seen before when it changed, else "". */
   tls?: { fingerprint: string; changed_from: string } | null;
+  /** info/report features ({"flow_calibration_support": true, ...}); {} before the printer said. */
+  features?: Record<string, boolean>;
+  /** Network (MAC) address, "" until the printer reported it. */
+  mac?: string;
+  /** Only the counters the printer reported. */
+  stats?: { print_minutes?: number; print_count?: number; filament_g?: number };
+  /** Print Assist switches by option number (JSON keys are strings); null until the printer answered. */
+  assist?: Record<string, boolean> | null;
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string;
   source?: AddressSource; note?: string }

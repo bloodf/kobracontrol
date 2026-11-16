@@ -18,6 +18,14 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(s["camera_enabled"])   # the camera stays off until the user turns it on
         self.assertEqual(s["ui_language"], "auto")
 
+    def test_print_option_defaults(self):
+        d = settings.DEFAULTS
+        self.assertEqual((d["auto_leveling"], d["vibration_compensation"], d["flow_calibration"], d["timelapse"]),
+                         (True, True, False, False))
+        s = settings.Store()
+        self.assertEqual(s.update({"flow_calibration": True, "timelapse": "yes"})["flow_calibration"], True)
+        self.assertFalse(s.effective()["timelapse"])   # not a bool: ignored
+
     def test_update_validates_and_ignores_unknown(self):
         st = settings.Store()
         out = st.update({"host": "192.168.1.9", "camera_enabled": True, "auto_leveling": "yes", "nope": 1,

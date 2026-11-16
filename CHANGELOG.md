@@ -4,6 +4,46 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-16
+
+Printing from OrcaSlicer gets the options Anycubic Slicer Next offers, and the Dashboard gets a Printer panel with
+the printer's details and its Print Assist switches. Checked against the repository's test fakes, page tests and
+screenshots. **None of the new options has been tried on a Kobra X yet**: see "Not yet tried on the printer" below.
+
+### Added
+
+- OrcaSlicer's Print dialog now shows **Flow Dynamics Calibration** for the Kobra X, and the printer runs it when it is
+  on. The dialog's **Timelapse** choice is now passed to the printer too; before, both were always sent as off.
+- The Files tab's print options add **Flow calibration** and **Time-lapse**, each shown only when the printer says it
+  has it. Settings > Print defaults has both, off by default, and the confirmation names every option.
+- A **Printer** panel on the Dashboard: the printer's name with Rename, its firmware, its network (MAC) address, and its
+  total print time, number of prints and filament used. A counter the printer does not report is left out, never
+  shown as 0.
+- **Print Assist** switches in that panel: filament break alert, filament jam alert, auto feed, remaining filament
+  detection, belt detection and lost step recovery. Only the switches the printer reports are shown; auto feed
+  changes every ACE at once. Each change asks first and is possible only while the printer is idle; so is Rename.
+
+### Changed
+
+- **Vibration (resonance) compensation now applies to prints sent from OrcaSlicer.** OrcaSlicer's Print dialog has no
+  such option and always sent it as off; the Settings > Print defaults switch (on by default) is now used for those
+  prints as well.
+- Setting the part fan while a print runs uses the print's own settings, as Anycubic Slicer Next does.
+- Turning the camera light on uses full brightness (it was 80 %), and off sends brightness 0, as Anycubic Slicer Next
+  does.
+
+### Not yet tried on the printer
+
+These come from Anycubic Slicer Next 2.0.0.3 and from Kobralink and KX-Bridge, not from our own Kobra X. A firmware
+that ignores them leaves the plugin working as before; the details and switches just stay hidden.
+
+- Print options: `flow_calibration` and `timelapse` (`{status, count: 0, type: 64}`) in `print/start`, and the flow
+  calibration bit in OrcaSlicer's status push.
+- Printer details: `info/net` (network address), `info/statistic-query` (print time, prints, filament used),
+  `info/setPrinterName` (Rename).
+- Print Assist: `properties/read` and `properties/write` of `assistant_settings`.
+- The part fan during a print (`print/update` `fan_speed_pct`) and light brightness 100 / 0.
+
 ## [0.4.0] - 2026-11-15
 
 A new look for the Kobra Control tab, on the interface shared by the Orca plugin family. Checked against the

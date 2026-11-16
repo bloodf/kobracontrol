@@ -32,6 +32,7 @@ const VIEW = extra => ({connected: true, state: 'idle', preparing: false, kobra_
   ace_units: [{id: 0, auto_feed: false, drying: DRY0}], can: {pause: false, resume: false, stop: false, move: true, heat: true, feed: true, print: true}, ...extra});
 const PRINTING = extra => VIEW({state: 'printing', kobra_state: 'printing', filename: 'benchy.gcode', progress: 37, layer: 142, total_layers: 380, elapsed_s: 4100, remaining_s: 7000,
   nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false}, ...extra});
+const ASSIST = {'0': true, '3': false, '4': true, '5': false};
 const CERT = {found: true, source: 'Anycubic Slicer Next'};
 const SETTINGS = {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ffmpeg_path: '', camera_enabled: false, auto_leveling: true, vibration_compensation: true,
   spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false};
@@ -904,15 +905,100 @@ test('files: list, details, the two print options, print and cancel', `
   await until(() => q('.fv-thumb'), 'thumbnail');
   assert(q('#opt-level input, input#opt-level').checked !== false, 'auto-leveling starts on from the setting');
   await click(q('input#opt-vib'));
+  assert(q('input#opt-flow') && !q('input#opt-flow').checked && q('input#opt-tl') && !q('input#opt-tl').checked, 'flow calibration and time-lapse start off');
+  await click(q('input#opt-tl'));
   await click(byTest('print-start'));
   assert(dialogOpen() && dialogText().includes('benchy.gcode') && dialogText().includes('Bench Kobra'), 'asks: ' + dialogText());
+  assert(dialogText().includes('Flow calibration: off') && dialogText().includes('Time-lapse: on'), 'the question names every option: ' + dialogText());
   await no();
   eq(cmds('file_print'), [], 'cancel prints nothing');
   await click(byTest('print-start')); await yes();
-  eq(cmds('file_print').map(m => m.args), [{name: 'benchy.gcode', auto_leveling: true, vibration_compensation: false}], 'file_print with both options');
+  eq(cmds('file_print').map(m => m.args), [{name: 'benchy.gcode', auto_leveling: true, vibration_compensation: false, flow_calibration: false, timelapse: true}],
+    'file_print with every option');
   await reply(last('cmd', 'file_print'), true);
   await until(() => !byTest('print-panel'), 'panel closes after printing');
 `);
+
+test('files: flow calibration and time-lapse follow the printer features and the saved defaults', `
+  await connect(); await post(CONFIG({settings: {...SETTINGS, flow_calibration: true, timelapse: true}}));
+  await post({type: 'status', data: VIEW({features: {flow_calibration_support: true, camera_timelapse_support: false}})});
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 1, timestamp: 1700000000}]});
+  await click(q('[data-file="benchy.gcode"] [data-print]'));
+  await reply(last('cmd', 'file_details'), {name: 'benchy.gcode', thumbnail: PNG, objects: []});
+  await until(() => q('.fv-thumb'), 'panel');
+  assert(q('input#opt-flow').checked, 'flow calibration on from the setting');
+  assert(!q('input#opt-tl'), 'no time-lapse switch on a printer without it');
+  await click(byTest('print-start')); await yes();
+  eq(cmds('file_print').map(m => [m.args.flow_calibration, m.args.timelapse]), [[true, false]], 'time-lapse never sent where unsupported');
+`);
+
+// ------------------------------------------------------------------ the printer's details and Print Assist
+test('printer panel: details are asked on connect; only reported counters show', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'device'), 'device asked after hello');
+  eq(cmds('device').length, 1, 'once per connection');
+  const panel = () => text(byTest('device'));
+  assert(panel().includes('Bench Kobra') && panel().includes('1.0'), 'name and firmware: ' + panel());
+  assert(!panel().includes('Network address') && !panel().includes('Prints') && !panel().includes('Total print time'), 'nothing unreported: ' + panel());
+  await post({type: 'status', data: VIEW({mac: 'AA:BB:CC:00:11:22', stats: {print_count: 12, filament_g: 1520}})});
+  assert(panel().includes('AA:BB:CC:00:11:22') && panel().includes('Prints') && panel().includes('12') && panel().includes('1.52 kg'), 'reported ones: ' + panel());
+  assert(!panel().includes('Total print time'), 'a counter the firmware did not send stays hidden');
+  await post({type: 'status', data: VIEW({stats: {print_minutes: 605}})});
+  assert(panel().includes('10 h 5 min'), 'print time: ' + panel());
+  assert(text(byTest('assist-none')).includes('Asking'), 'while the printer is asked: ' + text(byTest('assist-none')));
+  await reply(last('cmd', 'device'), {sent: true, assist: false});
+  await until(() => text(byTest('assist-none')).includes('did not report'), 'a firmware that does not answer says so');
+  eq(qa('[data-assist]').map(e => e.getAttribute('data-assist')), ['autoFeed'], 'auto-feed is the ACE’s own and always there');
+`);
+
+test('printer panel: Print Assist switches ask first, then send; only reported ones show', `
+  await ready(VIEW({assist: ASSIST}));
+  eq(qa('[data-assist]').map(e => e.getAttribute('data-assist')), ['breakAlert', 'jamAlert', 'autoFeed', 'remain', 'belt'], 'reported switches, Anycubic’s order');
+  assert(!q('#assist-breakAlert').checked && q('#assist-jamAlert').checked, 'values from the printer');
+  await click(q('#assist-breakAlert'));
+  assert(dialogOpen() && dialogText().includes('Turn on Filament break alert') && dialogText().includes('Bench Kobra'), 'asks: ' + dialogText());
+  await no();
+  eq(cmds('assist'), [], 'cancel sends nothing');
+  assert(!q('#assist-breakAlert').checked, 'the switch stays as the printer says');
+  await click(q('#assist-breakAlert')); await yes();
+  eq(cmds('assist').map(m => m.args), [{option: 'breakAlert', on: true}], 'assist sent');
+  await reply(last('cmd', 'assist'), {confirmed: true});
+  await until(() => text(q('.notices')).includes('Filament break alert is on'), 'result shown');
+  await click(q('#assist-autoFeed')); await yes();
+  eq(cmds('assist').map(m => m.args)[1], {option: 'autoFeed', on: true}, 'auto-feed for every ACE');
+`);
+
+test('printer panel: changes are refused while printing, with the reason', `
+  await ready(PRINTING({assist: ASSIST}));
+  assert(q('#assist-belt').disabled && byTest('rename').disabled, 'switches and rename off');
+  assert(text(byTest('device-why')).includes('while it is idle'), 'says why: ' + text(byTest('device-why')));
+  eq(q('#assist-belt').getAttribute('aria-describedby'), 'device-why', 'the reason is announced');
+`);
+
+test('printer panel: rename asks for the name and checks it', `
+  await ready(VIEW());
+  await click(byTest('rename'));
+  assert(dialogOpen() && dialogText().includes('Rename the printer'), 'asks: ' + dialogText());
+  await no();
+  eq(cmds('rename'), [], 'cancel renames nothing');
+  await click(byTest('rename'));
+  const input = q('.p-dialog input');
+  eq(input.value, 'Bench Kobra', 'starts from the current name');
+  await type(input, 'Shop <X>'); await yes();
+  eq(cmds('rename'), [], 'an invalid name is not sent');
+  await until(() => text(q('.notices')).includes('without quotes'), 'says why');
+  await click(byTest('rename'));
+  await type(q('.p-dialog input'), '  Shop   Kobra '); await yes();
+  eq(cmds('rename').map(m => m.args), [{name: 'Shop Kobra'}], 'rename sent, spaces tidied');
+`);
+
+test('pt-BR: the printer panel is translated', `
+  await ready(VIEW({assist: ASSIST, mac: 'AA:BB', stats: {print_count: 3}}));
+  const panel = text(byTest('device'));
+  for (const w of ['Impressora', 'Renomear', 'Endereço de rede', 'Impressões', 'Assistente de impressão', 'Alerta de filamento rompido', 'Detecção de correia'])
+    assert(panel.includes(w), w + ' in ' + panel);
+`, { lang: 'pt-BR' });
 
 test('files: print is refused while the printer cannot start, with the reason', `
   await ready(PRINTING());
@@ -1057,7 +1143,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   await click(byTest('save-top'));
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
-    spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true}, 'every setting, by its name');
+    flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true}, 'every setting, by its name');
   assert(!text(q('.notices')).includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(text(q('.notices')).includes('Settings saved'), 'saved after the answer');
