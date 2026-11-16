@@ -1,7 +1,7 @@
 // Pure rules of the page (node --test runs this TypeScript directly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, fingerprintText, finishAt } from '../../src/core/logic.ts';
+import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
 import { normalizeLocale, resolveLocale, interpolate } from '../../src/core/i18n-core.ts';
 import { en, ptBR } from '../../src/core/messages.ts';
 
@@ -118,4 +118,13 @@ test('the new texts exist in every language', () => {
   for (const key of ['files.count', 'files.noMatch', 'files.mat.differs', 'files.mat.missing', 'tls.changed.body', 'status.eta'] as const) {
     assert.ok(en[key] && ptBR[key] && en[key] !== ptBR[key], key);
   }
+});
+
+test('heater phase: off, heating, at target (within 2 °C), cooling; unknown without a target or a reading', () => {
+  assert.equal(heaterPhase(25, 0), 'off');
+  assert.equal(heaterPhase(150, 220), 'heating');
+  assert.equal(heaterPhase(218.5, 220), 'target');
+  assert.equal(heaterPhase(240, 220), 'cooling');
+  assert.equal(heaterPhase(25, undefined), null);
+  assert.equal(heaterPhase(undefined, 220), null);
 });

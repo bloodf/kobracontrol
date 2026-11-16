@@ -18,7 +18,7 @@ const slot = (g, box, i, o) => ({global_index: g, box_id: box, box_pos: box < 0 
 const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state: 'printing', printer_name: 'Bench Kobra', model: 'Kobra X', firmware: '1.0',
   filename: 'desk_organiser_plate_1.gcode', progress: 37, layer: 142, total_layers: 380, elapsed_s: 4100, remaining_s: 7000, task_id: '1',
   nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, fan_pct: 70, light_on: true, speed_mode: 2, files: [], 
-  storage: {}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
+  storage: {total: 8000, used: 2100}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
   slots: [slot(0, -1, 0, {type: 'PETG', color: [62, 99, 221]}), slot(1, -1, 1, {status: 0, type: ''}), slot(2, -1, 2, {color: [244, 207, 120], type: 'PLA+'}),
     slot(3, 0, 0, {activity: 'loaded', spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
   loaded_slot: 3, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
@@ -27,7 +27,9 @@ const CONFIG = {type: 'config', settings: {host: '', printer_name: 'Bench Kobra'
   spoolman_url: 'http://192.168.1.10:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false},
   certificate: {found: SCN !== 'nocert', source: 'Anycubic Slicer Next'}, spooler: {installed: true}, version: '0.1.0', limits: {nozzle_max: 300, bed_max: 100}};
 if (SCN === 'nocert') __t.handler({type: 'reply', id: hello.id, error: 'no certificate', no_certificate: true});
-else if (SCN === 'notarget') __t.handler({type: 'reply', id: hello.id, error: 'no target', no_target: true});
+else if (SCN === 'notarget') __t.handler({type: 'reply', id: hello.id, error: 'No Kobra X answered the network search. Enter the printer’s own address under Settings > Printer address.', no_target: true});
+else if (SCN === 'different') __t.handler({type: 'reply', id: hello.id, error: 'A different Kobra X answered at 192.168.1.61. Use it? Kobra Control does not switch to another printer by itself.', no_target: true,
+  candidates: [{ip: '192.168.1.61', name: 'Workshop KX', model: 'Anycubic Kobra X', needs_allow: false, different: true}]});
 else {
   __t.handler({type: 'reply', id: hello.id, result: {address: '192.168.1.50', printer: 'Bench Kobra', generation: 1}});
   __t.handler({type: 'status', data: VIEW});
@@ -40,28 +42,40 @@ ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material
 ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'ok', code: 'ok', text: '', key: 's:1', ts: Date.now() / 1000 - 30,
   rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
-  same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}});
+  same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}, available: true, reason: null});
 ans('usage', {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
   acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
+if (SCN === 'offline') { __t.handler({type: 'status', data: {...VIEW, connected: false}}); __t.handler({type: 'offline', error: 'printer not reachable at 192.168.1.50', retry_at: Date.now() / 1000 + 24}); }
+if (SCN === 'stale') { const real = Date.now; Date.now = () => real() + 4 * 60000; await sleep(1100); }
+if (SCN === 'usage') { await sleep(50); document.querySelector('[data-test="usage-review"]')?.click(); }
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
 if (SCN === 'settings' || SCN === 'files') { document.querySelector('[data-tab="' + SCN + '"]').click(); await sleep(300); }
 if (SCN === 'files') {
-  ans('files', {files: [{filename: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {filename: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400}], storage: {total: 8000, used: 2100}});
+  ans('files', {files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {name: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400},
+    {name: 'cable_clips_x12.gcode', size: 1300000, timestamp: Date.now()/1000 - 3 * 86400}]});
   await sleep(100);
   document.querySelector('[data-print]').click(); await sleep(100);
-  ans('file_details', {thumbnail: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>'});
+  ans('file_details', {name: 'desk_organiser_plate_1.gcode', thumbnail: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>',
+    info: {estimated_s: 25816, layers: 380, filament_g: 102.9, layer_height: 0.2, nozzle_temp: 220, bed_temp: 60, nozzle: 0.4, printer_model: 'Anycubic Kobra X', model_ok: true},
+    materials: [{paint_index: 0, material: 'PLA', colour: '#111111', grams: 84.1, slot: 3, slot_type: 'PLA', slot_colour: '#E5484D', check: 'ok'},
+      {paint_index: 1, material: 'PETG', colour: '#2850a8', grams: 18.8, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}]});
 }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
 `;
-const SCENES = [
+const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   // scene, theme, lang, width, height
-  ['dash', 'light', 'en', 1280, 720], ['dash', 'dark', 'en', 1280, 720], ['dash', 'light', 'en', 1280, 2600], ['dash', 'dark', 'pt_BR', 1280, 2600],
-  ['dash', 'light', 'pt_BR', 720, 2800], ['dash', 'dark', 'en', 400, 3400],
-  ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1280, 720], ['settings', 'light', 'en', 1280, 1500], ['settings', 'dark', 'en', 1280, 720],
-  ['nocert', 'light', 'en', 1280, 720], ['nocert', 'dark', 'en', 1280, 720], ['nocert', 'light', 'pt_BR', 720, 720], ['notarget', 'dark', 'en', 1280, 720],
-  ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'en', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
-];
+  ['dash', 'dark', 'en', 1900, 1000], ['dash', 'light', 'en', 1900, 1000], ['dash', 'dark', 'en', 1280, 720], ['dash', 'light', 'en', 1280, 720],
+  ['dash', 'dark', 'pt_BR', 1280, 720], ['dash', 'light', 'pt_BR', 1900, 1000], ['dash', 'dark', 'en', 720, 1000], ['dash', 'light', 'pt_BR', 720, 1000],
+  ['dash', 'light', 'en', 1280, 2200], ['dash', 'dark', 'pt_BR', 720, 3400], ['dash', 'dark', 'en', 400, 3600],
+  ['offline', 'dark', 'en', 1280, 720], ['offline', 'light', 'en', 1900, 1000], ['offline', 'dark', 'en', 720, 1000], ['stale', 'dark', 'en', 1280, 720],
+  ['notarget', 'dark', 'en', 1900, 1000], ['notarget', 'light', 'en', 1280, 720], ['notarget', 'dark', 'pt_BR', 1280, 720], ['notarget', 'light', 'en', 720, 1000],
+  ['different', 'dark', 'en', 1280, 720], ['nocert', 'light', 'en', 1280, 720], ['nocert', 'dark', 'pt_BR', 720, 1000],
+  ['settings', 'dark', 'en', 1900, 1000], ['settings', 'light', 'en', 1280, 720], ['settings', 'dark', 'en', 720, 1000], ['settings', 'dark', 'pt_BR', 1280, 720],
+  ['settings', 'light', 'pt_BR', 720, 1000],
+  ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1900, 1000], ['files', 'dark', 'en', 720, 1000],
+  ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'pt_BR', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
+]);
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));
 const browser = await launch();
 const metrics = [];

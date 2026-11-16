@@ -1,9 +1,9 @@
 {
   "name": "kobracontrol-ui",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "Kobra Control pages (Vue 3 + PrimeVue 5, shared Orca UI foundation 3.1.0), built into one offline HTML file",
+  "description": "Kobra Control pages (Vue 3 + PrimeVue 5, shared Orca UI foundation 4.0.1), built into one offline HTML file",
   "scripts": {
     "check:shared": "node shared/scripts/check.mjs",
     "typecheck": "node shared/scripts/vue-tsc.mjs --noEmit",

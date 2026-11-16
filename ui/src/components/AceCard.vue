@@ -1,42 +1,54 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Icon from './Icon.vue';
+import ToggleSwitch from 'primevue/toggleswitch';
+import { OuiEmpty, OuiPanel, OuiStatus } from '../../shared/src/components';
+import { ace } from '../../shared/src/icons';
 import SlotTile from './SlotTile.vue';
 import AceUnitControls from './AceUnitControls.vue';
-import { s, controlsOff } from '../app/store';
+import { s, run, tracker, controlsOff, stale } from '../app/store';
 import { t } from '../core/i18n';
 import { groupSlots } from '../core/logic';
 
+// Filament: one group per feeder (the print head, each ACE), its auto-feed and drying strip, then one object card per
+// slot with its filament colour, spool, amount, Spoolman spool and actions. Why feeding is off right now is said once,
+// in the footer.
 const groups = computed(() => groupSlots(s.status?.slots ?? []));
 const unitOf = (boxId: number) => s.status?.ace_units.find(u => u.id === boxId) ?? null;
 const groupName = (boxId: number) => (boxId < 0 ? t('ace.head') : t('ace.unit', { n: boxId + 1 }));
 const slotName = (index: number) => t('slot.name', { n: index + 1 });
 const modeText = computed(() => (s.status ? t(`ace.mode.${s.status.mode}` as 'ace.mode.toolhead') : ''));
+const setAuto = (id: number, on: boolean) => run({ key: `auto:${id}`, label: t('act.autoFeed', { ace: groupName(id) }), cmd: 'auto_feed', args: { ace: id, on } });
+const feedNo = computed(() => !!s.status && !s.status.can.feed && !controlsOff.value);
 </script>
 
 <template>
-  <section class="kc-card" aria-labelledby="ace-h" data-test="ace-card">
-    <div class="kc-row">
-      <h2 id="ace-h" class="ace-h"><Icon name="icon/ace" /> {{ t('ace.title') }}</h2>
-      <span class="oui-meta" data-test="ace-mode">{{ modeText }}</span>
+  <OuiPanel :title="t('ace.title')" :icon="ace" tone="magenta" data-test="ace-card">
+    <template #meta><span data-test="ace-mode">{{ modeText }}</span><template v-if="stale"> · <OuiStatus state="stale">{{ t('status.lastKnownShort') }}</OuiStatus></template></template>
+    <OuiEmpty v-if="!s.status" compact :icon="ace" tone="magenta" :title="t('ace.noStatus')" />
+    <OuiEmpty v-else-if="!groups.length" compact :icon="ace" tone="magenta" :title="t('ace.noSlots')" />
+    <div v-else class="oui-stack">
+      <section v-for="g in groups" :key="g.boxId" class="kc-group" :data-box="g.boxId" :aria-labelledby="`ace-g-${g.boxId}`">
+        <div class="kc-group-head">
+          <h3 :id="`ace-g-${g.boxId}`" class="ace-g oui-label">{{ groupName(g.boxId) }}</h3>
+          <label v-if="unitOf(g.boxId)" class="kc-inline" :for="`auto-${g.boxId}`">{{ t('ace.autoFeed') }}
+            <ToggleSwitch :input-id="`auto-${g.boxId}`" :model-value="unitOf(g.boxId)!.auto_feed" :disabled="!!controlsOff || tracker.isBusy(`auto:${g.boxId}`)"
+                          :aria-describedby="controlsOff ? 'kc-why' : undefined" :data-auto="g.boxId" @update:model-value="(on: boolean) => setAuto(g.boxId, on)" /></label>
+        </div>
+        <AceUnitControls v-if="unitOf(g.boxId)" :unit="unitOf(g.boxId)!" :label="groupName(g.boxId)" />
+        <div class="oui-cards">
+          <SlotTile v-for="sl in g.slots" :key="sl.global_index" :slot="sl" :label="`${groupName(g.boxId)} · ${slotName(sl.index)}`" />
+        </div>
+      </section>
     </div>
-    <p v-if="!s.status" class="oui-muted">{{ t('ace.noStatus') }}</p>
-    <p v-else-if="!groups.length" class="oui-muted">{{ t('ace.noSlots') }}</p>
-    <p v-if="s.status && !s.status.can.feed && !controlsOff" class="kc-why" data-test="feed-why">{{ t('reason.noFeed') }}</p>
-    <p v-if="s.status?.box_set_failed" class="kc-err" role="alert">{{ t('ace.setFailed') }}</p>
-    <div v-for="g in groups" :key="g.boxId" class="ace-group" :data-box="g.boxId">
-      <h3 class="ace-g">{{ groupName(g.boxId) }}</h3>
-      <AceUnitControls v-if="unitOf(g.boxId)" :unit="unitOf(g.boxId)!" :label="groupName(g.boxId)" />
-      <div class="ace-grid">
-        <SlotTile v-for="sl in g.slots" :key="sl.global_index" :slot="sl" :label="`${groupName(g.boxId)} · ${slotName(sl.index)}`" />
-      </div>
-    </div>
-  </section>
+    <template v-if="feedNo || s.status?.box_set_failed" #footer>
+      <p v-if="feedNo" id="feed-why" class="oui-meta" data-test="feed-why">{{ t('reason.noFeed') }}.</p>
+      <p v-if="s.status?.box_set_failed" class="kc-why" data-tone="danger" role="alert">{{ t('ace.setFailed') }}</p>
+    </template>
+  </OuiPanel>
 </template>
 
-<style scoped>
-.ace-h { margin: 0; display: flex; gap: 8px; align-items: center; }
-.ace-group { margin-top: 16px; }
-.ace-g { margin: 0 0 4px; }
-.ace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(264px, 1fr)); gap: 12px; }
+<style>
+.kc-group { display: grid; gap: var(--oui-s2); }
+.kc-group-head { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s2); min-height: 28px; }
+.kc-group + .kc-group { padding-top: var(--oui-s3); border-top: 1px solid var(--oui-border); }
 </style>

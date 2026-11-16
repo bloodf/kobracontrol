@@ -21,8 +21,8 @@ PROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))["project"]
 DIST_INFO = "kobracontrol-%s.dist-info/" % PROJECT["version"]
 EXPECTED = {"kobracontrol/%s.py" % n for n in ("__init__", "_assets") + build.MODULES} | {
     "kobracontrol/anycubic_slicer.pem", "kobracontrol/anycubic_slicer_key.pem"} | {
-    DIST_INFO + n for n in ("METADATA", "WHEEL", "RECORD", "top_level.txt", "licenses/LICENSE", "licenses/PrimeUIX.txt",
-                            "licenses/PrimeVue.txt", "licenses/Vue.txt")}
+    DIST_INFO + n for n in ("METADATA", "WHEEL", "RECORD", "top_level.txt", "licenses/LICENSE", "licenses/Lucide.txt",
+                            "licenses/Manrope.txt", "licenses/PrimeUIX.txt", "licenses/PrimeVue.txt", "licenses/Vue.txt")}
 # (?<![.\w]): a JS method call such as RegExp .exec( in the embedded page is not Python exec().
 FORBIDDEN = re.compile(r"(?<![.\w])exec\(|(?<![.\w])eval\(|__import__|importlib")
 DYNAMIC_BUILTINS = {"exec", "eval", "compile", "__import__"}

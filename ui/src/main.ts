@@ -4,13 +4,14 @@ import { boot } from './core/boot';
 import { locale, setHostLanguage } from './core/i18n';
 import { followHostTheme } from './core/theme';
 import { primeVueOptions } from '../shared/src';
+import './styles.css';
 import App from './App.vue';
 
 document.body.classList.add('orca-ui');
 setHostLanguage(boot.lang);
 followHostTheme();
 const app = createApp(App);
-installOrcaUI(app, 'en');
+installOrcaUI(app, 'en', 'violet');
 // PrimeVue's own labels (dialog close, select filter…) follow the page language too.
 const prime = app.config.globalProperties.$primevue;
 const english = { ...prime.config.locale };

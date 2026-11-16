@@ -83,3 +83,13 @@ export function finishAt(st: { state: string; preparing: boolean; remaining_s: n
   if (!st || st.state !== 'printing' || st.preparing || !(st.remaining_s > 0)) return null;
   return (st.updated_at > 0 ? st.updated_at : now) + st.remaining_s;
 }
+
+/** What a heater is doing, from its reading and target: null when it can't be told (no target or no reading). */
+export type HeaterPhase = 'heating' | 'target' | 'cooling' | 'off';
+export function heaterPhase(temp: number | null | undefined, target: number | null | undefined): HeaterPhase | null {
+  if (typeof target !== 'number' || !Number.isFinite(target)) return null;
+  if (target <= 0) return 'off';
+  if (typeof temp !== 'number' || !Number.isFinite(temp)) return null;
+  const d = temp - target;
+  return Math.abs(d) <= 2 ? 'target' : d < 0 ? 'heating' : 'cooling';
+}

@@ -4,6 +4,44 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-15
+
+A new look for the Kobra Control tab, on the interface shared by the Orca plugin family. Checked against the
+repository's page tests and screenshots in Chrome; not yet tried in OrcaSlicer's own web view.
+
+### Changed
+
+- The tab has a violet top bar with the plugin's mark, the printer's connection state and its address, and the
+  Dashboard, Files and Settings tabs, each with an icon. Panels have coloured headers by subject: heat in orange,
+  motion in blue, camera in light blue, filament in magenta, Spoolman and stock in green.
+- The print is the page's main block: a drawing of the Kobra X with its four spools in their real colours, the
+  file, a large percentage, the progress bar, and elapsed, left and finish time. Pause, Resume, Choose objects and a
+  red Stop print sit under it. A printer that stopped answering keeps its last values, in grey, with their age.
+- Temperatures, fan, speed mode and light are rows of one "Temperature and air" panel. Each heater shows its
+  reading in the colour of what it is doing (heating, at target, cooling), its target and a small chart of the
+  last ten minutes.
+- Move has a jog pad (X/Y with home in the middle, Z), the step as one segmented control, Home XY, Home Z and
+  Motors off.
+- The camera is one row while it is off, so it no longer pushes the printer's state down.
+- Each filament slot is a card that opens with the filament's colour, then a drawn spool showing how much is left,
+  the amount and its bar, the Spoolman spool it books on (the picker that was in the separate Spoolman card), and
+  Edit, Feed and Retract. Auto-feed sits by each ACE's name; drying is one strip with its temperature, time left
+  and humidity.
+- Spoolman and Spooler's stock are one panel: where the spools come from and Refresh, then the stock list with
+  search, material filter, "same material as the slot", the slot to link to, drawn spools and level bars.
+- Filament use that Spoolman did not confirm is one warning line with Review; the list and "I checked it in
+  Spoolman" open from there.
+- The first run (no printer found yet, or the certificate missing) is one panel with an illustration, the reason
+  and the way out: Open Settings and Search again, the printers to choose from, or Find certificate.
+- Files has search and sort in a toolbar and the print details beside the list on wide screens, with what the file
+  needs, which slot prints each filament, and the auto-leveling and vibration compensation switches.
+- Settings has a section index that follows the page, sections in two columns (Connection, Certificate, Print
+  defaults, Camera, Spoolman, Language, About) and one save bar that names what changed, with Discard.
+- One reason is said once: when the printer does not answer, is still connecting or is not found, one line under
+  the top bar says why and offers the way out; disabled controls point at it instead of repeating it.
+- Text is set in Manrope (embedded) and icons come from one shared set; the spool pictures are drawn instead of
+  fifteen bitmaps, and the page is about 14 kB smaller.
+
 ## [0.3.0] - 2026-11-15
 
 Checked against the repository's test fakes and page tests. How a real Kobra X (firmware 2.0.2.8) answers the

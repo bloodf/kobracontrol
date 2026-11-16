@@ -1,56 +1,53 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
-import Icon from './Icon.vue';
+import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
+import { printer, refresh, settings } from '../../shared/src/icons';
 import CertFinder from './CertFinder.vue';
 import { s, searchAgain, choosePrinter, tracker } from '../app/store';
 import { t } from '../core/i18n';
-import { computed } from 'vue';
+import art from '../assets/kobra-connect.webp';
 
-// A printer other than the remembered one answered: it is offered, never used by itself.
+// First-run states: each is one clear task with its recovery. A printer other than the remembered one that answered
+// is offered, never used by itself; several that answered are listed to pick one once.
 const different = computed(() => s.candidates.some(c => c.different));
+const title = computed(() => (different.value ? t('fr.pick.different') : s.candidates.length ? t('fr.pick.title') : t('fr.target.title')));
 </script>
 
-<!-- First-run states: each is one clear task with its recovery. -->
 <template>
-  <section v-if="s.phase === 'noCertificate'" class="kc-card fr" aria-labelledby="fr-h" data-test="first-run-cert">
-    <div class="fr-top"><Icon name="spot/not-connected" :size="96" />
-      <div class="fr-text">
-        <h2 id="fr-h">{{ t('fr.cert.title') }}</h2>
-        <p>{{ t('fr.cert.why') }}</p>
-        <p>{{ t('fr.cert.how') }}</p>
-      </div>
-    </div>
-    <CertFinder id-prefix="fr" />
-    <p class="oui-meta fr-detail">{{ t('target.detail', { error: s.error }) }}</p>
-  </section>
-  <section v-else-if="s.phase === 'noTarget'" class="kc-card fr" aria-labelledby="fr-h" data-test="first-run-target">
-    <div class="fr-top"><Icon name="spot/not-connected" :size="96" />
-      <div class="fr-text">
-        <h2 id="fr-h">{{ different ? t('fr.pick.different') : s.candidates.length ? t('fr.pick.title') : t('fr.target.title') }}</h2>
-        <p data-test="fr-target-why">{{ s.error }}</p>
-        <p v-if="!s.candidates.length">{{ t('fr.target.body') }}</p>
-      </div>
-    </div>
-    <!-- Several Kobra X answered: pick one once; the plugin remembers it for this printer preset. -->
-    <ul v-if="s.candidates.length" class="fr-pick" data-test="fr-candidates">
-      <li v-for="c in s.candidates" :key="c.ip" class="kc-row">
-        <span><strong>{{ c.name || t('app.printer') }}</strong> <span class="oui-meta">{{ c.model }} · {{ c.ip }}</span></span>
-        <span class="kc-spacer" />
-        <Button size="small" :label="c.needs_allow ? t('fr.pick.allow') : t('fr.pick.use')" :loading="tracker.isBusy('choose')"
-                :data-pick-ip="c.ip" @click="choosePrinter(c)" />
+  <OuiPanel v-if="s.phase === 'noCertificate'" class="kc-first" flush :aria-label="t('fr.cert.title')" data-test="first-run-cert">
+    <!-- wrapped: OuiEmpty fills its parent's height (min-height: 100%), which would push the form out of the panel -->
+    <div><OuiEmpty :image="art" :title="t('fr.cert.title')">
+      {{ t('fr.cert.why') }} {{ t('fr.cert.how') }}
+    </OuiEmpty></div>
+    <div class="kc-first-form"><CertFinder id-prefix="fr" /></div>
+    <template #footer><p class="oui-meta kc-first-detail">{{ t('target.detail', { error: s.error }) }}</p></template>
+  </OuiPanel>
+
+  <OuiPanel v-else-if="s.phase === 'noTarget'" class="kc-first" flush :aria-label="title" data-test="first-run-target">
+    <div><OuiEmpty :image="art" :title="title">
+      <span data-test="fr-target-why">{{ s.error }}</span>
+      <template v-if="!s.candidates.length">{{ ' ' + t('fr.target.body') }}</template>
+      <template #actions>
+        <Button :severity="s.candidates.length ? 'secondary' : undefined" :label="t('common.openSettings')" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+        <Button severity="secondary" :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" data-test="search-again" @click="searchAgain()"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+      </template>
+    </OuiEmpty></div>
+    <!-- Several Kobra X answered, or a different one: pick one once; the plugin remembers it for this printer preset. -->
+    <ul v-if="s.candidates.length" class="kc-pick" data-test="fr-candidates">
+      <li v-for="c in s.candidates" :key="c.ip">
+        <OuiIcon :icon="printer" :size="16" tile tone="accent" />
+        <span class="kc-pick-id"><span class="oui-strong">{{ c.name || t('app.printer') }}</span><span class="oui-meta oui-mono">{{ [c.model, c.ip].filter(Boolean).join(' · ') }}</span></span>
+        <Button size="small" :label="c.needs_allow ? t('fr.pick.allow') : t('fr.pick.use')" :loading="tracker.isBusy('choose')" :data-pick-ip="c.ip" @click="choosePrinter(c)" />
       </li>
     </ul>
-    <div class="kc-row"><Button :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" data-test="search-again" @click="searchAgain()" />
-      <Button severity="secondary" outlined :label="t('common.openSettings')" @click="s.tab = 'settings'" /></div>
-  </section>
+  </OuiPanel>
 </template>
 
-<style scoped>
-.fr { display: grid; gap: 12px; max-width: 760px; }
-.fr-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.fr-text { flex: 1 1 320px; min-width: 0; }
-.fr-text h2 { margin: 0 0 8px; }
-.fr-text p { margin: 0 0 8px; }
-.fr-pick { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.fr-detail { margin: 0; overflow-wrap: anywhere; }
+<style>
+.kc-first-form { padding: 0 var(--oui-s5) var(--oui-s5); }
+.kc-first-detail { overflow-wrap: anywhere; }
+.kc-pick { list-style: none; margin: 0; padding: 0 var(--oui-s4) var(--oui-s4); display: grid; gap: var(--oui-s2); }
+.kc-pick > li { display: flex; align-items: center; gap: var(--oui-s3); padding: var(--oui-s2) var(--oui-s3); border-radius: var(--oui-radius); background: var(--oui-raised); }
+.kc-pick-id { display: grid; flex: 1 1 auto; min-width: 0; }
 </style>

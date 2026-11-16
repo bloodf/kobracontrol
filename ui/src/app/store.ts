@@ -39,6 +39,8 @@ export const s = reactive({
   retryAt: 0,                        // unix s of the plugin's next automatic attempt, 0 = none planned
   candidates: [] as bridge.Candidate[],   // printers found when there was more than one
   located: null as Located | null,   // the address in use and where it came from (config)
+  history: {} as Record<string, (number | null)[]>,   // recent nozzle/bed readings, oldest first (drawn, not used)
+  historyAt: 0,
 });
 
 export const tracker = new Tracker(
@@ -63,6 +65,8 @@ export const link = computed<Link>(() => {
   return s.phase === 'unreachable' ? 'offline' : s.phase;
 });
 export const statusAge = computed(() => (s.statusAt ? (s.now - s.statusAt) / 1000 : Infinity));
+/** The values on screen are the last known ones, not live: drawn grey with their age. */
+export const stale = computed(() => !!s.status && (link.value === 'offline' || statusAge.value > STALE_STATUS_S));
 export const printing = computed(() => s.status?.state === 'printing' || s.status?.state === 'paused');
 /** Why printer commands are off, or '' when they can be used. */
 export const controlsOff = computed(() => {
@@ -82,7 +86,7 @@ export const bindings = computed(() => boundSlots(
 function reset(): void {
   s.epoch++;
   Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
-    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0 });   // candidates stay until an answer replaces them
+    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0 });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
@@ -199,6 +203,7 @@ function onMessage(m: any): void {
   switch (m.type) {
     case 'status':
       s.status = m.data; s.statusAt = Date.now();
+      if (m.data?.connected === true) keepHistory(m.data);
       if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message
       // Statuses come every second, connected or not: only one that says connected means it answers again.
       if (m.data?.connected === true && (s.phase === 'unreachable' || s.phase === 'noCertificate') && !helloInFlight) void hello();
@@ -212,6 +217,13 @@ function onMessage(m: any): void {
     case 'selection_changed': void hello(); break;
     case 'reply': if (m.error) tracker.notify('error', t('msg.plugin', { error: String(m.error) })); break;
   }
+}
+const HISTORY_EVERY_MS = 30000, HISTORY_MAX = 20;   // ten minutes of readings, one every 30 s
+function keepHistory(d: Status): void {
+  if (!d.updated_at || s.statusAt - s.historyAt < HISTORY_EVERY_MS) return;
+  const add = (key: string, v: number | undefined) => [key, [...(s.history[key] ?? []), v ?? null].slice(-HISTORY_MAX)] as const;
+  s.history = Object.fromEntries([add('nozzle', d.nozzle_temp), add('bed', d.bed_temp)]);
+  s.historyAt = s.statusAt;
 }
 const configHandlers = new Set<(m: Config) => void>();
 export const onConfig = (h: (m: Config) => void) => { configHandlers.add(h); return () => configHandlers.delete(h); };

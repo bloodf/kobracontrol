@@ -3,12 +3,14 @@ import { computed } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import Checkbox from 'primevue/checkbox';
-import Icon from './Icon.vue';
+import ToggleSwitch from 'primevue/toggleswitch';
+import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiSettings, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
+import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman } from '../../shared/src/icons';
+import { UI_VERSION } from '../../shared/src';
 import CertFinder from './CertFinder.vue';
 import SpoolerHint from './SpoolerHint.vue';
-import { s, controlsOff, tracker, loadSpools, searchAgain, otherAgent } from '../app/store';
-import { config, form, dirty, saving, save } from '../app/settings';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent } from '../app/store';
+import { config, form, changed, dirty, saving, save, discard } from '../app/settings';
 import { t, langPref, setLangPref, autoLocale } from '../core/i18n';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
@@ -17,114 +19,130 @@ import { fingerprintText } from '../core/logic';
 const cert = computed(() => s.certificate ?? config.value?.certificate ?? null);
 const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.found ? t('cert.missing')
   : cert.value.source === 'saved' ? t('cert.saved') : t('cert.builtIn')));
-// The address in use and how it was found; blank "Printer address" means "find it by itself".
+// The address in use and how it was found; a blank "Printer address" means "find it by itself".
 const inUse = computed(() => (s.info?.address ? t('conn.inUse', { address: s.info.address, how: t(`conn.source.${s.info.source || 'override'}`) }) : ''));
 const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form.spoolman ? t('conn.smFromSpooler', { url: s.located.spoolman_url }) : ''));
 const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded')));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
   { value: 'en', label: t('lang.en') }, { value: 'pt-BR', label: t('lang.pt-BR') }]);
+const sections = computed<OuiSettingsSection[]>(() => [
+  { id: 'conn-h', label: t('conn.title'), icon: linkIcon },
+  { id: 'cert-h', label: t('cert.section'), icon: shieldCheck, ...(cert.value && !cert.value.found ? { state: 'warn' as const } : {}) },
+  { id: 'print-h', label: t('printdef.title'), icon: printer },
+  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' ? { state: 'warn' as const } : {}) },
+  { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
+  { id: 'lang-h', label: t('lang.title'), icon: languages },
+  { id: 'about-h', label: t('about.title'), icon: info },
+]);
+// The save bar names what is not saved yet.
+const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
+  auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage' };
+const changedText = computed(() => changed.value.map(k => t(FIELD[k] as 'conn.host')).join(', '));
+const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
+// Enter in a text field saves, as the form's own button did.
+function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') { e.preventDefault(); void save(); } }
 </script>
 
 <template>
   <div class="sv">
-    <section class="kc-card" aria-labelledby="save-h">
-      <div class="kc-row">
-        <h2 id="save-h" class="sv-h">{{ t('settings.title') }}</h2><span class="kc-spacer" />
-        <span v-if="dirty" class="kc-warn" role="status">{{ t('settings.unsaved') }}</span>
-        <Button :label="saving ? t('settings.saving') : t('common.save')" :loading="saving" :disabled="!config" data-test="save-top" @click="save" />
-      </div>
-      <p v-if="!config" class="oui-muted">{{ t('settings.notLoaded') }}</p>
-    </section>
+    <OuiSettings :sections="sections" :nav-label="t('settings.nav')">
+      <div class="oui-stack">
+        <OuiFormSection id="conn-h" :icon="linkIcon" tone="cobalt" :title="t('conn.title')" :description="t('conn.help')">
+          <template v-if="link === 'connected'" #status><OuiStatus state="ok">{{ t('conn.answering') }}</OuiStatus></template>
+          <OuiEmpty v-if="!config" compact state="loading" :title="t('settings.notLoaded')" />
+          <form class="oui-formsection-rows" @submit.prevent="save" @keydown.enter="onEnter">
+            <OuiFormRow :label="t('conn.name')" for="c-name" :hint="t('conn.nameHelp')"><InputText id="c-name" v-model="form.name" /></OuiFormRow>
+            <OuiFormRow :label="t('conn.host')" for="c-host" :hint="t('conn.hostHelp')">
+              <InputText id="c-host" v-model="form.host" class="oui-mono" :placeholder="t('conn.hostPh')" />
+            </OuiFormRow>
+            <OuiFormRow :label="t('conn.inUseLabel')">
+              <span v-if="inUse" class="oui-meta sv-inuse" data-test="in-use" role="status">{{ inUse }}</span><span v-else class="oui-muted">—</span>
+              <Button size="small" severity="secondary" :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" :disabled="!!form.host"
+                      data-test="search-again-settings" @click="searchAgain()"><template #icon><OuiIcon :icon="search" :size="14" /></template></Button>
+            </OuiFormRow>
+          </form>
+          <div v-if="otherAgent || s.status?.tls" class="oui-stack sv-notes">
+            <p v-if="otherAgent" class="oui-meta" data-test="other-agent">{{ t('agent.other', { agent: otherAgent }) }}</p>
+            <template v-if="s.status?.tls">
+              <p class="oui-meta oui-mono sv-fp" data-test="tls-fp">{{ t('tls.fingerprint', { fp: fingerprintText(s.status.tls.fingerprint) }) }}
+                <template v-if="s.status.tls.changed_from"><br>{{ t('tls.previous', { fp: fingerprintText(s.status.tls.changed_from) }) }}</template></p>
+              <p class="oui-meta">{{ t('tls.help') }}</p>
+            </template>
+          </div>
+        </OuiFormSection>
 
-    <section class="kc-card" aria-labelledby="conn-h">
-      <h2 id="conn-h">{{ t('conn.title') }}</h2>
-      <form class="sv-conn" @submit.prevent="save">
-        <label for="c-host">{{ t('conn.host') }}</label>
-        <span class="sv-field"><InputText id="c-host" v-model="form.host" :placeholder="t('conn.hostPh')" aria-describedby="c-host-help" />
-          <span id="c-host-help" class="oui-meta">{{ t('conn.hostHelp') }}</span>
-          <span class="kc-row"><span v-if="inUse" class="oui-meta" data-test="in-use" role="status">{{ inUse }}</span><span class="kc-spacer" />
-            <Button size="small" severity="secondary" outlined :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')"
-                    :disabled="!!form.host" data-test="search-again-settings" @click="searchAgain()" /></span>
-          <span v-if="otherAgent" class="oui-meta" data-test="other-agent">{{ t('agent.other', { agent: otherAgent }) }}</span></span>
-        <label for="c-name">{{ t('conn.name') }}</label>
-        <span class="sv-field"><InputText id="c-name" v-model="form.name" aria-describedby="c-name-help" />
-          <span id="c-name-help" class="oui-meta">{{ t('conn.nameHelp') }}</span></span>
-      </form>
-      <template v-if="s.status?.tls">
-        <p class="oui-meta sv-fp" data-test="tls-fp">{{ t('tls.fingerprint', { fp: fingerprintText(s.status.tls.fingerprint) }) }}
-          <template v-if="s.status.tls.changed_from"><br>{{ t('tls.previous', { fp: fingerprintText(s.status.tls.changed_from) }) }}</template></p>
-        <p class="oui-meta">{{ t('tls.help') }}</p>
+        <OuiFormSection id="cert-h" :icon="shieldCheck" tone="teal" :title="t('cert.section')" :description="t('cert.why')">
+          <template #status><OuiStatus :state="!cert ? 'pending' : cert.found ? 'ok' : 'warn'">{{ !cert ? t('cert.chip.unknown') : cert.found ? t('cert.chip.ok') : t('cert.chip.missing') }}</OuiStatus></template>
+          <OuiFormRow :label="t('cert.source')"><span data-test="cert-status" role="status">{{ certText }}</span></OuiFormRow>
+          <!-- Only for a firmware that stops taking the built-in copy: the one action that reads Anycubic Slicer Next. -->
+          <details class="kc-disclose sv-adv" data-test="cert-advanced">
+            <summary>{{ t('cert.advanced') }}</summary>
+            <p class="oui-meta">{{ t('cert.advancedHelp') }}</p>
+            <CertFinder id-prefix="set" />
+          </details>
+        </OuiFormSection>
+
+        <OuiFormSection id="print-h" :icon="printer" :title="t('printdef.title')" :description="t('printdef.help')">
+          <OuiFormRow :label="t('files.autoLeveling')" for="c-level"><ToggleSwitch v-model="form.leveling" input-id="c-level" data-test="def-leveling" /></OuiFormRow>
+          <OuiFormRow :label="t('files.vibration')" for="c-vib"><ToggleSwitch v-model="form.vibration" input-id="c-vib" data-test="def-vibration" /></OuiFormRow>
+        </OuiFormSection>
+      </div>
+
+      <div class="oui-stack">
+        <OuiFormSection id="cam-s-h" :icon="camera" tone="sky" :title="t('camset.title')">
+          <template v-if="s.camReason === 'no_ffmpeg'" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
+          <OuiFormRow :label="t('camset.default')" for="c-cam"><ToggleSwitch v-model="form.camera" input-id="c-cam" data-test="cam-default" /></OuiFormRow>
+          <OuiFormRow :label="t('camset.ffmpeg')" for="c-ffmpeg" :hint="t('camset.ffmpegHelp')">
+            <InputText id="c-ffmpeg" v-model="form.ffmpeg" class="oui-mono" :placeholder="t('camset.ffmpegPh')" @keydown.enter="onEnter" />
+          </OuiFormRow>
+        </OuiFormSection>
+
+        <OuiFormSection id="sm-s-h" :icon="spoolman" tone="magenta" :title="t('sm.title')" :description="t('sm.sectionHelp')">
+          <OuiFormRow :label="t('conn.sm')" for="c-sm">
+            <InputText id="c-sm" v-model="form.spoolman" class="oui-mono" :placeholder="t('conn.smPh')" aria-describedby="c-sm-help" @keydown.enter="onEnter" />
+            <p id="c-sm-help" class="oui-meta sv-hint" data-test="sm-from">{{ smFrom || t('conn.smHelp') }}</p>
+          </OuiFormRow>
+          <OuiFormRow :label="t('sm.auto')" for="c-sm-auto"><ToggleSwitch v-model="form.spoolmanAuto" input-id="c-sm-auto" /></OuiFormRow>
+          <OuiFormRow :label="t('sm.usage')" for="c-sm-usage"><ToggleSwitch v-model="form.usage" input-id="c-sm-usage" /></OuiFormRow>
+          <OuiFormRow :label="t('sm.spools')">
+            <span class="oui-muted" role="status">{{ smInfo }}</span>
+            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!controlsOff" :aria-describedby="controlsOff ? 'kc-why' : undefined"
+                    :loading="tracker.isBusy('spools')" @click="loadSpools(false)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+          </OuiFormRow>
+          <div class="kc-pad"><SpoolerHint where="settings" /></div>
+        </OuiFormSection>
+
+        <OuiFormSection id="lang-h" :icon="languages" tone="neutral" :title="t('lang.title')">
+          <OuiFormRow :label="t('lang.label')" :hint="t('lang.help')">
+            <Select :model-value="langPref" :options="langOptions" option-label="label" option-value="value" :aria-label="t('lang.label')" data-test="lang"
+                    @update:model-value="setLangPref($event as LangPref)" />
+          </OuiFormRow>
+        </OuiFormSection>
+
+        <OuiFormSection id="about-h" :icon="info" tone="neutral" :title="t('about.title')">
+          <div class="kc-pad oui-stack">
+            <OuiKeyValue :items="about" />
+            <p class="oui-meta" data-test="version">{{ t('about.text', { version: config?.version || boot.version }) }}</p>
+          </div>
+        </OuiFormSection>
+      </div>
+
+      <template #footer>
+        <template v-if="dirty"><OuiStatus state="pending" role="status">{{ t('settings.unsaved') }}</OuiStatus><span class="oui-meta oui-truncate">{{ changedText }}</span></template>
+        <span class="oui-spacer" />
+        <Button severity="secondary" text :label="t('settings.discard')" :disabled="!dirty || saving" data-test="discard" @click="discard" />
+        <Button :label="saving ? t('settings.saving') : t('settings.save')" :loading="saving" :disabled="!config" data-test="save-top" @click="save">
+          <template #icon><OuiIcon :icon="saveIcon" :size="14" /></template></Button>
       </template>
-    </section>
-
-    <section class="kc-card" aria-labelledby="cert-h">
-      <h2 id="cert-h"><Icon name="icon/certificate" /> {{ t('cert.title') }}</h2>
-      <p data-test="cert-status" role="status" :class="{ 'kc-warn': cert && !cert.found }">{{ certText }}</p>
-      <p class="oui-meta">{{ t('cert.why') }}</p>
-      <!-- Only for a firmware that stops taking the built-in copy: the one action that reads Anycubic Slicer Next. -->
-      <details class="sv-adv" data-test="cert-advanced">
-        <summary>{{ t('cert.advanced') }}</summary>
-        <p class="oui-meta">{{ t('cert.advancedHelp') }}</p>
-        <CertFinder id-prefix="set" />
-      </details>
-    </section>
-
-    <section class="kc-card" aria-labelledby="cam-s-h">
-      <h2 id="cam-s-h"><Icon name="icon/camera" /> {{ t('camset.title') }}</h2>
-      <div class="sv-conn">
-        <label for="c-ffmpeg">{{ t('camset.ffmpeg') }}</label>
-        <span class="sv-field"><InputText id="c-ffmpeg" v-model="form.ffmpeg" :placeholder="t('camset.ffmpegPh')" aria-describedby="c-ffmpeg-help" />
-          <span id="c-ffmpeg-help" class="oui-meta">{{ t('camset.ffmpegHelp') }}</span></span>
-        <span /><span class="kc-row"><Checkbox v-model="form.camera" binary input-id="c-cam" data-test="cam-default" /><label for="c-cam">{{ t('camset.default') }}</label></span>
-      </div>
-    </section>
-
-    <section class="kc-card" aria-labelledby="pd-h">
-      <h2 id="pd-h">{{ t('printdef.title') }}</h2>
-      <p class="oui-meta">{{ t('printdef.help') }}</p>
-      <div class="sv-prefs">
-        <span class="kc-row"><Checkbox v-model="form.leveling" binary input-id="c-level" data-test="def-leveling" /><label for="c-level">{{ t('files.autoLeveling') }}</label></span>
-        <span class="kc-row"><Checkbox v-model="form.vibration" binary input-id="c-vib" data-test="def-vibration" /><label for="c-vib">{{ t('files.vibration') }}</label></span>
-      </div>
-    </section>
-
-    <section class="kc-card" aria-labelledby="sm-s-h">
-      <h2 id="sm-s-h"><Icon name="icon/spoolman" /> {{ t('sm.title') }}</h2>
-      <div class="sv-conn">
-        <label for="c-sm">{{ t('conn.sm') }}</label>
-        <span class="sv-field"><InputText id="c-sm" v-model="form.spoolman" :placeholder="t('conn.smPh')" aria-describedby="c-sm-help" />
-          <span id="c-sm-help" class="oui-meta" data-test="sm-from">{{ smFrom || t('conn.smHelp') }}</span></span>
-        <span /><span class="kc-row"><Checkbox v-model="form.spoolmanAuto" binary input-id="c-sm-auto" /><label for="c-sm-auto">{{ t('sm.auto') }}</label></span>
-        <span /><span class="kc-row"><Checkbox v-model="form.usage" binary input-id="c-sm-usage" /><label for="c-sm-usage">{{ t('sm.usage') }}</label></span>
-      </div>
-      <div class="kc-row"><span class="oui-muted" role="status">{{ smInfo }}</span><span class="kc-spacer" />
-        <Button severity="secondary" outlined :disabled="!!controlsOff" :loading="tracker.isBusy('spools')" @click="loadSpools(false)">
-          <Icon name="icon/spoolman" /><span>{{ t('sm.refresh') }}</span></Button></div>
-    </section>
-
-    <SpoolerHint where="settings" />
-
-    <section class="kc-card" aria-labelledby="lang-h">
-      <h2 id="lang-h">{{ t('lang.title') }}</h2>
-      <div class="kc-row"><label id="lang-l">{{ t('lang.label') }}</label>
-        <Select :model-value="langPref" :options="langOptions" option-label="label" option-value="value" aria-labelledby="lang-l" data-test="lang"
-                @update:model-value="setLangPref($event as LangPref)" /></div>
-      <p class="oui-meta">{{ t('lang.help') }}</p>
-      <p class="oui-meta" data-test="version">{{ t('about.text', { version: config?.version || boot.version }) }}</p>
-    </section>
+    </OuiSettings>
   </div>
 </template>
 
-<style scoped>
-.sv { display: grid; gap: 16px; max-width: 1000px; }
-.sv-h { margin: 0; }
-.sv-fp { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.sv-prefs { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-.sv-conn { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 12px; align-items: start; margin-bottom: 8px; }
-.sv-conn > label { padding-top: 8px; }
-.sv-field { display: grid; gap: 4px; }
-.sv-adv { margin-top: 8px; }
-.sv-adv > summary { cursor: pointer; color: var(--oui-muted); }
-@media (max-width: 640px) { .sv-conn { grid-template-columns: minmax(0, 1fr); } .sv-conn > label { padding-top: 0; } }
+<style>
+.sv-hint { flex: 1 0 100%; text-align: end; }
+.sv-inuse { margin-inline-end: auto; }
+.sv-notes { padding: 0 var(--oui-s4) var(--oui-s3); }
+.sv-fp { overflow-wrap: anywhere; }
+.sv-adv { padding: var(--oui-s3) var(--oui-s4); border-top: 1px solid var(--oui-border); }
 </style>
