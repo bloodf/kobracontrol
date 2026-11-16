@@ -139,6 +139,12 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(self.push(view(features={"flow_calibration_support": True}))["home_flag"] >> 8 & 3, 1)   # storage kept
         self.assertNotIn("support_auto_flow_calibration", self.push())   # on/off, never "auto"
 
+    def test_timelapse_support_only_when_the_printer_says(self):
+        """is_support_timelapse defaults to false in OrcaSlicer (DeviceManager.hpp): without it Timelapse is greyed out."""
+        self.assertIs(self.push(view(features={"camera_timelapse_support": True}))["support_timelapse"], True)
+        self.assertIs(self.push(view(features={"camera_timelapse_support": False}))["support_timelapse"], False)
+        self.assertIs(self.push()["support_timelapse"], False)   # unknown: not claimed
+
     def test_bed_leveling_follows_features(self):
         self.assertEqual(self.push(view(features={"auto_leveling_support": False}))["support_bed_leveling"], 0)
         self.assertEqual(self.push(view(features={"auto_leveling_support": True}))["support_bed_leveling"], 1)

@@ -113,7 +113,6 @@ export async function hello(retry = false): Promise<void> {
     if (r.note && r.note !== lastNote) { lastNote = r.note; tracker.notify('info', r.note); }   // once: how it was found
     if (otherAgent.value && !agentNoted) { agentNoted = true; tracker.notify('info', t('agent.other', { agent: otherAgent.value })); }
     void loadSpools(true);
-    void loadDevice();
   } catch (e) {
     if (epoch !== s.epoch) return;
     s.phase = e instanceof bridge.ReplyError && e.noCertificate ? 'noCertificate'
@@ -129,7 +128,8 @@ export async function hello(retry = false): Promise<void> {
 }
 
 /** Ask the printer for its network address, counters and Print Assist switches (read only; the answers come in the
- *  status). A firmware that does not answer just leaves those parts out. */
+ *  status). Once per connection, and only while the printer is idle (the Printer panel calls it): these messages are
+ *  not tried on a Kobra X yet, so none is sent during a print. A firmware that does not answer just leaves them out. */
 export async function loadDevice(): Promise<void> {
   const epoch = s.epoch;
   s.device = 'asking';

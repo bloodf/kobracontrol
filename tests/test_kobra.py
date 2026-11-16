@@ -571,7 +571,6 @@ class HelperTests(PrinterCase):
             (p.query_skip_objects, ("slicer", "skip", "query_obj", None)),
             (lambda: p.skip_objects(["a"]), ("slicer", "skip", "start", {"objects_skip_parts": ["a"]})),
             # Anycubic Slicer Next's Workbench messages, on the web topic (UNTESTED on the printer)
-            (p.query_properties, ("web", "properties", "read", ["assistant_settings"])),
             (lambda: p.set_assist([{"option": 3, "value": 1}]),
              ("web", "properties", "write", {"assistant_settings": [{"option": 3, "value": 1}]})),
             (lambda: p.set_printer_name("Shop X"), ("web", "info", "setPrinterName", {"printerName": "Shop X"})),
@@ -579,16 +578,35 @@ class HelperTests(PrinterCase):
         for call, expected in cases:
             self.check(lambda call=call: self.assertTrue(kobra.succeeded(call())), expected, reply=expected[1:3])
 
-    def test_workbench_requests_settle_on_any_report_action(self):
-        """The answer's action to properties/read and info/setPrinterName is not known: any report of that type does."""
+    def test_workbench_reads_settle_on_their_answer_only(self):
+        """properties/read is answered by a report "read" (or a "report" push) that carries assistant_settings."""
         p = self.printer
-        for call, request, answer in ((p.query_properties, ("properties", "read"), "report"),
-                                      (lambda: p.set_printer_name("A"), ("info", "setPrinterName"), "update")):
-            self.fake.reply(*request, {})
-            self.fake.replies[request]["action"] = answer
-            reply = call()
-            self.assertTrue(kobra.succeeded(reply))
-            self.assertEqual(reply["action"], answer)
+        self.fake.reply("properties", "read", {"assistant_settings": []})
+        self.check(lambda: self.assertEqual(p.query_properties()["action"], "read"),
+                   ("web", "properties", "read", ["assistant_settings"]))
+        self.fake.replies[("properties", "read")]["action"] = "report"
+        self.assertEqual(p.query_properties()["action"], "report")
+        self.fake.replies[("properties", "read")]["data"] = {"hotbed_settings": 1}   # another property: not ours
+        self.assertFalse(kobra.succeeded(p.query_properties(timeout=0.3)))
+
+    def test_writes_are_never_settled_by_an_unrelated_report(self):
+        """A rename or a Print Assist write settles only on a report of its own action; the shared topics carry
+        reads, pushes and other clients' answers too."""
+        p = self.printer
+        for call, kind, other in ((lambda: p.set_printer_name("A", timeout=0.6), "info", "report"),
+                                  (lambda: p.set_assist([{"option": 3, "value": 1}], timeout=0.6), "properties", "read")):
+            out = {}
+            t = threading.Thread(target=lambda: out.update(r=call()))
+            t.start()
+            time.sleep(0.15)
+            self.fake.report(kind + "/report", {"type": kind, "action": other, "state": "done", "code": 200, "msg": "done",
+                                                "msgid": "x", "data": {"assistant_settings": [], "printerName": "B"}})
+            t.join(3)
+            self.assertFalse(kobra.succeeded(out["r"]), (kind, out["r"]))   # only the ack: no answer of its own
+        self.fake.reply("info", "setPrinterName", {})
+        self.assertTrue(kobra.succeeded(p.set_printer_name("A")))
+        self.fake.reply("properties", "write", {})
+        self.assertTrue(kobra.succeeded(p.set_assist([{"option": 3, "value": 1}])))
 
     def test_fire_and_forget(self):
         p = self.printer
@@ -1098,8 +1116,11 @@ class StateTests(unittest.TestCase):
         self.assertEqual(v["assist"], {0: True, 3: True})   # merged by option, wrapped form accepted
         v = self.apply("properties/report", {"assistant_settings": [{"option": 4, "value": 1}]}, state="failed")
         self.assertEqual(v["assist"], {0: True, 3: True})   # a refused write changes nothing
+        v = self.apply("properties/report", {"assistant_settings": [{"option": "4", "value": "1"}, {"option": "1.5", "value": 1},
+                                                                     {"option": True, "value": 1}]})
+        self.assertEqual(v["assist"], {0: True, 3: True, 4: True})   # numeric strings read; fractions and bools not
         v = self.apply("properties/report", {"hotbed_settings": 1})
-        self.assertEqual(v["assist"], {0: True, 3: True})
+        self.assertEqual(v["assist"], {0: True, 3: True, 4: True})
         json.dumps(v)
 
     def test_info_report(self):

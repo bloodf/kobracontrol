@@ -123,6 +123,10 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
         # the bit is what counts. support_auto_flow_calibration stays unset: the option is on/off, not "auto".
         "sdcard": storage, "home_flag": (HAS_SDCARD_NORMAL if storage else 0) << 8 | (FLOW_CALI_BIT if flow else 0),
         "support_send_to_sd": True,                                                # MRA:2190, DM:3251
+        # DM:3336 / DeviceManager.hpp:632 is_support_timelapse (default false): without it canEnableTimelapse fails and
+        # the Print dialog greys Timelapse out and sets it off (SelectMachine.cpp load_option_vals). Only what the
+        # printer's info/report features say: no guess while they are unknown.
+        "support_timelapse": (view.get("features") or {}).get("camera_timelapse_support") is True,
         # MRA:2191-2194; the printer's info/report features say whether it can level (no guess when absent)
         "support_bed_leveling": 0 if (view.get("features") or {}).get("auto_leveling_support") is False else 1,
         "nozzle_temp_range": [0, nozzle_max], "bed_temp_range": [0, bed_max],      # MRA:2187, DM:3213

@@ -142,8 +142,12 @@ option the printer marks unsupported.
 
 OrcaSlicer's Print dialog: Flow Dynamics Calibration shows when bit 16 of the status push's `home_flag`
 is set (`DeviceManager.cpp` `parse_home_flag`, which overwrites `support_flow_calibration`).
-Timelapse always shows. Vibration compensation is never offered (`SelectMachine.cpp` passes false),
-so the plugin's own setting is used for OrcaSlicer prints.
+Timelapse always shows but is greyed out and off unless the push says `support_timelapse: true`
+(`is_support_timelapse` defaults to false); the plugin sends it from `features.camera_timelapse_support`.
+Both start ticked for a printer the dialog has no saved choice for, so the plugin sends flow calibration
+and time-lapse only when the dialog's choice and its own Print defaults setting (off by default) are both
+on. Vibration compensation is never offered (`SelectMachine.cpp` passes false), so the plugin's own
+setting is used for OrcaSlicer prints.
 
 ## Printer details and Print Assist
 
@@ -157,7 +161,13 @@ the `web` topic. **None of these answers has been captured from a Kobra X yet.**
 | `info/setPrinterName` | `{printerName}` | `info/report` |
 | `properties/read` | `["assistant_settings"]` | `properties/report` `assistant_settings: [{option, value}]`, maybe wrapped as `{value: [...]}` |
 | `properties/write` | `{assistant_settings: [{option, value}]}` | `properties/report` |
-| `print/update` | `{taskid, settings: {fan_speed_pct}}` | the part fan during a print (idle: `fan/setSpeed`) |
+| `print/update` | `{taskid, settings: {fan_speed_pct}}` | the part fan during a print, sent after `fan/setSpeed` (which is always sent) |
+
+The plugin sends the three reads (`info/net`, `info/statistic-query`, `properties/read`) only while the
+printer is idle, once per connection, and refuses a write while they are out. A `properties/write`
+is settled only by a `properties/report` with action `write`, a rename only by an `info/report` with
+action `setPrinterName`: the periodic `info/report` and other clients' answers share those topics.
+Without such an answer the page says the change was sent; the next status shows the printer's value.
 
 Print Assist options: 0 belt detection, 1 lost step recovery, 3 filament break alert, 4 filament jam
 alert, 5 remaining filament detection. An option missing from the answer is not supported. Auto-feed

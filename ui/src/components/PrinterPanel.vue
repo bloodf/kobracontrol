@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
 import { OuiIcon, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
 import { edit, printer, shieldCheck } from '../../shared/src/icons';
-import { s, run, tracker, controlsOff, printerName, stale } from '../app/store';
+import { s, run, tracker, controlsOff, printerName, stale, loadDevice } from '../app/store';
 import { ask, prompt } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
 import type { MessageKey } from '../core/messages';
@@ -15,7 +15,11 @@ import type { MessageKey } from '../core/messages';
 // The details and the switches come from messages read in Anycubic Slicer Next's Workbench; they are not yet tried
 // on a Kobra X, so a firmware that ignores them just shows less.
 const st = computed(() => s.status);
-const NAME_MAX = 32;   // service.NAME_MAX
+const NAME_MAX = 32;   // service.NAME_MAX, in UTF-8 bytes
+
+// The details and switches are asked for when this panel is shown with the printer idle, once per connection.
+const idle = computed(() => !!st.value?.connected && !!st.value.can.print && !controlsOff.value);
+watch([idle, () => s.epoch], () => { if (idle.value && s.device === '') void loadDevice(); }, { immediate: true });
 
 const facts = computed(() => {
   const v = st.value, stats = v?.stats ?? {};
@@ -45,7 +49,8 @@ const switches = computed<Switch[]>(() => {
   });
 });
 // The printer's own switches (all but auto-feed) are missing: still being asked, or the firmware did not answer.
-const assistNote = computed(() => (st.value?.assist != null ? '' : s.device === 'done' ? t('assist.none') : s.device === 'asking' ? t('assist.asking') : ''));
+const assistNote = computed(() => (st.value?.assist != null ? '' : s.device === 'done' ? t('assist.none') : s.device === 'asking' ? t('assist.asking')
+  : st.value && !controlsOff.value ? t('assist.whenIdle') : ''));
 // A switch shows the printer's value, never the click: it is drawn again from that value when asked.
 const rev = ref(0);
 const name = (key: string) => t(`assist.${key}` as MessageKey);
@@ -60,7 +65,9 @@ async function toggle(sw: Switch, on: boolean) {
     okText: t(on ? 'ok.assistOn' : 'ok.assistOff', { what }), sentText: t('sent.assist', { what }) });
 }
 
-const validName = (v: string) => { const n = v.trim().replace(/\s+/g, ' '); return n && n.length <= NAME_MAX && !/["<>\\\u0000-\u001f]/.test(n) ? n : ''; };
+// service.cmd_rename's rule: 1-32 UTF-8 bytes, no control characters, quotes, backslashes or angle brackets.
+const validName = (v: string) => { const n = v.trim().replace(/\s+/g, ' ');
+  return n && new TextEncoder().encode(n).length <= NAME_MAX && !/["<>\\\u0000-\u001f]/.test(n) ? n : ''; };
 async function rename() {
   const typed = await prompt({ title: t('confirm.rename.title'), text: t('confirm.rename.text', { max: NAME_MAX }),
     input: { label: t('device.name'), value: st.value?.printer_name ?? '' }, yes: t('confirm.rename.yes'), no: t('common.goBack') });

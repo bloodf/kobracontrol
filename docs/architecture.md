@@ -113,7 +113,7 @@ is always empty, because it carries the upload token. Plus:
 | `pause`, `resume` | | |
 | `stop` | | yes |
 | `set_temp` | `nozzle`, `bed` (either may be absent; 0 turns off) | yes when heating |
-| `set_fan` | `pct` 0-100 (while printing: `print/update`) | |
+| `set_fan` | `pct` 0-100 (`fan/setSpeed`; while printing also `print/update`) | |
 | `set_light` | `on` | |
 | `set_speed` | `mode`: 1 quiet, 2 standard, 3 sport; only while printing | |
 | `move` | `axis` (`x`, `y`, `z`), `distance` (mm, signed, at most 50) | |
@@ -126,9 +126,9 @@ is always empty, because it carries the upload token. Plus:
 | `auto_feed` | `ace` (unit id), `on` | |
 | `dry_start` | `aces`, `temp`, `minutes` | yes |
 | `dry_stop` | `aces` | |
-| `device` | (read only) asks for the network address, counters and Print Assist; the answers come in the status | |
+| `device` | (read only) asks for the network address, counters and Print Assist; idle printer only; the answers come in the status | |
 | `assist` | `option` (`breakAlert`, `jamAlert`, `remain`, `belt`, `lostStep`, `autoFeed`), `on`; idle printer only | yes |
-| `rename` | `name` (1-32 characters); idle printer only | yes |
+| `rename` | `name` (1-32 UTF-8 bytes, no quotes, backslashes or angle brackets); idle printer only | yes |
 | `files` | | |
 | `file_details` | `name` | |
 | `file_print` | `name`, `auto_leveling`, `vibration_compensation`, `flow_calibration`, `timelapse` | yes |

@@ -43,7 +43,8 @@ from usage import UsageMixin
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
-BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device")   # home: up to 90 s, never on the worker   # own thread, at most one of each in flight
+# Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device")
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = "%s is already running; try again when it ends"
 STALE = "the selected printer changed; nothing was sent to it"
@@ -64,7 +65,8 @@ HOME = {"xyz": 5, "xy": 4, "z": 3}
 STOCK_UNSUPPORTED_S = 30.0      # Spooler active but no stock list for us this long: "unsupported"
 # Print Assist switches by the names Anycubic Slicer Next's page uses -> assistant_settings option numbers.
 ASSIST = {"belt": 0, "lostStep": 1, "breakAlert": 3, "jamAlert": 4, "remain": 5}
-NAME_MAX = 32                   # printer name length: an assumption (Anycubic's own limit is not known)
+NAME_MAX = 32                   # printer name, UTF-8 bytes: an assumption (Anycubic's own limit is not known)
+NAME_FORBIDDEN = '\\"<>'          # backslash, quote, angle brackets: the same rule as the page (PrinterPanel.vue)
 FEED_ACK_DELAY = 2.0            # Kobralink: feedFilament type 3 two seconds after feed_status 10/11
 DRY_TEMP, DRY_MINUTES = (30, 80), (10, 24 * 60)   # ace.sanitize_ace_dry_presets bounds
 
@@ -701,13 +703,16 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def cmd_set_fan(self, pct):
         pct = int(max(0, min(100, float(pct))))
-        data = self._data()
-        if data["state"] == "printing":   # Anycubic Slicer Next's Workbench: print/update while a print runs (UNTESTED)
-            return self._sent(self._printer().set_printing_fan(data["task_id"] or "-1", pct))
-        return self._sent(self._printer().set_fan(pct))
+        data, printer = self._data(), self._printer()
+        sent = self._sent(printer.set_fan(pct))   # fan/setSpeed, verified on the printer: always sent
+        if data["state"] == "printing":
+            # Anycubic Slicer Next's Workbench also sets the fan through the running print (UNTESTED): a second
+            # message, never instead of fan/setSpeed. Best effort: the fan/setSpeed above already went out.
+            printer.set_printing_fan(data["task_id"] or "-1", pct)
+        return sent
 
     def cmd_set_light(self, on):
-        # Anycubic Slicer Next's camera light: brightness 100 when on, 0 when off
+        # Anycubic Slicer Next's camera light (Workbench toggle-light: status 1/0, brightness 100/0)
         return self._sent(self._printer().set_light(bool(on), 100 if on else 0))
 
     # printer details and Print Assist ------------------------------------------------------------------
@@ -715,8 +720,10 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     # to any of them was captured yet; what the printer reports shows up in status.data mac / stats / assist.
 
     def cmd_device(self):
-        """Ask the printer for its network address, its print counters and its Print Assist switches (read only).
-        The answers arrive as reports; a firmware that does not answer leaves those fields empty."""
+        """Ask the printer for its network address, its print counters and its Print Assist switches (read only),
+        only while it is idle: untested messages are never sent during a print. The answers arrive as reports; a
+        firmware that does not answer leaves those fields empty."""
+        self._allowed("print", "reading the printer's details")
         printer = self._printer()
         sent = [printer.query_net(), printer.query_statistics()]
         assist = printer.query_properties()
@@ -726,6 +733,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         """Turn one Print Assist switch on or off (idle printer only). option: "autoFeed" (every ACE's auto-feed,
         as Anycubic Slicer Next does) or one of ASSIST, which the printer must have reported as supported."""
         data = self._allowed("print", "changing Print Assist")
+        self._not_reading()
         if option == "autoFeed":
             ids = [u["id"] for u in data["ace_units"]]
             if not ids:
@@ -738,14 +746,22 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if number not in (data.get("assist") or {}):
             raise kobra.KobraError("the printer did not report this Print Assist option; nothing was sent")
         return self._answer(self._printer().set_assist([{"option": number, "value": 1 if on else 0}]),
-                            "the Print Assist change")
+                            "the Print Assist change", True)
+
+    def _not_reading(self):
+        """A write waits until the read-only device queries are done: their answers share the report topics."""
+        with self.lock:
+            busy = "device" in self._busy
+        if busy:
+            raise kobra.KobraError("the printer's details are still being read; nothing was sent, try again in a moment")
 
     def cmd_rename(self, name):
         """The printer's own name (info/setPrinterName), on an idle printer."""
         name = " ".join(str(name or "").split())
-        if not name or len(name) > NAME_MAX or any(ord(c) < 32 or c in "\"<>" for c in name):
-            raise ValueError("the name is 1-%d characters, without quotes or angle brackets" % NAME_MAX)
+        if not name or len(name.encode("utf-8")) > NAME_MAX or any(ord(c) < 32 or c in NAME_FORBIDDEN for c in name):
+            raise ValueError("the name is 1-%d bytes (UTF-8), without quotes, backslashes or angle brackets" % NAME_MAX)
         self._allowed("print", "renaming the printer")
+        self._not_reading()
         printer = self._printer()
         result = self._answer(printer.set_printer_name(name), "the new name", True)
         printer.query_info()

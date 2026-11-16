@@ -489,13 +489,20 @@ class Printer:
     # Anycubic Slicer Next 2.0.0.3 Workbench (web topic). UNTESTED on our printer: no answer captured yet.
     ASSIST_KEYS = ["assistant_settings"]
 
+    # Which properties/report or info/report answers a request: the report topic is shared with every client and
+    # with the printer's own pushes, so only a report of the request's own action settles it (Anycubic's page names
+    # the properties actions read, write and report). A read may also be answered by a "report" push carrying the
+    # switches; a write or a rename is never settled by a push.
     def query_properties(self, timeout=5):
-        """properties/read of the Print Assist switches; the answer is a properties/report (any action)."""
-        return self.request("properties", "read", list(self.ASSIST_KEYS), timeout, reply_action=None, kind="web")
+        """properties/read of the Print Assist switches."""
+        def answers(r):
+            return r.get("action") in ("read", "report") and "assistant_settings" in _dict(r.get("data"))
+        return self.request("properties", "read", list(self.ASSIST_KEYS), timeout, reply_action=None, accept=answers,
+                            kind="web")
 
     def set_assist(self, items, timeout=8):
-        """items: [{"option": n, "value": 0|1}]; the printer answers with properties/report."""
-        return self.request("properties", "write", {"assistant_settings": list(items)}, timeout, reply_action=None,
+        """items: [{"option": n, "value": 0|1}]; settled only by a properties/report action "write"."""
+        return self.request("properties", "write", {"assistant_settings": list(items)}, timeout, reply_action="write",
                             kind="web")
 
     def query_net(self):
@@ -505,7 +512,9 @@ class Printer:
         return self.publish_web("info", "statistic-query")
 
     def set_printer_name(self, name, timeout=8):
-        return self.request("info", "setPrinterName", {"printerName": name}, timeout, reply_action=None, kind="web")
+        """Settled only by an info/report action "setPrinterName" (the periodic info "report" never does)."""
+        return self.request("info", "setPrinterName", {"printerName": name}, timeout, reply_action="setPrinterName",
+                            kind="web")
 
     def set_print_speed_mode(self, taskid, mode):
         return self.publish_web("print", "update", {"taskid": taskid, "settings": {"print_speed_mode": mode}})
@@ -820,9 +829,21 @@ def _assist(raw):
         return None
     out = {}
     for item in raw:
-        if isinstance(item, dict) and item.get("option") in ASSIST_OPTIONS and not isinstance(item.get("option"), bool):
-            out[item["option"]] = _num(item.get("value")) == 1
+        option = _int(item.get("option")) if isinstance(item, dict) else None
+        if option in ASSIST_OPTIONS:
+            out[option] = _int(item.get("value")) == 1
     return out
+
+
+def _int(value):
+    """An int from an int or a numeric string ("3"); None otherwise (bools and fractions too)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
 
 
 class State:

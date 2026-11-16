@@ -175,19 +175,33 @@ class Agent(Base):
 
     def test_orca_print_options(self):
         """OrcaSlicer's Print dialog never sends vibration compensation (SelectMachine.cpp passes false): the Kobra
-        Control setting is the default. Its Timelapse and Flow Dynamics Calibration choices go through."""
+        Control setting is the default. Its Flow Dynamics Calibration and Timelapse start "on" for a printer it has no
+        saved choice for, so with the default settings (both off, untested on the printer) neither is sent."""
         self.connect()
-        plugin.get_store().update({"vibration_compensation": True})
         params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]", task_flow_cali=True,
                                 task_record_timelapse=True)
         self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
         task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
-        self.assertEqual((task["vibration_compensation"], task["flow_calibration"], task["timelapse"]["status"]), (1, 1, 1))
+        self.assertEqual((task["vibration_compensation"], task["flow_calibration"], task["timelapse"]["status"]), (1, 0, 0))
+
+    def test_orca_print_options_opted_in(self):
+        self.connect()
+        plugin.get_store().update({"flow_calibration": True, "timelapse": True})
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]", task_flow_cali=True,
+                                task_record_timelapse=True)
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["flow_calibration"], task["timelapse"]), (1, {"status": 1, "count": 0, "type": 64}))
 
     def test_job_task(self):
-        params = pa.PrintParams(task_bed_leveling=True, task_record_timelapse=True)
+        params = pa.PrintParams(task_bed_leveling=True, task_record_timelapse=True, task_flow_cali=True)
         self.assertEqual(plugin.job_task(params, {"vibration_compensation": True}),
-                         {"auto_leveling": True, "vibration_compensation": True, "flow_calibration": False, "timelapse": True})
+                         {"auto_leveling": True, "vibration_compensation": True, "flow_calibration": False, "timelapse": False})
+        self.assertEqual(plugin.job_task(params, plugin.settings.DEFAULTS),   # defaults: the untested options stay off
+                         {"auto_leveling": True, "vibration_compensation": True, "flow_calibration": False, "timelapse": False})
+        both = {"flow_calibration": True, "timelapse": True}
+        self.assertEqual({k: plugin.job_task(params, both)[k] for k in both}, both)
+        self.assertEqual({k: plugin.job_task(pa.PrintParams(), both)[k] for k in both}, {k: False for k in both})   # dialog off
         self.assertFalse(plugin.job_task(params, {})["vibration_compensation"])
         self.assertFalse(plugin.job_task(params, {"vibration_compensation": False})["vibration_compensation"])
         self.assertTrue(plugin.job_task(pa.PrintParams(task_vibration_cali=True), {"vibration_compensation": False})["vibration_compensation"])

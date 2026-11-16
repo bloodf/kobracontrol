@@ -934,6 +934,17 @@ test('files: flow calibration and time-lapse follow the printer features and the
 `);
 
 // ------------------------------------------------------------------ the printer's details and Print Assist
+test('printer panel: details are asked once the printer is idle, never during a print', `
+  await ready(PRINTING());
+  await sleep(300);
+  eq(cmds('device'), [], 'nothing asked while printing');
+  assert(text(byTest('assist-none')).includes('once it is idle'), 'says when: ' + text(byTest('assist-none')));
+  await post({type: 'status', data: VIEW()});
+  await until(() => last('cmd', 'device'), 'asked when idle');
+  await post({type: 'status', data: PRINTING()}); await post({type: 'status', data: VIEW()}); await settle();
+  eq(cmds('device').length, 1, 'once per connection');
+`);
+
 test('printer panel: details are asked on connect; only reported counters show', `
   await ready(VIEW());
   await until(() => last('cmd', 'device'), 'device asked after hello');
@@ -987,6 +998,10 @@ test('printer panel: rename asks for the name and checks it', `
   eq(input.value, 'Bench Kobra', 'starts from the current name');
   await type(input, 'Shop <X>'); await yes();
   eq(cmds('rename'), [], 'an invalid name is not sent');
+  await until(() => text(q('.notices')).includes('without quotes'), 'says why');
+  await click(byTest('rename'));
+  await type(q('.p-dialog input'), 'é'.repeat(17)); await yes();
+  eq(cmds('rename'), [], '34 bytes is too long, as the plugin counts it');
   await until(() => text(q('.notices')).includes('without quotes'), 'says why');
   await click(byTest('rename'));
   await type(q('.p-dialog input'), '  Shop   Kobra '); await yes();

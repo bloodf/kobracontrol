@@ -242,6 +242,7 @@ class IdleCommands(Base):
     def test_fan_light(self):
         self.assertTrue(self.run_cmd("set_fan", pct=150)["result"])
         self.assertEqual(wait(lambda: self.sent("fan", "setSpeed"))[0]["data"], {"fan_speed_pct": 100})
+        time.sleep(0.2)
         self.assertFalse(self.sent("print", "update"))   # idle: fan/setSpeed only
         self.assertTrue(self.run_cmd("set_light", on=True)["result"])
         self.assertEqual(wait(lambda: self.sent("light", "control"))[0]["data"], {"type": 3, "status": 1, "brightness": 100})
@@ -284,14 +285,32 @@ class IdleCommands(Base):
         self.assertEqual(wait(lambda: self.sent("multiColorBox", "setAutoFeed"))[0]["data"],
                          {"multi_color_box": [{"id": 0, "auto_feed": 0}]})
 
+    def test_writes_wait_for_the_device_queries(self):
+        """While the read-only queries are out, an assist write or a rename is refused: their answers share topics."""
+        self.fake.send_ack = False   # unanswered: the device command waits its full 5 s
+        self.conn.state._v["assist"] = {3: False}
+        rid = "dev"
+        self.svc.submit(rid, "device", {})
+        wait(lambda: self.sent("properties", "read"))
+        for cmd, args in (("assist", {"option": "breakAlert", "on": True}), ("rename", {"name": "Shop"})):
+            self.assertIn("still being read", self.run_cmd(cmd, **args)["error"], cmd)
+        self.assertFalse(self.kinds() & {("properties", "write"), ("info", "setPrinterName")})
+        wait(lambda: next((m for m in self.published if m.get("id") == rid), None), 12)
+
+    def test_rename_not_confirmed_by_an_unrelated_info_report(self):
+        self.fake.reply("info", "setPrinterName", {"printerName": "Shop"})
+        self.fake.replies[("info", "setPrinterName")]["action"] = "report"   # what every info poll answers with
+        self.assertEqual(self.run_cmd("rename", name="Shop", timeout=20)["result"], {"confirmed": False, "name": "Shop"})
+
     def test_rename(self):
         self.fake.reply("info", "setPrinterName", {"printerName": "Shop"})
         result = self.run_cmd("rename", name="  Shop   X ", timeout=15)["result"]
         self.assertEqual(result["name"], "Shop X")
         self.assertEqual(self.sent("info", "setPrinterName")[0]["data"], {"printerName": "Shop X"})
-        for bad in ("", "   ", "x" * (service.NAME_MAX + 1), 'a"b', "<b>", "a\x00b"):
-            self.assertIn("characters", self.run_cmd("rename", name=bad)["error"], repr(bad))
+        for bad in ("", "   ", "x" * (service.NAME_MAX + 1), "é" * (service.NAME_MAX // 2 + 1), 'a"b', "<b>", "a\\b", "a\x00b"):
+            self.assertIn("bytes (UTF-8)", self.run_cmd("rename", name=bad)["error"], repr(bad))
         self.assertEqual(len(self.sent("info", "setPrinterName")), 1)
+        self.assertEqual(self.run_cmd("rename", name="é" * (service.NAME_MAX // 2), timeout=15)["result"]["name"], "é" * 16)   # 32 bytes
 
     def test_speed_needs_a_print(self):
         self.assertIn("running print", self.run_cmd("set_speed", mode=3)["error"])
@@ -367,11 +386,18 @@ class PrintingCommands(Base):
             self.assertIn("printing", self.run_cmd(cmd, **args)["error"], cmd)
         self.assertFalse(self.kinds() & {("properties", "write"), ("info", "setPrinterName"), ("multiColorBox", "setAutoFeed")})
 
-    def test_fan_while_printing_uses_print_update(self):
+    def test_fan_while_printing_sends_set_speed_then_print_update(self):
+        """fan/setSpeed (verified) is always sent; print/update (Anycubic's page, untested) only as a second message."""
         self.assertTrue(self.run_cmd("set_fan", pct=40)["result"])
+        self.assertEqual(wait(lambda: self.sent("fan", "setSpeed"))[0]["data"], {"fan_speed_pct": 40})
         msg = wait(lambda: self.sent("print", "update"))[0]
         self.assertEqual(msg["data"], {"taskid": "42", "settings": {"fan_speed_pct": 40}})
-        self.assertFalse(self.sent("fan", "setSpeed"))
+        kinds = [(r["msg"]["type"], r["msg"]["action"]) for r in self.fake.requests if isinstance(r["msg"], dict)]
+        self.assertLess(kinds.index(("fan", "setSpeed")), kinds.index(("print", "update")))
+
+    def test_device_queries_never_sent_while_printing(self):
+        self.assertIn("printing", self.run_cmd("device")["error"])
+        self.assertFalse(self.kinds() & {("info", "net"), ("info", "statistic-query"), ("properties", "read")})
 
     def test_temperature_while_printing_uses_print_update(self):
         self.run_cmd("set_temp", nozzle=215.4)
