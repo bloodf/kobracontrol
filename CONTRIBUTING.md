@@ -43,7 +43,7 @@ scripts/build.py       builds the single-file plugin
 tests/                 unit tests, a fake `orca` module and a fake Kobra X (HTTP and MQTT over TLS)
 ui/                    the Vue 3 + PrimeVue project for the tab
 assets/                README, store and social images
-docs/                  reference documentation
+docs/                  reference documentation (setup, architecture, protocol, release)
 ```
 
 ## Rules for code
@@ -80,7 +80,9 @@ open a pull request.
 
 Images live in `assets/` and the UI icons in `src/kobracontrol/ui/`. Screenshots inside images are
 real renders of the built page (`node ui/tests/page/shots.mjs`), not edited by hand. Fonts stay with
-their licence files.
+their licence files. The listing and README images are rebuilt with `scripts/marketing_images.py`, which
+records each export in `assets/marketing/asset-manifest.json`; [docs/release.md](docs/release.md) lists
+which file goes where.
 
 ## License
 

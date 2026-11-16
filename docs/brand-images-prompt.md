@@ -1,5 +1,10 @@
 # Brand and image set prompt
 
+This prompt made the vector set: the symbol, the tab icon, the feature icons, the diagrams and the install cards.
+The README heroes, the Orca Cloud images, the store tile and the social preview no longer come from it: they are the
+pictures in `assets/marketing/source/` (prompts and hashes in `assets/marketing/asset-manifest.json`), finished by
+`scripts/marketing_images.py`; see [release.md](release.md).
+
 Paste the prompt below into an image model (ChatGPT with image generation or similar). Ask for the
 assets one at a time if it tries to cram everything into one image. Ask for SVG code for the mark,
 wordmark, icons, diagrams and anything with text, so they stay sharp.
@@ -10,15 +15,13 @@ Where each asset goes in this repo:
 |---|---|
 | Symbol / app icon | `assets/kobracontrol-icon.svg` (and `.png`) |
 | Tab icon (24x24) | `src/kobracontrol/ui/icon.svg` |
-| README hero, light and dark | `assets/readme/kobracontrol-hero-light.*`, `assets/readme/kobracontrol-hero-dark.*` |
 | Feature icons | `assets/features/feature-*.svg` |
 | How it works diagram | `assets/diagrams/how-it-works-{light,dark}.*` |
 | Works with Spooler | `assets/diagrams/kobracontrol-works-with-spooler-{light,dark}.*` |
-| Orca Cloud frames and main images | `assets/orca-cloud/*` (each under 2 MB) |
 | Install steps | `assets/install/kobracontrol-install-0{1..4}.*` |
-| Social images | `assets/social/kobracontrol-social-{wide,square,vertical}.*` |
-| Main image and its 900x900 square crop | `assets/orca-cloud/kobracontrol-main.*`, `assets/orca-cloud/kobracontrol-main-square.*` |
-| 512x512 store tile | `assets/orca-cloud/kobracontrol-tile.*` |
+
+Deliverables 4, 8, 10 and 11 of the prompt (hero, store frames, social images and store tile) are kept below as
+written, but their files were replaced.
 
 ---
 

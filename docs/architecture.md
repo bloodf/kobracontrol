@@ -3,6 +3,36 @@
 kobracontrol ships as a pure-Python wheel, `kobracontrol_any.whl`, which OrcaSlicer loads as a
 plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs them.
 
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/diagrams/how-it-works-dark.png">
+  <img src="../assets/diagrams/how-it-works-light.png" alt="OrcaSlicer sends to kobracontrol, which talks to the Kobra X, Spoolman and Spooler">
+</picture>
+
+kobracontrol connects to the printer over HTTP on port 18910 and MQTT over mutual TLS on port 9883.
+The printer must have LAN mode enabled. The printer only accepts the TLS client certificate that
+Anycubic Slicer Next carries. This is a shared client identity, the same in every copy of Anycubic
+Slicer Next, not a per-user secret; kobracontrol bundles it so the plugin connects out of the box.
+If a future firmware stops accepting the bundled copy, **Find certificate** (Settings, under the
+certificate's advanced option) replaces it with the one from your own Anycubic Slicer Next install.
+
+The tab finds the printer by itself: the address in Settings if you set one, else the address it found
+before for the selected printer preset, else the preset's own address if a Kobra X answers there, else
+a search of the local network (SSDP, the way Anycubic Slicer Next finds printers). The protocol is
+described in [protocol.md](protocol.md).
+
+### Works with Spooler
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/diagrams/kobracontrol-works-with-spooler-dark.png">
+  <img src="../assets/diagrams/kobracontrol-works-with-spooler-light.png" alt="kobracontrol works with Spooler, and on its own" width="800">
+</picture>
+
+[Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament
+profiles. With Spooler installed, kobracontrol shows Spooler's stock on the Dashboard. Each plugin
+works on its own.
+
 ## Modules
 
 | Module | Job | Uses `orca`? |
