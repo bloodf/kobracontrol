@@ -1019,7 +1019,10 @@ class ProbeTests(unittest.TestCase):
                                           "urls": {"fileUploadurl": self.fake.upload_url, "rtspUrl": "rtsp://x"}})
         self.fake.reply("multiColorBox", "getInfo", {"multi_color_box": [{"id": 0, "slots": [{}, {}, {}, {}]},
                                                                          {"id": 1, "slots": [{}]}]})
-        before = set(os.listdir(tempfile.gettempdir()))
+        # The probe's and certs' temporary folders go to a folder of this test's own, so other processes using the
+        # shared system temp folder can neither add "kobracontrol-*" entries nor make this check fail.
+        own = tempfile.mkdtemp(dir=self.tmp)
+        self.enterContext(mock.patch.object(tempfile, "tempdir", own))
         text = self.run_probe()
         for expected in ("libcloud_mqtt.dylib", "K1", "1.2", "idle", "26 / 0", "ACE boxes:   2 (5 slots)",
                          "upload URL:  yes", "camera URL:  yes"):
@@ -1028,8 +1031,7 @@ class ProbeTests(unittest.TestCase):
             self.assertNotIn(secret, text)
         self.assertEqual([(r["msg"]["type"], r["msg"]["action"]) for r in self.fake.requests],
                          [("info", "query"), ("multiColorBox", "getInfo")])
-        leftovers = {n for n in set(os.listdir(tempfile.gettempdir())) - before if n.startswith("kobracontrol-")}
-        self.assertEqual(leftovers, set())
+        self.assertEqual(os.listdir(own), [])   # nothing left behind
 
     def test_failing_steps(self):
         with self.assertRaisesRegex(probe.StepFailed, "^info/query: the printer received info/query but reported no"):
