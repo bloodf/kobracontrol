@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="#-install">Install</a> · <a href="#-features">Features</a> · <a href="#%EF%B8%8F-how-to-use">How to use</a> · <a href="#-faq">FAQ</a> · <a href="README.pt-BR.md">Português</a>
+  <a href="#-install">Install</a> · <a href="#-features">Features</a> · <a href="#-how-to-use">How to use</a> · <a href="#-faq">FAQ</a> · <a href="README.pt-BR.md">Português</a>
 </p>
 
 ## ✨ What it does
@@ -92,6 +92,7 @@ From a file:
 
 Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and other Kobra models.
 
+<a id="-how-to-use"></a>
 ## 🛠️ How to use
 
 1. Turn on LAN mode on the Kobra X and put the printer and the computer on the same network.

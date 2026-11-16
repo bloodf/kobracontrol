@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="#-instalação">Instalação</a> · <a href="#-recursos">Recursos</a> · <a href="#%EF%B8%8F-como-usar">Como usar</a> · <a href="#-perguntas-frequentes">Perguntas frequentes</a> · <a href="README.md">English</a>
+  <a href="#-instalação">Instalação</a> · <a href="#-recursos">Recursos</a> · <a href="#-como-usar">Como usar</a> · <a href="#-perguntas-frequentes">Perguntas frequentes</a> · <a href="README.md">English</a>
 </p>
 
 ## ✨ O que faz
@@ -92,6 +92,7 @@ A partir de um arquivo (os menus do OrcaSlicer aparecem aqui com os nomes em ing
 
 Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e outros modelos Kobra.
 
+<a id="-como-usar"></a>
 ## 🛠️ Como usar
 
 1. Ligue o modo LAN na Kobra X e deixe a impressora e o computador na mesma rede.
