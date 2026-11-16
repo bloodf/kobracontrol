@@ -31,6 +31,9 @@ been reviewed by native speakers yet.
 ### Fixed
 
 - In Brazilian Portuguese, the delete button in the Files list no longer gets cut off by the Print button next to it.
+- A decimal typed or pasted into a number field (temperature targets, fan, drying temperature and time) no longer
+  loses its decimal sign: "22.5" was read as 225, in every language. Now "22.5" and "22,5" both read as 22.5, and
+  temperatures and times are rounded to whole numbers as before.
 
 ## [0.6.0] - 2026-11-16
 

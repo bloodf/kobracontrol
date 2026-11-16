@@ -8,8 +8,12 @@ import { OuiIcon, OuiPanel, OuiStatus } from '../../shared/src/components';
 import { fan, light, speed, thermometer } from '../../shared/src/icons';
 import HeaterControl from './HeaterControl.vue';
 import { s, run, tracker, controlsOff, printing, reported, stale } from '../app/store';
-import { t, tMaybe, fmt } from '../core/i18n';
+import { t, tMaybe, fmt, locale } from '../core/i18n';
+import { acceptDot } from '../core/decimal-input';
 import { parseWhole } from '../core/logic';
+
+// '.' and the locale's own sign both type a decimal (PrimeVue alone reads only the locale's; '100.4' became 1004).
+const dot = computed(() => acceptDot(locale.value));
 
 // Temperature and air: the two heaters, then fan, speed mode and light as rows. A reason that concerns this panel only
 // (the printer doesn't allow heating) is said once, in its footer; the page-level reasons are under the app bar (#kc-why).
@@ -51,7 +55,7 @@ const setLight = (on: boolean) => run({ key: 'light', label: t('act.light'), cmd
 
       <div class="kc-line">
         <label for="fan" class="kc-line-label"><OuiIcon :icon="fan" :size="14" tile tone="sky" />{{ t('fan.label') }}</label>
-        <InputNumber :model-value="fanDraft" input-id="fan" :min="0" :max="100" :step="5" :suffix="fmt.percent('')" :use-grouping="false" :allow-empty="true" size="small"
+        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="fanDraft" input-id="fan" :min="0" :max="100" :step="5" :suffix="fmt.percent('')" :use-grouping="false" :allow-empty="true" size="small"
                      :placeholder="reported && st ? fmt.percent(st.fan_pct) : '—'" :disabled="!!controlsOff" :input-style="{ width: '72px' }"
                      :pt="{ pcInputText: { root: { 'aria-describedby': controlsOff ? 'kc-why' : 'fan-why' } } }"
                      @input="e => (fanDraft = asNumber(e.value))" @update:model-value="v => (fanDraft = v)" @keydown.enter="setFan" />

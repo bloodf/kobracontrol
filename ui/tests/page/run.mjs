@@ -1507,6 +1507,34 @@ for (const b of [q('[data-print]'), q('[data-delete]')]) {
 }
 `, { lang });
 }
+// PrimeVue 5.0.5's InputNumber reads only the locale's decimal sign: in de/es/pt-BR a typed or pasted "100.4" became
+// 1004 (over the limit, or a different temperature). Typed and pasted, it must read as 100.4 and heat to 100 °C.
+for (const lang of ['en', 'pt_BR', 'es_ES', 'de_DE', 'zh_CN']) {
+  test(`decimal input (${lang}): "100.4" typed or pasted into a target heats to 100 °C, never 1004`, `
+await ready(VIEW());
+const field = q('#temp-nozzle');
+await type(field, '100.4');
+await click(q('[data-set="nozzle"]'));
+assert(dialogOpen() && text(q('[data-dlg="yes"]')).includes('100') && !dialogText().includes('1004'), 'typed: ' + field.value + ' / ' + dialogText());
+await yes();
+eq(cmds('set_temp').map(m => m.args), [{nozzle: 100}], 'typed value sent');
+await reply(last('cmd', 'set_temp'), true);
+await type(field, '');
+field.focus();
+const data = new DataTransfer();
+data.setData('text/plain', '100.4');
+field.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+await settle();
+await click(q('[data-set="nozzle"]'));
+assert(dialogOpen() && !dialogText().includes('1004'), 'pasted: ' + field.value + ' / ' + dialogText());
+await yes();
+eq(cmds('set_temp').map(m => m.args), [{nozzle: 100}, {nozzle: 100}], 'pasted value sent');
+for (const id of ['#temp-bed', '#fan', '#dry-t-0', '#dry-m-0']) {   // every number field shares the fix
+  await type(q(id), '6.5');
+  assert(!/^65/.test(q(id).value), id + ': ' + q(id).value);
+}
+`, { lang });
+}
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');
