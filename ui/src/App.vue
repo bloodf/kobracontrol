@@ -40,9 +40,12 @@ const tabs = computed(() => [
 
   <PageMessages />
 
-  <main v-show="s.tab === 'dash'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-dash"><Dashboard /></main>
-  <main v-show="s.tab === 'files'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-files"><FilesView /></main>
-  <main v-show="s.tab === 'settings'" role="tabpanel" aria-labelledby="oui-tab-settings"><SettingsView /></main>
+  <!-- One main landmark; each view inside it is the tab panel of its tab. -->
+  <main class="kc-main">
+    <div v-show="s.tab === 'dash'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-dash" data-view="dash"><Dashboard /></div>
+    <div v-show="s.tab === 'files'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-files" data-view="files"><FilesView /></div>
+    <div v-show="s.tab === 'settings'" role="tabpanel" aria-labelledby="oui-tab-settings" data-view="settings"><SettingsView /></div>
+  </main>
 
   <ConfirmDialog />
 

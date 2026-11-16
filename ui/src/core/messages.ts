@@ -1,7 +1,6 @@
 // Every visible string of the Kobra Control page, in English and Brazilian Portuguese. Texts that come from the
 // printer or from Python (error details, printer messages) are shown inside these, not translated.
 export const en = {
-  'app.title': 'Kobra Control',
   'app.brand': 'Kobra Control',
   'app.printer': 'Kobra X',
   'nav.label': 'Kobra Control sections',
@@ -35,9 +34,7 @@ export const en = {
   'fr.target.title': 'No Kobra X found',
   'fr.target.body': 'Kobra Control looks for the printer by itself: the address in Settings, then the printer preset, then the local network.',
 
-  'cert.title': 'Anycubic certificate',
   'cert.unknown': 'Certificate status not loaded yet.',
-  'cert.found': 'Certificate found ({source}).',
   'cert.missing': 'No certificate found yet.',
   'cert.why': 'The printer only accepts the certificate that Anycubic Slicer Next carries. Kobra Control has it built in, so Anycubic Slicer Next is not needed.',
   'cert.path': 'Where to look (optional)',
@@ -55,7 +52,6 @@ export const en = {
   'reason.notPaused': 'Available while a print is paused',
   'reason.noPrint': 'No print is running',
   'reason.pending': 'Waiting for the previous command',
-  'reason.controlsOff': 'Controls off: {reason}.',
   'reason.noHeat': 'The printer doesn’t allow heating right now',
   'reason.noMove': 'Moves are available while the printer is idle or paused',
   'reason.noFeed': 'Feeding and retracting are not available right now',
@@ -233,17 +229,14 @@ export const en = {
   'phase.ace_filament_feeding': 'feeding filament',
   'phase.ace_filament_unfeeding': 'retracting filament',
 
-  'temps.title': 'Temperatures',
   'temps.nozzle': 'Nozzle',
   'temps.bed': 'Bed',
-  'temps.reading': '{temp} °C / {target} °C',
   'temps.range': '{min}–{max} °C',
   'temps.target': '{heater} target temperature',
   'temps.set': 'Set',
   'temps.setFor': 'Set {heater} target',
   'temps.off': 'Off',
   'temps.offFor': 'Turn {heater} off',
-  'temps.empty': 'Type a target first',
   'temps.invalid': 'Use a value from {min} to {max} °C',
 
   'speed.label': 'Speed mode',
@@ -273,7 +266,6 @@ export const en = {
   'skip.none': 'This print has no objects that can be skipped.',
 
   'cam.title': 'Camera',
-  'cam.off': 'Off',
   'cam.offHint': 'turn it on to watch the print',
   'cam.start': 'Turn on',
   'cam.stop': 'Turn off',
@@ -299,7 +291,6 @@ export const en = {
   'slot.loading': 'Loading…',
   'slot.unloading': 'Unloading…',
   'slot.loadedHere': 'Loaded in the print head',
-  'slot.ready': 'Filament ready',
   'slot.empty': 'Empty',
   'slot.noType': 'material not set',
   'slot.edit': 'Edit',
@@ -334,7 +325,6 @@ export const en = {
   'sm.count': '{n} spools in Spoolman',
   'sm.same': '{n} spools in Spoolman (the same one Spooler uses)',
   'sm.error': 'Spoolman: {error}',
-  'sm.noSpools': 'No spools to choose from',
   'sm.auto': 'Link a spool automatically when a slot changes',
   'sm.usage': 'Book each slot’s filament use in Spoolman when a print finishes',
   'pick.label': 'Spoolman spool for {slot}',
@@ -433,7 +423,6 @@ export const en = {
   'files.mat.missing': 'Filament {n} ({material}) has no loaded slot to print from',
   'files.mat.warn': 'Not as sliced: {list}.',
 
-  'settings.title': 'Settings',
   'settings.notLoaded': 'Settings haven’t loaded yet.',
   'settings.unsaved': 'Unsaved changes',
   'settings.saving': 'Saving…',
@@ -542,7 +531,6 @@ export const en = {
 export type MessageKey = keyof typeof en;
 
 export const ptBR: Record<MessageKey, string> = {
-  'app.title': 'Kobra Control',
   'app.brand': 'Kobra Control',
   'app.printer': 'Kobra X',
   'nav.label': 'Seções do Kobra Control',
@@ -576,9 +564,7 @@ export const ptBR: Record<MessageKey, string> = {
   'fr.target.title': 'Nenhuma Kobra X encontrada',
   'fr.target.body': 'O Kobra Control procura a impressora sozinho: o endereço em Ajustes, depois o perfil da impressora, depois a rede local.',
 
-  'cert.title': 'Certificado da Anycubic',
   'cert.unknown': 'O estado do certificado ainda não foi carregado.',
-  'cert.found': 'Certificado encontrado ({source}).',
   'cert.missing': 'Nenhum certificado encontrado ainda.',
   'cert.why': 'A impressora só aceita o certificado que acompanha o Anycubic Slicer Next. O Kobra Control já traz esse certificado, então o Anycubic Slicer Next não é necessário.',
   'cert.path': 'Onde procurar (opcional)',
@@ -596,7 +582,6 @@ export const ptBR: Record<MessageKey, string> = {
   'reason.notPaused': 'Disponível enquanto uma impressão está pausada',
   'reason.noPrint': 'Nenhuma impressão em andamento',
   'reason.pending': 'Aguardando o comando anterior',
-  'reason.controlsOff': 'Controles desligados: {reason}.',
   'reason.noHeat': 'A impressora não permite aquecer agora',
   'reason.noMove': 'Movimentos ficam disponíveis com a impressora parada ou pausada',
   'reason.noFeed': 'Alimentar e recolher não estão disponíveis agora',
@@ -774,17 +759,14 @@ export const ptBR: Record<MessageKey, string> = {
   'phase.ace_filament_feeding': 'alimentando filamento',
   'phase.ace_filament_unfeeding': 'recolhendo filamento',
 
-  'temps.title': 'Temperaturas',
   'temps.nozzle': 'Bico',
   'temps.bed': 'Mesa',
-  'temps.reading': '{temp} °C / {target} °C',
   'temps.range': '{min}–{max} °C',
   'temps.target': 'Temperatura alvo de {heater}',
   'temps.set': 'Definir',
   'temps.setFor': 'Definir alvo de {heater}',
   'temps.off': 'Desligar',
   'temps.offFor': 'Desligar {heater}',
-  'temps.empty': 'Digite um alvo primeiro',
   'temps.invalid': 'Use um valor de {min} a {max} °C',
 
   'speed.label': 'Modo de velocidade',
@@ -814,7 +796,6 @@ export const ptBR: Record<MessageKey, string> = {
   'skip.none': 'Esta impressão não tem objetos que possam ser pulados.',
 
   'cam.title': 'Câmera',
-  'cam.off': 'Desligada',
   'cam.offHint': 'ligue para acompanhar a impressão',
   'cam.start': 'Ligar',
   'cam.stop': 'Desligar',
@@ -840,7 +821,6 @@ export const ptBR: Record<MessageKey, string> = {
   'slot.loading': 'Carregando…',
   'slot.unloading': 'Descarregando…',
   'slot.loadedHere': 'Carregado na cabeça de impressão',
-  'slot.ready': 'Filamento pronto',
   'slot.empty': 'Vazio',
   'slot.noType': 'material não definido',
   'slot.edit': 'Editar',
@@ -875,7 +855,6 @@ export const ptBR: Record<MessageKey, string> = {
   'sm.count': '{n} bobinas no Spoolman',
   'sm.same': '{n} bobinas no Spoolman (o mesmo que o Spooler usa)',
   'sm.error': 'Spoolman: {error}',
-  'sm.noSpools': 'Nenhuma bobina para escolher',
   'sm.auto': 'Vincular uma bobina automaticamente quando um slot muda',
   'sm.usage': 'Lançar no Spoolman o consumo de cada slot quando a impressão termina',
   'pick.label': 'Bobina do Spoolman para {slot}',
@@ -974,7 +953,6 @@ export const ptBR: Record<MessageKey, string> = {
   'files.mat.missing': 'O filamento {n} ({material}) não tem slot carregado para imprimir',
   'files.mat.warn': 'Diferente do fatiado: {list}.',
 
-  'settings.title': 'Ajustes',
   'settings.notLoaded': 'Os ajustes ainda não foram carregados.',
   'settings.unsaved': 'Alterações não salvas',
   'settings.saving': 'Salvando…',
