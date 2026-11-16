@@ -33,6 +33,9 @@ printer" below), so the new print options are **opt-in and off by default** in S
 - **Vibration (resonance) compensation now applies to prints sent from OrcaSlicer.** OrcaSlicer's Print dialog has no
   such option and always sent it as off; the Settings > Print defaults switch (on by default) is now used for those
   prints as well. This field was already sent by earlier versions from the Files tab.
+- **Auto-leveling for OrcaSlicer prints also follows Settings > Print defaults.** It runs when both the Print dialog's
+  Bed Leveling and the setting (on by default) are on, so turning the setting off now keeps OrcaSlicer prints from
+  levelling too. With the default setting nothing changes.
 - Setting the part fan while a print runs still sends the fan command that was checked on the printer, then also
   sets the fan through the print's own settings, as Anycubic Slicer Next does.
 - Turning the camera light on uses full brightness (it was 80 %), and off sends brightness 0, as Anycubic Slicer Next

@@ -146,7 +146,8 @@ Timelapse always shows but is greyed out and off unless the push says `support_t
 (`is_support_timelapse` defaults to false); the plugin sends it from `features.camera_timelapse_support`.
 Both start ticked for a printer the dialog has no saved choice for, so the plugin sends flow calibration
 and time-lapse only when the dialog's choice and its own Print defaults setting (off by default) are both
-on. Vibration compensation is never offered (`SelectMachine.cpp` passes false), so the plugin's own
+on. Auto-leveling follows the same rule with its setting (on by default), since Bed Leveling also starts
+ticked. Vibration compensation is never offered (`SelectMachine.cpp` passes false), so the plugin's own
 setting is used for OrcaSlicer prints.
 
 ## Printer details and Print Assist

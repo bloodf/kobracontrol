@@ -582,6 +582,7 @@ export const en = {
   'files.flow': 'Flow calibration',
   'files.timelapse': 'Time-lapse',
   'printdef.vibrationHint': 'Also used for prints sent from OrcaSlicer, whose Print dialog has no such option.',
+  'printdef.levelingHint': 'While off, prints sent from OrcaSlicer don’t level either, whatever its Print dialog says.',
   'printdef.untestedHint': 'Off by default: not yet tried on a Kobra X. While off, OrcaSlicer’s own choice is not sent either.',
 } as const;
 
@@ -1169,5 +1170,6 @@ export const ptBR: Record<MessageKey, string> = {
   'files.flow': 'Calibração de fluxo',
   'files.timelapse': 'Time-lapse',
   'printdef.vibrationHint': 'Vale também para impressões enviadas pelo OrcaSlicer, cuja janela Imprimir não tem essa opção.',
+  'printdef.levelingHint': 'Desligado, as impressões enviadas pelo OrcaSlicer também não nivelam, seja qual for a escolha na janela Imprimir.',
   'printdef.untestedHint': 'Desligado por padrão: ainda não testado numa Kobra X. Desligado, a escolha do próprio OrcaSlicer também não é enviada.',
 };

@@ -202,6 +202,19 @@ class Agent(Base):
         both = {"flow_calibration": True, "timelapse": True}
         self.assertEqual({k: plugin.job_task(params, both)[k] for k in both}, both)
         self.assertEqual({k: plugin.job_task(pa.PrintParams(), both)[k] for k in both}, {k: False for k in both})   # dialog off
+
+    def test_job_task_auto_leveling_needs_dialog_and_setting(self):
+        on, off = pa.PrintParams(task_bed_leveling=True), pa.PrintParams(task_bed_leveling=False)
+        self.assertTrue(plugin.job_task(on, plugin.settings.DEFAULTS)["auto_leveling"])     # default: unchanged
+        self.assertFalse(plugin.job_task(on, {"auto_leveling": False})["auto_leveling"])     # setting off wins
+        self.assertFalse(plugin.job_task(off, {"auto_leveling": True})["auto_leveling"])     # dialog off wins
+
+    def test_orca_print_without_auto_leveling_setting(self):
+        self.connect()
+        plugin.get_store().update({"auto_leveling": False})
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]", task_bed_leveling=True)
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
+        self.assertEqual(wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]["auto_leveling"], 0)
         self.assertFalse(plugin.job_task(params, {})["vibration_compensation"])
         self.assertFalse(plugin.job_task(params, {"vibration_compensation": False})["vibration_compensation"])
         self.assertTrue(plugin.job_task(pa.PrintParams(task_vibration_cali=True), {"vibration_compensation": False})["vibration_compensation"])

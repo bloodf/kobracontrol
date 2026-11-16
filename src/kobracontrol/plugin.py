@@ -435,13 +435,17 @@ def job_task(params, defaults):
     """The print options of an OrcaSlicer job. Its Print dialog never offers vibration compensation (SelectMachine.cpp
     sends task_vibration_cali false), so the Kobra Control setting is the default.
 
+    Auto-leveling is sent when the dialog's Bed Leveling AND the Kobra Control setting (on by default) are on: the
+    dialog starts it "on" for a printer it has no saved choice for (support_bed_leveling 1, on/off), so the setting
+    is how auto-leveling stays off for OrcaSlicer prints.
+
     Flow calibration and time-lapse are UNTESTED on the printer, so they are opt-in: sent only when the dialog's
     choice AND the Kobra Control setting (Print defaults, off by default) are both on. The dialog alone is not
     enough: its Flow Dynamics Calibration and Timelapse start "on" for a printer it has no saved choice for
     (SelectMachine.cpp load_option_vals falls back to "on" for on/off options)."""
     def opt(name):
         return bool(getattr(params, name, False))
-    return {"auto_leveling": opt("task_bed_leveling"),
+    return {"auto_leveling": opt("task_bed_leveling") and defaults.get("auto_leveling") is not False,
             "vibration_compensation": opt("task_vibration_cali") or bool(defaults.get("vibration_compensation")),
             "flow_calibration": opt("task_flow_cali") and defaults.get("flow_calibration") is True,
             "timelapse": opt("task_record_timelapse") and defaults.get("timelapse") is True}
