@@ -2,6 +2,16 @@
    tables and the printer drawing. Colours are the foundation's --oui-* roles only; nothing here defines a colour. */
 html, body, #app { min-height: 100%; }
 
+/* Chinese punctuation from the system's Chinese font. Manrope has the Latin quotes and ellipsis, so “…” and … came out
+   as narrow Latin marks in Chinese text; letters and figures stay Manrope's. */
+@font-face {
+  font-family: 'OuiCJKPunct';
+  src: local('PingFang SC'), local('PingFangSC-Regular'), local('Hiragino Sans GB'), local('HiraginoSansGB-W3'),
+    local('Microsoft YaHei'), local('Noto Sans CJK SC'), local('NotoSansCJKsc-Regular'), local('Noto Sans SC');
+  unicode-range: U+2018-201F, U+2026, U+3000-303F, U+FF00-FFEF;
+}
+:root:lang(zh) { --oui-font: 'OuiCJKPunct', 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
 /* Page-level messages, under the app bar on every tab. The live regions stay in the DOM while empty (what is added
    later is then announced); only filled ones take space. */
 .kc-top { padding: 0 var(--oui-s4); }

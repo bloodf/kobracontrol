@@ -1535,6 +1535,15 @@ for (const id of ['#temp-bed', '#fan', '#dry-t-0', '#dry-m-0']) {   // every num
 }
 `, { lang });
 }
+test('zh-CN: Chinese punctuation comes from a Chinese system font, Latin text stays Manrope', `
+await ready(VIEW());
+const font = getComputedStyle(document.body).fontFamily;
+assert(/^"?OuiCJKPunct"?, "?Manrope/.test(font), 'font: ' + font);
+`, { lang: 'zh_CN' });
+test('en: no Chinese punctuation font outside Chinese', `
+await ready(VIEW());
+assert(!getComputedStyle(document.body).fontFamily.includes('OuiCJKPunct'), 'font: ' + getComputedStyle(document.body).fontFamily);
+`);
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');
