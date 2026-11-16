@@ -1,0 +1,563 @@
+{
+  "about": "Listing and README artwork. `generated` are the native originals, each with an empty panel for a screenshot; `exports` are written by scripts/marketing_images.py, which pastes a real screenshot of the built page into the panel and scales to the listing sizes.",
+  "generated": [
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "main",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control main banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "earlier_prompt": "Create ONE realistic professional software marketing cover for 'Kobra Control', part of the exact same coordinated six-plugin campaign as reference. Preserve reference16:9 composition, top-left brand and copy area, lower-left studio-photographed physical subject, right-half EMPTY SQUARE with identical position/size/border, graphite workbench, believable material depth, controlled softbox lighting and subtle accent reflections. Accent violet #6240c8, dark violet-tinted graphite backdrop #18152b. Top-left rounded-square violet app tile with white2px ROUND-STROKE mark of two facing angular brackets around a single continuous horizontal line, matching24grid safe margins and round caps, symmetrical, no snake, no animal, no manufacturer logo. Exact product name 'Kobra Control' in Manrope semibold #eef1f6. Exact headline 'Run your printer over the LAN.' in two balanced lines if needed, keep entirely left of square. Exact scope line 'Kobra X status, files, camera and print.' in Manrope regular muted #b4bcc9. Lower-left photo shows a generic unbranded filament spool wound with violet filament on graphite workshop surface next to a few beautiful violet3D-printed functional parts with realistic fine layer texture. Behind them, softly out of focus, a generic minimal gantry3D printer with a simple horizontal motion rail and unbranded small printhead, neutral rectangular build surface, no recognizable real product silhouette, no logo, no product labels, no front display or invented screen. The foreground spool and printed parts are the photographic focus, the printer only quietly establishes workshop context. Serious commercially photographed materials, no toy render, no neon, no illustrated vector object. RIGHT square: completely EMPTY uniform #24203d interior, thin neutral gray border, understated rounded corners, straight-on flat plane, no UI, no screenshot, no numbers, no symbols, no text, no diagram, no object or photograph inside, no monitor or laptop bezel. It is reserved for a real application screenshot later. Same bottom-left six small plain rounded-square color tiles exact workflow order #00628c #00675b #446600 #a3247a #6240c8 #2b55c5. Bottom-right exact signature 'by bloodf'. No pack name, no additional words. Brand coherence with reference, precise negative space, restrained typography, physical plausibility and photographic polish.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1758843,
+      "sha256": "3a816c5ac3a9d2f31627e410cecc9d3c67f8a25aa7deefd469a972c96cd37d63",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "square",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control square banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-main-square-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1874229,
+      "sha256": "94f7e358c15fc85d3c8292ae28db8e0ba288748e4934b440c54c0ceab21568c8",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-01-lan-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1815882,
+      "sha256": "7a1f1d6250ecda40f2dd5d94e6c166e3be1c9c0647dc8aecea14a6d077103c27",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-02-status-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-02-status-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1728715,
+      "sha256": "3f719981425195cb1c9797b076562ba5e500ad1024ef9c7c2fff25bb2a78dbc6",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-03-ace-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1787609,
+      "sha256": "a883251e4401c0d200cc4562c2a5ec0822a6730be8b9a99ce38999380f6d1da9",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-04-files-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Edit this Kobra Control banner. Keep the printer photo, background, layout, icon, headline, footer, and completely empty right screenshot square unchanged. Correct the supporting text to this COMPLETE exact sentence: 'Browse files and check the print setup.' Use a slightly smaller font so the whole sentence fits comfortably in the left column on a single line, above and entirely clear of the printer tubes. Do not truncate or omit 'setup.'. No other changes.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-04-files-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1671,
+      "height": 941,
+      "bytes": 1721723,
+      "sha256": "72f4c47c68aa3c93fa5e8d3795ceb0922cdb02e8990d6faf42197f02144ca70a",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "social",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control social banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-social-preview-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1774,
+      "height": 887,
+      "bytes": 1769431,
+      "sha256": "48ad0c2a9a6916f5a8a96fc2905d2e8a0bb9137b52dd3117e7ca7239b362bed8",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-hero-dark-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "hero-dark",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-dark banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-hero-dark-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1754909,
+      "sha256": "98be61d57cc436598484f5894e50610a630c7d62d6bb2432bcfdd9280422a7e6",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-hero-light-en.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "hero-light",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-light banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-hero-light-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1559308,
+      "sha256": "665a0b7ec6504abcf0376c948bd1d1bdf6718f5b3cc3530dcfd890f2ea0e68df",
+      "language": "en",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-main-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "main",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control main banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-main-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1736416,
+      "sha256": "35cc075360e1e5a792560687a9265de5fc050e3a4c7563b8bc801ab70a88f5f0",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-main-square-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "square",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control square banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-main-square-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1834460,
+      "sha256": "1f9928d5776635aa52815a7bacb69c6f705f7bc71fa7e72a027e0486575f7bd8",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-01-lan-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1764147,
+      "sha256": "05fce153eecbddc6919a00237f62998a665233fa7cc61a83ab6f1274a697828c",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-02-status-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-02-status-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1694365,
+      "sha256": "cd9e0a659b8235893a19d71a38d90234d6c0562d8d7ffeed79b676d366681beb",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-03-ace-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1717801,
+      "sha256": "420dc6e7b0f843984e13eb490e24b4b40d573e5e0b6567610495a1b05df1fb1c",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-feature-04-files-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "feature",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-feature-04-files-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1765472,
+      "sha256": "295a568e2967183e7083ef30b826bb80cb3c6a908b070a3c562c398c47db87dd",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-social-preview-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "social",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control social banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-social-preview-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1774,
+      "height": 887,
+      "bytes": 1778332,
+      "sha256": "9fcf9a3603e72fcad5e989e63afe473ac87d36317a85ba07d30a3a03daf870ab",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-hero-dark-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "hero-dark",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-dark banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-hero-dark-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1719092,
+      "sha256": "9af8e68596caf0199523d3a4f61a4403c45d4cc37142ad33237240a8972600d1",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-hero-light-pt-BR.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "hero-light",
+      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-light banner in pt-BR. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "referenced_images": [
+        "kobra-x.png",
+        "kobracontrol-workshop-cover-en.png",
+        "kobracontrol-workshop-hero-light-pt-BR.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1672,
+      "height": 941,
+      "bytes": 1526153,
+      "sha256": "da627b500e25b613f4a3f91150db2b553b2ecf123605860edccba4e8a237d999",
+      "language": "pt-BR",
+      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+    },
+    {
+      "file": "assets/marketing/source/kobracontrol-workshop-tile.png",
+      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "category": "tile",
+      "exact_prompt": "Use case: logo-brand. Create ONE clean finished STORE APP ICON for 'Kobra Control', square1:1. Reference image is for identity ONLY. This is a flat graphic icon, not a realistic scene. An opaque pure white background, no transparency or cutout processing. A large perfectly smooth rounded square almost fills the canvas with only tiny white corners at its outer radius, consistent radius18% of side. Fill the rounded square with ONE UNIFORM SOLID color #6240c8. Inside, centered and optically balanced, draw ONLY this approved identity mark in pure white: two facing angular brackets around a single horizontal line, white 2px round-cap strokes, no snake. All strokes the same2px round-cap round-join weight on a24grid,2px safe area. The icon mark and tile must be crisp and evenly proportioned. No text, no letters, no numbers, no footer, no additional symbol, no photograph, no texture, no grain, no mottling, NO GRADIENT, no shading or lighting, no shadow, no bevel, no glow. Every pixel inside the colored tile away from the white mark must have the same solid color. Especially the upper and lower areas must be perfectly uniform with no bands, dirty patches, cutouts or holes. Deliver clean opaque artwork on white, no alpha channel processing. A single icon, not a board or mockup. Intended final use512x512 store tile.",
+      "referenced_images": [
+        "kobracontrol-workshop-cover-en.png"
+      ],
+      "date": "2026-11-16",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 1201174,
+      "sha256": "20ef89f8c40a56381b3b007064a57367e4865b4bd74cc6c694e8fefbb1f73b6f",
+      "language": "none",
+      "review_note": "Displayed and visually reviewed as a native ChatGPT image. Screenshot placeholders intentionally empty. Original generated pixels preserved without resizing or compositing. Intended production size is recorded separately from actual native dimensions. Exact font and palette fidelity are not certified by image generation."
+    }
+  ],
+  "exports": [
+    {
+      "file": "assets/orca-cloud/kobracontrol-main-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
+      "operation": "screenshot store-dash (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1239304,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-main-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-main-pt-BR.png",
+      "operation": "screenshot store-dash (dark, pt-BR, 800x771 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1228688,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-main-square-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
+      "operation": "screenshot store-dash (dark, en, 520x521 CSS px at 2x) pasted into the empty panel at x=661 y=433 531x532, corner radius 17; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
+      "size": "900x900",
+      "bytes": 861401,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-main-square-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-main-square-pt-BR.png",
+      "operation": "screenshot store-dash (dark, pt-BR, 520x519 CSS px at 2x) pasted into the empty panel at x=661 y=430 529x528, corner radius 10; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
+      "size": "900x900",
+      "bytes": 843120,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-01-lan-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-en.png",
+      "operation": "screenshot store-lan (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1338765,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-01-lan-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-pt-BR.png",
+      "operation": "screenshot store-lan (dark, pt-BR, 800x771 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1322559,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-02-status-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-02-status-en.png",
+      "operation": "screenshot store-status (dark, en, 940x907 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x689, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "1600x900",
+      "bytes": 1346667,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-02-status-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-02-status-pt-BR.png",
+      "operation": "screenshot store-status (dark, pt-BR, 940x903 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x686, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "1600x900",
+      "bytes": 1313386,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-03-ace-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-en.png",
+      "operation": "screenshot store-ace (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1335601,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-03-ace-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-pt-BR.png",
+      "operation": "screenshot store-ace (dark, pt-BR, 800x770 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1299824,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-04-files-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-04-files-en.png",
+      "operation": "screenshot store-files (dark, en, 800x774 CSS px at 2x) pasted into the empty panel at x=883 y=100 711x688, corner radius 14; then 1671x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1230433,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-feature-04-files-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-feature-04-files-pt-BR.png",
+      "operation": "screenshot store-files (dark, pt-BR, 800x771 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1297111,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/social/kobracontrol-social-preview-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
+      "operation": "screenshot store-dash (dark, en, 620x617 CSS px at 2x) pasted into the empty panel at x=1048 y=95 648x645, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
+      "size": "1280x640",
+      "bytes": 783948,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/social/kobracontrol-social-preview-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-social-preview-pt-BR.png",
+      "operation": "screenshot store-dash (dark, pt-BR, 620x587 CSS px at 2x) pasted into the empty panel at x=1017 y=91 686x650, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
+      "size": "1280x640",
+      "bytes": 794282,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-hero-dark-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-hero-dark-en.png",
+      "operation": "screenshot store-dash (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=882 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1242309,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-hero-dark-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-hero-dark-pt-BR.png",
+      "operation": "screenshot store-dash (dark, pt-BR, 800x773 CSS px at 2x) pasted into the empty panel at x=882 y=99 714x690, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1222520,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-hero-light-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-hero-light-en.png",
+      "operation": "screenshot store-dash (light, en, 800x772 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1165090,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-hero-light-pt-BR.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-hero-light-pt-BR.png",
+      "operation": "screenshot store-dash (light, pt-BR, 800x773 CSS px at 2x) pasted into the empty panel at x=883 y=99 714x690, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1174800,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-light-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (light, en, 1280x800 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x1600",
+      "bytes": 941540,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-light-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (light, pt-BR, 1280x800 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x1600",
+      "bytes": 964797,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-dark-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (dark, en, 1280x800 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x1600",
+      "bytes": 937046,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-dark-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (dark, pt-BR, 1280x800 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x1600",
+      "bytes": 960024,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-light-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (light, en, 1280x620 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1240",
+      "bytes": 313417,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-light-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (light, pt-BR, 1280x620 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1240",
+      "bytes": 333997,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-dark-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (dark, en, 1280x620 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1240",
+      "bytes": 307696,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-dark-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (dark, pt-BR, 1280x620 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1240",
+      "bytes": 328217,
+      "date": "2026-11-16"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-tile.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-tile.png",
+      "operation": "rounded square cropped at x=41 y=42 1172x1170 (corner radius 186), ground outside it made transparent, scaled to 512x512 (Lanczos)",
+      "size": "512x512",
+      "bytes": 212218,
+      "date": "2026-11-16"
+    }
+  ]
+}

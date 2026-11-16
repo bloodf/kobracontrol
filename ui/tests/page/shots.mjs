@@ -1,6 +1,9 @@
 // MOCK evidence: the built page in owned headless Chrome (CSP, scripted bridge), screenshots in light/dark,
 // en/pt-BR and several widths, with overflow and DOM measurements. Not a substitute for OrcaSlicer.
 //   OUT=<dir> PAGE=<page with icons> node tests/page/shots.mjs
+// SCENES=<json> picks the scenes: [scene, theme, lang, width, height, scale = 1]. The store-* scenes are the
+// pictures inside the listing and README images (scripts/marketing_images.py): a quiet day with no Spoolman
+// reminders, today's date, and for store-status a camera frame read from FRAME=<jpeg file>.
 import { writeFile, mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +28,9 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
   features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',
   stats: {print_minutes: 37230, print_count: 214, filament_g: 18420}, assist: {'0': true, '1': false, '3': true, '4': true, '5': false}};
-if (SCN === 'idle' || SCN === 'assist') Object.assign(VIEW, {state: 'idle', kobra_state: 'free', filename: '', progress: 0, layer: 0, total_layers: 0, elapsed_s: 0, remaining_s: 0,
+if (STORE) Object.assign(VIEW, {updated_at: Date.now() / 1000, filename: 'desk_organiser.gcode'});
+if (SCENE === 'store-ace') Object.assign(VIEW, {mode: 'ace_direct', slots: VIEW.slots.filter(s => s.box_id >= 0)});
+if (SCN === 'idle' || SCN === 'assist' || SCENE === 'store-files') Object.assign(VIEW, {state: 'idle', kobra_state: 'free', filename: '', progress: 0, layer: 0, total_layers: 0, elapsed_s: 0, remaining_s: 0,
   nozzle_target: 0, bed_target: 0, can: {pause: false, resume: false, stop: false, move: true, heat: true, feed: true, print: true}});
 const CONFIG = {type: 'config', settings: {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ffmpeg_path: '', camera_enabled: false, auto_leveling: true, vibration_compensation: true,
   spoolman_url: 'http://192.168.1.10:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false},
@@ -48,11 +53,12 @@ ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {s
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
   same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}, available: true, reason: null});
 ans('device', {sent: true, assist: true});
-ans('usage', {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
+ans('usage', STORE ? {pending: [], unconfirmed: [], acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''} : {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
   acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
 if (SCN === 'offline') { __t.handler({type: 'status', data: {...VIEW, connected: false}}); __t.handler({type: 'offline', error: 'printer not reachable at 192.168.1.50', retry_at: Date.now() / 1000 + 24}); }
 if (SCN === 'stale') { const real = Date.now; Date.now = () => real() + 4 * 60000; await sleep(1100); }
 if (SCN === 'usage') { await sleep(50); document.querySelector('[data-test="usage-review"]')?.click(); }
+if (SCENE === 'store-status') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'frame', image: FRAME}); }
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
 // videos, videos-empty, videos-error, videos-delete: the Files tab's Time-lapses section in each of its states.
 const TAB = SCN.startsWith('videos') ? 'files' : SCN;
@@ -70,7 +76,7 @@ if (TAB === 'files') {
 if (SCN === 'videos-delete') { const del = document.querySelector('[data-empty] [data-video-delete]'); del.focus(); del.click(); await until(() => document.querySelector('.p-dialog')); }
 if (SCN === 'files') {
   document.querySelector('[data-print]').click(); await sleep(100);
-  ans('file_details', {name: 'desk_organiser_plate_1.gcode', thumbnail: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>',
+  ans('file_details', {name: 'desk_organiser_plate_1.gcode', thumbnail: STORE ? THUMB : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>',
     info: {estimated_s: 25816, layers: 380, filament_g: 102.9, layer_height: 0.2, nozzle_temp: 220, bed_temp: 60, nozzle: 0.4, printer_model: 'Anycubic Kobra X', model_ok: true},
     materials: [{paint_index: 0, material: 'PLA', colour: '#111111', grams: 84.1, slot: 3, slot_type: 'PLA', slot_colour: '#E5484D', check: 'ok'},
       {paint_index: 1, material: 'PETG', colour: '#2850a8', grams: 18.8, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}]});
@@ -78,7 +84,15 @@ if (SCN === 'files') {
 if (SCN === 'assist') { const sw = document.querySelector('#assist-remain'); sw.scrollIntoView({block: 'center'}); sw.click(); await until(() => document.querySelector('.p-dialog')); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
+// once the page has settled: the Filament panel just under the app bar
+if (SCENE === 'store-ace') { scrollTo({top: document.querySelector('[data-test="ace-card"]').getBoundingClientRect().top + scrollY - 64, behavior: 'instant'}); await sleep(200); }
 `;
+// store-*: the same states under their own names. THUMB stands in for the plate picture a sliced file carries.
+const STORE_AS = { 'store-dash': 'dash', 'store-status': 'dash', 'store-lan': 'settings', 'store-ace': 'idle', 'store-files': 'files' };
+const THUMB = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 -8 136 136"><rect x="12" y="-8" width="136" height="136" fill="#24203d"/>'
+  + '<path d="M22 86 80 104 138 86 80 68Z" fill="#332d55"/><path d="M40 48v30l40 13V61Z" fill="#6240c8"/><path d="M120 48v30L80 91V61Z" fill="#4e33a0"/>'
+  + '<path d="M40 48 80 35 120 48 80 61Z" fill="#c0acff"/><path d="M52 48 80 39 108 48 80 57Z" fill="#392c6a"/></svg>');
+const FRAME = process.env.FRAME ? 'data:image/jpeg;base64,' + (await readFile(process.env.FRAME)).toString('base64') : '';
 const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   // scene, theme, lang, width, height
   ['dash', 'dark', 'en', 1900, 1000], ['dash', 'light', 'en', 1900, 1000], ['dash', 'dark', 'en', 1280, 720], ['dash', 'light', 'en', 1280, 720],
@@ -100,14 +114,15 @@ const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));
 const browser = await launch();
 const metrics = [];
 try {
-  for (const [scn, theme, lang, width, height] of SCENES) {
+  for (const [scn, theme, lang, width, height, scale = 1] of SCENES) {
     const file = join(dir, `${scn}.html`);
     await writeFile(file, preparePage(page, { version: '0.1.0', lang }));
     const p = await browser.newPage();
-    await p.size(width, height, 1);
+    await p.size(width, height, scale);
     await p.init(MOCK_HOST);
     await p.goto(pathToFileURL(file).href + '?theme=' + theme);
-    const m = await p.evaluate(`(async () => { ${HELPERS} const SCN = ${JSON.stringify(scn)};
+    const m = await p.evaluate(`(async () => { ${HELPERS} const SCENE = ${JSON.stringify(scn)}; const STORE = SCENE.startsWith('store-'); const SCN = ${JSON.stringify(STORE_AS[scn] ?? scn)};
+      const THUMB = ${JSON.stringify(THUMB)}; const FRAME = ${JSON.stringify(scn === 'store-status' ? FRAME : '')};
       await until(() => document.querySelector('#app > *'));
       ${STATE}
       const over = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
