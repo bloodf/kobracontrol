@@ -89,6 +89,9 @@ async function loadObjects() {
 }
 function toggle() { open.value = !open.value; if (open.value) void loadObjects(); }
 const skipWhy = computed(() => controlsOff.value || (!printing.value ? t('reason.noPrint') : ''));
+// Skip off for its own reason while Stop still works (the shared reasons above don't cover it): said beside it.
+const skipOwnWhy = computed(() => (skipWhy.value && !controlsOff.value && !noPrint.value ? skipWhy.value : ''));
+const skipDescribedBy = computed(() => (!skipWhy.value ? undefined : skipOwnWhy.value ? 'skip-why' : describedBy.value));
 // A finished print or another printer closes the section: its list is no longer true.
 watch(() => [printing.value, s.epoch], () => { open.value = false; seq++; sk.state = 'idle'; chosen.value = []; });
 async function skip() {
@@ -134,11 +137,12 @@ async function skip() {
       <Button severity="secondary" :label="t('act.resume')" :disabled="!!resumeWhy" :aria-describedby="describedBy" :loading="tracker.isBusy('resume')" data-focus-key="resume" data-test="resume" @click="resume">
         <template #icon><OuiIcon :icon="play" :size="14" /></template></Button>
       <Button severity="secondary" text :label="open ? t('skip.close') : t('skip.open')" :aria-expanded="open" aria-controls="skip-body" :disabled="!!skipWhy"
-              :aria-describedby="skipWhy ? describedBy : undefined" data-test="skip-open" data-focus-key="skip-open" @click="toggle">
+              :aria-describedby="skipDescribedBy" data-test="skip-open" data-focus-key="skip-open" @click="toggle">
         <template #icon><OuiIcon :icon="layers" :size="14" /></template></Button>
       <span class="oui-spacer" />
       <Button severity="danger" :label="t('act.stop')" :disabled="!!stopWhy" :aria-describedby="describedBy" :loading="tracker.isBusy('stop')" data-focus-key="stop" data-test="stop" @click="stop">
         <template #icon><OuiIcon :icon="stopIcon" :size="14" /></template></Button>
+      <p v-if="skipOwnWhy" id="skip-why" class="oui-meta kc-job-why" data-test="skip-why">{{ t('skip.title') }}: {{ skipOwnWhy }}</p>
       <p v-if="noPrint" id="print-why" class="oui-meta kc-job-why" data-test="print-why">{{ t('reason.noPrint') }}</p>
     </div>
 
