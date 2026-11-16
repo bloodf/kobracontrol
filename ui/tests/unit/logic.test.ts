@@ -1,7 +1,7 @@
 // Pure rules of the page (node --test runs this TypeScript directly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
+import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, clipLength, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
 import { normalizeLocale, resolveLocale, interpolate } from '../../src/core/i18n-core.ts';
 import { en, ptBR } from '../../src/core/messages.ts';
 
@@ -96,6 +96,15 @@ test('files: search ignores case and spaces around it; the four orders', () => {
   assert.deepEqual(names('  CU ', 'newest'), ['cube.gcode']);
   assert.deepEqual(names('zzz', 'newest'), []);
   assert.equal(files[0].name, 'b.gcode', 'the input is not reordered');
+});
+
+test('a video length reads m:ss, h:mm:ss from an hour on; nothing for no length', () => {
+  assert.equal(clipLength(6), '0:06');
+  assert.equal(clipLength(83), '1:23');
+  assert.equal(clipLength(59.6), '1:00');
+  assert.equal(clipLength(3725), '1:02:05');
+  assert.equal(clipLength(0.2), '0:01', 'a video that has a length is never 0:00');
+  for (const none of [0, -3, NaN, Infinity, null, undefined, '83']) assert.equal(clipLength(none), '');
 });
 
 test('fingerprints read in pairs; anything that is not hex is shown as is', () => {

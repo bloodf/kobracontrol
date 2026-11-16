@@ -204,6 +204,22 @@ FILE_FILEDETAILS = {'action': 'fileDetails',
  'timestamp': 1794639828084,
  'type': 'file'}
 
+# file/listVideo (the time-lapse videos), read on firmware 2.0.2.8; msgid and timestamp were not kept. Seconds and
+# bytes here, where listLocal has milliseconds. A print stopped before its first frame leaves a record with
+# duration 0 and about 156 bytes.
+FILE_LISTVIDEO = {'action': 'listVideo',
+ 'code': 200,
+ 'data': {'records': [{'createTime': 1794838471,
+                       'duration': 6,
+                       'fileKey': 'ffffffffffffffffffffffffffffffff',
+                       'fileSize': 109048,
+                       'file_image': 'orcatest_kx3-20261116215053_8_6.jpg',
+                       'filename': 'orcatest_kx3-20261116215053_8.mp4',
+                       'main_file_name': 'orcatest_kx3'}]},
+ 'msg': 'done',
+ 'state': 'done',
+ 'type': 'file'}
+
 FILE_DELETEBATCH = {'action': 'deleteBatch',
  'code': 200,
  'data': None,

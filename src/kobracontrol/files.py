@@ -2,7 +2,9 @@
 page rows, name checks for print and delete, the print/start payload. Free of the `orca` module.
 
 There are no downloads: neither Kobralink nor KX-Bridge has a way to fetch a file back from the printer
-(the printer only lists, details, deletes and prints; a file's thumbnail comes inline in file_details)."""
+(the printer only lists, details, deletes and prints; a file's thumbnail comes inline in file_details).
+The time-lapse videos are listed and deleted too; no way to fetch a video or its cover picture over the LAN
+is known yet."""
 
 import math
 import re
@@ -13,6 +15,7 @@ import kobra
 
 MAX_NAME = 255
 MAX_DELETE = 200
+VIDEO_EXT = ".mp4"
 THUMB_MAX = 1024 * 1024                      # characters of base64 kept per thumbnail
 _B64 = re.compile(r"^[A-Za-z0-9+/=\s]+$")
 _DATA_PNG = re.compile(r"^data:image/png;base64,[A-Za-z0-9+/=]+$")
@@ -34,6 +37,33 @@ def valid_names(names):
     if len(names) > MAX_DELETE:
         raise ValueError("too many files at once (at most %d)" % MAX_DELETE)
     return list(dict.fromkeys(valid_name(n) for n in names))
+
+
+def valid_video_name(name):
+    """A time-lapse video's file name unchanged, or ValueError: a plain file name (valid_name) ending in .mp4."""
+    valid_name(name)
+    if len(name) <= len(VIDEO_EXT) or not name.lower().endswith(VIDEO_EXT):
+        raise ValueError("a time-lapse video's name ends in %s" % VIDEO_EXT)
+    return name
+
+
+def video_rows(videos):
+    """Rows for the page from kobra.Printer.list_videos(), order kept (newest first): {"filename", "name" (the
+    print, else the file name without .mp4), "created" (unix s), "duration" (s), "size" (bytes), "empty"}.
+    empty: nothing was recorded (duration 0: the print ended before the first frame). A video whose name could not
+    be sent back for a delete is left out."""
+    out = []
+    for v in videos if isinstance(videos, list) else []:
+        filename = v.get("filename") if isinstance(v, dict) else None
+        try:
+            valid_video_name(filename)
+        except ValueError:
+            continue
+        name = v.get("name") if isinstance(v.get("name"), str) and v.get("name").strip() else filename[:-len(VIDEO_EXT)]
+        duration = _number(v.get("duration"))
+        out.append({"filename": filename, "name": name, "created": _number(v.get("created")), "duration": duration,
+                    "size": _number(v.get("size")), "empty": duration <= 0})
+    return out
 
 
 def _thumbnail(details):
@@ -188,3 +218,16 @@ class FilesMixin:
         for n in names:
             cache.pop(n, None)
         return self.cmd_files()
+
+    # Time-lapse videos. Neither command moves the printer, so both run while it prints too: like the file
+    # commands they need only a connected printer.
+
+    def cmd_videos(self):
+        """Fresh list of the printer's time-lapse videos, as page rows."""
+        return {"videos": video_rows(self._printer().list_videos())}
+
+    def cmd_video_delete(self, name):
+        """Delete one video. The page asks for the list again afterwards, so a delete that worked is never
+        reported as failed because of the list."""
+        self._printer().delete_video(valid_video_name(name))
+        return {"deleted": name}

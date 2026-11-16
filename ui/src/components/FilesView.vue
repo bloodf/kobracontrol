@@ -14,6 +14,7 @@ import { t, fmt } from '../core/i18n';
 import { message } from '../core/tracker';
 import { thumbSrc, listFiles, type FileSort } from '../core/logic';
 import type { FileDetails, FileEntry, FileMaterial, FilesResult } from '../app/types';
+import TimelapsePanel from './TimelapsePanel.vue';
 
 const state = ref<'idle' | 'loading' | 'ok' | 'error'>('idle');
 const error = ref('');
@@ -202,12 +203,18 @@ async function del(name: string) {
         <span v-if="printWhy && !controlsOff" id="print-start-why" class="oui-meta">{{ printWhy }}</span>
       </template>
     </OuiPanel>
+
+    <TimelapsePanel />
   </div>
 </template>
 
 <style>
 .fv { display: grid; gap: var(--oui-s3); grid-template-columns: minmax(0, 1fr); align-items: start; }
-@container oui-page (min-width: 1160px) { .fv[data-detail] { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); } }
+/* Wide, with a file open: its panel is a second column beside the file list and the time-lapses under it. */
+@container oui-page (min-width: 1160px) {
+  .fv[data-detail] { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); grid-template-rows: auto 1fr; }
+  .fv[data-detail] > .fv-detail { grid-column: 2; grid-row: 1 / span 2; }
+}
 .fv-bar { border-bottom: 1px solid var(--oui-border); }
 .fv-q { width: 240px; max-width: 100%; }
 .fv-table { table-layout: fixed; min-width: 520px; }

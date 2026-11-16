@@ -46,6 +46,10 @@ export interface FileInfo { estimated_s: number | null; layers: number | null; f
 export interface FileMaterial { paint_index: number; material: string; colour: string; grams: number; slot: number | null;
   slot_type: string; slot_colour: string; check: 'ok' | 'differs' | 'missing' }
 export interface FileDetails { name: string; thumbnail?: string | null; info?: FileInfo; materials?: FileMaterial[] }
+/** A time-lapse video on the printer: `name` is the print, `created` unix seconds, `duration` seconds, `size` bytes;
+ *  `empty` when nothing was recorded (the print ended before the first frame). */
+export interface VideoEntry { filename: string; name: string; created: number; duration: number; size: number; empty: boolean }
+export interface VideosResult { videos: VideoEntry[] }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {

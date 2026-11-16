@@ -115,6 +115,40 @@ class NameTests(unittest.TestCase):
                 files.valid_names(bad)
 
 
+class VideoTests(unittest.TestCase):
+    VIDEOS = [{"filename": "benchy-20261116_8.mp4", "name": "benchy", "created": 30, "duration": 6, "size": 109048},
+              {"filename": "cube-20261107_1.mp4", "name": "cube", "created": 20, "duration": 0, "size": 156}]
+
+    def test_valid_video_names(self):
+        for name in ("a.mp4", "orcatest_kx3-20261116215053_8.mp4", "Ünï (1).MP4", "x" * 251 + ".mp4"):
+            self.assertEqual(files.valid_video_name(name), name)
+
+    def test_invalid_video_names(self):
+        for bad in ("", ".mp4", "a.gcode", "a.mp4.gcode", "mp4", "../a.mp4", "x/a.mp4", "a\\b.mp4", "/a.mp4", "a.mp4/",
+                    "a\x00.mp4", "a\n.mp4", "a.mp4\n", "x" * 252 + ".mp4", None, 5, ["a.mp4"], {"name": "a.mp4"}):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                files.valid_video_name(bad)
+
+    def test_rows(self):
+        self.assertEqual(files.video_rows(self.VIDEOS), [
+            {"filename": "benchy-20261116_8.mp4", "name": "benchy", "created": 30, "duration": 6, "size": 109048,
+             "empty": False},
+            {"filename": "cube-20261107_1.mp4", "name": "cube", "created": 20, "duration": 0, "size": 156, "empty": True}])
+
+    def test_rows_drop_what_could_not_be_deleted_by_name_and_fall_back_to_the_file_name(self):
+        videos = [{"filename": "../x.mp4", "name": "x"}, {"filename": "a.gcode"}, "junk", None, {"filename": 5},
+                  {"filename": "plain.mp4", "name": 7, "created": "x", "duration": None, "size": True}]
+        self.assertEqual(files.video_rows(videos), [
+            {"filename": "plain.mp4", "name": "plain", "created": 0, "duration": 0, "size": 0, "empty": True}])
+        for bad in (None, "x", {}, 5):
+            self.assertEqual(files.video_rows(bad), [])
+
+    def test_inputs_are_not_mutated(self):
+        videos = [dict(v) for v in self.VIDEOS]
+        files.video_rows(videos)
+        self.assertEqual(videos, self.VIDEOS)
+
+
 class PayloadTests(unittest.TestCase):
     def test_payload_uses_the_listed_size(self):
         mapping = [{"paint_index": 0, "ams_index": 1}]
@@ -147,6 +181,14 @@ class FakePrinter:
     def __init__(self, ip=""):
         self.creds = type("C", (), {"ip": ip, "device_id": "d" + ip})()
         self.files, self.started, self.deleted, self.details = [dict(f) for f in LISTING], [], [], {"thumbnail": "AAAA"}
+        self.videos = [dict(v) for v in VideoTests.VIDEOS]
+
+    def list_videos(self):
+        return [dict(v) for v in self.videos]
+
+    def delete_video(self, name):
+        self.deleted.append(name)
+        self.videos = [v for v in self.videos if v["filename"] != name]
 
     def list_files(self):
         return [dict(f) for f in self.files]
@@ -202,6 +244,20 @@ class MixinTests(unittest.TestCase):
         h.cmd_files()                                      # a.gcode deleted outside kobracontrol
         first.files.append({"filename": "a.gcode", "size": 1, "timestamp": 1})
         self.assertIsNone(h.cmd_files()["files"][-1]["thumbnail"])
+
+    def test_videos_list_and_delete(self):
+        h = Host()
+        self.assertEqual([v["name"] for v in h.cmd_videos()["videos"]], ["benchy", "cube"])
+        self.assertEqual(h.cmd_video_delete("cube-20261107_1.mp4"), {"deleted": "cube-20261107_1.mp4"})
+        self.assertEqual(h.printer.deleted, ["cube-20261107_1.mp4"])
+        self.assertEqual(h.idle_checks, 0)   # videos are listed and deleted during a print too
+
+    def test_bad_video_names_never_reach_the_printer(self):
+        h = Host()
+        for bad in ("../x.mp4", "a.gcode", "x/y.mp4", "", "x" * 300 + ".mp4", 5, None, ["cube-20261107_1.mp4"]):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                h.cmd_video_delete(bad)
+        self.assertEqual(h.printer.deleted, [])
 
     def test_bad_names_never_reach_the_printer(self):
         h = Host()

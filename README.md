@@ -134,7 +134,9 @@ The agent has the id `kobracontrol`. With it, OrcaSlicer's own dialogs work with
   one, the print panel shows its estimated time, layers, filament, layer height and temperatures, and
   which ACE slot will print each of its filaments. It warns when a slot holds a different material than
   the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another
-  printer; the confirmation repeats the warning.
+  printer; the confirmation repeats the warning. A Time-lapses section lists the printer's time-lapse
+  videos (print, date, length, size) and deletes them. The printer offers no way to download a video
+  over the local network yet.
 - **Settings:** connection (with the printer's certificate fingerprint), certificate, ffmpeg path, Spoolman
   and Spooler. If the printer presents a different TLS certificate than last time, every tab shows a
   warning; see [SECURITY.md](SECURITY.md).

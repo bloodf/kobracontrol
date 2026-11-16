@@ -550,6 +550,63 @@ class Files(Base):
         self.assertIn("path separators", self.run_cmd("file_details", name="../x")["error"])
 
 
+VIDEO = {"createTime": 1794838471, "duration": 6, "fileKey": "f" * 32, "fileSize": 109048,
+         "file_image": "benchy-20261116215053_8_6.jpg", "filename": "benchy-20261116215053_8.mp4", "main_file_name": "benchy"}
+ABORTED = {**VIDEO, "createTime": 1794000000, "duration": 0, "fileSize": 156, "filename": "cube-20261107_1.mp4",
+           "main_file_name": "cube"}
+
+
+class Videos(Base):
+    """Time-lapse videos: the page's `videos` and `video_delete` commands (docs/architecture.md)."""
+
+    def script(self):
+        self.fake.reply("file", "listVideo", {"records": [ABORTED, VIDEO, {"filename": "../x.mp4"}, "junk"]})
+        self.fake.reply("file", "deleteVideo", None, state="success")
+
+    def test_list_newest_first_with_the_aborted_one_marked(self):
+        self.script()
+        self.assertEqual(self.run_cmd("videos")["result"], {"videos": [
+            {"filename": "benchy-20261116215053_8.mp4", "name": "benchy", "created": 1794838471, "duration": 6,
+             "size": 109048, "empty": False},
+            {"filename": "cube-20261107_1.mp4", "name": "cube", "created": 1794000000, "duration": 0, "size": 156,
+             "empty": True}]})
+        self.assertEqual(self.sent("file", "listVideo")[0]["data"], {"page_num": 1, "page_size": 200, "path": "/", "keyword": ""})
+
+    def test_delete_sends_one_named_video(self):
+        self.script()
+        self.assertEqual(self.run_cmd("video_delete", name="cube-20261107_1.mp4")["result"], {"deleted": "cube-20261107_1.mp4"})
+        self.assertEqual([m["data"] for m in self.sent("file", "deleteVideo")], [{"path": "/", "filename": "cube-20261107_1.mp4"}])
+
+    def test_a_name_that_is_not_a_plain_mp4_name_is_refused_before_the_printer(self):
+        self.script()
+        for bad in ("../x.mp4", "x/y.mp4", "x\\y.mp4", "a.gcode", "", ".mp4", "x" * 300 + ".mp4", 5, None, ["a.mp4"]):
+            self.assertIn("error", self.run_cmd("video_delete", name=bad), repr(bad))
+        self.assertIn("error", self.run_cmd("video_delete"))                       # no name at all
+        self.assertIn("error", self.run_cmd("video_delete", names=["a.mp4"]))      # the file command's argument
+        self.assertEqual(self.sent("file", "deleteVideo"), [])
+
+    def test_what_the_printer_refuses_is_an_error_with_its_code(self):
+        self.fake.reply("file", "listVideo", None, state="failed", code=10112)
+        self.fake.reply("file", "deleteVideo", None, state="failed", code=10110)
+        self.assertIn("10112", self.run_cmd("videos")["error"])
+        self.assertIn("10110", self.run_cmd("video_delete", name="a.mp4")["error"])
+
+    def test_nothing_else_is_sent(self):
+        self.script()
+        before = self.kinds()
+        self.run_cmd("videos")
+        self.run_cmd("video_delete", name="a.mp4")
+        self.assertEqual(self.kinds() - before - READ_ONLY, {("file", "listVideo"), ("file", "deleteVideo")})
+
+
+class VideosWhilePrinting(Videos):
+    """Listing and deleting videos does not move the printer: both work during a print."""
+
+    def setUp(self):
+        super().setUp()
+        self.set_state("printing")
+
+
 if __name__ == "__main__":
     unittest.main()
 

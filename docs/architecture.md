@@ -14,7 +14,7 @@ plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs th
 | `ace.py` | ACE and print-head slot model, slot mapping for a print, drying | no |
 | `bambu.py` | Translates the view to the Device tab's status JSON and Device tab commands to printer commands | no |
 | `camera.py` | Camera start and, for the tab, `ffmpeg` to JPEG frames | no |
-| `files.py` | Printer file list, details, delete, print | no |
+| `files.py` | Printer file list, details, delete, print; time-lapse video list and delete | no |
 | `spoolman.py`, `peers.py`, `spooler_bridge.py`, `stockview.py`, `usage.py` | Spoolman, Spooler presence and stock, filament use | no |
 | `settings.py` | Settings store | no |
 | `connection.py` | One connection and one state per printer address, with the reconnect loop; certificate search | no |
@@ -133,6 +133,8 @@ is always empty, because it carries the upload token. Plus:
 | `file_details` | `name` | |
 | `file_print` | `name`, `auto_leveling`, `vibration_compensation`, `flow_calibration`, `timelapse` | yes |
 | `file_delete` | `names` | yes |
+| `videos` | (the time-lapse videos; also while printing) | |
+| `video_delete` | `name` (one video's file name: a plain name ending `.mp4`, at most 255 characters); also while printing | yes |
 | `find_certificate` | `path` (optional file or folder) | |
 | `spools` | | |
 | `bind`, `unbind` | `slot`, `spool_id` | |
@@ -147,6 +149,8 @@ Replies:
 | `files` | `{files: [{name, size, timestamp, thumbnail}]}`; storage is in `status.data.storage` |
 | `file_details` | `{name, thumbnail, info, materials}`: thumbnail is a PNG data URL or `null`; `info` is `{estimated_s, layers, filament_g, layer_height, nozzle_temp, bed_temp, nozzle, printer_model, model_ok}` (numbers `null` when the file does not say); `materials` is one `{paint_index, material, colour, grams, slot, slot_type, slot_colour, check}` per filament, where `slot` is the `global_index` a print from the Files page would use (the same auto mapping as `file_print`, `null` when none) and `check` is `ok`, `differs` or `missing` (`files.plan`) |
 | `file_print` | `{started: name}`; uses the automatic slot mapping from the loaded slots |
+| `videos` | `{videos: [{filename, name, created, duration, size, empty}]}`, newest first: `name` is the print, `created` unix seconds, `duration` seconds, `size` bytes, `empty` true when nothing was recorded (duration 0). No cover picture and no download: the printer has no known LAN route for either |
+| `video_delete` | `{deleted: name}`; the page then asks for `videos` again |
 | `objects` | `{filename, objects: [name], skipped: [name]}` for the running print; an error when none runs |
 | `find_certificate` | `{found, source}` |
 | `spools` | `{spools, bindings}` |
