@@ -97,7 +97,7 @@ watch(() => [printing.value, s.epoch], () => { open.value = false; seq++; sk.sta
 async function skip() {
   const names = chosen.value.filter(n => sk.objects.includes(n));
   if (!names.length) return;
-  if (!await ask({ title: t('confirm.skip.title'), text: t('confirm.skip.text', { printer: printerName.value, names: names.join(', ') }),
+  if (!await ask({ title: t('confirm.skip.title'), text: t('confirm.skip.text', { printer: printerName.value, names: fmt.list(names) }),
     yes: t('confirm.skip.yes'), no: t('common.goBack'), danger: true })) return;
   const r = await run({ key: 'skip', label: t('act.skip'), cmd: 'skip_objects', args: { names }, okText: t('ok.skip') });
   if (r.ok) { chosen.value = []; void loadObjects(); }
@@ -142,7 +142,7 @@ async function skip() {
       <span class="oui-spacer" />
       <Button severity="danger" :label="t('act.stop')" :disabled="!!stopWhy" :aria-describedby="describedBy" :loading="tracker.isBusy('stop')" data-focus-key="stop" data-test="stop" @click="stop">
         <template #icon><OuiIcon :icon="stopIcon" :size="14" /></template></Button>
-      <p v-if="skipOwnWhy" id="skip-why" class="oui-meta kc-job-why" data-test="skip-why">{{ t('skip.title') }}: {{ skipOwnWhy }}</p>
+      <p v-if="skipOwnWhy" id="skip-why" class="oui-meta kc-job-why" data-test="skip-why">{{ fmt.pair(t('skip.title'), skipOwnWhy) }}</p>
       <p v-if="noPrint" id="print-why" class="oui-meta kc-job-why" data-test="print-why">{{ t('reason.noPrint') }}</p>
     </div>
 

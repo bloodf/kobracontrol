@@ -1,5 +1,7 @@
-// Every visible string of the Kobra Control page, in English and Brazilian Portuguese. Texts that come from the
-// printer or from Python (error details, printer messages) are shown inside these, not translated.
+// Every visible string of the Kobra Control page, in English and Brazilian Portuguese; Spanish, German and Simplified
+// Chinese are in locales/. English is the source: its keys are the type every other language must fill. Texts from the
+// printer are shown as they come; the plugin's own error details arrive from Python already in the page's language
+// (src/kobracontrol/i18n.py).
 export const en = {
   'app.brand': 'Kobra Control',
   'app.printer': 'Kobra X',
@@ -448,6 +450,9 @@ export const en = {
   'lang.auto': 'Automatic ({current})',
   'lang.en': 'English',
   'lang.pt-BR': 'Português (Brasil)',
+  'lang.es': 'Español',
+  'lang.de': 'Deutsch',
+  'lang.zh-CN': '简体中文',
   'lang.help': 'Automatic follows OrcaSlicer’s language, then the system’s. Your choice is kept in OrcaSlicer only.',
   'about.text': 'Kobra Control {version} · Independent project, not made by Anycubic.',
   'reason.connecting': 'Connecting to the printer',
@@ -592,6 +597,13 @@ export const en = {
   'printdef.vibrationHint': 'Also used for prints sent from OrcaSlicer, whose Print dialog has no such option.',
   'printdef.levelingHint': 'While off, prints sent from OrcaSlicer don’t level either, whatever its Print dialog says.',
   'printdef.untestedHint': 'Off by default: not yet tried on a Kobra X. While off, OrcaSlicer’s own choice is not sent either.',
+  // 0.7.0: words and punctuation around numbers and lists (the unit symbols g, mm, °C, kB are the same everywhere)
+  'fmt.hm': '{h} h {m} min',
+  'fmt.m': '{m} min',
+  'fmt.percent': '{value} %',
+  'fmt.listSep': ', ',
+  'fmt.pair': '{label}: {value}',
+  'unit.min': 'min',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1044,6 +1056,9 @@ export const ptBR: Record<MessageKey, string> = {
   'lang.auto': 'Automático ({current})',
   'lang.en': 'English',
   'lang.pt-BR': 'Português (Brasil)',
+  'lang.es': 'Español',
+  'lang.de': 'Deutsch',
+  'lang.zh-CN': '简体中文',
   'lang.help': 'Automático segue o idioma do OrcaSlicer e depois o do sistema. A escolha fica guardada só neste OrcaSlicer.',
   'about.text': 'Kobra Control {version} · Projeto independente, não feito pela Anycubic.',
   'reason.connecting': 'conectando à impressora',
@@ -1188,4 +1203,11 @@ export const ptBR: Record<MessageKey, string> = {
   'printdef.vibrationHint': 'Vale também para impressões enviadas pelo OrcaSlicer, cuja janela Imprimir não tem essa opção.',
   'printdef.levelingHint': 'Desligado, as impressões enviadas pelo OrcaSlicer também não nivelam, seja qual for a escolha na janela Imprimir.',
   'printdef.untestedHint': 'Desligado por padrão: ainda não testado numa Kobra X. Desligado, a escolha do próprio OrcaSlicer também não é enviada.',
+  // 0.7.0
+  'fmt.hm': '{h} h {m} min',
+  'fmt.m': '{m} min',
+  'fmt.percent': '{value} %',
+  'fmt.listSep': ', ',
+  'fmt.pair': '{label}: {value}',
+  'unit.min': 'min',
 };

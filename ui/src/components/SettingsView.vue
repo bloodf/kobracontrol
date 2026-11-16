@@ -11,7 +11,8 @@ import CertFinder from './CertFinder.vue';
 import SpoolerHint from './SpoolerHint.vue';
 import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent } from '../app/store';
 import { config, form, changed, dirty, saving, save, discard } from '../app/settings';
-import { t, langPref, setLangPref, autoLocale } from '../core/i18n';
+import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
+import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
 import { fingerprintText } from '../core/logic';
@@ -25,7 +26,7 @@ const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form
 const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded')));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
-  { value: 'en', label: t('lang.en') }, { value: 'pt-BR', label: t('lang.pt-BR') }]);
+  ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);
 const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'conn-h', label: t('conn.title'), icon: linkIcon },
   { id: 'cert-h', label: t('cert.section'), icon: shieldCheck, ...(cert.value && !cert.value.found ? { state: 'warn' as const } : {}) },
@@ -38,7 +39,7 @@ const sections = computed<OuiSettingsSection[]>(() => [
 // The save bar names what is not saved yet.
 const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
   auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage' };
-const changedText = computed(() => changed.value.map(k => t(FIELD[k] as 'conn.host')).join(', '));
+const changedText = computed(() => fmt.list(changed.value.map(k => t(FIELD[k] as 'conn.host'))));
 const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
 // Enter in a text field saves, as the form's own button did.
 function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') { e.preventDefault(); void save(); } }

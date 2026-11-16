@@ -18,6 +18,8 @@ import ssl
 import threading
 import time
 
+from i18n import lazy, tr
+
 log = logging.getLogger(__name__)
 
 CONNECT, CONNACK, PUBLISH, SUBSCRIBE, SUBACK, PINGREQ, PINGRESP, DISCONNECT = 1, 2, 3, 8, 9, 12, 13, 14
@@ -27,7 +29,7 @@ POLL = 0.25
 EMPTY_READS_EOF = 5  # KX-Bridge: Windows TLS sockets can return b"" briefly without a real EOF
 
 
-CLOSED_IN_LOGIN = ("the printer closed the connection during the TLS/MQTT login; another app connected to the "
+CLOSED_IN_LOGIN = lazy("the printer closed the connection during the TLS/MQTT login; another app connected to the "
                    "printer may be the cause")
 
 
@@ -63,7 +65,7 @@ def decode_length(buf, start):
         if not b & 0x80:
             return value, start + i + 1
         mult *= 128
-    raise MqttError("protocol error: malformed remaining length")
+    raise MqttError(tr("protocol error: malformed remaining length"))
 
 
 def packet(head, body):
@@ -79,7 +81,7 @@ def split_packets(buf):
             break
         n, start = decoded
         if n > MAX_PACKET:
-            raise MqttError("protocol error: packet too large (%d bytes)" % n)
+            raise MqttError(tr("protocol error: packet too large (%d bytes)") % n)
         if len(buf) < start + n:
             break
         out.append((buf[0] >> 4, buf[0] & 0x0F, bytes(buf[start:start + n])))
@@ -113,7 +115,7 @@ def enable_tcp_keepalive(sock):
 def _s(value):
     raw = value.encode("utf-8") if isinstance(value, str) else value
     if len(raw) > 0xFFFF:
-        raise MqttError("MQTT string too long (%d bytes)" % len(raw))
+        raise MqttError(tr("MQTT string too long (%d bytes)") % len(raw))
     return len(raw).to_bytes(2, "big") + raw
 
 
@@ -149,11 +151,11 @@ class Client:
     # connection ---------------------------------------------------------------------------
     def connect(self):
         if self._closing:
-            raise MqttError("client is closed")
+            raise MqttError(tr("client is closed"))
         try:
             raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as e:
-            raise MqttError("no answer on the printer's MQTT port %s:%s (%s)" % (self.host, self.port, e)) from None
+            raise MqttError(tr("no answer on the printer's MQTT port %s:%s (%s)") % (self.host, self.port, e)) from None
         enable_tcp_keepalive(raw)
         try:
             sock = self.ssl_context.wrap_socket(raw) if self.ssl_context else raw
@@ -168,16 +170,16 @@ class Client:
             if isinstance(e, MqttError):
                 raise
             if isinstance(e, TimeoutError):
-                raise MqttError("the printer accepted the connection on %s:%s but did not answer the TLS/MQTT login "
-                                "within %g s" % (self.host, self.port, self.timeout)) from None
+                raise MqttError(tr("the printer accepted the connection on %s:%s but did not answer the TLS/MQTT login "
+                                "within %g s") % (self.host, self.port, self.timeout)) from None
             if isinstance(e, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, ConnectionAbortedError,
                               BrokenPipeError)):   # ConnectionAbortedError: Windows (WinError 10053)
-                raise MqttError(CLOSED_IN_LOGIN) from None
+                raise MqttError(tr(CLOSED_IN_LOGIN)) from None
             if isinstance(e, ssl.SSLError):
-                raise MqttError("TLS handshake with %s:%s failed (%s), most likely a certificate problem: check the Anycubic "
-                                "certificate in Settings" % (self.host, self.port, e)) from None
+                raise MqttError(tr("TLS handshake with %s:%s failed (%s), most likely a certificate problem: check the Anycubic "
+                                "certificate in Settings") % (self.host, self.port, e)) from None
             if isinstance(e, OSError):
-                raise MqttError("MQTT handshake with %s:%s failed (%s)" % (self.host, self.port, e)) from None
+                raise MqttError(tr("MQTT handshake with %s:%s failed (%s)") % (self.host, self.port, e)) from None
             raise
         # Short read timeout from now on: the reader holds the I/O lock across recv, and a TLS record that
         # stalls half-way would otherwise block every publish for the full timeout (KX-Bridge uses 0.2 s).
@@ -203,21 +205,21 @@ class Client:
             if packets:
                 break
             if time.monotonic() >= deadline:
-                raise MqttError("the printer did not answer the MQTT login on %s:%s within %g s"
+                raise MqttError(tr("the printer did not answer the MQTT login on %s:%s within %g s")
                                 % (self.host, self.port, self.timeout))
             data = sock.recv(65536)
             if not data:
-                raise MqttError(CLOSED_IN_LOGIN)
+                raise MqttError(tr(CLOSED_IN_LOGIN))
             self._buf += data
         ptype, _, body = packets[0]
         if ptype != CONNACK or len(body) < 2:
-            raise MqttError("protocol error: expected CONNACK")
+            raise MqttError(tr("protocol error: expected CONNACK"))
         code = body[1]
         if code in (4, 5):
-            raise MqttAuthError("the printer refused the MQTT login (code %d). The login comes from the "
-                                "printer itself; another app connected to the printer may be the cause" % code, code)
+            raise MqttAuthError(tr("the printer refused the MQTT login (code %d). The login comes from the "
+                                "printer itself; another app connected to the printer may be the cause") % code, code)
         if code:
-            raise MqttError("MQTT connection refused (code %d)" % code, code)
+            raise MqttError(tr("MQTT connection refused (code %d)") % code, code)
         # Anything after CONNACK goes back in front of the buffer for the reader thread.
         self._buf[:0] = b"".join(packet(t << 4 | f, b) for t, f, b in packets[1:])
 
@@ -229,11 +231,11 @@ class Client:
         try:
             self._send(packet(SUBSCRIBE << 4 | 2, pid.to_bytes(2, "big") + _s(topic) + b"\x00"))
             if not waiter[0].wait(self.timeout if timeout is None else timeout):
-                raise MqttError("no SUBACK for %s" % topic)
+                raise MqttError(tr("no SUBACK for %s") % topic)
         finally:
             self._acks.pop(pid, None)
         if waiter[1] is None or waiter[1] & 0x80:
-            raise MqttError("subscription to %s refused" % topic)
+            raise MqttError(tr("subscription to %s refused") % topic)
 
     def publish(self, topic, payload):
         data = payload.encode("utf-8") if isinstance(payload, str) else bytes(payload)
@@ -263,7 +265,7 @@ class Client:
 
     def _send(self, data):
         if not self.connected:
-            raise MqttError("not connected")
+            raise MqttError(tr("not connected"))
         try:
             with self._io:
                 self._sock.settimeout(self.timeout)  # writes may take the full timeout; reads may not
@@ -279,7 +281,7 @@ class Client:
                 self._sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-            raise MqttError("send failed (%s)" % e) from None
+            raise MqttError(tr("send failed (%s)") % e) from None
 
     # reader thread ------------------------------------------------------------------------
     def _run(self):
@@ -293,7 +295,7 @@ class Client:
                 if not data:
                     self._empty_reads += 1
                     if self._empty_reads >= EMPTY_READS_EOF:
-                        raise MqttError("connection closed by the printer")
+                        raise MqttError(tr("connection closed by the printer"))
                     continue
                 self._empty_reads = 0
                 self._last_in = time.monotonic()
@@ -303,10 +305,10 @@ class Client:
         except MqttError as e:
             reason = str(e)
         except (OSError, ValueError) as e:
-            reason = "connection lost (%s)" % e
+            reason = tr("connection lost (%s)") % e
         except Exception as e:  # never a silently dead reader: close and tell the owner
             log.exception("MQTT reader failed")
-            reason = "reader error (%s)" % e
+            reason = tr("reader error (%s)") % e
         finally:
             self._open = False
             try:
@@ -320,7 +322,7 @@ class Client:
     def _keepalive(self):
         now = time.monotonic()
         if now - self._last_in > self.keepalive * 1.5:
-            raise MqttError("keepalive timeout: the printer stopped answering")
+            raise MqttError(tr("keepalive timeout: the printer stopped answering"))
         if now - self._last_out >= self.keepalive / 2:
             self._send(packet(PINGREQ << 4, b""))
 

@@ -1,5 +1,5 @@
 // MOCK evidence: the built page in owned headless Chrome (CSP, scripted bridge), screenshots in light/dark,
-// en/pt-BR and several widths, with overflow and DOM measurements. Not a substitute for OrcaSlicer.
+// all five languages and several widths, with overflow and DOM measurements. Not a substitute for OrcaSlicer.
 //   OUT=<dir> PAGE=<page with icons> node tests/page/shots.mjs
 import { writeFile, mkdtemp, rm, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -112,15 +112,19 @@ try {
       ${STATE}
       const over = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
         .slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+      // Text cut inside its own box (a button, tab, chip or cell narrower than its words), which page overflow misses.
+      const clipped = [...document.querySelectorAll('button, [role=tab], th, td, label, .p-tag, .p-button-label, .oui-chip, .p-select-label')]
+        .filter(e => e.offsetParent && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible')
+        .slice(0, 8).map(e => e.tagName + '.' + String(e.className).slice(0, 30) + ' ' + JSON.stringify((e.textContent || '').trim().slice(0, 30)));
       const b = document.querySelector('.p-button'); const cs = b ? getComputedStyle(b) : null;
-      return { overflowX: document.documentElement.scrollWidth > innerWidth, scrollWidth: document.documentElement.scrollWidth, innerWidth, overflowing: over,
+      return { overflowX: document.documentElement.scrollWidth > innerWidth, clipped, scrollWidth: document.documentElement.scrollWidth, innerWidth, overflowing: over,
         dom: document.getElementsByTagName('*').length, lang: document.documentElement.lang, dark: document.documentElement.classList.contains('orca-dark'),
         bodyFont: getComputedStyle(document.body).fontSize, buttonRadius: cs && cs.borderRadius, buttonFont: cs && cs.fontSize,
         violations: __t.violations, errors: __t.errors, rejections: __t.rejections }; })()`);
     const name = `kobra-${scn}-${theme}-${lang}-${width}x${height}.png`;
     await writeFile(join(OUT, name), await p.screenshot());
     metrics.push({ name, ...m });
-    console.log(name, JSON.stringify({ overflowX: m.overflowX, overflowing: m.overflowing, dom: m.dom, lang: m.lang, dark: m.dark }));
+    console.log(name, JSON.stringify({ overflowX: m.overflowX, overflowing: m.overflowing, clipped: m.clipped, dom: m.dom, lang: m.lang, dark: m.dark }));
     await p.close();
   }
 } finally { await browser.close(); await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }

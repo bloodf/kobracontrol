@@ -3,8 +3,9 @@ slot. Every printer command still goes through kobracontrol's own service for th
 Spooler only supplies the list. Free of the `orca` module."""
 
 import peers
+from i18n import lazy, tr
 
-STOCK_CHANGED = "Spooler's stock list changed since this one was shown; nothing was written. Pick the spool again."
+STOCK_CHANGED = lazy("Spooler's stock list changed since this one was shown; nothing was written. Pick the spool again.")
 
 
 def _int(value):
@@ -13,11 +14,11 @@ def _int(value):
 
 def _assign_args(slot, spool_id, key):
     if not _int(slot) or slot < 0:
-        raise ValueError("no slot chosen")
+        raise ValueError(tr("no slot chosen"))
     if not _int(spool_id) or spool_id <= 0:
-        raise ValueError("no spool chosen")
+        raise ValueError(tr("no spool chosen"))
     if not isinstance(key, str) or not key:
-        raise ValueError(STOCK_CHANGED)
+        raise ValueError(tr(STOCK_CHANGED))
     return slot, spool_id, key
 
 
@@ -76,15 +77,15 @@ class StockMixin:
 
     def _current_row(self, key, spool_id):
         if self.peers is None:
-            raise ValueError(peers.STATE_TEXT["absent"])
+            raise ValueError(tr(peers.STATE_TEXT["absent"]))
         spooler, stock = self.peers.stock()
         if spooler["state"] != "active":
-            raise ValueError(spooler["text"])
+            raise ValueError(tr(spooler["text"]))
         if stock["key"] != key:
-            raise ValueError(STOCK_CHANGED)
+            raise ValueError(tr(STOCK_CHANGED))
         row = next((r for r in stock["rows"] if r["id"] == spool_id), None)
         if row is None:
-            raise ValueError("Spool #%d is no longer in Spooler's stock list; nothing was written." % spool_id)
+            raise ValueError(tr("Spool #%d is no longer in Spooler's stock list; nothing was written.") % spool_id)
         return spooler, row
 
     def cmd_stock_assign(self, slot, spool_id, key):
@@ -95,17 +96,17 @@ class StockMixin:
         target = self._ctx()[-1]
         spooler, row = self._current_row(key, spool_id)
         if self._origin_check(target, spooler["origin"]) is False:
-            raise ValueError("Kobra Control's Spoolman (%s) isn't the one Spooler uses (%s); nothing was written. "
-                             "Set the same Spoolman address in both." % (peers.normalize_origin(target.spoolman_url),
+            raise ValueError(tr("Kobra Control's Spoolman (%s) isn't the one Spooler uses (%s); nothing was written. "
+                             "Set the same Spoolman address in both.") % (peers.normalize_origin(target.spoolman_url),
                                                                          spooler["origin"]))
         self.cmd_spools()   # kobracontrol's own, fresh read of the spool it will write
         with self.lock:
             mine = next((s for s in self.spools if s["id"] == spool_id), None)
         if mine is None:
-            raise ValueError("Spool #%d isn't in the Spoolman Kobra Control reaches; nothing was written. "
-                             "Do both plugins use the same Spoolman?" % spool_id)
+            raise ValueError(tr("Spool #%d isn't in the Spoolman Kobra Control reaches; nothing was written. "
+                             "Do both plugins use the same Spoolman?") % spool_id)
         if row["filament_id"] is not None and mine.get("filament_id") != row["filament_id"]:
-            raise ValueError("Spool #%d holds another filament in the Spoolman Kobra Control reaches than in "
-                             "Spooler's list; nothing was written. Do both plugins use the same Spoolman?" % spool_id)
+            raise ValueError(tr("Spool #%d holds another filament in the Spoolman Kobra Control reaches than in "
+                             "Spooler's list; nothing was written. Do both plugins use the same Spoolman?") % spool_id)
         self._current_row(key, spool_id)   # Spooler didn't restart or change source during the read
         return self.cmd_bind_spool(slot, spool_id)

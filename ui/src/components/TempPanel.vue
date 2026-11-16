@@ -51,8 +51,8 @@ const setLight = (on: boolean) => run({ key: 'light', label: t('act.light'), cmd
 
       <div class="kc-line">
         <label for="fan" class="kc-line-label"><OuiIcon :icon="fan" :size="14" tile tone="sky" />{{ t('fan.label') }}</label>
-        <InputNumber :model-value="fanDraft" input-id="fan" :min="0" :max="100" :step="5" suffix=" %" :use-grouping="false" :allow-empty="true" size="small"
-                     :placeholder="reported && st ? `${fmt.number(st.fan_pct)} %` : '—'" :disabled="!!controlsOff" :input-style="{ width: '72px' }"
+        <InputNumber :model-value="fanDraft" input-id="fan" :min="0" :max="100" :step="5" :suffix="fmt.percent('')" :use-grouping="false" :allow-empty="true" size="small"
+                     :placeholder="reported && st ? fmt.percent(st.fan_pct) : '—'" :disabled="!!controlsOff" :input-style="{ width: '72px' }"
                      :pt="{ pcInputText: { root: { 'aria-describedby': controlsOff ? 'kc-why' : 'fan-why' } } }"
                      @input="e => (fanDraft = asNumber(e.value))" @update:model-value="v => (fanDraft = v)" @keydown.enter="setFan" />
         <Button severity="secondary" size="small" :label="t('fan.set')" :disabled="!!controlsOff || fanValue == null" :aria-describedby="offId" :loading="tracker.isBusy('fan')"

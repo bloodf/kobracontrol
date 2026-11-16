@@ -11,6 +11,7 @@ import zipfile
 import ace
 import connection
 import kobra
+from i18n import lazy, tr
 
 CONNECT_WAIT = 10.0             # s a print job waits for the session
 GCODE_MAX = 1024 ** 3           # BAMBU_NETWORK_ERR_PRINT_LP_FILE_OVER_SIZE: 1 GB
@@ -25,7 +26,7 @@ def remote_name(name):
     return base[:120] + ".gcode"
 
 
-DENIED_READ = ("OrcaSlicer did not let kobracontrol read the sliced file %s. Allow kobracontrol to read %s in "
+DENIED_READ = lazy("OrcaSlicer did not let kobracontrol read the sliced file %s. Allow kobracontrol to read %s in "
                "Plugins > Permissions, then print again.")
 
 
@@ -33,9 +34,9 @@ def _open_job_file(path):
     try:
         return open(path, "rb")
     except PermissionError:   # OrcaSlicer's audit hook: no read grant for this folder (never "not a zip")
-        raise kobra.KobraError(DENIED_READ % (path, os.path.join(os.path.dirname(path), "*")), code="denied") from None
+        raise kobra.KobraError(tr(DENIED_READ) % (path, os.path.join(os.path.dirname(path), "*")), code="denied") from None
     except OSError as e:
-        raise kobra.KobraError("cannot read the sliced file %s (%s)" % (path, e.strerror or e)) from None
+        raise kobra.KobraError(tr("cannot read the sliced file %s (%s)") % (path, e.strerror or e)) from None
 
 
 @contextlib.contextmanager
@@ -49,7 +50,7 @@ def plate_source(path, plate_index=1):
             raw.seek(0)
             size = os.fstat(raw.fileno()).st_size
             if size > GCODE_MAX:
-                raise kobra.KobraError("the G-code is larger than 1 GB")
+                raise kobra.KobraError(tr("the G-code is larger than 1 GB"))
             yield raw, size, {}
             return
         plate = int(plate_index) if str(plate_index).isdigit() and int(plate_index) > 0 else 1
@@ -57,9 +58,9 @@ def plate_source(path, plate_index=1):
             try:
                 info = z.getinfo("Metadata/plate_%d.gcode" % plate)
             except KeyError:
-                raise kobra.KobraError("the sliced file has no G-code for plate %d: slice it first" % plate) from None
+                raise kobra.KobraError(tr("the sliced file has no G-code for plate %d: slice it first") % plate) from None
             if info.file_size > GCODE_MAX:
-                raise kobra.KobraError("the G-code is larger than 1 GB")
+                raise kobra.KobraError(tr("the G-code is larger than 1 GB"))
             weights = _plate_weights(z, plate)
             with z.open(info) as member:
                 yield member, info.file_size, weights
@@ -113,7 +114,7 @@ class JobsMixin:
             conn.wait_connected(timeout)
         if not conn.connected or conn.printer is None:
             cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
-            raise cls(conn.error or "the printer at %s did not answer" % host)
+            raise cls(conn.error or tr("the printer at %s did not answer") % host)
         return conn
 
     def _upload(self, conn, filename, source, size, progress, cancelled):
@@ -122,7 +123,7 @@ class JobsMixin:
             conn.printer.query_info()
             upload_url = conn.view()["upload_url"]
         if not upload_url:
-            raise kobra.KobraError("the printer has not announced its upload address yet; try again")
+            raise kobra.KobraError(tr("the printer has not announced its upload address yet; try again"))
         conn.printer.upload(filename, source, upload_url, size=size, progress=progress, cancelled=cancelled)
 
     def send_file(self, host, path, name, plate_index=1, progress=None, cancelled=None):
@@ -146,7 +147,7 @@ class JobsMixin:
             stage and stage("upload")
             self._upload(conn, filename, source, size, progress, cancelled)
         if cancelled and cancelled():
-            raise kobra.Cancelled("print cancelled; the file stays on the printer")
+            raise kobra.Cancelled(tr("print cancelled; the file stays on the printer"))
         stage and stage("start")
         with conn.start_lock:   # the idle check and print/start of one job at a time (tab file prints too)
             mapping, used = self._job_mapping(conn, tray_ids, filaments)   # the slots may have changed meanwhile
@@ -161,16 +162,16 @@ class JobsMixin:
         tray is usable. With no tray chosen at all, the loaded slots are used in order (Kobralink's auto mapping)."""
         data = self._data(conn)
         if not data["connected"]:
-            raise kobra.KobraError(conn.error or "the printer is not connected")
+            raise kobra.KobraError(conn.error or tr("the printer is not connected"))
         if not data["can"]["print"]:
-            raise kobra.KobraError("the printer is %s; nothing was sent" % data["state"])
+            raise kobra.KobraError(tr("the printer is %s; nothing was sent") % tr(data["state"]))
         trays = [int(t) for t in tray_ids or []]
         if not any(t >= 0 for t in trays):
             loaded, _ = ace.select_loaded_slots_for_print(data["slots"], data["mode"])
             return ace.build_auto_ams_box_mapping(loaded, data["mode"]), {s["global_index"]: s["global_index"] for s in loaded}
         mapping, problems = ace.mapping_from_trays(trays, list(filaments or []), data["slots"], data["mode"])
         if problems:
-            raise kobra.KobraError("; ".join(problems) + "; nothing was sent")
+            raise kobra.KobraError("; ".join(problems) + tr("; nothing was sent"))
         used = {i: ace.slot_for_tray(t, data["slots"])["global_index"] for i, t in enumerate(trays) if t >= 0}
         return mapping, used
 

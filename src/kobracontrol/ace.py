@@ -56,6 +56,8 @@ ams_color [r,g,b,a], material_type}.
 import math
 from types import MappingProxyType
 
+from i18n import tr
+
 READY_STATUS = 5
 _WHITE = [255, 255, 255]
 
@@ -338,24 +340,23 @@ def mapping_from_trays(tray_ids, filaments, slots, mode):
     for i, tray in enumerate(tray_ids):
         if tray == -1:
             continue
-        label = f"filament {i + 1}"
         fil = filaments[i] if i < len(filaments) else None
         if fil is None:
-            problems.append(f"{label}: no filament description for tray {tray}")
+            problems.append(tr("filament %d: no filament description for tray %d") % (i + 1, tray))
             fil = {"colour": "#FFFFFF"}
         slot = slot_for_tray(tray, slots)
         if slot is None:
-            problems.append(f"{label}: tray {tray} does not exist")
+            problems.append(tr("filament %d: tray %d does not exist") % (i + 1, tray))
             continue
         if slot["status"] != READY_STATUS:
-            problems.append(f"{label}: tray {tray} is empty (slot status {slot['status']})")
+            problems.append(tr("filament %d: tray %d is empty (slot status %s)") % (i + 1, tray, slot["status"]))
             continue
         if not slot_usable_for_print(slot, mode):
-            problems.append(f"{label}: tray {tray} is not usable for print in {mode} mode")
+            problems.append(tr("filament %d: tray %d is not usable for print in %s mode") % (i + 1, tray, mode))
             continue
         color = _parse_hex(fil.get("colour"))
         if color is None:
-            problems.append(f"{label}: invalid colour {fil.get('colour')!r}, using white")
+            problems.append(tr("filament %d: invalid colour %r, using white") % (i + 1, fil.get("colour")))
             color = [255, 255, 255, 255]
         mapping.append(_entry(i, slot, mode, color, slot["type"] or fil.get("type") or "PLA"))
     return mapping, problems

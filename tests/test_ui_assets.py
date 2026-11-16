@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build  # noqa: E402
 
 UI = ROOT / "src" / "kobracontrol" / "ui"
-MAX_BUILT_BYTES = 400_000   # the wheel measures ~240 kB
+MAX_BUILT_BYTES = 520_000   # the wheel measures ~430 kB with its five languages
 
 
 class UiAssets(unittest.TestCase):

@@ -60,8 +60,8 @@ const stop = () => run({ key: `dry:${props.unit.id}`, label: t('act.dryStop', { 
         <InputNumber :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true" size="small"
                      :placeholder="`${TEMP.min}–${TEMP.max} °C`" :input-style="{ width: '84px' }" :aria-label="t('dry.temp')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
                      @input="e => (temp = asNumber(e.value))" @update:model-value="v => (temp = v)" />
-        <InputNumber :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" suffix=" min" :allow-empty="true" size="small"
-                     :placeholder="`${MINUTES.min}–${MINUTES.max} min`" :input-style="{ width: '96px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
+        <InputNumber :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" :suffix="' ' + t('unit.min')" :allow-empty="true" size="small"
+                     :placeholder="`${MINUTES.min}–${MINUTES.max} ${t('unit.min')}`" :input-style="{ width: '96px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
                      @input="e => (minutes = asNumber(e.value))" @update:model-value="v => (minutes = v)" />
         <Button severity="secondary" size="small" :label="t('dry.start')" :aria-label="t('dry.startLabel', { ace: label })" :disabled="!!startWhy" :aria-describedby="offId ?? `dry-why-${unit.id}`"
                 :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-start:${unit.id}`" :data-dry-start="unit.id" @click="start">

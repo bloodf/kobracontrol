@@ -39,6 +39,7 @@ from jobs import CONNECT_WAIT, PRINT_OPTIONS, JobsMixin, plate_source, remote_na
 from files import FilesMixin
 from stockview import StockMixin
 from usage import UsageMixin
+from i18n import lazy, tr
 
 LEASE_SECONDS = 6.0
 STATUS_EVERY = 1.0
@@ -46,10 +47,10 @@ URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
 BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device")
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
-BUSY = "%s is already running; try again when it ends"
-STALE = "the selected printer changed; nothing was sent to it"
-NO_PRINTER = "no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address"
-NOTHING_LOADED = "no filament is loaded in the print head, so there is nothing to unload"
+BUSY = lazy("%s is already running; try again when it ends")
+STALE = lazy("the selected printer changed; nothing was sent to it")
+NO_PRINTER = lazy("no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address")
+NOTHING_LOADED = lazy("no filament is loaded in the print head, so there is nothing to unload")
 # The Kobra X machine profile (OrcaSlicer resources/profiles/Anycubic/machine/Anycubic Kobra X 0.4 nozzle.json)
 # sets no temperature maxima; these are Kobralink's limits (packages/shared/src/control.ts setTemperature).
 NOZZLE_MAX, BED_MAX = 320, 120
@@ -209,7 +210,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         address came from and already checks the certificate pin."""
         with self.lock:
             if self.closed:
-                raise kobra.KobraError("Kobra Control is shutting down")
+                raise kobra.KobraError(tr("Kobra Control is shutting down"))
             conn = self.connections.get(host)
             fresh = conn is None
             if fresh:
@@ -238,8 +239,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if impostor:
             conn.mismatch = impostor
             conn._stop.set()
-            conn._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
-                       "knows. It was not used." % host, False)
+            conn._fail(tr("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used.") % host, False)
             _background(conn.stop, "impostor-stop")
             _background(lambda: self._refuse_impostor(conn), "impostor")
         return conn
@@ -331,7 +332,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         with self.lock:
             current, target = self.generation, self.target
         if gen is not None and gen != current:
-            self.publish({"type": "reply", "id": request_id, "error": STALE})
+            self.publish({"type": "reply", "id": request_id, "error": tr(STALE)})
             return
         conn = self.connections.get(target.host) if target else None
         job = (request_id, command, args, (current, conn, target, command in URGENT))
@@ -340,7 +341,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 busy = command in self._busy
                 self._busy.add(command)
             if busy:
-                self.publish({"type": "reply", "id": request_id, "error": BUSY % command})
+                self.publish({"type": "reply", "id": request_id, "error": tr(BUSY) % command})
                 return
             threading.Thread(target=self._run_bounded, args=job, name="kobracontrol-" + command, daemon=True).start()
         elif command in DEDICATED:
@@ -386,11 +387,11 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _run(self, request_id, command, args, ctx):
         handler = getattr(self, "cmd_" + str(command), None) if re.fullmatch(r"\w+", str(command)) else None
         if handler is None:
-            self.publish({"type": "reply", "id": request_id, "error": "unknown command %s" % command})
+            self.publish({"type": "reply", "id": request_id, "error": tr("unknown command %s") % command})
             return
         gen, _, _, pinned = ctx
         if not pinned and not self._current(gen):
-            self.publish({"type": "reply", "id": request_id, "error": STALE})
+            self.publish({"type": "reply", "id": request_id, "error": tr(STALE)})
             return
         try:
             with self._bound(ctx):
@@ -409,7 +410,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.publish(reply)
         except Exception as e:  # never kill the worker; details go to the log only
             self.log("kobracontrol: %s failed: %s\n%s" % (command, e, traceback.format_exc()))
-            self.publish({"type": "reply", "id": request_id, "error": "%s failed: %s" % (command, e)})
+            self.publish({"type": "reply", "id": request_id, "error": tr("%s failed: %s") % (command, e)})
 
     def call(self, host, command, **args):
         """Run cmd_<command> for printer `host` on this thread (the printer agent's commands)."""
@@ -439,9 +440,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         else:
             gen, conn, target, pinned = ctx
             if not pinned and not self._current(gen):
-                raise kobra.KobraError(STALE)
+                raise kobra.KobraError(tr(STALE))
         if conn is None or target is None:
-            raise kobra.KobraError(NO_PRINTER)
+            raise kobra.KobraError(tr(NO_PRINTER))
         return gen, conn, target
 
     def _current(self, gen):
@@ -459,7 +460,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         conn = self._conn()
         printer = conn.printer
         if not conn.connected or printer is None:
-            raise kobra.KobraError(conn.error or "the printer is not connected yet")
+            raise kobra.KobraError(conn.error or tr("the printer is not connected yet"))
         return printer
 
     def _data(self, conn=None):
@@ -476,9 +477,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _allowed(self, flag, what):
         data = self._data()
         if not data["connected"]:
-            raise kobra.KobraError(self._conn().error or "the printer is not connected")
+            raise kobra.KobraError(self._conn().error or tr("the printer is not connected"))
         if not data["can"][flag]:
-            raise kobra.KobraError("%s is not possible while the printer is %s" % (what, data["state"]))
+            raise kobra.KobraError(tr("%s is not possible while the printer is %s") % (what, tr(data["state"])))
         return data
 
     # ------------------------------------------------------------------ monitor and tracker
@@ -509,7 +510,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if self._current(gen):
             self.publish({"type": "status", "data": data, "gen": gen})
             if not data["connected"]:
-                self.publish({"type": "offline", "error": conn.error or "connecting to %s" % target.host,
+                self.publish({"type": "offline", "error": conn.error or tr("connecting to %s") % target.host,
                               "retry_at": conn.next_try, **({"no_certificate": True} if conn.no_certificate else {})})
 
     def _camera_url(self):
@@ -616,10 +617,10 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 pick = sm.best_spool(slots[g], spools, exclude=taken)
                 if pick:
                     self.cmd_bind(g, pick["id"])
-                    self._notice("S%d now uses Spoolman spool #%d (%s %s)" % (g + 1, pick["id"], pick["vendor"],
+                    self._notice(tr("S%d now uses Spoolman spool #%d (%s %s)") % (g + 1, pick["id"], pick["vendor"],
                                                                                 pick["name"]), gen)
         except (kobra.KobraError, sm.SpoolmanError, ValueError) as e:
-            self._notice("Spoolman: %s" % e, gen)
+            self._notice(tr("Spoolman: %s") % e, gen)
 
     # ------------------------------------------------------------------ commands
 
@@ -636,7 +637,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self._start_locate(gen)
         target = self.wait_located(CONNECT_WAIT + 2 * (locate.SEARCH_SECONDS + locate.SEND_GAP) + 2 * locate.PROBE_TIMEOUT)
         if not self._current(gen):
-            raise kobra.KobraError(STALE)
+            raise kobra.KobraError(tr(STALE))
         conn = self.connection(target.host)
         if not conn.connected:
             failures = conn.failures
@@ -650,10 +651,10 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if getattr(offer, "candidates", None):
                 # The known printer is down and another Kobra X answered: the reply carries that offer, so the
                 # page keeps showing "Use it?" while the known address keeps being retried.
-                raise locate.NotFound("%s %s" % (conn.error or "The known printer does not answer.", offer),
+                raise locate.NotFound("%s %s" % (conn.error or tr("The known printer does not answer."), offer),
                                       offer.candidates, rejected=offer.rejected)
             cls = connection.NoCertificate if conn.no_certificate else kobra.KobraError
-            raise cls(conn.error or "the printer at %s did not answer yet" % target.host)
+            raise cls(conn.error or tr("the printer at %s did not answer yet") % target.host)
         view = conn.view()
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
                 "firmware": view["firmware"], "limits": LIMITS, "source": target.source,
@@ -676,23 +677,23 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return {"confirmed": True}
 
     def cmd_pause(self):
-        self._allowed("pause", "pausing")
-        return self._answer(self._printer().pause_print(self._task_id()), "the pause", True)
+        self._allowed("pause", tr("pausing"))
+        return self._answer(self._printer().pause_print(self._task_id()), tr("the pause"), True)
 
     def cmd_resume(self):
-        self._allowed("resume", "resuming")
-        return self._answer(self._printer().resume_print(self._task_id()), "the resume", True)   # reply action not captured
+        self._allowed("resume", tr("resuming"))
+        return self._answer(self._printer().resume_print(self._task_id()), tr("the resume"), True)   # reply action not captured
 
     def cmd_stop(self):
-        self._allowed("stop", "stopping")
-        return self._answer(self._printer().stop_print(self._task_id()), "the stop", True)
+        self._allowed("stop", tr("stopping"))
+        return self._answer(self._printer().stop_print(self._task_id()), tr("the stop"), True)
 
     def cmd_set_temp(self, nozzle=None, bed=None):
-        data = self._allowed("heat", "heating")
+        data = self._allowed("heat", tr("heating"))
         nozzle = None if nozzle is None else max(0, min(float(nozzle), NOZZLE_MAX))
         bed = None if bed is None else max(0, min(float(bed), BED_MAX))
         if nozzle is None and bed is None:
-            raise ValueError("no temperature given")
+            raise ValueError(tr("no temperature given"))
         if data["state"] == "printing":   # only a running print takes print/update; paused uses tempature/set
             # (Kobralink printer-bridge.ts:1162, KX-Bridge handle_api_temperature)
             sent = self._printer().set_printing_temperature(data["task_id"] or "-1", nozzle, bed)
@@ -723,7 +724,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         """Ask the printer for its network address, its print counters and its Print Assist switches (read only),
         only while it is idle: untested messages are never sent during a print. The answers arrive as reports; a
         firmware that does not answer leaves those fields empty."""
-        self._allowed("print", "reading the printer's details")
+        self._allowed("print", tr("reading the printer's details"))
         printer = self._printer()
         sent = [printer.query_net(), printer.query_statistics()]
         assist = printer.query_properties()
@@ -732,80 +733,80 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def cmd_assist(self, option, on):
         """Turn one Print Assist switch on or off (idle printer only). option: "autoFeed" (every ACE's auto-feed,
         as Anycubic Slicer Next does) or one of ASSIST, which the printer must have reported as supported."""
-        data = self._allowed("print", "changing Print Assist")
+        data = self._allowed("print", tr("changing Print Assist"))
         self._not_reading()
         if option == "autoFeed":
             ids = [u["id"] for u in data["ace_units"]]
             if not ids:
-                raise kobra.KobraError("no ACE is connected")
+                raise kobra.KobraError(tr("no ACE is connected"))
             printer = self._printer()
             return self._sent(all([printer.set_auto_feed(i, bool(on)) for i in ids]))
         number = ASSIST.get(option)
         if number is None:
-            raise ValueError("unknown Print Assist option %r" % (option,))
+            raise ValueError(tr("unknown Print Assist option %r") % (option,))
         if number not in (data.get("assist") or {}):
-            raise kobra.KobraError("the printer did not report this Print Assist option; nothing was sent")
+            raise kobra.KobraError(tr("the printer did not report this Print Assist option; nothing was sent"))
         return self._answer(self._printer().set_assist([{"option": number, "value": 1 if on else 0}]),
-                            "the Print Assist change", True)
+                            tr("the Print Assist change"), True)
 
     def _not_reading(self):
         """A write waits until the read-only device queries are done: their answers share the report topics."""
         with self.lock:
             busy = "device" in self._busy
         if busy:
-            raise kobra.KobraError("the printer's details are still being read; nothing was sent, try again in a moment")
+            raise kobra.KobraError(tr("the printer's details are still being read; nothing was sent, try again in a moment"))
 
     def cmd_rename(self, name):
         """The printer's own name (info/setPrinterName), on an idle printer."""
         name = " ".join(str(name or "").split())
         if not name or len(name.encode("utf-8")) > NAME_MAX or any(ord(c) < 32 or c in NAME_FORBIDDEN for c in name):
-            raise ValueError("the name is 1-%d bytes (UTF-8), without quotes, backslashes or angle brackets" % NAME_MAX)
-        self._allowed("print", "renaming the printer")
+            raise ValueError(tr("the name is 1-%d bytes (UTF-8), without quotes, backslashes or angle brackets") % NAME_MAX)
+        self._allowed("print", tr("renaming the printer"))
         self._not_reading()
         printer = self._printer()
-        result = self._answer(printer.set_printer_name(name), "the new name", True)
+        result = self._answer(printer.set_printer_name(name), tr("the new name"), True)
         printer.query_info()
         return {**result, "name": name}
 
     def cmd_set_speed(self, mode):
         mode = int(mode)
         if mode not in (1, 2, 3):   # the Kobra's three modes (Kobralink controls-card.tsx); no reference sends 4
-            raise ValueError("speed mode is 1 (quiet) to 3 (sport)")
+            raise ValueError(tr("speed mode is 1 (quiet) to 3 (sport)"))
         data = self._data()
         if data["state"] not in ("printing", "paused"):
-            raise kobra.KobraError("the speed mode applies to a running print")
+            raise kobra.KobraError(tr("the speed mode applies to a running print"))
         return self._sent(self._printer().set_print_speed_mode(data["task_id"] or "-1", mode))
 
     def _sent(self, ok):
         if not ok:
-            raise kobra.KobraError("the printer connection dropped; nothing was sent")
+            raise kobra.KobraError(tr("the printer connection dropped; nothing was sent"))
         return True
 
     def cmd_move(self, axis, distance):
         if axis not in AXIS:
-            raise ValueError("axis is x, y or z")
+            raise ValueError(tr("axis is x, y or z"))
         distance = float(distance)
         if not distance or distance != distance:
-            raise ValueError("no distance given")
+            raise ValueError(tr("no distance given"))
         distance = max(-MOVE_MAX, min(MOVE_MAX, distance))   # one move is never longer than MOVE_MAX
-        self._allowed("move", "moving")
-        return self._answer(self._printer().move_axis(AXIS[axis], 1 if distance > 0 else 0, abs(distance)), "the move", True)
+        self._allowed("move", tr("moving"))
+        return self._answer(self._printer().move_axis(AXIS[axis], 1 if distance > 0 else 0, abs(distance)), tr("the move"), True)
 
     def cmd_home(self, axes="xyz"):
         if axes not in HOME:
-            raise ValueError("home xyz, xy or z")
-        self._allowed("move", "homing")
-        return self._answer(self._printer().move_axis(HOME[axes], 2, 0), "homing", True)   # ~37 s; state "busy"
+            raise ValueError(tr("home xyz, xy or z"))
+        self._allowed("move", tr("homing"))
+        return self._answer(self._printer().move_axis(HOME[axes], 2, 0), tr("homing"), True)   # ~37 s; state "busy"
 
     def cmd_motors_off(self):
-        self._allowed("move", "turning the motors off")
+        self._allowed("move", tr("turning the motors off"))
         return self._sent(self._printer().disable_steppers())
 
     def _running_objects(self):
         """(view, object names of the running file), asked of the printer now (file/fileDetails, read-only)."""
         data = self._data()
         if data["state"] not in ("printing", "paused") or not data["filename"]:
-            raise kobra.KobraError("no print is running")
+            raise kobra.KobraError(tr("no print is running"))
         raw = self._printer().file_details(data["filename"]).get("objects_skip_parts")
         names = [str(o.get("name") if isinstance(o, dict) else o) for o in raw if o not in (None, "")] \
             if isinstance(raw, list) else []
@@ -817,44 +818,44 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def cmd_skip_objects(self, names):
         if not isinstance(names, list) or not names or not all(isinstance(n, str) and n for n in names):
-            raise ValueError("no objects chosen")
+            raise ValueError(tr("no objects chosen"))
         data, objects = self._running_objects()
         unknown = [n for n in names if n not in objects]
         if unknown:
-            raise ValueError("not in %s: %s; nothing was skipped" % (data["filename"], ", ".join(unknown)))
-        return self._answer(self._printer().skip_objects(names), "the skip")
+            raise ValueError(tr("not in %s: %s; nothing was skipped") % (data["filename"], ", ".join(unknown)))
+        return self._answer(self._printer().skip_objects(names), tr("the skip"))
 
     # slots and ACE -----------------------------------------------------------------------------------
 
     def _slot(self, data, slot):
         if not isinstance(slot, int) or isinstance(slot, bool):
-            raise ValueError("no slot chosen")
+            raise ValueError(tr("no slot chosen"))
         found = next((s for s in data["slots"] if s["global_index"] == slot), None)
         if found is None:
-            raise ValueError("slot %d does not exist" % (slot + 1))
+            raise ValueError(tr("slot %d does not exist") % (slot + 1))
         return found
 
     def cmd_slot_set(self, slot, type, colour):
-        data = self._allowed("feed", "editing a slot")
+        data = self._allowed("feed", tr("editing a slot"))
         found = self._slot(data, slot)
         material = str(type or "").strip().upper()
         if not re.fullmatch(r"[A-Z0-9+ _-]{1,20}", material):
-            raise ValueError("material is 1-20 letters, digits, '+', '-'")
+            raise ValueError(tr("material is 1-20 letters, digits, '+', '-'"))
         m = re.fullmatch(r"#?([0-9A-Fa-f]{6})", str(colour or ""))
         if not m:
-            raise ValueError("colour is #RRGGBB")
+            raise ValueError(tr("colour is #RRGGBB"))
         rgb = [int(m.group(1)[i:i + 2], 16) for i in (0, 2, 4)]
         return self._sent(self._printer().set_ams_slot_info(found["box_id"], found["index"], material, rgb))
 
     def _feed(self, slot, kind):
-        data = self._allowed("feed", "loading filament" if kind == 1 else "unloading filament")
+        data = self._allowed("feed", tr("loading filament") if kind == 1 else tr("unloading filament"))
         if kind == 2 and data["loaded_slot"] >= 0:   # Kobralink: retract unloads what is loaded
             slot = data["loaded_slot"]
         elif kind == 2 and isinstance(slot, int) and slot < 0:   # "unload" without a slot and nothing loaded
-            raise kobra.KobraError(NOTHING_LOADED)
+            raise kobra.KobraError(tr(NOTHING_LOADED))
         found = self._slot(data, slot)
         if kind == 1 and found["status"] != 5:
-            raise kobra.KobraError("slot %d is empty" % (slot + 1))
+            raise kobra.KobraError(tr("slot %d is empty") % (slot + 1))
         return self._sent(self._printer().feed_filament(found["box_id"], found["index"], kind))
 
     def cmd_slot_feed(self, slot):
@@ -867,7 +868,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         ids = [u["id"] for u in data["ace_units"]]
         aces = aces if isinstance(aces, list) else [aces]
         if not aces or any(a not in ids for a in aces):
-            raise ValueError("no such ACE unit")
+            raise ValueError(tr("no such ACE unit"))
         return aces
 
     def cmd_auto_feed(self, ace, on):
@@ -875,7 +876,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return self._sent(self._printer().set_auto_feed(self._aces(data, [ace])[0], bool(on)))
 
     def cmd_dry_start(self, aces, temp, minutes):
-        data = self._allowed("heat", "drying")
+        data = self._allowed("heat", tr("drying"))
         temp = int(max(DRY_TEMP[0], min(DRY_TEMP[1], float(temp))))
         minutes = int(max(DRY_MINUTES[0], min(DRY_MINUTES[1], float(minutes))))
         payload = ace.set_dry_payload(self._aces(data, aces), temp, minutes)   # minutes, as the printer counts
@@ -902,7 +903,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return self._data()
 
     def _require_idle(self):
-        return self._allowed("print", "starting a print")
+        return self._allowed("print", tr("starting a print"))
 
     # stock --------------------------------------------------------------------------------------------------
 
@@ -947,21 +948,21 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         spools = [sm.spool_view(s) for s in self._spoolman(target).spools()]
         with self.lock:
             if gen is not None and gen != self.generation:
-                raise kobra.KobraError(STALE)
+                raise kobra.KobraError(tr(STALE))
             self.spools, self.bindings = spools, sm.bindings_from_locations(spools, target.name)
             return {"spools": spools, "bindings": {str(k): v for k, v in self.bindings.items()}}
 
     def cmd_bind(self, slot, spool_id):
         """Link a spool to a slot: its Spoolman location becomes "<printer name> S<n>" (the printer is not written)."""
         if not isinstance(slot, int) or isinstance(slot, bool) or slot < 0:
-            raise ValueError("no slot chosen")
+            raise ValueError(tr("no slot chosen"))
         if not isinstance(spool_id, int) or isinstance(spool_id, bool) or spool_id <= 0:
-            raise ValueError("no spool chosen")
+            raise ValueError(tr("no spool chosen"))
         gen, _, target = self._ctx()
         if not any(s["id"] == spool_id for s in self.spools):
             self.cmd_spools()
         if not any(s["id"] == spool_id for s in self.spools):
-            raise ValueError("spool #%d not found in Spoolman" % spool_id)
+            raise ValueError(tr("spool #%d not found in Spoolman") % spool_id)
         smc = self._spoolman(target)
         with self.lock:
             previous = self.bindings.get(slot)

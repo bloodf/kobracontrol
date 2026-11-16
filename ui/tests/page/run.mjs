@@ -9,6 +9,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch, MOCK_HOST, HELPERS, preparePage } from './cdp.mjs';
+import { es } from '../../src/core/locales/es.ts';
+import { de } from '../../src/core/locales/de.ts';
+import { zhCN } from '../../src/core/locales/zh-CN.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../../..');
@@ -1455,6 +1458,55 @@ test('filament use: recently checked entries show without opening Review, and wi
   assert(text(byTest('usage-recent')).includes('benchy.gcode') && text(byTest('usage-recent')).includes('ACE 1 · Slot 2'), 'entry listed: ' + text(byTest('usage-recent')));
 `);
 
+// Spanish, German and Simplified Chinese: the page follows OrcaSlicer's code (es_ES, de_DE, zh_CN, zh_TW), the main
+// surfaces and a confirmation read in that language, and Settings can switch to another one by its native name.
+for (const [lang, host, D] of [['es', 'es_ES', es], ['de', 'de_DE', de], ['zh-CN', 'zh_CN', zhCN], ['zh-CN', 'zh_TW', zhCN]]) {
+  const T = JSON.stringify(D);
+  test(`${lang} (host ${host}): the page follows the host language; tabs, state, slots, buttons and the stop dialog are translated`, `
+const D = ${T};
+await ready(VIEW());
+eq(document.documentElement.lang, '${lang}', 'html lang');
+eq(qa('[data-tab]').map(text), [D['nav.dash'], D['nav.files'], D['nav.settings']], 'tabs');
+eq(statusText(), D['status.state.idle'], 'state');
+eq(text(byTest('link')), D['link.connected'], 'pill');
+eq(qa('.ace-g').map(text), [D['ace.head'], 'ACE 1'], 'groups');
+assert(text(q('[data-slot="3"]')).includes(D['slot.loadedHere']), 'slot state: ' + text(q('[data-slot="3"]')));
+await post({type: 'status', data: PRINTING()});
+eq(text(q('[data-test="pause"]')), D['act.pause'], 'pause button');
+await click(q('[data-test="stop"]'));
+assert(dialogText().includes(D['confirm.stop.title']) && dialogText().includes('Bench Kobra'), 'stop dialog: ' + dialogText()); await no();
+`, { lang: host });
+}
+for (const [lang, D, name] of [['es', es, 'Español'], ['de', de, 'Deutsch'], ['zh-CN', zhCN, '简体中文']]) {
+  test(`${lang}: chosen in Settings over an English OrcaSlicer, posted and applied`, `
+const D = ${JSON.stringify({ dash: D['nav.dash'], fr: D['fr.cert.title'] })};
+await ready(VIEW());
+await tab('settings');
+await pick(byTest('lang'), '${name}');
+eq(last('ui_language').value, '${lang}', 'choice posted');
+eq(text(q('[data-tab="dash"]')), D.dash, 'page switched');
+eq(document.documentElement.lang, '${lang}', 'html lang');
+`);
+  test(`${lang}: kept as the plugin's saved choice; first-run certificate state translated`, `
+const D = ${JSON.stringify({ fr: D['fr.cert.title'], find: D['cert.find'] })};
+await until(() => last('hello'));
+await fail(last('hello'), 'x', {no_certificate: true});
+assert(text(byTest('first-run-cert')).includes(D.fr) && text(byTest('find-cert')).includes(D.find), 'cert: ' + text(byTest('first-run-cert')));
+`, { lang: 'en', pref: lang });
+}
+for (const lang of ['en', 'pt-BR', 'es', 'de', 'zh_CN']) {
+  test(`files (${lang}): Print and Delete fit inside the actions column`, `
+await ready(VIEW());
+await tab('files');
+await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]});
+await until(() => q('[data-delete]'), 'listed');
+const cell = q('[data-delete]').closest('td').getBoundingClientRect();
+for (const b of [q('[data-print]'), q('[data-delete]')]) {
+  const r = b.getBoundingClientRect();
+  assert(r.left >= cell.left - 0.5 && r.right <= cell.right + 0.5, 'clipped: ' + JSON.stringify([r.left, r.right, cell.left, cell.right]));
+}
+`, { lang });
+}
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');

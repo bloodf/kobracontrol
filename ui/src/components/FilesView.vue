@@ -181,7 +181,7 @@ async function del(name: string) {
           <p class="oui-label">{{ t('files.mat.title') }}</p>
           <ul>
             <li v-for="m in materials" :key="m.paint_index" :data-mat="m.paint_index" :data-check="m.check">
-              <OuiSwatch :color="m.colour || null" /><span>{{ t('files.mat.name', { n: m.paint_index + 1 }) }}: {{ m.material || t('slot.noType') }} · {{ fmt.grams(m.grams) }}</span>
+              <OuiSwatch :color="m.colour || null" /><span>{{ fmt.pair(t('files.mat.name', { n: m.paint_index + 1 }), m.material || t('slot.noType')) }} · {{ fmt.grams(m.grams) }}</span>
               <span class="oui-muted" aria-hidden="true">→</span>
               <OuiSwatch :color="m.slot_colour || null" /><span>{{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template></span>
             </li>
@@ -218,7 +218,7 @@ async function del(name: string) {
 .fv-bar { border-bottom: 1px solid var(--oui-border); }
 .fv-q { width: 240px; max-width: 100%; }
 .fv-table { table-layout: fixed; min-width: 520px; }
-.fv-size { width: 96px; } .fv-date { width: 150px; } .fv-act { width: 132px; }
+.fv-size { width: 96px; } .fv-date { width: 150px; } .fv-act { width: 160px; }   /* Print + Delete: fits "Imprimir" (pt-BR, es), "Drucken" */
 .fv-name { display: inline-flex; align-items: center; gap: var(--oui-s2); min-width: 0; overflow-wrap: anywhere; }
 .fv-acts { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--oui-s1); white-space: nowrap; }
 .fv-del { margin-inline-start: var(--oui-s3); }

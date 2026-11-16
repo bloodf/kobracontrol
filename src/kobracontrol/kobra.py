@@ -92,6 +92,7 @@ from dataclasses import dataclass
 
 import aes
 import mqtt
+from i18n import tr
 
 log = logging.getLogger(__name__)
 UPLOAD_CHUNK = 256 * 1024
@@ -166,13 +167,13 @@ def succeeded(reply):
 def check_reply(reply, what):
     """`reply` when it succeeded, else the KobraError a caller can show (what: "the pause", ...)."""
     if reply is None:
-        raise KobraError("the printer did not answer %s" % what, code="no_answer")
+        raise KobraError(tr("the printer did not answer %s") % what, code="no_answer")
     if is_ack_only(reply):
-        raise NoResult("the printer received %s but reported no result" % what)
+        raise NoResult(tr("the printer received %s but reported no result") % what)
     if not succeeded(reply):
         code = reply.get("code")
         detail = _str(reply.get("msg")) or json.dumps(reply.get("data"))
-        raise KobraError("the printer refused %s (code %s): %s" % (what, "?" if code is None else code, detail),
+        raise KobraError(tr("the printer refused %s (code %s): %s") % (what, "?" if code is None else code, detail),
                          code=code)
     return reply
 
@@ -201,15 +202,15 @@ class Credentials:
 # redirects: a 3xx is just a non-200 answer.
 def _network_error(e, host, what):
     if isinstance(e, PermissionError):
-        return KobraError("OrcaSlicer denied network access to %s (grant it in the plugin's permissions)" % host,
+        return KobraError(tr("OrcaSlicer denied network access to %s (grant it in the plugin's permissions)") % host,
                           code="denied")
-    return KobraError("printer not reachable at %s for %s (%s)" % (host, what, e), code="unreachable")
+    return KobraError(tr("printer not reachable at %s for %s (%s)") % (host, what, e), code="unreachable")
 
 
 def _read_capped(resp, what):
     body = resp.read(MAX_HTTP_BODY + 1)
     if len(body) > MAX_HTTP_BODY:
-        raise KobraError("answer from %s too large" % what)
+        raise KobraError(tr("answer from %s too large") % what)
     return body
 
 
@@ -227,7 +228,7 @@ def _http_json(ip, port, path, timeout, what, post=False):
         conn.request("POST" if post else "GET", path, body=b"" if post else None, headers={"Connection": "close"})
         resp = conn.getresponse()
         if resp.status != 200:
-            raise KobraError("%s answered HTTP %d" % (what, resp.status))
+            raise KobraError(tr("%s answered HTTP %d") % (what, resp.status))
         body = _read_capped(resp, what)
     except (OSError, http.client.HTTPException) as e:
         raise _network_error(e, "%s:%d" % (ip, port), what) from None
@@ -235,7 +236,7 @@ def _http_json(ip, port, path, timeout, what, post=False):
         conn.close()
     result = _loads(body)
     if result is None:
-        raise KobraError("bad answer from %s (not JSON)" % what)
+        raise KobraError(tr("bad answer from %s (not JSON)") % what)
     return result
 
 
@@ -243,7 +244,7 @@ def fetch_credentials(ip, port=18910, timeout=10):
     info = _http_json(ip, port, "/info", timeout, "/info")
     token = info.get("token") if isinstance(info, dict) else None
     if not isinstance(token, str) or len(token) < 32:
-        raise KobraError("/info gave no token: is LAN mode enabled on the printer?")
+        raise KobraError(tr("/info gave no token: is LAN mode enabled on the printer?"))
     ts = str(int(time.time() * 1000))
     nonce = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(6))
     sign = _md5(_md5(token[:16]) + ts + nonce)
@@ -251,16 +252,16 @@ def fetch_credentials(ip, port=18910, timeout=10):
     ctrl = _http_json(ip, port, "/ctrl?" + query, timeout, "/ctrl", post=True)
     data = ctrl.get("data") if isinstance(ctrl, dict) else None
     if not (isinstance(data, dict) and isinstance(data.get("info"), str) and isinstance(data.get("token"), str)):
-        raise KobraError("unexpected /ctrl answer from the printer")
+        raise KobraError(tr("unexpected /ctrl answer from the printer"))
     try:  # AES-128: KX-Bridge's notes say AES-256, but both use the 16-byte key token[16:32]
         plain = aes.decrypt_cbc(token[16:32].encode(), data["token"].encode(), base64.b64decode(data["info"]))
     except ValueError:
         plain = b""
     result = _loads(plain)
     if not isinstance(result, dict):
-        raise KobraError("could not decrypt the printer credentials")
+        raise KobraError(tr("could not decrypt the printer credentials"))
     if result.get("error"):
-        raise KobraError("printer refused LAN access: %s" % result["error"])
+        raise KobraError(tr("printer refused LAN access: %s") % result["error"])
     # The decrypted "ip" is ignored: the printer must not choose where we connect (both references use it).
     return Credentials(ip, str(result.get("username", "")), str(result.get("password", "")),
                        str(result.get("deviceId", "")), str(result.get("modeId") or "20030"),
@@ -344,7 +345,7 @@ class Printer:
             client.subscribe("anycubic/anycubicCloud/v1/printer/public/%s/%s/#" % (c.mode_id, c.device_id))
         except mqtt.MqttError as e:
             client.close()
-            raise KobraError("MQTT %s:%d: %s" % (c.ip, self.mqtt_port, e), code=e.code) from None
+            raise KobraError(tr("MQTT %s:%d: %s") % (c.ip, self.mqtt_port, e), code=e.code) from None
         self._client = client
 
     def close(self):
@@ -577,14 +578,14 @@ class Printer:
 
     def list_files(self, timeout=15):
         """[{"filename", "size", "timestamp" (seconds)}] of the printer's local storage, newest first."""
-        reply = check_reply(self.request("file", "listLocal", self.LIST_DATA, timeout), "the file list")
+        reply = check_reply(self.request("file", "listLocal", self.LIST_DATA, timeout), tr("the file list"))
         return _file_records(_dict(reply.get("data")).get("records"))
 
     def delete_files(self, filenames, timeout=8):
         filenames = list(filenames)
         if not filenames:
-            raise KobraError("no file to delete")
-        return check_reply(self.request("file", "deleteBatch", _delete_data(filenames), timeout), "the delete")
+            raise KobraError(tr("no file to delete"))
+        return check_reply(self.request("file", "deleteBatch", _delete_data(filenames), timeout), tr("the delete"))
 
     # Time-lapse videos. file/listVideo and its answer were read on firmware 2.0.2.8 (tests/kobra_captures.py
     # FILE_LISTVIDEO). There is no known way to fetch a video or its cover picture (file_image) over the LAN.
@@ -592,17 +593,17 @@ class Printer:
 
     def list_videos(self, timeout=15):
         """[{"filename", "name" (the print), "created" (unix s), "duration" (s), "size" (bytes)}], newest first."""
-        reply = check_reply(self.request("file", "listVideo", self.VIDEO_LIST_DATA, timeout), "the time-lapse list")
+        reply = check_reply(self.request("file", "listVideo", self.VIDEO_LIST_DATA, timeout), tr("the time-lapse list"))
         return _video_records(_dict(reply.get("data")).get("records"))
 
     def delete_video(self, filename, timeout=8):
         if not isinstance(filename, str) or not filename:
-            raise KobraError("no video to delete")
+            raise KobraError(tr("no video to delete"))
         def ours(report):  # other clients delete videos on the shared topic; a reply naming another file is theirs
             named = _str(_dict(report.get("data")).get("filename")).lstrip("/")
             return named in ("", filename.lstrip("/"))
         reply = self.request("file", "deleteVideo", _delete_video_data(filename), timeout, accept=ours)
-        return check_reply(reply, "the delete")
+        return check_reply(reply, tr("the delete"))
 
     def file_details(self, filename, timeout=5):
         """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, estimated_time_s, ...)."""
@@ -610,7 +611,7 @@ class Printer:
             named = _str(_dict(report.get("data")).get("filename")).lstrip("/")
             return named == filename.lstrip("/") or (not named and not succeeded(report))  # a refusal names none
         reply = self.request("file", "fileDetails", {"root": "local", "filename": filename}, timeout, accept=ours)
-        return _dict(_dict(check_reply(reply, "the details of %s" % filename).get("data")).get("file_details"))
+        return _dict(_dict(check_reply(reply, tr("the details of %s") % filename).get("data")).get("file_details"))
 
     def start_print(self, payload, timeout=15):
         """Send print/start; return the first print/report action "start" once the print is known to run.
@@ -626,7 +627,7 @@ class Printer:
         with self._lock:
             self._pending.append(watch)
         try:
-            reply = check_reply(self.request("print", "start", payload, timeout), "the print")
+            reply = check_reply(self.request("print", "start", payload, timeout), tr("the print"))
             if not _start_outcome(reply):
                 watch.event.wait(START_WATCH)
         finally:
@@ -635,8 +636,8 @@ class Printer:
         if isinstance(end, dict) and end.get("state") in ("stoped", "failed"):
             code = end.get("code")
             if end.get("state") == "stoped" and code in (None, 0, 200):
-                raise Cancelled("the print was stopped right after it started")
-            raise KobraError("the printer ended the print at once (code %s): %s" % (code, _str(end.get("msg"))),
+                raise Cancelled(tr("the print was stopped right after it started"))
+            raise KobraError(tr("the printer ended the print at once (code %s): %s") % (code, _str(end.get("msg"))),
                              code=code)
         return reply
 
@@ -649,10 +650,10 @@ class Printer:
         progress(sent, total) after each chunk; cancelled() is checked before each chunk (-> Cancelled).
         A source that ends before `size` bytes raises KobraError: nothing truncated is ever completed."""
         if not filename or any(ch in filename for ch in '"\r\n'):
-            raise KobraError("unsupported file name for the printer")
+            raise KobraError(tr("unsupported file name for the printer"))
         idx = upload_url.find("?s=")
         if idx < 0:
-            raise KobraError("the printer's upload URL has no session token")
+            raise KobraError(tr("the printer's upload URL has no session token"))
         if isinstance(source, (str, os.PathLike)):
             with open(source, "rb") as f:
                 return self._upload(filename, f, os.path.getsize(source), upload_url[idx + 3:], progress, cancelled)
@@ -676,20 +677,20 @@ class Printer:
             conn.send(tail)
             conn.sock.settimeout(180)  # the printer answers after writing the file to its storage
             resp = conn.getresponse()
-            status, body = resp.status, _read_capped(resp, "the upload")
+            status, body = resp.status, _read_capped(resp, tr("the upload"))
         except PermissionError as e:
-            raise _network_error(e, self.creds.ip, "the upload") from None
+            raise _network_error(e, self.creds.ip, tr("the upload")) from None
         except (OSError, http.client.HTTPException) as e:
-            raise KobraError("upload to the printer failed (%s)" % e) from None
+            raise KobraError(tr("upload to the printer failed (%s)") % e) from None
         finally:
             conn.close()
         if status != 200:
-            raise KobraError("the printer refused the upload: HTTP %d" % status)
+            raise KobraError(tr("the printer refused the upload: HTTP %d") % status)
         result = _loads(body)
         if not isinstance(result, dict):
-            raise KobraError("unexpected upload answer: %r" % body[:200])
+            raise KobraError(tr("unexpected upload answer: %r") % body[:200])
         if result.get("code") != 200:  # real answer: {"code": 200, "data": {"gcode": name}, "message": "success"}
-            raise KobraError("the printer refused the upload (code %s): %s"
+            raise KobraError(tr("the printer refused the upload (code %s): %s")
                              % (result.get("code"), _str(result.get("message"))), code=result.get("code"))
         return result
 
@@ -706,16 +707,16 @@ class Printer:
         sent = 0
         while sent < total:
             if cancelled and cancelled():
-                raise Cancelled("upload cancelled")
+                raise Cancelled(tr("upload cancelled"))
             chunk = source.read(min(UPLOAD_CHUNK, total - sent))
             if not chunk:  # closing the connection short of Content-Length makes the printer drop it
-                raise KobraError("the file ended early (%d of %d bytes)" % (sent, total))
+                raise KobraError(tr("the file ended early (%d of %d bytes)") % (sent, total))
             conn.send(chunk)
             sent += len(chunk)
             if progress:
                 progress(sent, total)
         if cancelled and cancelled():  # last chance: the printer keeps nothing until the closing boundary
-            raise Cancelled("upload cancelled")
+            raise Cancelled(tr("upload cancelled"))
 
 
 def print_file_payload(filename, size, mapping, task=None):
@@ -791,9 +792,9 @@ def _file_records(records):
 
 
 def _delete_video_data(filename):
-    """file/deleteVideo data. UNTESTED on our printer: the two fields are Anycubic Slicer Next's VideoDelete
-    {path, filename}, and "/" is the folder listVideo lists (as in a deleteBatch entry). If the printer wants
-    another shape, this is the one place to change."""
+    """file/deleteVideo data: Anycubic Slicer Next's VideoDelete {path, filename}, "/" being the folder listVideo
+    lists (as in a deleteBatch entry). Verified on a Kobra X with firmware 2.0.2.8 on 2026-11-16; it answered
+    {"action": "deleteVideo", "code": 200, "data": null, "msg": "done"}."""
     return {"path": "/", "filename": filename}
 
 
