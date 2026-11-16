@@ -17,7 +17,8 @@ import type { MessageKey } from '../core/messages';
 const st = computed(() => s.status);
 const NAME_MAX = 32;   // service.NAME_MAX, in UTF-8 bytes
 
-// The details and switches are asked for when this panel is shown with the printer idle, once per connection.
+// The details and switches are asked for when this panel is shown with the printer idle, once per connection. An ask
+// that failed (loadDevice puts s.device back to '') is made again the next time the printer becomes idle, not in a loop.
 const idle = computed(() => !!st.value?.connected && !!st.value.can.print && !controlsOff.value);
 watch([idle, () => s.epoch], () => { if (idle.value && s.device === '') void loadDevice(); }, { immediate: true });
 

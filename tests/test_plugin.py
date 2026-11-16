@@ -24,6 +24,7 @@ orca = fake_orca.install_orca(preset={"name": "Anycubic Kobra X 0.4 nozzle", "pr
                               filament_names=["Generic PLA @System"],
                               filament_meta={"Generic PLA @System": {"filament_id": "OGFL99"}})
 import certs  # noqa: E402
+import kobra  # noqa: E402
 import plugin  # noqa: E402
 import service  # noqa: E402
 
@@ -71,7 +72,17 @@ class Base(unittest.TestCase):
         self.assertEqual(self.agent.connect_printer(params), 0)
         self.assertLess(time.monotonic() - started, 0.5)   # UI thread: returns at once
         wait(lambda: self.events["connect"])
-        return wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        self.wait_state(kobra.normalise(self.state))
+        return msg
+
+    def wait_state(self, state, timeout=15):
+        """Until the plugin's view of the fake printer is `state` with every connect query answered: a print or a
+        refusal then depends on what the printer said, never on how fast this machine is."""
+        def ready():
+            view = plugin._service.view_for(self.fake.host) if plugin._service else None
+            return view if view and view["connected"] and view["state"] == state and view["multi_color_box"] else None
+        return wait(ready, timeout)
 
     def sent(self, type_, action):
         return [r["msg"] for r in self.fake.requests if isinstance(r["msg"], dict)
@@ -564,11 +575,26 @@ class Guarded(Base):
         self.assertIn(os.path.realpath(plugin.slicer_temp_root()) + "/*", self.perms["fs_read"])
 
     def test_print_from_orca_temp_dir(self):   # C1 + C2
-        self.connect()
+        self.connect()   # waits until the printer is known to be idle (state, not time)
         params = pa.PrintParams(project_name="cube", filename=make_3mf(self.job_dir()), ams_mapping="[0]")
-        code = run_off_main(lambda: self.agent.start_local_print(params, None, lambda: False))
-        self.assertEqual((code, audit_guard.denials()), (0, []))
+        stages = []
+        code = run_off_main(lambda: self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False))
+        self.assertEqual((code, audit_guard.denials()), (0, []), stages[-1:])
         self.assertEqual(self.fake.uploads[0]["data"], test_service.GCODE)
+        self.assertEqual(len(self.sent("print", "start")), 1)
+
+    def test_connect_waits_for_the_printer_state(self):
+        """The helper every print test relies on: it returns only once the printer reported idle."""
+        self.fake.replies[("info", "query")]["data"]["project"] = None
+        delay = threading.Event()
+        real = self.fake.replies[("info", "query")]
+
+        def slow(msg):   # the first info answer comes late, as on a loaded machine
+            delay.wait(1.0)
+            return real
+        self.fake.replies[("info", "query")] = slow
+        self.connect()
+        self.assertEqual(plugin._service.view_for(self.fake.host)["state"], "idle")
 
     def test_send_from_orca_temp_dir(self):
         self.connect()

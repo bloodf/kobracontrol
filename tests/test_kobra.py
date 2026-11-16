@@ -1119,9 +1119,16 @@ class StateTests(unittest.TestCase):
         v = self.apply("properties/report", {"assistant_settings": [{"option": "4", "value": "1"}, {"option": "1.5", "value": 1},
                                                                      {"option": True, "value": 1}]})
         self.assertEqual(v["assist"], {0: True, 3: True, 4: True})   # numeric strings read; fractions and bools not
+
         v = self.apply("properties/report", {"hotbed_settings": 1})
         self.assertEqual(v["assist"], {0: True, 3: True, 4: True})
         json.dumps(v)
+
+    def test_int_accepts_only_plain_integers(self):
+        for good, n in ((3, 3), ("3", 3), (" 4 ", 4), ("-1", -1), ("0", 0)):
+            self.assertEqual(kobra._int(good), n, repr(good))
+        for bad in ("--3", "-", "", "3.0", "1e2", "+3", "\u0663", "3-", True, None, 1.5, [3]):
+            self.assertIsNone(kobra._int(bad), repr(bad))
 
     def test_info_report(self):
         v = self.apply("info/report", {

@@ -133,8 +133,11 @@ export async function hello(retry = false): Promise<void> {
 export async function loadDevice(): Promise<void> {
   const epoch = s.epoch;
   s.device = 'asking';
-  try { await bridge.command('device', {}, s.info?.generation); } catch { /* the panel shows only what was reported */ }
-  if (epoch === s.epoch) s.device = 'done';
+  let ok = true;
+  try { await bridge.command('device', {}, s.info?.generation); } catch { ok = false; }
+  // A refused or failed ask (the printer started a print meanwhile, the connection dropped) is asked again the next
+  // time the printer is idle; the panel shows only what was reported.
+  if (epoch === s.epoch) s.device = ok ? 'done' : '';
 }
 
 /** The search found a printer OrcaSlicer does not let the plugin reach yet: ask the plugin to have OrcaSlicer show
