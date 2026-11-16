@@ -945,6 +945,19 @@ test('printer panel: details are asked once the printer is idle, never during a 
   eq(cmds('device').length, 1, 'once per connection');
 `);
 
+test('printer panel: a failed ask is made again the next time the printer is idle', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'device'), 'asked');
+  await fail(last('cmd', 'device'), 'reading the printer’s details is not possible while the printer is printing');
+  await settle();
+  eq(cmds('device').length, 1, 'no retry loop while nothing changed');
+  await post({type: 'status', data: PRINTING()}); await post({type: 'status', data: VIEW()});
+  await until(() => cmds('device').length === 2, 'asked again once idle');
+  await reply(last('cmd', 'device'), {sent: true, assist: true});
+  await post({type: 'status', data: PRINTING()}); await post({type: 'status', data: VIEW()}); await settle();
+  eq(cmds('device').length, 2, 'a successful ask is not repeated');
+`);
+
 test('printer panel: details are asked on connect; only reported counters show', `
   await ready(VIEW());
   await until(() => last('cmd', 'device'), 'device asked after hello');

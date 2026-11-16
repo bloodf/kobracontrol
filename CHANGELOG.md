@@ -4,6 +4,16 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-16
+
+### Fixed
+
+- When reading the printer's details and Print Assist switches fails (say a print started at that moment), the
+  Printer panel asks again the next time the printer is idle. Before, it gave up until the page was reloaded.
+- A Print Assist report with an option or value like "--3" is no longer misread; only plain whole numbers count.
+- A plugin test that could fail on a heavily loaded machine now waits for the printer's reported state instead of
+  depending on timing.
+
 ## [0.5.0] - 2026-11-16
 
 Printing from OrcaSlicer gets the options Anycubic Slicer Next offers, and the Dashboard gets a Printer panel with

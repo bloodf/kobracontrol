@@ -81,6 +81,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import string
 import threading
@@ -841,7 +842,7 @@ def _int(value):
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+    if isinstance(value, str) and re.fullmatch(r"-?[0-9]+", value.strip(), re.ASCII):   # not "--3", "3.0", "٣" or ""
         return int(value.strip())
     return None
 
