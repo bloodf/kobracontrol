@@ -598,7 +598,11 @@ class Printer:
     def delete_video(self, filename, timeout=8):
         if not isinstance(filename, str) or not filename:
             raise KobraError("no video to delete")
-        return check_reply(self.request("file", "deleteVideo", _delete_video_data(filename), timeout), "the delete")
+        def ours(report):  # other clients delete videos on the shared topic; a reply naming another file is theirs
+            named = _str(_dict(report.get("data")).get("filename")).lstrip("/")
+            return named in ("", filename.lstrip("/"))
+        reply = self.request("file", "deleteVideo", _delete_video_data(filename), timeout, accept=ours)
+        return check_reply(reply, "the delete")
 
     def file_details(self, filename, timeout=5):
         """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, estimated_time_s, ...)."""

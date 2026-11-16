@@ -51,7 +51,11 @@ async function del(v: VideoEntry) {
   if (r.ok) refreshKey.value = key;
   await load();   // after an error too: the list then shows whether the video is still on the printer
   await nextTick();
-  if (document.activeElement === document.body) document.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(key)}"]`)?.focus();
+  if (document.activeElement === document.body) {
+    // a failed delete whose video is gone anyway leaves no button carrying the key: Refresh is always there
+    (document.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(key)}"]`)
+      ?? document.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(refreshKey.value)}"]`))?.focus();
+  }
 }
 </script>
 <template>

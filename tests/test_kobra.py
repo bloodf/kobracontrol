@@ -579,6 +579,22 @@ class FileCommandTests(PrinterCase):
         sent = [r["msg"] for r in self.fake.requests if isinstance(r["msg"], dict) and r["msg"].get("action") == "deleteVideo"]
         self.assertEqual(len(sent), 2)   # the three bad names sent nothing
 
+    def test_delete_video_ignores_other_clients_deletes(self):
+        """Another client deleting its own video on the shared topic does not settle our delete; a reply naming
+        no file (the shape is not known yet) or ours does."""
+        def answer(m):
+            self.fake.report("file/report", {"type": "file", "action": "deleteVideo", "code": 10112, "state": "failed",
+                                             "data": {"filename": "other.mp4"}})
+            time.sleep(0.1)
+            return {"type": "file", "action": "deleteVideo", "code": 200, "state": "success",
+                    "data": {"filename": m["data"]["filename"]}}
+        self.fake.replies[("file", "deleteVideo")] = answer
+        self.assertEqual(self.printer.delete_video("a.mp4", timeout=2)["code"], 200)
+        self.fake.replies[("file", "deleteVideo")] = lambda m: {
+            "type": "file", "action": "deleteVideo", "code": 200, "data": {"filename": "other.mp4"}}
+        with self.assertRaises(kobra.NoResult):
+            self.printer.delete_video("a.mp4", timeout=0.4)
+
     def test_file_details(self):
         details = {"thumbnail": "iVBOR", "png_image": "", "svg_image": "", "objects_skip_parts": []}
         self.answer("fileDetails", code=200, state="done", data={"file_details": details, "filename": "a.gcode"})
