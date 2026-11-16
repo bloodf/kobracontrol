@@ -100,6 +100,7 @@ is always empty, because it carries the upload token. Plus:
 | `slots` | `ace.aggregate_slots` slots (including `percent`, `weight`, `brand` and `material_name`), each with `activity` filled, plus `tray` (`ace.tray_id`), `usable` (`ace.slot_usable_for_print`) and `spool_id` (bound Spoolman spool or `null`) |
 | `loaded_slot` | `global_index` of the loaded slot, or -1 |
 | `ace_units` | `ace.aggregate_ace_units` units: `{id, auto_feed, humidity, temp, status, model_id, drying}`; `drying.remain_time` is in minutes |
+| `mac`, `stats`, `assist` | from `kobra.State.view()`: the network address (`""` until reported), the counters the printer reported (`print_minutes`, `print_count`, `filament_g`; absent when not reported) and the Print Assist switches by option number (`null` until the printer answered). Not yet seen from a Kobra X |
 | `features`, `aux_fan_pct`, `phase_unit`, `phase_channel` | from `kobra.State.view()`: the `*_support` flags, the auxiliary fan percentage, and the ACE unit and slot (1-based) of the current slot check during a job, or `null` |
 | `can` | `{pause, resume, stop, move, heat, feed, print}` booleans: what the printer state allows now |
 | `tls` | `{fingerprint, changed_from}`: SHA-256 (hex) of the certificate the printer presented on this session, and the one remembered from before when it differs (else `""`); `null` without TLS. See SECURITY.md |
@@ -112,7 +113,7 @@ is always empty, because it carries the upload token. Plus:
 | `pause`, `resume` | | |
 | `stop` | | yes |
 | `set_temp` | `nozzle`, `bed` (either may be absent; 0 turns off) | yes when heating |
-| `set_fan` | `pct` 0-100 | |
+| `set_fan` | `pct` 0-100 (`fan/setSpeed`; while printing also `print/update`) | |
 | `set_light` | `on` | |
 | `set_speed` | `mode`: 1 quiet, 2 standard, 3 sport; only while printing | |
 | `move` | `axis` (`x`, `y`, `z`), `distance` (mm, signed, at most 50) | |
@@ -125,9 +126,12 @@ is always empty, because it carries the upload token. Plus:
 | `auto_feed` | `ace` (unit id), `on` | |
 | `dry_start` | `aces`, `temp`, `minutes` | yes |
 | `dry_stop` | `aces` | |
+| `device` | (read only) asks for the network address, counters and Print Assist; idle printer only; the answers come in the status | |
+| `assist` | `option` (`breakAlert`, `jamAlert`, `remain`, `belt`, `lostStep`, `autoFeed`), `on`; idle printer only | yes |
+| `rename` | `name` (1-32 UTF-8 bytes, no quotes, backslashes or angle brackets); idle printer only | yes |
 | `files` | | |
 | `file_details` | `name` | |
-| `file_print` | `name`, `auto_leveling`, `vibration_compensation` | yes |
+| `file_print` | `name`, `auto_leveling`, `vibration_compensation`, `flow_calibration`, `timelapse` | yes |
 | `file_delete` | `names` | yes |
 | `find_certificate` | `path` (optional file or folder) | |
 | `spools` | | |

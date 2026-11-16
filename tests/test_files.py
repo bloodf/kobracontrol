@@ -126,6 +126,12 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(p["task_settings"]["auto_leveling"], 1)
         self.assertEqual(p["task_settings"]["vibration_compensation"], 0)
 
+    def test_payload_flow_calibration_and_timelapse(self):
+        p = files.print_payload(LISTING, "a.gcode", [], flow_calibration=True, timelapse=True)
+        self.assertEqual((p["task_settings"]["flow_calibration"], p["task_settings"]["timelapse"]["status"]), (1, 1))
+        p = files.print_payload(LISTING, "a.gcode", [])
+        self.assertEqual((p["task_settings"]["flow_calibration"], p["task_settings"]["timelapse"]["status"]), (0, 0))
+
     def test_unknown_or_bad_names_are_refused(self):
         with self.assertRaises(ValueError):
             files.print_payload(LISTING, "nope.gcode", [])

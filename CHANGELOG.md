@@ -4,6 +4,57 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-16
+
+Printing from OrcaSlicer gets the options Anycubic Slicer Next offers, and the Dashboard gets a Printer panel with
+the printer's details and its Print Assist switches. Checked against the repository's test fakes, page tests and
+screenshots. **None of the new printer messages has been tried on a Kobra X yet** (see "Not yet tried on the
+printer" below), so the new print options are **opt-in and off by default** in Settings > Print defaults.
+
+### Added
+
+- **Flow calibration** and **Time-lapse** print options, off by default because they are untested on the printer.
+  Turn them on in Settings > Print defaults. Once on there, OrcaSlicer's Print dialog choice is used: its Flow
+  Dynamics Calibration now shows for the Kobra X, and Timelapse can be ticked when the printer reports it has a
+  time-lapse camera. While the setting is off, the plugin sends both as off whatever the dialog says (the dialog
+  starts with both ticked for a printer it has not seen before).
+- The Files tab's print options add Flow calibration and Time-lapse, shown only when the printer reports them and
+  starting from the Print defaults. The confirmation names every option.
+- A **Printer** panel on the Dashboard: the printer's name with Rename, its firmware, its network (MAC) address, and its
+  total print time, number of prints and filament used. A counter the printer does not report is left out, never
+  shown as 0. These are read once per connection, when the printer is idle; nothing new is asked during a print.
+- **Print Assist** switches in that panel: filament break alert, filament jam alert, auto feed, remaining filament
+  detection, belt detection and lost step recovery. Only the switches the printer reports are shown; auto feed
+  changes every ACE at once. Each change asks first and is possible only while the printer is idle; so is Rename
+  (up to 32 bytes: fewer letters with accents).
+
+### Changed
+
+- **Vibration (resonance) compensation now applies to prints sent from OrcaSlicer.** OrcaSlicer's Print dialog has no
+  such option and always sent it as off; the Settings > Print defaults switch (on by default) is now used for those
+  prints as well. This field was already sent by earlier versions from the Files tab.
+- **Auto-leveling for OrcaSlicer prints also follows Settings > Print defaults.** It runs when both the Print dialog's
+  Bed Leveling and the setting (on by default) are on, so turning the setting off now keeps OrcaSlicer prints from
+  levelling too. With the default setting nothing changes.
+- Setting the part fan while a print runs still sends the fan command that was checked on the printer, then also
+  sets the fan through the print's own settings, as Anycubic Slicer Next does.
+- Turning the camera light on uses full brightness (it was 80 %), and off sends brightness 0, as Anycubic Slicer Next
+  does.
+
+### Not yet tried on the printer
+
+These come from Anycubic Slicer Next 2.0.0.3 and from Kobralink and KX-Bridge, not from our own Kobra X.
+
+- Print options (opt-in): `flow_calibration` and `timelapse` (`{status, count: 0, type: 64}`) in `print/start`.
+  What a printer does with them when they are on is not known yet.
+- OrcaSlicer's status push: the flow calibration bit and `support_timelapse`, which make the Print dialog offer them.
+- Printer details, read only while idle: `info/net` (network address) and `info/statistic-query` (print time, prints,
+  filament used). A firmware that does not answer them shows less in the Printer panel.
+- Writes: `info/setPrinterName` (Rename) and `properties/write` of `assistant_settings` (Print Assist), after a
+  `properties/read`. If the printer does not answer a write, the page says it was sent and the next status shows the
+  printer's value; what an unknown answer does to the printer is not known.
+- The second fan message during a print (`print/update` `fan_speed_pct`) and light brightness 100 / 0.
+
 ## [0.4.1] - 2026-11-16
 
 ### Fixed

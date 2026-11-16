@@ -63,6 +63,14 @@ State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KE
   skipped_objects  [str]; pause_reason {"code", "msg"} or None; last_error {"report", "action",
                    "code", "msg"} of the last report with state "failed", or None
   updated_at       time.time() of the last applied report (0.0 before)
+  mac              str, the printer's network address (info/net data.mac or machine_mac; "" until reported)
+  stats            {"print_minutes", "print_count", "filament_g"}: only the counters the printer reported
+                   (info statistic-query / statistic-reported); {} when it reported none
+  assist           {option: bool} of properties/report assistant_settings (Print Assist: 0 belt, 1 lost
+                   step, 3 filament break, 4 filament jam, 5 remaining filament); an option the printer does not
+                   list is not supported and is absent; None until the printer answered
+UNTESTED on our printer (firmware 2.0.2.8): mac, stats and assist come from messages read in Anycubic Slicer
+Next 2.0.0.3's Workbench page (info/net, info/statistic-query, properties/read); no capture of their answers yet.
 """
 
 import base64
@@ -406,7 +414,7 @@ class Printer:
         except mqtt.MqttError:
             return False
 
-    def request(self, type_, action, data=None, timeout=5, reply_action=_DEFAULT, accept=None):
+    def request(self, type_, action, data=None, timeout=5, reply_action=_DEFAULT, accept=None, kind="slicer"):
         """Publish and wait for the `<type>/report` answer (see the module docstring for the contract).
         reply_action: the report action that answers (default: REPLY_ACTIONS or the request's action);
         None accepts any action of that type. accept(report) -> bool: an extra test on top of the action
@@ -423,7 +431,7 @@ class Printer:
             self._pending.append(p)
         try:
             p.sent = True  # set before publishing: the answer can arrive before publish() returns
-            if self._publish("slicer", type_, action, data, p.msgid):
+            if self._publish(kind, type_, action, data, p.msgid):
                 p.event.wait(max(timeout, 0.001))
         finally:
             self._resolve(p, None)
@@ -470,8 +478,43 @@ class Printer:
     def set_fan(self, pct):
         return self.send("fan", "setSpeed", {"fan_speed_pct": pct})
 
-    def set_light(self, on, brightness=80):
+    def set_light(self, on, brightness=100):
         return self.send("light", "control", {"type": 3, "status": 1 if on else 0, "brightness": brightness})
+
+    def set_printing_fan(self, taskid, pct):
+        """The part fan during a print, as Anycubic Slicer Next's Workbench sends it (print/update settings); UNTESTED
+        on our printer: fan/setSpeed is what the references send, idle or not."""
+        return self.publish_web("print", "update", {"taskid": taskid, "settings": {"fan_speed_pct": pct}})
+
+    # Anycubic Slicer Next 2.0.0.3 Workbench (web topic). UNTESTED on our printer: no answer captured yet.
+    ASSIST_KEYS = ["assistant_settings"]
+
+    # Which properties/report or info/report answers a request: the report topic is shared with every client and
+    # with the printer's own pushes, so only a report of the request's own action settles it (Anycubic's page names
+    # the properties actions read, write and report). A read may also be answered by a "report" push carrying the
+    # switches; a write or a rename is never settled by a push.
+    def query_properties(self, timeout=5):
+        """properties/read of the Print Assist switches."""
+        def answers(r):
+            return r.get("action") in ("read", "report") and "assistant_settings" in _dict(r.get("data"))
+        return self.request("properties", "read", list(self.ASSIST_KEYS), timeout, reply_action=None, accept=answers,
+                            kind="web")
+
+    def set_assist(self, items, timeout=8):
+        """items: [{"option": n, "value": 0|1}]; settled only by a properties/report action "write"."""
+        return self.request("properties", "write", {"assistant_settings": list(items)}, timeout, reply_action="write",
+                            kind="web")
+
+    def query_net(self):
+        return self.publish_web("info", "net", {})
+
+    def query_statistics(self):
+        return self.publish_web("info", "statistic-query")
+
+    def set_printer_name(self, name, timeout=8):
+        """Settled only by an info/report action "setPrinterName" (the periodic info "report" never does)."""
+        return self.request("info", "setPrinterName", {"printerName": name}, timeout, reply_action="setPrinterName",
+                            kind="web")
 
     def set_print_speed_mode(self, taskid, mode):
         return self.publish_web("print", "update", {"taskid": taskid, "settings": {"print_speed_mode": mode}})
@@ -662,7 +705,10 @@ def print_file_payload(filename, size, mapping, task=None):
     filepath is the FOLDER holding the file ("/"), as in file/deleteBatch's {path, filename}: firmware 2.0.2.8
     joins it with filename, so Kobralink's printPrinterFile form ("/<filename>") made it look for
     /<name>/<name>, find nothing and end the task with code 10111.
-    mapping: ams_box_mapping entries; task: {"auto_leveling", "vibration_compensation", "skip_parts"}."""
+    mapping: ams_box_mapping entries; task: {"auto_leveling", "vibration_compensation", "flow_calibration", "timelapse",
+    "skip_parts"}. flow_calibration and timelapse are UNTESTED on our printer: the fields are Anycubic Slicer Next's
+    (libmach_mqtt PrintStart), timelapse type 64 is what Kobralink and KX-Bridge send; no print with them set was
+    captured yet (the printer echoes both in buried/report PrintStart as flow_calibration / time_lapse)."""
     task = task or {}
     return {
         "taskid": "-1", "url": "", "filename": filename, "md5": "", "filepath": "/",
@@ -671,9 +717,9 @@ def print_file_payload(filename, size, mapping, task=None):
         "task_settings": {
             "auto_leveling": 1 if task.get("auto_leveling") else 0,
             "vibration_compensation": 1 if task.get("vibration_compensation") else 0,
-            "flow_calibration": 0, "dry_mode": 0,
+            "flow_calibration": 1 if task.get("flow_calibration") else 0, "dry_mode": 0,
             "ai_settings": {"status": 0, "count": 0, "type": 1},
-            "timelapse": {"status": 0, "count": 0, "type": 64},
+            "timelapse": {"status": 1 if task.get("timelapse") else 0, "count": 0, "type": 64},
             "drying_settings": {"status": 0, "target_temp": 0, "duration": 0, "remain_time": 0},
             "model_objects_skip_parts": list(task.get("skip_parts") or []),
         },
@@ -687,7 +733,7 @@ VIEW_KEYS = ("connected", "state", "preparing", "box_set_failed", "camera_url_re
              "bed_temp", "bed_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
              "head_tools_model", "files", "file_details", "upload_url", "camera_url", "camera_urls",
              "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job", "aux_fan_pct",
-             "features", "last_project", "phase_unit", "phase_channel")
+             "features", "last_project", "phase_unit", "phase_channel", "mac", "stats", "assist")
 
 
 def normalise(kobra_state):
@@ -754,6 +800,52 @@ def _box(raw):
     return box
 
 
+# Anycubic Slicer Next 2.0.0.3 (Workbench lanTopic_v3 mergeLanStatistics): grams in material_used_gram_value, else
+# material_used_value. UNTESTED on our printer.
+_STATS = (("print_total_minutes", "print_minutes"), ("print_count", "print_count"))
+
+
+def _statistics(d):
+    """The cumulative counters an info report carries, each only when present and a number >= 0."""
+    out = {}
+    for key, field in _STATS:
+        if isinstance(d.get(key), (int, float)) and not isinstance(d.get(key), bool) and d[key] >= 0:
+            out[field] = _num(d[key])
+    grams = d.get("material_used_gram_value", d.get("material_used_value"))
+    if isinstance(grams, (int, float)) and not isinstance(grams, bool) and grams >= 0:
+        out["filament_g"] = _num(grams)
+    return out
+
+
+ASSIST_OPTIONS = (0, 1, 3, 4, 5)   # belt, lost step, filament break, filament jam, remaining filament
+
+
+def _assist(raw):
+    """{option: bool} from assistant_settings ([{option, value}], maybe wrapped as {"value": [...]}); None when it
+    is not a list. Unknown options are dropped."""
+    if isinstance(raw, dict) and "value" in raw:
+        raw = raw["value"]
+    if not isinstance(raw, list):
+        return None
+    out = {}
+    for item in raw:
+        option = _int(item.get("option")) if isinstance(item, dict) else None
+        if option in ASSIST_OPTIONS:
+            out[option] = _int(item.get("value")) == 1
+    return out
+
+
+def _int(value):
+    """An int from an int or a numeric string ("3"); None otherwise (bools and fractions too)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
+
 class State:
     """Folds report payloads into one view (see the module docstring). Thread-safe."""
 
@@ -769,7 +861,8 @@ class State:
             "file_details": {}, "upload_url": "", "camera_url": "", "camera_urls": {}, "camera_active": False,
             "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0,
             "box_set_failed": False, "camera_url_rev": 0, "last_job": None,
-            "aux_fan_pct": 0, "features": {}, "last_project": None, "phase_unit": None, "phase_channel": None}
+            "aux_fan_pct": 0, "features": {}, "last_project": None, "phase_unit": None, "phase_channel": None,
+            "mac": "", "stats": {}, "assist": None}
 
     def view(self):
         with self._lock:
@@ -912,6 +1005,12 @@ class State:
         storage = _dict(d.get("storage"))
         if storage:
             v["storage"] = {"total": _num(storage.get("total")), "used": _num(storage.get("used"))}
+        mac = _str(d.get("mac")) or _str(d.get("machine_mac"))
+        if mac:
+            v["mac"] = mac[:64]
+        stats = _statistics(d)
+        if stats:
+            v["stats"] = {**v["stats"], **stats}
 
     def _temps(self, d):
         if d:
@@ -964,6 +1063,11 @@ class State:
                                "total_layers": _num(d.get("total_layers"))}
         self._v["storage"] = {"total": _num(d.get("storage_total")), "used": _num(d.get("storage_used"))}
 
+    def _on_properties(self, p, d):
+        assist = _assist(d.get("assistant_settings"))
+        if assist is not None and p.get("state") != "failed":
+            self._v["assist"] = {**(self._v["assist"] or {}), **assist}
+
     def _on_video(self, p, d):
         if p.get("state") != "failed" and p.get("action") in ("startCapture", "stopCapture"):
             self._v["camera_active"] = p["action"] == "startCapture"
@@ -977,4 +1081,4 @@ class State:
     _HANDLERS = {"status/report": _on_status, "print/report": _on_print, "info/report": _on_info, "tempature/report": _on_temp,
                  "multiColorBox/report": _on_box, "light/report": _on_light, "fan/report": _on_fan,
                  "file/report": _on_file, "skip/report": _on_skip, "buried/report": _on_buried,
-                 "video/report": _on_video}
+                 "video/report": _on_video, "properties/report": _on_properties}

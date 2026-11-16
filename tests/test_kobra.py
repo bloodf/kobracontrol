@@ -570,16 +570,53 @@ class HelperTests(PrinterCase):
             (lambda: p.move_axis(1, 0, 10), ("slicer", "axis", "move", {"axis": 1, "move_type": 0, "distance": 10})),
             (p.query_skip_objects, ("slicer", "skip", "query_obj", None)),
             (lambda: p.skip_objects(["a"]), ("slicer", "skip", "start", {"objects_skip_parts": ["a"]})),
+            # Anycubic Slicer Next's Workbench messages, on the web topic (UNTESTED on the printer)
+            (lambda: p.set_assist([{"option": 3, "value": 1}]),
+             ("web", "properties", "write", {"assistant_settings": [{"option": 3, "value": 1}]})),
+            (lambda: p.set_printer_name("Shop X"), ("web", "info", "setPrinterName", {"printerName": "Shop X"})),
         ]
         for call, expected in cases:
             self.check(lambda call=call: self.assertTrue(kobra.succeeded(call())), expected, reply=expected[1:3])
+
+    def test_workbench_reads_settle_on_their_answer_only(self):
+        """properties/read is answered by a report "read" (or a "report" push) that carries assistant_settings."""
+        p = self.printer
+        self.fake.reply("properties", "read", {"assistant_settings": []})
+        self.check(lambda: self.assertEqual(p.query_properties()["action"], "read"),
+                   ("web", "properties", "read", ["assistant_settings"]))
+        self.fake.replies[("properties", "read")]["action"] = "report"
+        self.assertEqual(p.query_properties()["action"], "report")
+        self.fake.replies[("properties", "read")]["data"] = {"hotbed_settings": 1}   # another property: not ours
+        self.assertFalse(kobra.succeeded(p.query_properties(timeout=0.3)))
+
+    def test_writes_are_never_settled_by_an_unrelated_report(self):
+        """A rename or a Print Assist write settles only on a report of its own action; the shared topics carry
+        reads, pushes and other clients' answers too."""
+        p = self.printer
+        for call, kind, other in ((lambda: p.set_printer_name("A", timeout=0.6), "info", "report"),
+                                  (lambda: p.set_assist([{"option": 3, "value": 1}], timeout=0.6), "properties", "read")):
+            out = {}
+            t = threading.Thread(target=lambda: out.update(r=call()))
+            t.start()
+            time.sleep(0.15)
+            self.fake.report(kind + "/report", {"type": kind, "action": other, "state": "done", "code": 200, "msg": "done",
+                                                "msgid": "x", "data": {"assistant_settings": [], "printerName": "B"}})
+            t.join(3)
+            self.assertFalse(kobra.succeeded(out["r"]), (kind, out["r"]))   # only the ack: no answer of its own
+        self.fake.reply("info", "setPrinterName", {})
+        self.assertTrue(kobra.succeeded(p.set_printer_name("A")))
+        self.fake.reply("properties", "write", {})
+        self.assertTrue(kobra.succeeded(p.set_assist([{"option": 3, "value": 1}])))
 
     def test_fire_and_forget(self):
         p = self.printer
         drying = {"status": 1, "target_temp": 50, "duration": 240, "remain_time": 240}
         cases = [
             (lambda: p.set_fan(40), ("slicer", "fan", "setSpeed", {"fan_speed_pct": 40})),
-            (lambda: p.set_light(True), ("slicer", "light", "control", {"type": 3, "status": 1, "brightness": 80})),
+            (lambda: p.set_light(True), ("slicer", "light", "control", {"type": 3, "status": 1, "brightness": 100})),
+            (lambda: p.set_printing_fan("9", 55), ("web", "print", "update", {"taskid": "9", "settings": {"fan_speed_pct": 55}})),
+            (p.query_net, ("web", "info", "net", {})),
+            (p.query_statistics, ("web", "info", "statistic-query", None)),
             (lambda: p.set_light(False, 20), ("slicer", "light", "control", {"type": 3, "status": 0, "brightness": 20})),
             (lambda: p.set_print_speed_mode("9", 2),
              ("web", "print", "update", {"taskid": "9", "settings": {"print_speed_mode": 2}})),
@@ -685,6 +722,12 @@ class PrintTests(PrinterCase):
                 "timelapse": {"status": 0, "count": 0, "type": 64},
                 "drying_settings": {"status": 0, "target_temp": 0, "duration": 0, "remain_time": 0},
                 "model_objects_skip_parts": ["o1"]}})
+
+    def test_payload_flow_calibration_and_timelapse(self):
+        task = kobra.print_file_payload("a.gcode", 1, [], {"flow_calibration": True, "timelapse": True})["task_settings"]
+        self.assertEqual((task["flow_calibration"], task["timelapse"]), (1, {"status": 1, "count": 0, "type": 64}))
+        task = kobra.print_file_payload("a.gcode", 1, [], {})["task_settings"]
+        self.assertEqual((task["flow_calibration"], task["timelapse"]), (0, {"status": 0, "count": 0, "type": 64}))
 
     def test_payload_defaults(self):
         payload = kobra.print_file_payload("a.gcode", 1, [], None)
@@ -1039,6 +1082,46 @@ class StateTests(unittest.TestCase):
         for key in kobra.VIEW_KEYS:
             self.assertIn(key, v)
         self.assertEqual(set(v), set(kobra.VIEW_KEYS))
+
+    def test_device_details_from_info_reports(self):
+        """info/net's mac and the counters of statistic-query / statistic-reported (Anycubic Slicer Next's fields)."""
+        v = self.s.view()
+        self.assertEqual((v["mac"], v["stats"], v["assist"]), ("", {}, None))
+        v = self.apply("info/report", {"mac": "AA:BB:CC:00:11:22"}, action="net")
+        self.assertEqual(v["mac"], "AA:BB:CC:00:11:22")
+        v = self.apply("info/report", {"machine_mac": "11:22"}, action="net")
+        self.assertEqual(v["mac"], "11:22")
+        v = self.apply("info/report", {"print_total_minutes": 600, "print_count": 12, "material_used_gram_value": 950.5},
+                       action="statistic-query")
+        self.assertEqual(v["stats"], {"print_minutes": 600, "print_count": 12, "filament_g": 950.5})
+        v = self.apply("info/report", {"print_count": 13}, action="statistic-reported")
+        self.assertEqual(v["stats"], {"print_minutes": 600, "print_count": 13, "filament_g": 950.5})
+
+    def test_statistics_keep_only_reported_numbers(self):
+        """A counter the firmware does not send is absent (the page hides it), never 0; junk is ignored."""
+        v = self.apply("info/report", {"project": None, "state": None, "temp": None}, action="statistic-reported")
+        self.assertEqual(v["stats"], {})   # what firmware 2.0.2.8 sent in our capture
+        v = self.apply("info/report", {"print_count": "x", "print_total_minutes": -1, "material_used_value": 20,
+                                       "mac": 5}, action="statistic-query")
+        self.assertEqual((v["stats"], v["mac"]), ({"filament_g": 20}, ""))
+        v = self.apply("info/report", {"print_count": True})
+        self.assertEqual(v["stats"], {"filament_g": 20})
+
+    def test_print_assist_from_properties_report(self):
+        v = self.apply("properties/report", {"assistant_settings": [{"option": 0, "value": 1}, {"option": 3, "value": 0},
+                                                                     {"option": 2, "value": 1}, {"option": 9, "value": 1},
+                                                                     "junk"]}, action="read")
+        self.assertEqual(v["assist"], {0: True, 3: False})   # 2 (auto-feed) is set per ACE; 9 is unknown
+        v = self.apply("properties/report", {"assistant_settings": {"value": [{"option": 3, "value": 1}]}}, action="write")
+        self.assertEqual(v["assist"], {0: True, 3: True})   # merged by option, wrapped form accepted
+        v = self.apply("properties/report", {"assistant_settings": [{"option": 4, "value": 1}]}, state="failed")
+        self.assertEqual(v["assist"], {0: True, 3: True})   # a refused write changes nothing
+        v = self.apply("properties/report", {"assistant_settings": [{"option": "4", "value": "1"}, {"option": "1.5", "value": 1},
+                                                                     {"option": True, "value": 1}]})
+        self.assertEqual(v["assist"], {0: True, 3: True, 4: True})   # numeric strings read; fractions and bools not
+        v = self.apply("properties/report", {"hotbed_settings": 1})
+        self.assertEqual(v["assist"], {0: True, 3: True, 4: True})
+        json.dumps(v)
 
     def test_info_report(self):
         v = self.apply("info/report", {

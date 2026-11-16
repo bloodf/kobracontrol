@@ -242,8 +242,75 @@ class IdleCommands(Base):
     def test_fan_light(self):
         self.assertTrue(self.run_cmd("set_fan", pct=150)["result"])
         self.assertEqual(wait(lambda: self.sent("fan", "setSpeed"))[0]["data"], {"fan_speed_pct": 100})
+        time.sleep(0.2)
+        self.assertFalse(self.sent("print", "update"))   # idle: fan/setSpeed only
         self.assertTrue(self.run_cmd("set_light", on=True)["result"])
-        self.assertEqual(wait(lambda: self.sent("light", "control"))[0]["data"]["status"], 1)
+        self.assertEqual(wait(lambda: self.sent("light", "control"))[0]["data"], {"type": 3, "status": 1, "brightness": 100})
+        self.assertTrue(self.run_cmd("set_light", on=False)["result"])
+        self.assertEqual(wait(lambda: self.sent("light", "control")[1:])[0]["data"], {"type": 3, "status": 0, "brightness": 0})
+
+    def test_device_asks_net_statistics_and_assist(self):
+        self.fake.reply("properties", "read", {"assistant_settings": [{"option": 0, "value": 1}, {"option": 3, "value": 0}]})
+        self.fake.reply("info", "net", {"mac": "AA:BB"})
+        self.fake.reply("info", "statistic-query", {"print_total_minutes": 90, "print_count": 4})
+        self.assertEqual(self.run_cmd("device")["result"], {"sent": True, "assist": True})
+        for kind in (("info", "net"), ("info", "statistic-query"), ("properties", "read")):
+            self.assertIn("/web/", next(r["topic"] for r in self.fake.requests if r["msg"] and
+                                        (r["msg"]["type"], r["msg"]["action"]) == kind), kind)
+        data = wait(lambda: (lambda d: d if d["mac"] and d["stats"] and d["assist"] else None)(self.svc._data(self.conn)))
+        self.assertEqual((data["mac"], data["stats"], data["assist"]),
+                         ("AA:BB", {"print_minutes": 90, "print_count": 4}, {0: True, 3: False}))
+
+    def test_device_without_answers_leaves_the_fields_empty(self):
+        """A firmware that ignores the Workbench queries (2.0.2.8 may): nothing is guessed."""
+        self.fake.send_ack = False
+        self.assertEqual(self.run_cmd("device", timeout=12)["result"], {"sent": True, "assist": False})
+        data = self.svc._data(self.conn)
+        self.assertEqual((data["mac"], data["stats"], data["assist"]), ("", {}, None))
+
+    def test_assist_writes_only_reported_options(self):
+        self.fake.reply("properties", "read", {"assistant_settings": [{"option": 3, "value": 0}]})
+        self.run_cmd("device")
+        wait(lambda: self.svc._data(self.conn)["assist"])
+        self.fake.reply("properties", "write", {"assistant_settings": [{"option": 3, "value": 1}]})
+        self.assertEqual(self.run_cmd("assist", option="breakAlert", on=True)["result"], {"confirmed": True})
+        self.assertEqual(self.sent("properties", "write")[0]["data"], {"assistant_settings": [{"option": 3, "value": 1}]})
+        wait(lambda: self.svc._data(self.conn)["assist"] == {3: True})
+        self.assertIn("did not report", self.run_cmd("assist", option="belt", on=True)["error"])
+        self.assertIn("unknown", self.run_cmd("assist", option="nozzle", on=True)["error"])
+        self.assertEqual(len(self.sent("properties", "write")), 1)
+
+    def test_assist_auto_feed_sets_every_ace(self):
+        self.assertTrue(self.run_cmd("assist", option="autoFeed", on=False)["result"])
+        self.assertEqual(wait(lambda: self.sent("multiColorBox", "setAutoFeed"))[0]["data"],
+                         {"multi_color_box": [{"id": 0, "auto_feed": 0}]})
+
+    def test_writes_wait_for_the_device_queries(self):
+        """While the read-only queries are out, an assist write or a rename is refused: their answers share topics."""
+        self.fake.send_ack = False   # unanswered: the device command waits its full 5 s
+        self.conn.state._v["assist"] = {3: False}
+        rid = "dev"
+        self.svc.submit(rid, "device", {})
+        wait(lambda: self.sent("properties", "read"))
+        for cmd, args in (("assist", {"option": "breakAlert", "on": True}), ("rename", {"name": "Shop"})):
+            self.assertIn("still being read", self.run_cmd(cmd, **args)["error"], cmd)
+        self.assertFalse(self.kinds() & {("properties", "write"), ("info", "setPrinterName")})
+        wait(lambda: next((m for m in self.published if m.get("id") == rid), None), 12)
+
+    def test_rename_not_confirmed_by_an_unrelated_info_report(self):
+        self.fake.reply("info", "setPrinterName", {"printerName": "Shop"})
+        self.fake.replies[("info", "setPrinterName")]["action"] = "report"   # what every info poll answers with
+        self.assertEqual(self.run_cmd("rename", name="Shop", timeout=20)["result"], {"confirmed": False, "name": "Shop"})
+
+    def test_rename(self):
+        self.fake.reply("info", "setPrinterName", {"printerName": "Shop"})
+        result = self.run_cmd("rename", name="  Shop   X ", timeout=15)["result"]
+        self.assertEqual(result["name"], "Shop X")
+        self.assertEqual(self.sent("info", "setPrinterName")[0]["data"], {"printerName": "Shop X"})
+        for bad in ("", "   ", "x" * (service.NAME_MAX + 1), "é" * (service.NAME_MAX // 2 + 1), 'a"b', "<b>", "a\\b", "a\x00b"):
+            self.assertIn("bytes (UTF-8)", self.run_cmd("rename", name=bad)["error"], repr(bad))
+        self.assertEqual(len(self.sent("info", "setPrinterName")), 1)
+        self.assertEqual(self.run_cmd("rename", name="é" * (service.NAME_MAX // 2), timeout=15)["result"]["name"], "é" * 16)   # 32 bytes
 
     def test_speed_needs_a_print(self):
         self.assertIn("running print", self.run_cmd("set_speed", mode=3)["error"])
@@ -310,6 +377,27 @@ class PrintingCommands(Base):
         self.assertEqual(self.sent("print", "pause")[0]["data"], {"taskid": "42"})
         self.fake.reply("print", "stop", {}, state="stoped")
         self.assertEqual(self.run_cmd("stop")["result"], {"confirmed": True})
+
+    def test_printer_settings_refused_while_printing(self):
+        """Print Assist and the printer's name change only on an idle printer."""
+        self.conn.state._v["assist"] = {3: False}
+        for cmd, args in (("assist", {"option": "breakAlert", "on": True}), ("assist", {"option": "autoFeed", "on": True}),
+                          ("rename", {"name": "Shop"})):
+            self.assertIn("printing", self.run_cmd(cmd, **args)["error"], cmd)
+        self.assertFalse(self.kinds() & {("properties", "write"), ("info", "setPrinterName"), ("multiColorBox", "setAutoFeed")})
+
+    def test_fan_while_printing_sends_set_speed_then_print_update(self):
+        """fan/setSpeed (verified) is always sent; print/update (Anycubic's page, untested) only as a second message."""
+        self.assertTrue(self.run_cmd("set_fan", pct=40)["result"])
+        self.assertEqual(wait(lambda: self.sent("fan", "setSpeed"))[0]["data"], {"fan_speed_pct": 40})
+        msg = wait(lambda: self.sent("print", "update"))[0]
+        self.assertEqual(msg["data"], {"taskid": "42", "settings": {"fan_speed_pct": 40}})
+        kinds = [(r["msg"]["type"], r["msg"]["action"]) for r in self.fake.requests if isinstance(r["msg"], dict)]
+        self.assertLess(kinds.index(("fan", "setSpeed")), kinds.index(("print", "update")))
+
+    def test_device_queries_never_sent_while_printing(self):
+        self.assertIn("printing", self.run_cmd("device")["error"])
+        self.assertFalse(self.kinds() & {("info", "net"), ("info", "statistic-query"), ("properties", "read")})
 
     def test_temperature_while_printing_uses_print_update(self):
         self.run_cmd("set_temp", nozzle=215.4)
@@ -1112,6 +1200,21 @@ class Features(Base):
         self.run_cmd("file_print", name="a.gcode", auto_leveling=True, vibration_compensation=True)
         task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
         self.assertEqual((task["auto_leveling"], task["vibration_compensation"]), (0, 1))
+
+    def test_file_print_flow_calibration_and_timelapse(self):
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "a.gcode", "size": 1, "timestamp": 1}]}, code=200)
+        self.conn.state._v["features"] = {"flow_calibration_support": True, "camera_timelapse_support": False}
+        self.run_cmd("file_print", name="a.gcode", flow_calibration=True, timelapse=True)
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["flow_calibration"], task["timelapse"]["status"]), (1, 0))   # no time-lapse support
+
+    def test_print_job_flow_calibration_and_timelapse(self):
+        self.conn.state._v["features"] = {"flow_calibration_support": True, "camera_timelapse_support": True}
+        self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000"}],
+                           {"auto_leveling": False, "vibration_compensation": False, "flow_calibration": True,
+                            "timelapse": True})
+        task = wait(lambda: self.sent("print", "start"))[0]["data"]["task_settings"]
+        self.assertEqual((task["flow_calibration"], task["timelapse"]), (1, {"status": 1, "count": 0, "type": 64}))
 
     def test_slots_carry_percent(self):
         box = dict(ACE0, slots=[dict(ACE0["slots"][0], consumables_percent=42)] + ACE0["slots"][1:])

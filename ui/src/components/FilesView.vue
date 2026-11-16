@@ -49,12 +49,17 @@ const seconds = (ts: number) => (ts > 1e12 ? ts / 1000 : ts);
 const selected = ref<string | null>(null);
 const details = ref<FileDetails | null>(null);
 const detailsError = ref('');
-const options = ref({ leveling: true, vibration: true });
+const options = ref({ leveling: true, vibration: true, flow: false, timelapse: false });
+// Flow calibration and time-lapse only where the printer says it has them (info/report features; unknown = offered).
+const canFlow = computed(() => s.status?.features?.flow_calibration_support !== false);
+const canTimelapse = computed(() => s.status?.features?.camera_timelapse_support !== false);
 let detailSeq = 0;
 watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); else selected.value = null; }, { immediate: true });
 async function openPanel(name: string) {
   selected.value = name; details.value = null; detailsError.value = '';
-  options.value = { leveling: config.value?.settings.auto_leveling !== false, vibration: config.value?.settings.vibration_compensation !== false };
+  const st = config.value?.settings;
+  options.value = { leveling: st?.auto_leveling !== false, vibration: st?.vibration_compensation !== false, flow: st?.flow_calibration === true,
+    timelapse: st?.timelapse === true };
   const mine = ++detailSeq;
   try {
     const r = await bridge.command('file_details', { name }, s.info?.generation);
@@ -95,11 +100,14 @@ const printWhy = computed(() => controlsOff.value || (s.status && !s.status.can.
 async function print() {
   const name = selected.value;
   if (!name) return;
+  const flow = canFlow.value && options.value.flow, timelapse = canTimelapse.value && options.value.timelapse;
   const warn = [mismatch.value ? t('files.mat.warn', { list: mismatch.value }) : '',
     info.value && !info.value.model_ok ? t('files.modelOther', { model: info.value.printer_model }) : ''].filter(Boolean).join('\n');
   if (!await ask({ title: t('act.print'), text: t('confirm.print.text', { name, printer: printerName.value, leveling: t(options.value.leveling ? 'common.on' : 'common.off'),
-    vibration: t(options.value.vibration ? 'common.on' : 'common.off') }) + (warn ? '\n' + warn : ''), yes: t('confirm.print.yes'), no: t('common.goBack'), danger: !!warn })) return;
-  const r = await run({ key: 'print', label: t('act.print'), cmd: 'file_print', args: { name, auto_leveling: options.value.leveling, vibration_compensation: options.value.vibration },
+    vibration: t(options.value.vibration ? 'common.on' : 'common.off'), flow: t(flow ? 'common.on' : 'common.off'), timelapse: t(timelapse ? 'common.on' : 'common.off') })
+    + (warn ? '\n' + warn : ''), yes: t('confirm.print.yes'), no: t('common.goBack'), danger: !!warn })) return;
+  const r = await run({ key: 'print', label: t('act.print'), cmd: 'file_print', args: { name, auto_leveling: options.value.leveling, vibration_compensation: options.value.vibration,
+    flow_calibration: flow, timelapse },
     okText: t('ok.print'), timeoutMs: 60000 });
   if (r.ok) closePanel();
 }
@@ -183,6 +191,8 @@ async function del(name: string) {
           <legend class="oui-label">{{ t('files.options') }}</legend>
           <label class="fv-opt" for="opt-level"><span>{{ t('files.autoLeveling') }}</span><ToggleSwitch v-model="options.leveling" input-id="opt-level" data-opt="auto_leveling" /></label>
           <label class="fv-opt" for="opt-vib"><span>{{ t('files.vibration') }}</span><ToggleSwitch v-model="options.vibration" input-id="opt-vib" data-opt="vibration_compensation" /></label>
+          <label v-if="canFlow" class="fv-opt" for="opt-flow"><span>{{ t('files.flow') }}</span><ToggleSwitch v-model="options.flow" input-id="opt-flow" data-opt="flow_calibration" /></label>
+          <label v-if="canTimelapse" class="fv-opt" for="opt-tl"><span>{{ t('files.timelapse') }}</span><ToggleSwitch v-model="options.timelapse" input-id="opt-tl" data-opt="timelapse" /></label>
         </fieldset>
       </div>
       <template #footer>

@@ -87,13 +87,18 @@ def _plate_weights(z, plate):
     return {}
 
 
+PRINT_OPTIONS = ("auto_leveling", "vibration_compensation", "flow_calibration", "timelapse")
+
+
 def supported_task(view, task):
     """The print options, with the ones info/report `features` marks unsupported turned off. A printer that
     has not reported its features yet keeps the user's choice."""
     features = view.get("features") or {}
     task = dict(task or {})
     for option, feature in (("auto_leveling", "auto_leveling_support"),
-                            ("vibration_compensation", "vibration_compensation_support")):
+                            ("vibration_compensation", "vibration_compensation_support"),
+                            ("flow_calibration", "flow_calibration_support"),
+                            ("timelapse", "camera_timelapse_support")):
         if features.get(feature) is False:
             task[option] = False
     return task
@@ -132,7 +137,8 @@ class JobsMixin:
                   cancelled=None, stage=None):
         """OrcaSlicer's Print: upload the plate's G-code, then print/start with the chosen trays.
         tray_ids[i]: Bambu tray id for project filament i (-1 unused); filaments[i]: {"colour", "type"};
-        task: {"auto_leveling", "vibration_compensation"}; stage(name) is told "upload" then "start"."""
+        task: {"auto_leveling", "vibration_compensation", "flow_calibration", "timelapse"}; stage(name) is told "upload"
+        then "start"."""
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
         filename = remote_name(name or os.path.basename(path))

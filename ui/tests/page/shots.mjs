@@ -22,7 +22,11 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   slots: [slot(0, -1, 0, {type: 'PETG', color: [62, 99, 221]}), slot(1, -1, 1, {status: 0, type: ''}), slot(2, -1, 2, {color: [244, 207, 120], type: 'PLA+'}),
     slot(3, 0, 0, {activity: 'loaded', spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
   loaded_slot: 3, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
-  can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false}};
+  can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
+  features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',
+  stats: {print_minutes: 37230, print_count: 214, filament_g: 18420}, assist: {'0': true, '1': false, '3': true, '4': true, '5': false}};
+if (SCN === 'idle' || SCN === 'assist') Object.assign(VIEW, {state: 'idle', kobra_state: 'free', filename: '', progress: 0, layer: 0, total_layers: 0, elapsed_s: 0, remaining_s: 0,
+  nozzle_target: 0, bed_target: 0, can: {pause: false, resume: false, stop: false, move: true, heat: true, feed: true, print: true}});
 const CONFIG = {type: 'config', settings: {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ffmpeg_path: '', camera_enabled: false, auto_leveling: true, vibration_compensation: true,
   spoolman_url: 'http://192.168.1.10:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false},
   certificate: {found: SCN !== 'nocert', source: 'Anycubic Slicer Next'}, spooler: {installed: true}, version: '0.1.0', limits: {nozzle_max: 300, bed_max: 100}};
@@ -43,6 +47,7 @@ ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {s
   rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
   same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}, available: true, reason: null});
+ans('device', {sent: true, assist: true});
 ans('usage', {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
   acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
 if (SCN === 'offline') { __t.handler({type: 'status', data: {...VIEW, connected: false}}); __t.handler({type: 'offline', error: 'printer not reachable at 192.168.1.50', retry_at: Date.now() / 1000 + 24}); }
@@ -60,6 +65,7 @@ if (SCN === 'files') {
     materials: [{paint_index: 0, material: 'PLA', colour: '#111111', grams: 84.1, slot: 3, slot_type: 'PLA', slot_colour: '#E5484D', check: 'ok'},
       {paint_index: 1, material: 'PETG', colour: '#2850a8', grams: 18.8, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}]});
 }
+if (SCN === 'assist') { const sw = document.querySelector('#assist-remain'); sw.scrollIntoView({block: 'center'}); sw.click(); await until(() => document.querySelector('.p-dialog')); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
 `;
@@ -74,6 +80,8 @@ const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   ['settings', 'dark', 'en', 1900, 1000], ['settings', 'light', 'en', 1280, 720], ['settings', 'dark', 'en', 720, 1000], ['settings', 'dark', 'pt_BR', 1280, 720],
   ['settings', 'light', 'pt_BR', 720, 1000],
   ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1900, 1000], ['files', 'dark', 'en', 720, 1000],
+  ['idle', 'light', 'en', 1280, 2200], ['idle', 'dark', 'en', 1900, 1400], ['idle', 'dark', 'pt_BR', 1280, 2200], ['idle', 'light', 'en', 720, 3600],
+  ['idle', 'dark', 'en', 400, 4400], ['dash', 'dark', 'en', 1280, 2200], ['assist', 'dark', 'en', 1280, 900], ['assist', 'light', 'pt_BR', 1280, 900],
   ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'pt_BR', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ]);
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));

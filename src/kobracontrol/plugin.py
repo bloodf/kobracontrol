@@ -431,6 +431,26 @@ def job_filaments(params):
     return trays, filaments
 
 
+def job_task(params, defaults):
+    """The print options of an OrcaSlicer job. Its Print dialog never offers vibration compensation (SelectMachine.cpp
+    sends task_vibration_cali false), so the Kobra Control setting is the default.
+
+    Auto-leveling is sent when the dialog's Bed Leveling AND the Kobra Control setting (on by default) are on: the
+    dialog starts it "on" for a printer it has no saved choice for (support_bed_leveling 1, on/off), so the setting
+    is how auto-leveling stays off for OrcaSlicer prints.
+
+    Flow calibration and time-lapse are UNTESTED on the printer, so they are opt-in: sent only when the dialog's
+    choice AND the Kobra Control setting (Print defaults, off by default) are both on. The dialog alone is not
+    enough: its Flow Dynamics Calibration and Timelapse start "on" for a printer it has no saved choice for
+    (SelectMachine.cpp load_option_vals falls back to "on" for on/off options)."""
+    def opt(name):
+        return bool(getattr(params, name, False))
+    return {"auto_leveling": opt("task_bed_leveling") and defaults.get("auto_leveling") is not False,
+            "vibration_compensation": opt("task_vibration_cali") or bool(defaults.get("vibration_compensation")),
+            "flow_calibration": opt("task_flow_cali") and defaults.get("flow_calibration") is True,
+            "timelapse": opt("task_record_timelapse") and defaults.get("timelapse") is True}
+
+
 class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
@@ -725,8 +745,7 @@ class KobraAgent(pa.PrinterAgentBase):
         host = self._job_host(params)
         path = params.dst_file if getattr(params, "dst_file", "") and os.path.exists(params.dst_file) else params.filename
         trays, filaments = job_filaments(params)
-        task = {"auto_leveling": bool(getattr(params, "task_bed_leveling", False)),
-                "vibration_compensation": bool(getattr(params, "task_vibration_cali", False))}
+        task = job_task(params, get_store().effective())
         stage = ["prepare"]
 
         def on_stage(name):
@@ -756,9 +775,7 @@ class KobraAgent(pa.PrinterAgentBase):
     def start_sdcard_print(self, params, update_fn, cancel_fn):
         name = os.path.basename(clean(getattr(params, "dst_file", "")) or clean(params.filename))
         try:
-            service().call(self._job_host(params), "file_print", name=name,
-                           auto_leveling=bool(getattr(params, "task_bed_leveling", False)),
-                           vibration_compensation=bool(getattr(params, "task_vibration_cali", False)))
+            service().call(self._job_host(params), "file_print", name=name, **job_task(params, get_store().effective()))
         except Exception as e:
             return self._fail(update_fn, ERR_LP_PUBLISH, e)
         if update_fn:

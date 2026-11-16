@@ -29,6 +29,7 @@ import time
 
 UNSUPPORTED = -7010            # IPrinterAgent: "command not supported"
 HAS_SDCARD_NORMAL = 1          # DevStorage.h SdcardState
+FLOW_CALI_BIT = 1 << 16        # home_flag: the printer can run flow (PA) calibration before a print
 CHAMBER_LIGHT = "chamber_light"
 
 # Material -> OrcaFilamentLibrary family, from MRA:794-841 map_filament_type_to_generic_id. The id itself is
@@ -101,6 +102,7 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
     state = view.get("state", "offline")
     stage = STAGES.get(view.get("kobra_state"), 0) if state in ("printing", "paused") else None
     storage = bool(view.get("connected"))   # the Kobra X always has its internal storage while it answers
+    flow = (view.get("features") or {}).get("flow_calibration_support") is not False
     p = {
         "command": "push_status", "msg": 0, "support_mqtt_alive": True,           # MRA:2134-2136
         # DM:4650 hands every "print" message to DevFan::command_handle_response, which logs "error reponse."
@@ -116,8 +118,15 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
         "mc_print_error_code": 0, "print_error": 0,   # MRA:2160-2164: numeric HMS codes only; 0 = no dialog
         # The print dialog refuses LAN printing without storage: DevStorage::ParseV1_0 reads "sdcard", then
         # DM parse_home_flag (DM:1195) reads bits 8-9 of home_flag; both must say present (MRA:2167-2184).
-        "sdcard": storage, "home_flag": (HAS_SDCARD_NORMAL if storage else 0) << 8,
+        # Bit 16 is DM parse_home_flag's is_support_pa_calibration (DM:1206), which shows the Print dialog's Flow Dynamics
+        # Calibration; parse_home_flag runs after the support_flow_calibration key (DM:3246) and overwrites it, so
+        # the bit is what counts. support_auto_flow_calibration stays unset: the option is on/off, not "auto".
+        "sdcard": storage, "home_flag": (HAS_SDCARD_NORMAL if storage else 0) << 8 | (FLOW_CALI_BIT if flow else 0),
         "support_send_to_sd": True,                                                # MRA:2190, DM:3251
+        # DM:3336 / DeviceManager.hpp:632 is_support_timelapse (default false): without it canEnableTimelapse fails and
+        # the Print dialog greys Timelapse out and sets it off (SelectMachine.cpp load_option_vals). Only what the
+        # printer's info/report features say: no guess while they are unknown.
+        "support_timelapse": (view.get("features") or {}).get("camera_timelapse_support") is True,
         # MRA:2191-2194; the printer's info/report features say whether it can level (no guess when absent)
         "support_bed_leveling": 0 if (view.get("features") or {}).get("auto_leveling_support") is False else 1,
         "nozzle_temp_range": [0, nozzle_max], "bed_temp_range": [0, bed_max],      # MRA:2187, DM:3213
