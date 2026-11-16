@@ -1246,7 +1246,7 @@ test('the page never shows U1 wording', `
   const bad = /\\bU1\\b|toolhead|Snapmaker|Moonraker|Klipper|extended firmware|purifier|console/i;
   for (const name of ['dash', 'files', 'settings']) {
     await tab(name);
-    const shown = qa('main').filter(m => m.offsetParent).map(text).join(' ');
+    const shown = qa('[role=tabpanel]').filter(m => m.offsetParent).map(text).join(' ');
     assert(!bad.test(shown), name + ': ' + (shown.match(bad) || [''])[0]);
   }
   assert(!q('[data-tab="console"]'), 'no Console tab');
@@ -1287,6 +1287,32 @@ test('the tabs switch panels and the lease follows the visible tab', `
   await tab('settings'); assert(q('#conn-h'), 'settings panel');
   await tab('dash'); assert(byTest('job-card') && byTest('job-card').offsetParent, 'dashboard panel');
   assert(last('lease').stock !== undefined, 'lease has the stock flag');
+`);
+
+test('one main landmark holds the three tab panels', `
+  await ready(VIEW());
+  eq(qa('main').length, 1, 'one main');
+  eq(qa('main [role=tabpanel]').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
+`);
+
+test('skip objects says why it is off when Stop still works', `
+  await ready(VIEW({can: {pause: false, resume: false, stop: true, move: true, heat: true, feed: true, print: false}}));
+  assert(!q('[data-test="stop"]').disabled && byTest('skip-open').disabled, 'stop on, skip off');
+  assert(text(byTest('skip-why')).includes('No print is running'), 'its own reason: ' + text(byTest('skip-why')));
+  eq(byTest('skip-open').getAttribute('aria-describedby'), 'skip-why', 'the button points at it');
+  await post({type: 'status', data: PRINTING()});
+  assert(!byTest('skip-why') && !byTest('skip-open').disabled, 'gone while printing');
+`);
+
+test('filament use: recently checked entries show without opening Review, and with no failed entry left', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({pending: [{file: 'gcodes/cube.gcode', printer: '192.168.1.50', grams: {'3': 2}}],
+    acknowledged: [{...ENTRY, acknowledged_at: 1794300000}], acknowledged_total: 1}));
+  assert(!byTest('usage-review'), 'nothing to review');
+  assert(text(byTest('usage-recent')).includes('Recently checked (1 in total)'), 'history shown: ' + text(byTest('usage-card')));
+  await click(q('[data-test="usage-recent"] summary'));
+  assert(text(byTest('usage-recent')).includes('benchy.gcode') && text(byTest('usage-recent')).includes('ACE 1 · Slot 2'), 'entry listed: ' + text(byTest('usage-recent')));
 `);
 
 // ------------------------------------------------------------------ runner

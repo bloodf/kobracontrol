@@ -55,6 +55,16 @@ These come from Anycubic Slicer Next 2.0.0.3 and from Kobralink and KX-Bridge, n
   printer's value; what an unknown answer does to the printer is not known.
 - The second fan message during a print (`print/update` `fan_speed_pct`) and light brightness 100 / 0.
 
+## [0.4.1] - 2026-11-16
+
+### Fixed
+
+- The list of recently checked filament uses shows again whenever there is one; 0.4.0 only showed it inside Review,
+  which needs at least one unconfirmed use.
+- Choose objects says why it is off when Stop print still works, and the button points screen readers at that reason.
+- The page has one main landmark holding the three tabs, instead of one per tab.
+- Eleven unused texts were removed from the English and Portuguese messages; a test now fails on any unused text.
+
 ## [0.4.0] - 2026-11-15
 
 A new look for the Kobra Control tab, on the interface shared by the Orca plugin family. Checked against the

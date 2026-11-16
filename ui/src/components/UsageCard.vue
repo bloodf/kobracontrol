@@ -85,17 +85,18 @@ async function ack(e: UsageEntry) {
           </tbody>
         </table>
       </div>
-      <template v-if="u?.acknowledged.length" #footer>
-        <details class="kc-disclose"><summary>{{ t('usage.recent', { total: u.acknowledged_total }) }}</summary>
-          <ul class="oui-meta uc-recent"><li v-for="e in u.acknowledged" :key="e.id">{{ fileName(e.file) }} · {{ slotName(e.slot) }} · {{ fmt.number(e.grams ?? 0, 1) }} g ·
-            {{ t('usage.checkedAt', { when: e.acknowledged_at ? fmt.dateTime(e.acknowledged_at) : t('usage.unknownTime') }) }}</li></ul></details>
-      </template>
     </OuiPanel>
+
+    <!-- What was marked checked recently, whether or not anything is still unconfirmed. -->
+    <details v-if="u?.acknowledged.length" class="kc-disclose uc-history" data-test="usage-recent"><summary>{{ t('usage.recent', { total: u.acknowledged_total }) }}</summary>
+      <ul class="oui-meta uc-recent"><li v-for="e in u.acknowledged" :key="e.id">{{ fileName(e.file) }} · {{ slotName(e.slot) }} · {{ fmt.number(e.grams ?? 0, 1) }} g ·
+        {{ t('usage.checkedAt', { when: e.acknowledged_at ? fmt.dateTime(e.acknowledged_at) : t('usage.unknownTime') }) }}</li></ul></details>
   </div>
 </template>
 
 <style>
 .uc-file, .uc-why { overflow-wrap: anywhere; max-width: 260px; }
 .uc-alerts:empty { display: none; }   /* no stack gap for an empty live region; it comes back with its first message */
+.uc-history { padding-inline: var(--oui-s2); }
 .uc-recent { margin: 0; padding-inline-start: var(--oui-s4); }
 </style>

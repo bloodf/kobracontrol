@@ -53,13 +53,19 @@ const assistNote = computed(() => (st.value?.assist != null ? '' : s.device === 
   : st.value && !controlsOff.value ? t('assist.whenIdle') : ''));
 // A switch shows the printer's value, never the click: it is drawn again from that value when asked.
 const rev = ref(0);
-const name = (key: string) => t(`assist.${key}` as MessageKey);
+// Each switch's name and help, spelled out (no keys built at run time: the messages test checks every key is used).
+const TEXT: Record<string, [MessageKey, MessageKey]> = {
+  breakAlert: ['assist.breakAlert', 'assist.breakAlert.help'], jamAlert: ['assist.jamAlert', 'assist.jamAlert.help'],
+  autoFeed: ['assist.autoFeed', 'assist.autoFeed.help'], remain: ['assist.remain', 'assist.remain.help'],
+  belt: ['assist.belt', 'assist.belt.help'], lostStep: ['assist.lostStep', 'assist.lostStep.help'] };
+const name = (key: string) => t(TEXT[key][0]);
+const help = (key: string) => t(TEXT[key][1]);
 
 async function toggle(sw: Switch, on: boolean) {
   const what = name(sw.key);
   rev.value++;   // the switch keeps showing the printer's value while the question is open
   if (!await ask({ title: t(on ? 'confirm.assist.onTitle' : 'confirm.assist.offTitle', { what }),
-    text: t(`assist.${sw.key}.help` as MessageKey) + '\n' + t('confirm.assist.text', { printer: printerName.value }),
+    text: help(sw.key) + '\n' + t('confirm.assist.text', { printer: printerName.value }),
     yes: t(on ? 'confirm.assist.on' : 'confirm.assist.off'), no: t('common.goBack') })) return;
   await run({ key: `assist:${sw.key}`, label: t('act.assist', { what }), cmd: 'assist', args: { option: sw.key, on },
     okText: t(on ? 'ok.assistOn' : 'ok.assistOff', { what }), sentText: t('sent.assist', { what }) });
@@ -96,7 +102,7 @@ async function rename() {
       <div v-if="switches.length" :key="rev" class="kc-rows" data-test="assist">
         <div v-for="sw in switches" :key="sw.key" class="kc-line">
           <label :for="`assist-${sw.key}`" class="kc-line-label kc-assist-label">{{ name(sw.key) }}
-            <span class="oui-meta">{{ t(`assist.${sw.key}.help` as MessageKey) }}</span></label>
+            <span class="oui-meta">{{ help(sw.key) }}</span></label>
           <ToggleSwitch :input-id="`assist-${sw.key}`" :model-value="sw.on" :disabled="!!changeWhy || tracker.isBusy(`assist:${sw.key}`)" :pt="{ input: { 'aria-describedby': whyId } }"
                         :data-assist="sw.key" :data-focus-key="`assist-${sw.key}`" @update:model-value="v => toggle(sw, v)" />
         </div>
