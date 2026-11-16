@@ -439,6 +439,39 @@ class SessionTests(PrinterCase):
         self.assertNotEqual(results["a"]["data"], results["b"]["data"])
 
 
+class VideoRecordTests(unittest.TestCase):
+    """kobra._video_records: whatever the printer sends reaches the page only as a short string or a plain number."""
+
+    def test_junk_is_dropped_or_zeroed(self):
+        junk = [None, 5, "x", [], {}, {"filename": 5}, {"filename": ""}, {"filename": "x" * 300 + ".mp4"},
+                {"filename": "odd.mp4", "main_file_name": ["x"], "createTime": "1794838471", "duration": True,
+                 "fileSize": float("inf")},
+                {"filename": "neg.mp4", "main_file_name": "n" * 400, "createTime": -5, "duration": float("nan"),
+                 "fileSize": 10 ** 400}]
+        videos = kobra._video_records(junk)
+        self.assertEqual(videos, [{"filename": "odd.mp4", "name": "", "created": 0, "duration": 0, "size": 0},
+                                  {"filename": "neg.mp4", "name": "n" * 255, "created": 0, "duration": 0, "size": 0}])
+        json.dumps(videos, allow_nan=False)
+        for bad in (None, "x", {}, 5):
+            self.assertEqual(kobra._video_records(bad), [])
+
+    def test_newest_first_and_milliseconds_become_seconds(self):
+        records = [{"filename": "a.mp4", "createTime": 100}, {"filename": "b.mp4", "createTime": 1794838471000},
+                   {"filename": "c.mp4", "createTime": 300}]
+        self.assertEqual([(v["filename"], v["created"]) for v in kobra._video_records(records)],
+                         [("b.mp4", 1794838471), ("c.mp4", 300), ("a.mp4", 100)])
+
+    def test_the_input_is_not_changed(self):
+        records = [dict(r) for r in cap.FILE_LISTVIDEO["data"]["records"]]
+        kobra._video_records(records)
+        self.assertEqual(records, cap.FILE_LISTVIDEO["data"]["records"])
+
+    def test_a_video_list_is_not_folded_into_the_file_list(self):
+        state = kobra.State()
+        state.apply("file/report", cap.FILE_LISTVIDEO)
+        self.assertEqual(state.view()["files"], [])
+
+
 class FileCommandTests(PrinterCase):
     """Ported from KX-Bridge tests/test_printer_files_endpoint.py: answers arrive as file/report."""
     RECORDS = [{"filename": "a.gcode", "is_dir": False, "size": 100, "timestamp": 1700000000},
@@ -499,6 +532,68 @@ class FileCommandTests(PrinterCase):
     def test_captured_delete_answer_is_success(self):
         self.answer("deleteBatch", **{k: v for k, v in cap.FILE_DELETEBATCH.items() if k not in ("type", "action")})
         self.assertIsNone(self.printer.delete_files(["a.gcode"], timeout=2)["data"])
+
+    VIDEO = cap.FILE_LISTVIDEO["data"]["records"][0]
+    ABORTED = {**VIDEO, "createTime": 1794000000, "duration": 0, "fileSize": 156, "filename": "cube-20261107_1.mp4",
+               "main_file_name": "cube"}
+
+    def test_list_videos(self):
+        """file/listVideo as the printer answers it: seconds and bytes, newest first, an aborted print's record kept."""
+        self.answer("listVideo", code=200, state="done", data={"records": [self.ABORTED, self.VIDEO]})
+        self.assertEqual(self.printer.list_videos(timeout=2), [
+            {"filename": "orcatest_kx3-20261116215053_8.mp4", "name": "orcatest_kx3", "created": 1794838471,
+             "duration": 6, "size": 109048},
+            {"filename": "cube-20261107_1.mp4", "name": "cube", "created": 1794000000, "duration": 0, "size": 156}])
+        self.assertEqual(self.fake.wait_request("file", "listVideo")["data"],
+                         {"page_num": 1, "page_size": 200, "path": "/", "keyword": ""})
+
+    def test_list_videos_refused_or_silent(self):
+        self.answer("listVideo", code=10112, state="failed", data=None)
+        with self.assertRaises(kobra.KobraError) as cm:
+            self.printer.list_videos(timeout=2)
+        self.assertEqual(cm.exception.code, 10112)
+        self.fake.replies.clear()
+        self.fake.replies[("file", "listVideo")] = lambda m: {   # the file list is not the video list
+            "type": "file", "action": "listLocal", "code": 200, "state": "done", "data": {"records": [self.VIDEO]}}
+        with self.assertRaises(kobra.NoResult):
+            self.printer.list_videos(timeout=0.3)
+        self.fake.send_ack = False
+        with self.assertRaisesRegex(kobra.KobraError, "did not answer the time-lapse list"):
+            self.printer.list_videos(timeout=0.3)
+
+    def test_delete_video(self):
+        self.answer("deleteVideo", code=200, state="success", data=None)
+        self.assertEqual(self.printer.delete_video("a.mp4", timeout=2)["code"], 200)
+        self.assertEqual(self.fake.wait_request("file", "deleteVideo")["data"], {"path": "/", "filename": "a.mp4"})
+
+    def test_delete_video_errors(self):
+        for bad in ("", None, 5):
+            with self.assertRaisesRegex(kobra.KobraError, "no video"):
+                self.printer.delete_video(bad)
+        self.answer("deleteVideo", code=10112, state="failed", msg="busy")
+        with self.assertRaisesRegex(kobra.KobraError, "10112"):
+            self.printer.delete_video("a.mp4", timeout=2)
+        self.fake.replies.clear()
+        with self.assertRaises(kobra.NoResult):
+            self.printer.delete_video("a.mp4", timeout=0.3)
+        sent = [r["msg"] for r in self.fake.requests if isinstance(r["msg"], dict) and r["msg"].get("action") == "deleteVideo"]
+        self.assertEqual(len(sent), 2)   # the three bad names sent nothing
+
+    def test_delete_video_ignores_other_clients_deletes(self):
+        """Another client deleting its own video on the shared topic does not settle our delete; a reply naming
+        no file (the shape is not known yet) or ours does."""
+        def answer(m):
+            self.fake.report("file/report", {"type": "file", "action": "deleteVideo", "code": 10112, "state": "failed",
+                                             "data": {"filename": "other.mp4"}})
+            time.sleep(0.1)
+            return {"type": "file", "action": "deleteVideo", "code": 200, "state": "success",
+                    "data": {"filename": m["data"]["filename"]}}
+        self.fake.replies[("file", "deleteVideo")] = answer
+        self.assertEqual(self.printer.delete_video("a.mp4", timeout=2)["code"], 200)
+        self.fake.replies[("file", "deleteVideo")] = lambda m: {
+            "type": "file", "action": "deleteVideo", "code": 200, "data": {"filename": "other.mp4"}}
+        with self.assertRaises(kobra.NoResult):
+            self.printer.delete_video("a.mp4", timeout=0.4)
 
     def test_file_details(self):
         details = {"thumbnail": "iVBOR", "png_image": "", "svg_image": "", "objects_skip_parts": []}

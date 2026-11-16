@@ -886,7 +886,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         data = self._data()
         return self._sent(self._printer().set_dry(self._aces(data, aces), {"status": 0}))
 
-    # files (files.FilesMixin: cmd_files, cmd_file_details, cmd_file_print, cmd_file_delete) ----------------
+    # files (files.FilesMixin: cmd_files, cmd_file_details, cmd_file_print, cmd_file_delete, and the time-lapse
+    # videos' cmd_videos and cmd_video_delete) -------------------------------------------------------------
 
     def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False, flow_calibration=False,
                        timelapse=False):

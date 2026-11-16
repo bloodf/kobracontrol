@@ -586,6 +586,24 @@ class Printer:
             raise KobraError("no file to delete")
         return check_reply(self.request("file", "deleteBatch", _delete_data(filenames), timeout), "the delete")
 
+    # Time-lapse videos. file/listVideo and its answer were read on firmware 2.0.2.8 (tests/kobra_captures.py
+    # FILE_LISTVIDEO). There is no known way to fetch a video or its cover picture (file_image) over the LAN.
+    VIDEO_LIST_DATA = {"page_num": 1, "page_size": 200, "path": "/", "keyword": ""}
+
+    def list_videos(self, timeout=15):
+        """[{"filename", "name" (the print), "created" (unix s), "duration" (s), "size" (bytes)}], newest first."""
+        reply = check_reply(self.request("file", "listVideo", self.VIDEO_LIST_DATA, timeout), "the time-lapse list")
+        return _video_records(_dict(reply.get("data")).get("records"))
+
+    def delete_video(self, filename, timeout=8):
+        if not isinstance(filename, str) or not filename:
+            raise KobraError("no video to delete")
+        def ours(report):  # other clients delete videos on the shared topic; a reply naming another file is theirs
+            named = _str(_dict(report.get("data")).get("filename")).lstrip("/")
+            return named in ("", filename.lstrip("/"))
+        reply = self.request("file", "deleteVideo", _delete_video_data(filename), timeout, accept=ours)
+        return check_reply(reply, "the delete")
+
     def file_details(self, filename, timeout=5):
         """The printer's file_details dict (thumbnail, png_image, objects_skip_parts, estimated_time_s, ...)."""
         def ours(report):  # other clients poll fileDetails for their files on the shared topic
@@ -770,6 +788,37 @@ def _file_records(records):
     files = [{"filename": _str(r.get("filename")), "size": _num(r.get("size")), "timestamp": _seconds(r.get("timestamp"))}
              for r in (records if isinstance(records, list) else []) if isinstance(r, dict) and not r.get("is_dir")]
     return sorted(files, key=lambda f: -f["timestamp"])
+
+
+def _delete_video_data(filename):
+    """file/deleteVideo data. UNTESTED on our printer: the two fields are Anycubic Slicer Next's VideoDelete
+    {path, filename}, and "/" is the folder listVideo lists (as in a deleteBatch entry). If the printer wants
+    another shape, this is the one place to change."""
+    return {"path": "/", "filename": filename}
+
+
+VIDEO_TEXT_MAX = 255
+
+
+def _amount(value, top):
+    """A number from 0 to top as the printer sent it; anything else (text, a bool, negative, infinite) is 0."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= top else 0
+
+
+def _video_records(records):
+    """listVideo records as [{"filename", "name", "created", "duration", "size"}], newest first. A record without
+    a file name of a sane length is dropped; every other field is a string of at most VIDEO_TEXT_MAX characters or
+    a plain number, whatever the printer sent. createTime is seconds on firmware 2.0.2.8; milliseconds would be
+    converted, as for listLocal."""
+    videos = []
+    for r in records if isinstance(records, list) else []:
+        filename = _str(r.get("filename")) if isinstance(r, dict) else ""
+        if not filename or len(filename) > VIDEO_TEXT_MAX:
+            continue
+        videos.append({"filename": filename, "name": _str(r.get("main_file_name"))[:VIDEO_TEXT_MAX],
+                       "created": _seconds(_amount(r.get("createTime"), 1e13)),
+                       "duration": _amount(r.get("duration"), 1e7), "size": _amount(r.get("fileSize"), 1e13)})
+    return sorted(videos, key=lambda v: -v["created"])
 
 
 def _dict(value):

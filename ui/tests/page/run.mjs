@@ -77,6 +77,16 @@ async function openDetails(details) {
   await reply(last('cmd', 'file_details'), details);
   await until(() => q('.fv-thumb'), 'file details shown');
 }
+const CUBE = 'cube-20261107101500_1.mp4';
+const VIDEOS = () => [{filename: 'benchy-20261116215053_8.mp4', name: 'benchy', created: 1794838471, duration: 83, size: 4109048, empty: false},
+  {filename: CUBE, name: 'cube', created: 1794000000, duration: 0, size: 156, empty: true}];
+const videoRow = name => q('[data-video="' + name + '"]');
+async function openVideos(videos, view) {
+  await ready(view || VIEW());
+  await tab('files');
+  await until(() => last('cmd', 'videos'), 'videos asked');
+  await reply(last('cmd', 'videos'), {videos: videos || VIDEOS()});
+}
 `;
 
 const scenarios = [];
@@ -1060,6 +1070,123 @@ test('files: a list error says so and can be retried', `
   await click(btn('Try again', q('.fv-error')));
   eq(cmds('files').length, 2, 'retry');
 `);
+
+// ------------------------------------------------------------------ time-lapses (Files tab)
+test('time-lapses: each video shows its print, date, length and size; an empty one is marked; no download', `
+  await openVideos();
+  const panel = byTest('videos');
+  eq(text(q('#videos-h')), 'Time-lapses', 'its own section');
+  eq(panel.getAttribute('aria-labelledby'), 'videos-h', 'named by its heading');
+  assert(q('#files-h').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING, 'after the file list');
+  eq(text(byTest('videos-count')), '2 videos', 'count');
+  eq(qa('[data-video]').map(r => r.dataset.video), ['benchy-20261116215053_8.mp4', CUBE], 'newest first, as the plugin gives them');
+  const cells = qa('td', videoRow('benchy-20261116215053_8.mp4')).map(text);
+  assert(cells[0].includes('benchy') && cells[0].includes('benchy-20261116215053_8.mp4'), 'print and file name: ' + cells[0]);
+  assert(/\\d/.test(cells[1]), 'date: ' + cells[1]);
+  eq(cells.slice(2, 4), ['1:23', '4.1 MB'], 'length and size');
+  const empty = videoRow(CUBE);
+  assert(empty.hasAttribute('data-empty') && !videoRow('benchy-20261116215053_8.mp4').hasAttribute('data-empty'), 'only the empty one is marked');
+  assert(text(empty).includes('Empty') && text(empty).includes('Nothing was recorded'), 'says it is empty and why: ' + text(empty));
+  assert(q('[data-video-delete]', empty) && !q('[data-video-delete]', empty).disabled, 'an empty one can be deleted');
+  eq(qa('.oui-thumb', panel).length, 2, 'a cover placeholder each');
+  eq(qa('img', panel).length, 0, 'no cover picture is fetched');
+  assert(text(byTest('videos-note')).includes('can’t be downloaded'), 'says why there is no download: ' + text(byTest('videos-note')));
+  assert(!qa('button, a', panel).some(b => /download/i.test(text(b) + (b.getAttribute('aria-label') || ''))), 'no download control');
+  eq(qa('thead th', panel).map(th => th.getAttribute('scope')), ['col', 'col', 'col', 'col', 'col'], 'column headers');
+  eq(q('[data-video-delete]', empty).getAttribute('aria-label').startsWith('Delete the time-lapse of cube from '), true, 'the button names its video');
+`);
+
+test('time-lapses: delete asks first, sends the file name, refreshes the list and keeps the focus in the section', `
+  await openVideos();
+  const del = () => q('[data-video-delete]', videoRow(CUBE));
+  del().focus();
+  await click(del());
+  assert(dialogOpen() && dialogText().includes('time-lapse of cube'), 'asks, naming the video: ' + dialogText());
+  eq(text(q('[data-dlg="yes"]')), 'Delete video', 'the action is named');
+  assert(q('[data-dlg="yes"]').classList.contains('p-button-danger'), 'destructive action is red');
+  assert(document.activeElement === q('[data-dlg="no"]'), 'focus starts on the way back');
+  await no();
+  eq(cmds('video_delete'), [], 'going back deletes nothing');
+  await until(() => document.activeElement === del(), 'focus is back on the Delete button');
+  await click(del()); await yes();
+  eq(cmds('video_delete').map(m => m.args), [{name: CUBE}], 'video_delete with the file name');
+  assert(del().disabled && !q('[data-video-delete]', videoRow('benchy-20261116215053_8.mp4')).disabled, 'only that row is busy');
+  eq(cmds('videos').length, 1, 'the list waits for the delete');
+  await reply(last('cmd', 'video_delete'), {deleted: CUBE});
+  await until(() => cmds('videos').length === 2, 'list asked again');
+  assert(byTest('videos-refresh').disabled && videoRow(CUBE), 'refreshing: the rows stay until the new list is here');
+  await reply(last('cmd', 'videos'), {videos: VIDEOS().slice(0, 1)});
+  eq(qa('[data-video]').length, 1, 'the deleted video is gone');
+  eq(text(byTest('videos-count')), '1 video', 'count follows');
+  assert(text(q('.notices')).includes('Time-lapse deleted.'), 'says it is deleted: ' + text(q('.notices')));
+  await until(() => document.activeElement === byTest('videos-refresh'), 'focus moved to Refresh, not lost');
+  eq(cmds('file_delete'), [], 'never the file command');
+`);
+
+test('time-lapses: the focus is kept when the printer answers before the dialog has closed', `
+  await openVideos();
+  q('[data-video-delete]', videoRow(CUBE)).focus();
+  await click(q('[data-video-delete]', videoRow(CUBE)));
+  await until(dialogOpen, 'dialog');
+  q('[data-dlg="yes"]').click();   // no waiting for the dialog to leave: both answers arrive while it closes
+  await until(() => last('cmd', 'video_delete'), 'delete sent');
+  __t.handler({type: 'reply', id: last('cmd', 'video_delete').id, result: {deleted: CUBE}});
+  await until(() => cmds('videos').length === 2, 'list asked again');
+  __t.handler({type: 'reply', id: last('cmd', 'videos').id, result: {videos: VIDEOS().slice(0, 1)}});
+  await until(() => !videoRow(CUBE) && !dialogOpen(), 'row gone and dialog closed');
+  await until(() => document.activeElement === byTest('videos-refresh'), 'focus on Refresh, not lost');
+`);
+
+test('time-lapses: empty list, a list error with retry, and a refused delete reads the list again', `
+  await openVideos([]);
+  assert(text(q('.tl-empty')).includes('No time-lapses on the printer'), 'empty state: ' + text(byTest('videos')));
+  assert(!byTest('videos-note') && !byTest('videos-count'), 'nothing about downloads or a count without a video');
+  await click(byTest('videos-refresh'));
+  eq(cmds('videos').length, 2, 'refresh asks again');
+  await fail(last('cmd', 'videos'), 'the printer did not answer the time-lapse list');
+  assert(text(q('.tl-error')).includes('did not answer the time-lapse list'), 'error shown: ' + text(byTest('videos')));
+  eq(q('.tl-error').getAttribute('role'), 'alert', 'announced');
+  assert(q('#files-h') && !q('.fv-error'), 'the file list is not affected');
+  await click(btn('Try again', q('.tl-error')));
+  eq(cmds('videos').length, 3, 'retry');
+  await reply(last('cmd', 'videos'), {videos: VIDEOS()});
+  await click(q('[data-video-delete]', videoRow(CUBE))); await yes();
+  await fail(last('cmd', 'video_delete'), 'the printer refused the delete (code 10110): busy');
+  assert(alerts().includes('Delete time-lapse failed') && alerts().includes('10110'), 'the reason stays on screen: ' + alerts());
+  await until(() => cmds('videos').length === 4, 'the list is read again: it shows what is on the printer');
+  await reply(last('cmd', 'videos'), {videos: VIDEOS()});
+  assert(videoRow(CUBE) && !q('[data-video-delete]', videoRow(CUBE)).disabled, 'the video stays and can be tried again');
+  assert(!text(q('.notices')).includes('Time-lapse deleted.'), 'not reported as deleted');
+`);
+
+test('time-lapses: offered only for a connected printer, also while it prints', `
+  await until(() => last('hello'), 'hello sent');
+  await tab('files');
+  assert(!byTest('videos') && !q('#videos-h'), 'no section before the printer answered');
+  eq(cmds('videos'), [], 'nothing asked without a printer');
+  await ready(PRINTING(), 4);
+  await until(() => last('cmd', 'videos'), 'asked once connected');
+  eq(last('cmd', 'videos').gen, 4, 'for this printer');
+  await reply(last('cmd', 'videos'), {videos: VIDEOS()});
+  assert(!q('[data-video-delete]').disabled && !byTest('videos-refresh').disabled, 'usable during a print');
+  await click(q('[data-video-delete]', videoRow(CUBE))); await yes();
+  eq(cmds('video_delete').map(m => [m.args, m.gen]), [[{name: CUBE}, 4]], 'delete during a print, for this printer');
+  await post({type: 'selection_changed'});
+  assert(!byTest('videos'), 'gone with the printer');
+`);
+
+test('pt-BR: the time-lapses section is translated', `
+  await openVideos();
+  eq(text(byTest('videos-count')), '2 vídeos', 'count');
+  eq(qa('thead th', byTest('videos')).map(text), ['Impressão', 'Gravado', 'Duração', 'Tamanho', 'Ações'], 'columns');
+  assert(text(videoRow(CUBE)).includes('Vazio') && text(videoRow(CUBE)).includes('Nada foi gravado'), 'empty: ' + text(videoRow(CUBE)));
+  assert(text(byTest('videos-note')).includes('Ainda não é possível baixar'), 'note: ' + text(byTest('videos-note')));
+  eq(byTest('videos-refresh').getAttribute('aria-label'), 'Atualizar time-lapses', 'refresh');
+  await click(q('[data-video-delete]', videoRow(CUBE)));
+  assert(dialogText().includes('Excluir o time-lapse de cube') && text(q('[data-dlg="yes"]')) === 'Excluir vídeo', 'dialog: ' + dialogText());
+  await no();
+  await reply(last('cmd', 'videos'), {videos: []});
+`, { lang: 'pt-BR' });
 
 test('files: the print panel shows what the file needs and which slot prints each filament', `
   await openDetails(DETAILS());

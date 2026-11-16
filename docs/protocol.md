@@ -150,6 +150,27 @@ on. Auto-leveling follows the same rule with its setting (on by default), since 
 ticked. Vibration compensation is never offered (`SelectMachine.cpp` passes false), so the plugin's own
 setting is used for OrcaSlicer prints.
 
+## Time-lapse videos
+
+| Message | Data | On the printer |
+|---|---|---|
+| `file/listVideo` | `{page_num: 1, page_size: 200, path: "/", keyword: ""}` | verified on firmware 2.0.2.8 |
+| `file/deleteVideo` | `{path: "/", filename}` | **not yet tried** |
+
+`listVideo` is answered on `file/report` with action `listVideo`, code 200 and `data.records`, one per
+video: `filename` (such as `cube-20261116215053_8.mp4`), `main_file_name` (the print), `createTime`
+(unix seconds, where `listLocal` has milliseconds), `duration` (seconds), `fileSize` (bytes),
+`fileKey` and `file_image` (the name of a cover picture on the printer). A print that was stopped
+before the first frame leaves a record with `duration` 0 and about 156 bytes.
+
+`deleteVideo` and its two fields come from Anycubic Slicer Next's `VideoDelete {path, filename}`;
+`path` is the folder, as in a `deleteBatch` entry. Its answer has not been captured: the plugin takes a
+`file/report` with action `deleteVideo` and code 0 or 200 as success.
+
+No LAN route is known yet for fetching a video or its cover picture, so the plugin lists and deletes
+the videos and does not download them. Both messages are sent while the printer is idle and while it
+prints.
+
 ## Printer details and Print Assist
 
 From Anycubic Slicer Next 2.0.0.3's Workbench page (its web bundle in `libWorkbench.dylib`), sent on
@@ -238,7 +259,8 @@ detection, and filament usage tracking of the job.
 
 - On the printer: pause, resume, stop, filament feed and retract, drying start and stop, slot edit,
   skip objects, speed mode and Spoolman booking; flow calibration and time-lapse in `print/start`;
-  everything under "Printer details and Print Assist".
+  everything under "Printer details and Print Assist"; `file/deleteVideo` (the time-lapse list,
+  `file/listVideo`, is verified).
 - Inside OrcaSlicer itself: nothing has been tested there. That covers the Device tab, the Print
   dialog, the permissions dialog and the Device tab camera with OrcaSlicer's bundled ffmpeg.
 

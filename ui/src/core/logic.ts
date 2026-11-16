@@ -71,6 +71,13 @@ export function listFiles<T extends { name: string; size: number; timestamp: num
   return out.sort(by[sort]);
 }
 
+/** A video's length as m:ss (h:mm:ss from an hour on); '' when it has none. */
+export function clipLength(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+  const s = Math.max(1, Math.round(seconds)), h = Math.floor(s / 3600), two = (n: number) => String(n).padStart(2, '0');
+  return (h ? `${h}:${two(Math.floor((s % 3600) / 60))}` : `${Math.floor(s / 60)}`) + `:${two(s % 60)}`;
+}
+
 /** A SHA-256 hex fingerprint as AB:CD:...; anything else unchanged. */
 export function fingerprintText(hex: string): string {
   return /^(?:[0-9a-f]{2})+$/i.test(hex) ? hex.toUpperCase().match(/../g)!.join(':') : hex;

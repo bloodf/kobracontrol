@@ -4,6 +4,33 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-16
+
+The Files tab shows the printer's time-lapse videos and can delete them. Checked against the repository's test
+fakes, page tests and screenshots. Reading the list was checked on a Kobra X (firmware 2.0.2.8); **deleting a video
+has not been tried on a Kobra X yet** (see "Not yet tried on the printer" below).
+
+### Added
+
+- A **Time-lapses** section in the Files tab, under the file list: each video with the print it belongs to, when it
+  was recorded, its length and its size, newest first. Refresh reads the list again.
+- **Delete** on each video. It asks first, naming the print and the date, and the list is read again afterwards.
+- A print that was stopped before anything was recorded leaves an empty video on the printer; it is listed as
+  "Empty" and can be deleted like the others.
+- The section shows for a connected printer, idle or printing: listing and deleting videos does not touch the
+  running print.
+
+### Not in this version
+
+- **Downloading a video.** The printer has no known way to hand a video over the local network, so there is no
+  Download button; the section says so. The cover picture of each video can't be fetched either, so a video icon
+  stands in for it.
+
+### Not yet tried on the printer
+
+- `file/deleteVideo` with `{path: "/", filename}`, as Anycubic Slicer Next names its fields. If the printer refuses
+  it, the page shows the printer's answer and the video stays in the list.
+
 ## [0.5.1] - 2026-11-16
 
 ### Fixed

@@ -458,6 +458,30 @@ class Page(Base):
         self.assertEqual(plugin.get_store().effective()["ui_language"], "pt-BR")
         self.assertIn('"pref": "pt-BR"', page.get_ui())
 
+    def test_time_lapse_commands(self):
+        """The page lists the videos and deletes one by name: {type: cmd, cmd: videos | video_delete, args, gen}."""
+        name = "benchy-20261116215053_8.mp4"
+        video = {"createTime": 1794838471, "duration": 6, "fileKey": "f" * 32, "fileSize": 109048, "file_image": "b_6.jpg",
+                 "filename": name, "main_file_name": "benchy"}
+        self.fake.reply("file", "listVideo", {"records": [video]})
+        self.fake.reply("file", "deleteVideo", None, state="success")
+        page = self.page()
+        page.on_message({"type": "hello", "id": 1})
+        wait(lambda: any(m.get("id") == 1 for m in page.posted))
+        gen = plugin._service.generation
+
+        def answer(rid, cmd, args, gen=gen):
+            page.on_message({"type": "cmd", "id": rid, "cmd": cmd, "args": args, "gen": gen})
+            return wait(lambda: next((m for m in page.posted if m.get("type") == "reply" and m.get("id") == rid), None))
+        self.assertEqual(answer(2, "videos", {}), {"type": "reply", "id": 2, "result": {"videos": [
+            {"filename": name, "name": "benchy", "created": 1794838471, "duration": 6, "size": 109048, "empty": False}]}})
+        self.assertEqual(answer(3, "video_delete", {"name": name}), {"type": "reply", "id": 3, "result": {"deleted": name}})
+        self.assertEqual([m["data"] for m in self.sent("file", "deleteVideo")], [{"path": "/", "filename": name}])
+        self.assertEqual(set(answer(4, "video_delete", {"name": "../benchy.mp4"})), {"type", "id", "error"})
+        # a delete asked for the printer that was selected before is dropped
+        self.assertIn("selected printer changed", answer(5, "video_delete", {"name": name}, gen + 1)["error"])
+        self.assertEqual(len(self.sent("file", "deleteVideo")), 1)
+
 
 class OneSession(Base):
     def test_agent_page_and_script_share_one_mqtt_session(self):
