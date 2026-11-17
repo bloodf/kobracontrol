@@ -32,10 +32,45 @@ import service  # noqa: E402
 pa = orca.printer_agent
 
 
+def isolate(test):
+    """Module state a test may change: the grants, the refused addresses, queue_on_main and the last preset hints."""
+    saved = (set(plugin._granted), set(plugin._refused), plugin._queue_on_main, plugin._last_hints)
+
+    def restore():
+        plugin._granted.clear()
+        plugin._granted.update(saved[0])
+        plugin._refused.clear()
+        plugin._refused.update(saved[1])
+        plugin._queue_on_main, plugin._last_hints = saved[2], saved[3]
+    test.addCleanup(restore)
+
+
+class FakeSvc:
+    """Just enough of Service for the page's hello / save_settings: records the order of the calls."""
+
+    def __init__(self, refuse=False):
+        self.calls, self.refuse, self.target = [], refuse, None
+
+    def _ask_orcaslicer(self, host):
+        self.calls.append(("ask", host))
+        if self.refuse:
+            raise PermissionError("denied")
+
+    def set_target(self, target, retry=False):
+        self.calls.append(("set_target", target.preset_host))
+
+    def touch(self, **kw):
+        pass
+
+    def submit(self, *a):
+        pass
+
+
 class Base(unittest.TestCase):
     state = "free"
 
     def setUp(self):
+        isolate(self)
         self.fake = FakeKobra().start()
         self.addCleanup(self.fake.stop)
         self.addCleanup(i18n.set_language, "en")   # a test that picks a language must not leave it to the next
@@ -92,6 +127,11 @@ class Base(unittest.TestCase):
 
 
 class Registration(unittest.TestCase):
+    def setUp(self):
+        isolate(self)
+        plugin._granted.clear()
+        plugin._refused.clear()
+
     def test_capabilities_and_permissions(self):
         orca.registered.clear()
         orca.permissions.clear()
@@ -128,17 +168,81 @@ class Registration(unittest.TestCase):
         self.assertEqual(orca.permissions[-1]["network"], ["http://192.168.1.30", "http://239.255.255.250"])
 
     def test_preset_address_is_granted_on_the_ui_thread(self):
-        """connect_printer and the page's hello ask OrcaSlicer about the preset's address (getaddrinfo, the audited
-        event) once; a refusal is logged, nothing raised."""
-        with mock.patch.object(plugin.socket, "getaddrinfo") as ask:
-            plugin.grant_on_ui_thread("192.168.1.77")
-            plugin.grant_on_ui_thread("192.168.1.77")
-            plugin.grant_on_ui_thread("printer.example.com")   # not a numeric LAN address: no lookup on the UI thread
-        self.assertEqual(ask.call_count, 1)
+        """connect_printer and the page's hello ask OrcaSlicer about the preset's address (the audited event) once;
+        a refusal is logged, nothing raised."""
+        svc = FakeSvc()
+        plugin.grant_on_ui_thread(svc, "192.168.1.77")
+        plugin.grant_on_ui_thread(svc, "192.168.1.77")
+        plugin.grant_on_ui_thread(svc, "printer.example.com")   # not a numeric LAN address: no lookup on the UI thread
+        self.assertEqual(svc.calls, [("ask", "192.168.1.77")])
         self.assertIn("192.168.1.77", plugin._granted)
-        with mock.patch.object(plugin.socket, "getaddrinfo", side_effect=PermissionError("denied")):
-            plugin.grant_on_ui_thread("192.168.1.78")
+        plugin.grant_on_ui_thread(FakeSvc(refuse=True), "192.168.1.78")
         self.assertNotIn("192.168.1.78", plugin._granted)
+
+    def page_with(self, svc):
+        page = plugin.KobraControlPage()
+        page.posted = []
+        page.post_message = page.posted.append
+        self.enterContext(mock.patch.object(plugin, "service", lambda publish=None: svc))
+        return page
+
+    def test_hello_and_save_ask_before_the_target_is_set(self):
+        """The preset's address must be granted before set_target starts locating and connecting on worker threads."""
+        svc = FakeSvc()
+        page = self.page_with(svc)
+        page.on_message({"type": "hello", "id": 1})
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1"), ("set_target", "127.0.0.1")])
+        plugin._granted.discard("127.0.0.1")
+        svc.calls.clear()
+        page.on_message({"type": "save_settings", "id": 2, "settings": {}})
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1"), ("set_target", "127.0.0.1")])
+
+    def test_refused_address_is_asked_again_only_on_a_user_action(self):
+        """A No in OrcaSlicer's dialog is not followed by another dialog on every hello or selection change; Save
+        and connecting the Device tab ask again."""
+        svc = FakeSvc(refuse=True)
+        page = self.page_with(svc)
+        page.on_message({"type": "hello", "id": 1})
+        page.on_message({"type": "hello", "id": 2})
+        self.assertEqual([c for c in svc.calls if c[0] == "ask"], [("ask", "127.0.0.1")])
+        page.on_message({"type": "save_settings", "id": 3, "settings": {}})
+        self.assertEqual([c for c in svc.calls if c[0] == "ask"], [("ask", "127.0.0.1")] * 2)
+        svc.refuse = False
+        plugin.grant_on_ui_thread(svc, "127.0.0.1", user=True)   # connect_printer
+        self.assertIn("127.0.0.1", plugin._granted)
+        self.assertNotIn("127.0.0.1", plugin._refused)
+
+    def test_check_script_reads_presets_on_the_ui_thread(self):
+        """Check Kobra X connection runs on a script worker: it has the UI thread read the preset (queue_on_main)
+        and ask about its address there, and never reads presets itself."""
+        ui = []
+
+        def queue(task):   # OrcaSlicer runs it later on the UI thread
+            t = threading.Thread(target=task, name="ui")
+            ui.append(t)
+            t.start()
+        readers = []
+        real = plugin.preset_hints
+
+        def hints():
+            readers.append(threading.current_thread().name)
+            return real()
+        svc = FakeSvc()
+        self.enterContext(mock.patch.object(plugin, "preset_hints", hints))
+        plugin._queue_on_main = queue
+        self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc))[0], "127.0.0.1")
+        self.assertEqual(readers, ["ui"])
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1")])
+        plugin._queue_on_main = None   # no queue: the hints the tab last read, presets untouched
+        plugin._last_hints = ("192.168.1.9", "KX", "")
+        self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
+        self.assertEqual(readers, ["ui"])
+
+        def stuck(task):   # a UI thread that does not answer in time
+            pass
+        plugin._queue_on_main = stuck
+        with mock.patch.object(plugin, "UI_WAIT", 0.05):
+            self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
 
     def test_raising_queued_callback_is_caught(self):
         """A callback queued to OrcaSlicer's UI thread that raises must not escape: OnExceptionInMainLoop would end

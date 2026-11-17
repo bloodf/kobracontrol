@@ -214,7 +214,11 @@ is written around that:
   docs/HLSD/plugin-permissions.md). It never reads the printer preset at load: OrcaSlicer loads plugins on a
   thread of its own while its UI thread is still loading the presets (GUI_App.cpp), so that read races it.
   The preset's address and the Device tab's printer are asked about later on the UI thread (the tab's hello,
-  Save, `connect_printer`), the same way as `allow_hosts` below; a Yes saved earlier passes silently. Nothing for Anycubic Slicer Next: the bundled
+  Save, `connect_printer`), the same way as `allow_hosts` below; a Yes saved earlier passes silently. An
+  address refused there is asked about again only on a user action (Save, `connect_printer`, the Check
+  script), never on the tab's own hello. The Check Kobra X connection script runs on a worker thread, so it
+  has the UI thread read the preset through `queue_on_main` (waiting at most 5 s); without it, it uses what
+  the tab last read. Nothing for Anycubic Slicer Next: the bundled
   certificate is read from the plugin's own package (inside `data_dir()`, no grant needed). Find
   certificate reads Anycubic Slicer Next only when the user asks; OrcaSlicer then asks about that one file.
 - No `chmod` and no `open()` of a file descriptor: OrcaSlicer's audit sees no path in those events and
