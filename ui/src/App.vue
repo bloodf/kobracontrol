@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue';
-import { OuiAppBar, OuiStatus, type OuiState } from '../shared/src/components';
+import { OuiAppBar, OuiStatus, OuiToastHost, type OuiState } from '../shared/src/components';
 import { dashboard, files, settings } from '../shared/src/icons';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import PageMessages from './components/PageMessages.vue';
@@ -48,5 +48,8 @@ const tabs = computed(() => [
   </main>
 
   <ConfirmDialog />
+
+  <!-- What commands answered, bottom-left; on Settings it sits above the save bar. -->
+  <OuiToastHost :close-label="t('common.close')" :label="t('msg.toasts')" />
 
 </template>

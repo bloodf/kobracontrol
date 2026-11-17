@@ -21,7 +21,7 @@ const firstRun = computed(() => s.phase === 'noCertificate' || s.phase === 'noTa
 
   <template v-else>
     <UsageCard />
-    <SpoolerHint where="dash" />
+    <SpoolerHint />
 
     <div class="kc-grid">
       <div class="oui-stack" data-test="machine">

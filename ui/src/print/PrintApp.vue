@@ -78,7 +78,7 @@ const canPrint = computed(() => !locked.value && !blocked.value && (!choice.valu
 const why = computed(() => locked.value ? '' : blocked.value ? t('pd.blocked') : !canPrint.value ? t('pd.needAck') : '');
 const stateText = computed(() => tMaybe(`status.state.${state.value}`, state.value));
 const lockText = (o: Option) => (o.lock ? t(o.lock === 'setting' ? 'pd.lock.setting' : 'pd.lock.unsupported') : '');
-const usage = computed(() => [D.job.grams ? fmt.grams(D.job.grams) : '', D.job.metres ? t('pd.metres', { m: fmt.number(D.job.metres, 2) }) : '']
+const usage = computed(() => [D.job.grams ? fmt.grams(D.job.grams) : '', D.job.metres ? `${fmt.number(D.job.metres, 2)} m` : '']
   .filter(Boolean).join(' / '));
 
 function pick(f: number, tray: number) { trays[String(f)] = tray; }
@@ -155,7 +155,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
           <template #icon><OuiIcon :icon="refresh" :size="15" /></template></Button>
       </div>
       <div class="pd-printer">
-        <span class="pd-printer-id"><span class="oui-strong oui-truncate">{{ t('pd.printer', { printer: D.printer.name, address: D.printer.host }) }}</span>
+        <span class="pd-printer-id"><span class="oui-strong oui-truncate">{{ D.printer.name }} · {{ D.printer.host }}</span>
           <OuiStatus :state="busy ? 'busy' : 'ok'" variant="plain" data-test="state">{{ stateText }}</OuiStatus></span>
         <span class="pd-ace" role="img" :aria-label="t('pd.slots') + ': ' + slots.map(s => slotName(s) + ' ' + (s.usable ? s.type : t('slot.empty'))).join(', ')">
           <OuiIcon :icon="aceIcon" :size="18" />

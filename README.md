@@ -87,7 +87,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 | Time-lapses | The printer's time-lapse videos with print, date, length and size, and **Delete**. The printer offers no way to download a video over the local network yet. |
 | Spoolman | Link a Spoolman spool to a slot. Finished prints book their filament use there when the option is on. |
 | Works with Spooler | [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament profiles. With it installed, the Dashboard shows Spooler's stock. Kobra Control also works alongside [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
-| Settings | Connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
+| Settings | Requirements (ffmpeg, Anycubic Slicer Next, OrcaSlicer's printer agents and Spoolman: what is found, what needs it, how to install it), connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
 | Plugins > Run | **Check Kobra X connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
 
 Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and other Kobra models.
@@ -99,7 +99,7 @@ Not supported: Anycubic Cloud and access from outside your local network, a G-co
 2. Open the **Kobra Control** tab. It looks for the printer by itself. The first time, OrcaSlicer asks once whether kobracontrol may connect to that address. Allow it.
 3. Use the **Dashboard** to follow the print, set temperatures, turn the camera on with **Turn on**, and feed, retract or dry filament.
 4. To print a file stored on the printer, open **Files**, press **Print** on the file, check the panel and press **Start printing**.
-5. To send prints from OrcaSlicer itself, tick **Preferences > Developer > Experimental Features > Use printer agents**. Then, in a copy of your Kobra X printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
+5. To send prints from OrcaSlicer itself, open **Preferences > Developer > Experimental Features**, tick **Use printer agents instead of print hosts** and restart OrcaSlicer. Then, in a copy of your Kobra X printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
 6. Run **Plugins > Check Kobra X connection**. Then, in OrcaSlicer's print dialog, sync the ACE slots, map each filament to a slot and send the print.
 
 <p align="center">
@@ -168,7 +168,7 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 <details>
 <summary>The printer preset has no kobracontrol Printer Agent.</summary>
 
-**Use printer agents** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
+**Use printer agents instead of print hosts** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
 </details>
 
 <details>
@@ -201,5 +201,7 @@ Bug reports, logs and pull requests are welcome. Start with [CONTRIBUTING.md](CO
 ## 📄 License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
+
+Printer photo: Anycubic product image (see [NOTICE.md](NOTICE.md)).
 
 <p align="center"><sub>by bloodf</sub></p>

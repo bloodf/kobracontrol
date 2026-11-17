@@ -2,7 +2,7 @@
 
 The Kobra Control tab needs only LAN mode on the printer: the client certificate is built in and the tab
 finds the printer on the network. OrcaSlicer's own Print, Send and Device tab go through kobracontrol
-only when the "Use printer agents" preference is on and the printer preset's agent is `kobracontrol`
+only when the "Use printer agents instead of print hosts" preference is on and the printer preset's agent is `kobracontrol`
 (sections 4 and 5). Without that, for example next to Kobralink or another Moonraker bridge, they keep
 using the preset's own agent and the tab works on its own.
 kobracontrol is in development. The connection, status, files, camera stream and
@@ -61,8 +61,9 @@ again. The plugin saves the copy in its storage folder and uses it instead of th
 
 ## 4. Turn on printer agents in OrcaSlicer
 
-Open **Preferences > Developer > Experimental Features** and tick **Use printer agents**. Restart
-OrcaSlicer if it asks.
+Open **Preferences > Developer > Experimental Features**, tick **Use printer agents instead of print hosts** and restart
+OrcaSlicer. Settings > Requirements in the Kobra Control tab shows "In use" once OrcaSlicer runs the
+kobracontrol agent (a plugin cannot read the preference itself, so before that it says "Not detected").
 
 ## 5. Set the printer preset (only for Print, Send and the Device tab)
 
@@ -92,7 +93,7 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
 |---|---|
 | Nothing connects, the printer does not answer on port 18910 or 9883 | LAN mode is off. Turn it on at the printer. |
 | The check reports the certificate is rejected by the printer | The bundled certificate no longer matches this firmware. Install Anycubic Slicer Next and press **Find certificate** to use your own copy (see section 3). |
-| The preset has no `kobracontrol` Printer Agent, or Print and Device tab do not use the plugin | **Use printer agents** is off. Turn it on under Preferences > Developer > Experimental Features and restart OrcaSlicer. |
+| The preset has no `kobracontrol` Printer Agent, or Print and Device tab do not use the plugin | **Use printer agents instead of print hosts** is off. Turn it on under Preferences > Developer > Experimental Features and restart OrcaSlicer. |
 | "Something answers at … but it is not a Kobra X in LAN mode" | The address is another device, often a bridge such as Kobralink, or LAN mode is off. Leave Settings > Printer address blank so the tab searches, or enter the printer's own IP there. |
 | "No Kobra X answered the network search" | The printer is off, on another network, in LAN mode off, or the network blocks multicast. Enter its IP under Settings > Printer address. |
 | Connection check fails with a timeout or connection refused | The address is wrong, or the printer is on another network. Use the printer's current IP. |

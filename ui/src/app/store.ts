@@ -1,10 +1,11 @@
 import { computed, reactive } from 'vue';
 import * as bridge from '../core/bridge';
-import { Tracker, message, type RunOptions } from '../core/tracker';
+import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
+import { showToast } from '../../shared/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { boundSlots } from '../core/logic';
-import type { Certificate, Config, Info, Limits, Located, Spool, Status, StockView, UsageView } from './types';
+import type { Certificate, Config, Info, Limits, Located, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
 
 export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 'unreachable';
 export const LIMITS: Limits = { nozzle_max: 300, bed_max: 100 };
@@ -43,13 +44,35 @@ export const s = reactive({
   historyAt: 0,
   /** The printer's details and Print Assist were asked for (cmd device): '' not yet, 'asking', 'done'. */
   device: '' as '' | 'asking' | 'done',
+  /** Settings > Requirements, as the plugin last checked them; `checking` while its file checks run. */
+  requirements: [] as Requirement[],
+  checking: false,
 });
 
+// What commands answered goes to the page's toasts (bottom-left): "Pause failed: timeout" is a title and its detail.
+// An unknown outcome stays until closed, like an error: the user has to look at the printer.
+const TOAST_TONE = { error: 'error', unknown: 'warn', success: 'success', info: 'info' } as const;
+export function toast(kind: NoticeKind, text: string, key?: string): void {
+  const i = text.indexOf(': ');
+  showToast({ tone: TOAST_TONE[kind], title: i < 0 ? text : text.slice(0, i + 1), body: i < 0 ? undefined : text.slice(i + 2), key,
+    ...(kind === 'unknown' ? { timeout: 0 } : {}) });
+}
 export const tracker = new Tracker(
   (cmd, args) => bridge.command(cmd, args, s.info?.generation),
   (key, params) => t(key, params),
+  toast,
 );
 export const run = (o: RunOptions) => tracker.run(o);
+export const requirement = (id: RequirementId) => s.requirements.find(r => r.id === id);
+/** ffmpeg was looked for and is not there: the camera is off (the plugin does not start it either). */
+export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing');
+/** Anycubic Slicer Next is not in its usual folder: Find certificate searches only a path typed in. */
+export const noSlicer = computed(() => requirement('anycubic_slicer')?.state === 'missing');
+/** Settings > Requirements > Check again: the plugin looks for ffmpeg and Anycubic Slicer Next again. */
+export function checkRequirements(): void {
+  s.checking = true;
+  bridge.post({ type: 'check_requirements' });
+}
 bridge.setErrorSink(e => tracker.notify('error', t('msg.plugin', { error: message(e) })));
 
 export const printerName = computed(() => s.info?.printer || t('app.printer'));
@@ -227,6 +250,7 @@ function onMessage(m: any): void {
     case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; s.now = Date.now(); break;
     case 'frame': s.frame = m.image; s.camError = ''; s.camReason = ''; break;
     case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; } break;
+    case 'requirements': s.requirements = Array.isArray(m.items) ? m.items : []; s.checking = m.checking === true; break;
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
     case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
     case 'selection_changed': void hello(); break;

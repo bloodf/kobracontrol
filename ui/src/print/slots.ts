@@ -20,5 +20,5 @@ export function slotNumber(s: PdSlot, all: readonly PdSlot[]): string {
 /** "ACE 1 · Slot 2" / "Print head · Slot 1". */
 export function slotName(s: PdSlot | undefined, _all?: readonly PdSlot[]): string {
   if (!s) return '?';
-  return t('pd.slot', { box: s.box_id < 0 ? t('ace.head') : t('ace.unit', { n: s.box_id + 1 }), slot: t('slot.name', { n: s.index + 1 }) });
+  return `${s.box_id < 0 ? t('ace.head') : t('ace.unit', { n: s.box_id + 1 })} · ${t('slot.name', { n: s.index + 1 })}`;
 }

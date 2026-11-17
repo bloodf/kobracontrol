@@ -106,6 +106,7 @@ Page to plugin:
 | `frame_ack` | | the page has shown the last camera frame |
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
+| `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
 
 Plugin to page:
 
@@ -116,6 +117,7 @@ Plugin to page:
 | `frame` | `image` (JPEG data URL) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
 | `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
+| `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`, `certificate`, `spooler` (the last two as the config just read them); `state` `ok`, `missing`, `unknown` = not checked yet; for `printer_agents` `missing` means not detected). Sent after `hello`, `save_settings` and `check_requirements` (each also sends `config` first), and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a Settings save; without ffmpeg the monitor never starts the camera |
 | `notice` | `text` |
 | `offline` | `error` |
 | `selection_changed` | |
@@ -209,10 +211,17 @@ granted and every temp-file creation, and it matches a `urllib` request by its f
 is written around that:
 
 - It asks at load for: threads; read access to OrcaSlicer's own temp tree, where the sliced `.3mf`
-  lives (`plugin.slicer_temp_root()`); network access to the printer addresses it already knows (the
-  Settings address, the Kobra X preset's address and the addresses found before, `addresses.json`) and to
-  the SSDP multicast group `239.255.255.250` for the network search (a canonical `http://host` grant also
-  covers raw sockets, docs/HLSD/plugin-permissions.md). Nothing for Anycubic Slicer Next: the bundled
+  lives (`plugin.slicer_temp_root()`); network access to the printer addresses its own files name (the
+  Settings address and the addresses found before, `addresses.json`) and to the SSDP multicast group
+  `239.255.255.250` for the network search (a canonical `http://host` grant also covers raw sockets,
+  docs/HLSD/plugin-permissions.md). It never reads the printer preset at load: OrcaSlicer loads plugins on a
+  thread of its own while its UI thread is still loading the presets (GUI_App.cpp), so that read races it.
+  The preset's address and the Device tab's printer are asked about later on the UI thread (the tab's hello,
+  Save, `connect_printer`), the same way as `allow_hosts` below; a Yes saved earlier passes silently. An
+  address refused there is asked about again only on a user action (Save, `connect_printer`, the Check
+  script), never on the tab's own hello. The Check Kobra X connection script runs on a worker thread, so it
+  has the UI thread read the preset through `queue_on_main` (waiting at most 5 s); without it, it uses what
+  the tab last read. Nothing for Anycubic Slicer Next: the bundled
   certificate is read from the plugin's own package (inside `data_dir()`, no grant needed). Find
   certificate reads Anycubic Slicer Next only when the user asks; OrcaSlicer then asks about that one file.
 - No `chmod` and no `open()` of a file descriptor: OrcaSlicer's audit sees no path in those events and

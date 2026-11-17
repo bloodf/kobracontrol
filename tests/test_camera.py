@@ -258,6 +258,17 @@ class RunTests(Base):
         self.assertEqual(self.errors[0][0], "no_ffmpeg")
         self.assertEqual(self.spawned, 0)
 
+    def test_no_ffmpeg_ends_the_reader_instead_of_looking_every_second(self):
+        looked = []
+        with mock.patch.object(camera, "find_ffmpeg", side_effect=lambda s: looked.append(s)):
+            cam = self.make(ffmpeg_path="/gone/ffmpeg")
+            cam.start()
+            self.assertTrue(wait_for(lambda: self.errors))
+            self.assertTrue(wait_for(lambda: not any(t.is_alive() for t in cam._threads)))
+            time.sleep(1.3)
+        self.assertEqual(looked, ["/gone/ffmpeg"])   # one lookup, not one per second
+        self.assertEqual(self.errors, [("no_ffmpeg", "ffmpeg was not found")])
+
     def test_failure_reports_failed_with_stderr_and_restarts_with_backoff(self):
         self.url = "rtsp://127.0.0.1:1/live?mode=die"
         cam = self.make()

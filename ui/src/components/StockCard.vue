@@ -8,7 +8,7 @@ import { OuiBanner, OuiIcon, OuiLevel, OuiPanel, OuiSpool, OuiStatus, OuiToolbar
 import { boxes, link as linkIcon, refresh, settings, spoolman } from '../../shared/src/icons';
 import { spoolFraction } from '../core/spool-level';
 import { s, run, tracker, loadStock, loadSpools, controlsOff, targetKnown, printerName, stockVisible } from '../app/store';
-import { config } from '../app/settings';
+import { config, spoolmanSet as configured } from '../app/settings';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
 import { family, groupSlots } from '../core/logic';
@@ -17,7 +17,8 @@ import type { Spool } from '../app/types';
 // Spoolman and stock: where the slots' spools come from (the source line, Refresh spools), and Spooler's stock with
 // the link to a slot. The per-slot pickers are in the slot cards. The stock list shows only when Spooler says it is
 // usable (`available`); every other reason hides it.
-const configured = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
+/** The Spoolman in use: what the stock banners are about (their dismissal comes back for another one). */
+const smUrl = computed(() => s.located?.spoolman_url || config.value?.settings.spoolman_url || '');
 // One visible spool source per screen: when Spooler's stock uses the same Spoolman, say so.
 const source = computed(() => {
   if (!configured.value && !s.spoolsLoaded) return t('sm.notConfigured');
@@ -49,7 +50,7 @@ const shown = computed(() => {
 });
 /** Why linking is off. A page-wide reason is said under the app bar (#kc-why); one about this list, here (#stock-why). */
 const why = computed(() => (!targetKnown.value || !s.info ? t('stock.why.connect') : controlsOff.value ? controlsOff.value : chosen.value == null ? t('stock.why.noSlot')
-  : s.stock?.same_spoolman === false ? t('stock.why.spoolman') : ''));
+  : !configured.value ? t('sm.notConfigured') : s.stock?.same_spoolman === false ? t('stock.why.spoolman') : ''));
 const pageWhy = computed(() => !targetKnown.value || !s.info || !!controlsOff.value);
 const whyId = computed(() => (!why.value ? undefined : pageWhy.value ? 'kc-why' : 'stock-why'));
 const slotOf = (r: Spool) => (r.bound_slot == null ? '' : slotOptions.value.find(o => o.value === r.bound_slot)?.label ?? '');
@@ -73,7 +74,7 @@ async function link(r: Spool) {
     <template #title><span id="stock-h">{{ stockVisible ? t('stock.title') : t('sm.title') }}</span></template>
     <template #meta><span data-test="spool-source" :title="source">{{ source }}</span></template>
     <template #actions>
-      <Button severity="secondary" text size="small" :label="t('sm.refreshShort')" :aria-label="t('sm.refresh')" :disabled="!!controlsOff" :aria-describedby="controlsOff ? 'kc-why' : undefined"
+      <Button severity="secondary" text size="small" :label="t('sm.refreshShort')" :aria-label="t('sm.refresh')" :disabled="!!controlsOff || !configured" :aria-describedby="controlsOff ? 'kc-why' : undefined"
               :loading="tracker.isBusy('spools')" data-focus-key="sm-refresh" @click="loadSpools(false)"><template #icon><OuiIcon :icon="spoolman" :size="14" /></template></Button>
       <Button v-if="stockVisible" severity="secondary" text size="small" :aria-label="t('stock.refresh')" :title="t('stock.refresh')" :loading="s.stockLoading"
               data-focus-key="stock-refresh" @click="loadStock(true)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
@@ -86,9 +87,10 @@ async function link(r: Spool) {
 
     <div v-if="stockVisible" class="sc-body" data-test="stock-card">
       <div role="status" aria-live="polite" class="sc-notes">
-        <OuiBanner v-if="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" />
-        <OuiBanner v-else-if="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" />
-        <OuiBanner v-if="why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })" />
+        <OuiBanner :show="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" dismissible :dismiss-key="`stock-other-spoolman:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" dismissible :dismiss-key="`stock-fallback:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="!!why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })"
+                   dismissible :dismiss-key="`stock-why:${why}`" :close-label="t('common.close')" />
       </div>
       <OuiToolbar class="sc-bar" :summary="t('stock.count', { shown: shown.length, n: rows.length })" :label="t('stock.searchLabel')">
         <InputText v-model="q" type="search" size="small" :placeholder="t('stock.search')" :aria-label="t('stock.searchLabel')" class="sc-q" />

@@ -6,7 +6,7 @@ import { computed, nextTick, ref } from 'vue';
 import Popover from 'primevue/popover';
 import { OuiIcon } from '../../shared/src/components';
 import { check, chevronDown } from '../../shared/src/icons';
-import { t } from '../core/i18n';
+import { fmt, t } from '../core/i18n';
 import { sameFamily, type PdFilament, type PdSlot } from '../core/printsetup';
 import { inkOn, slotNumber, slotName } from './slots';
 
@@ -18,7 +18,7 @@ const group = ref<HTMLElement | null>(null);
 
 const chosen = computed(() => props.slots.find(s => s.tray === props.tray));
 const choosable = (s: PdSlot) => s.usable && sameFamily(props.filament, s);
-const discLabel = (s: PdSlot) => [t('pd.disc', { slot: slotName(s, props.slots), type: s.usable ? (s.type || t('slot.noType')) : t('slot.empty') }), s.spool]
+const discLabel = (s: PdSlot) => [fmt.pair(slotName(s, props.slots), s.usable ? (s.type || t('slot.noType')) : t('slot.empty')), s.spool]
   .filter(Boolean).join(' · ');
 const chipLabel = computed(() => t('pd.slotBtn', { n: props.filament.index + 1, type: props.filament.type || '?',
   slot: chosen.value ? discLabel(chosen.value) : t('pd.noSlot') }));
