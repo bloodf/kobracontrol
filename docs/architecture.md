@@ -64,6 +64,7 @@ state, so `usage_track` never runs for it). A Spooler that does must list `"anyc
 `provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
 | `gcode_check.py` | Read-only checks of the plate G-code (settings block, PNG preview) and of the printer preset | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
+| `bridge.py` | Upload bridge (opt-in): OctoPrint-compatible `GET /api/version` and `POST /api/files/local` on 127.0.0.1, API key in `bridge_key.txt` (0600) | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
 | `ui/app.html` | The Kobra Control tab: one compiled Vue 3 + PrimeVue page, built from `ui/` | - |
@@ -116,6 +117,7 @@ Page to plugin:
 | `video_error` | | the page's player can't play this stream: the plugin uses `ffmpeg` for it for 60 s, or until the camera is turned off |
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
+| `bridge_new_key` | `id` | replace the upload bridge's API key; answers `{renewed}` and a new `config` |
 | `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
 
 Plugin to page:
@@ -127,7 +129,7 @@ Plugin to page:
 | `video` | `codec` and `init` (base64 init segment: a new stream, the player starts over), else `data` (base64 fragment, one frame) and `key` (it starts with a keyframe) |
 | `frame` | `image` (JPEG data URL, the `ffmpeg` fallback) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
-| `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
+| `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`), `bridge` (`{enabled, running, port, host, key, error}`) |
 | `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`, `certificate`, `spooler` (the last two as the config just read them); `state` `ok`, `missing`, `unknown` = not checked yet; for `printer_agents` `missing` means not detected). Sent after `hello`, `save_settings` and `check_requirements` (each also sends `config` first), and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a Settings save; without ffmpeg the monitor never starts the camera |
 | `notice` | `text` |
 | `offline` | `error` |
@@ -148,6 +150,7 @@ is always empty, because it carries the upload token. Plus:
 | `features`, `aux_fan_pct`, `phase_unit`, `phase_channel` | from `kobra.State.view()`: the `*_support` flags, the auxiliary fan percentage, and the ACE unit and slot (1-based) of the current slot check during a job, or `null` |
 | `can` | `{pause, resume, stop, move, heat, feed, print}` booleans: what the printer state allows now |
 | `tls` | `{fingerprint, changed_from}`: SHA-256 (hex) of the certificate the printer presented on this session, and the one remembered from before when it differs (else `""`); `null` without TLS. See SECURITY.md |
+| `bridge_pending` | `{id, name, at}`: an Upload and Print from the upload bridge waiting for Start in the tab, else `null` |
 
 ### Commands
 
@@ -177,6 +180,7 @@ is always empty, because it carries the upload token. Plus:
 | `file_details` | `name` | |
 | `file_print` | `name`, `auto_leveling`, `vibration_compensation`, `flow_calibration`, `timelapse` | yes |
 | `file_delete` | `names` | yes |
+| `bridge_start`, `bridge_cancel` | `id` (of `status.data.bridge_pending`); Start runs `file_print` with the Print defaults, idle printer only | the banner's Start is the confirmation |
 | `videos` | (the time-lapse videos; also while printing) | |
 | `video_delete` | `name` (one video's file name: a plain name ending `.mp4`, at most 255 characters); also while printing | yes |
 | `find_certificate` | `path` (optional file or folder) | |

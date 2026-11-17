@@ -5,6 +5,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 ## [Unreleased]
 
 ### Added
+- **Upload bridge** (opt-in, off by default): OrcaSlicer's OctoPrint host type (Upload, Upload and Print) reaches
+  the Kobra X through Kobra Control on 127.0.0.1. Every request needs an API key the plugin makes (Settings, with
+  Copy, New key and the OrcaSlicer steps). Upload and Print never starts by itself: the tab shows the waiting print
+  with Start and Don't print, and refuses while the printer is busy. Loopback only, rate and size limited.
 
 - The camera in the Kobra Control tab no longer needs `ffmpeg`. The plugin reads the printer's video stream
   (H.264 in FLV) and the page plays it with the webview's own video player, at the printer's full 1280x720 and

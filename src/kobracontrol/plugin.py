@@ -14,6 +14,7 @@ import orca
 
 import ace
 import bambu
+import bridge
 import certs
 import gcode_check
 import i18n
@@ -39,6 +40,7 @@ _granted = set()   # printer addresses declared at load or allowed since: the se
 _refused = set()   # addresses refused in OrcaSlicer's dialog this session: asked again only on a user action
 _queue_on_main = None   # OrcaSlicer's queue_on_main, once it hands it to the printer agent
 _last_hints = ("", "", "")   # preset_hints() as last read on the UI thread, for the script's worker thread
+STOP_WAIT = 1.0    # s a restarted bridge waits for the previous one to let go of its port
 UI_WAIT = 5.0      # s a worker thread waits for the UI thread to read the presets
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
@@ -54,6 +56,9 @@ _link = None
 _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
+_bridge = None            # the running upload bridge (bridge.Bridge), None while off
+_bridge_error = ""       # why it is not running although on (shown in Settings)
+_bridge_key = ""         # the key when there is no storage folder to keep it in (this session only)
 _agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 _preset_notices = set()   # orca_filament_preset names already reported as not usable this session
 _user_presets_failed = False
@@ -230,6 +235,103 @@ def service(publish=None):
             _service.publish = publish
         _service.peers = _link
         return _service
+
+
+# ---------------------------------------------------------------------- upload bridge (opt-in)
+
+def bridge_key(renew=False, create=True):
+    """The bridge's API key: kept in the storage folder (mode 0600), else for this session only. create=False only
+    reads it ("" when there is none yet): the bridge's requests and Settings while the bridge is off."""
+    global _bridge_key
+    folder = _storage()
+    if folder:
+        if renew:
+            return bridge.write_key(folder, bridge.new_key())
+        return bridge.key_for(folder) if create else bridge.read_key(folder)
+    if not create and not renew:
+        return _bridge_key
+    if renew or not _bridge_key:
+        _bridge_key = bridge.new_key()
+    return _bridge_key
+
+
+def _bridge_upload(path, filename, plate_index, start):
+    """The bridge's thread: the file to the printer Kobra Control has selected (located now if the tab never was open)."""
+    svc = service()
+    if svc.target is None:   # never read the presets here: the UI thread does (preset_hints_from_worker)
+        svc.set_target(_target(preset_hints_from_worker(svc)))
+    try:
+        svc.wait_located(CHECK_SECONDS)
+    except Exception as e:
+        raise bridge.Refused(503, str(e)) from None
+    return svc.bridge_upload(path, filename, plate_index, start, get_store().effective())
+
+
+def sync_bridge(on_change=None):
+    """Start, restart or stop the bridge as Settings say. Binds on the caller's thread: OrcaSlicer asks for the
+    127.0.0.1 network permission there when it was not granted at load. Never waits: when the previous bridge on
+    the port is still stopping, a worker waits for it and binds again, then calls on_change() (the page's config)."""
+    global _bridge, _bridge_error
+    cfg = get_store().effective()
+    want, folder = cfg["bridge_enabled"], _storage()   # an upload is written to the storage folder first
+    if _bridge is not None and (not want or _bridge.port != cfg["bridge_port"]):
+        stop_bridge()
+    _bridge_error = ""
+    if want and _bridge is None and not folder:
+        _bridge_error = tr("no storage folder for the uploads")
+    elif want and _bridge is None:
+        try:
+            bridge_key()   # made once here; requests only read it
+            _bridge = _make_bridge(cfg["bridge_port"], folder)
+        except OSError as e:
+            stopping = _stopping
+            if stopping is not None and stopping.is_alive() and stopping.port == cfg["bridge_port"]:   # off and on quickly
+                _bridge_error = tr("waiting for the previous bridge to close")
+                threading.Thread(target=_retry_bridge, args=(stopping, cfg["bridge_port"], folder, on_change),
+                                 name="kobracontrol-bridge-retry", daemon=True).start()
+            else:
+                _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
+                log("upload bridge not started: %s" % _bridge_error)
+
+
+_stopping = None   # the thread stopping the previous bridge, while it runs
+
+
+def _make_bridge(port, folder):
+    return bridge.Bridge(port, lambda: bridge_key(create=False), _bridge_upload, folder, log).start()
+
+
+def _retry_bridge(stopping, port, folder, on_change):
+    """Worker: wait for the old bridge to let go of the port, bind once more if Settings still want this one."""
+    global _bridge, _bridge_error
+    stopping.join(STOP_WAIT)
+    cfg = get_store().effective()
+    if _bridge is None and cfg["bridge_enabled"] and cfg["bridge_port"] == port:
+        try:
+            _bridge, _bridge_error = _make_bridge(port, folder), ""
+        except OSError as e:
+            _bridge_error = tr("port %d could not be opened (%s)") % (port, e.strerror or e)
+            log("upload bridge not started: %s" % _bridge_error)
+    if on_change is not None:
+        try:
+            on_change()
+        except Exception as e:
+            log("bridge state not shown: %r" % e)
+
+
+def stop_bridge():
+    global _bridge, _stopping
+    running, _bridge = _bridge, None
+    if running is not None:   # shutdown waits for a request in progress: never on the UI thread
+        _stopping = threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True)
+        _stopping.port = running.port
+        _stopping.start()
+
+
+def bridge_state():
+    cfg = get_store().effective()
+    return {"enabled": cfg["bridge_enabled"], "running": _bridge is not None, "port": _bridge.port if _bridge else cfg["bridge_port"],
+            "host": bridge.HOST, "key": bridge_key(create=cfg["bridge_enabled"]), "error": _bridge_error}
 
 
 def start_link():
@@ -578,11 +680,16 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "allow_hosts":   # UI thread: OrcaSlicer's dialog for a printer the search found
                 result = svc.allow(data.get("hosts"), user=data.get("user") is True)
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+            elif kind == "bridge_new_key":   # the old key stops working at once
+                bridge_key(renew=True)
+                self.post_message(self._config_message())
+                self.post_message({"type": "reply", "id": data.get("id"), "result": {"renewed": True}})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
+                sync_bridge(lambda: self.post_message(self._config_message()))
                 target = _target()
                 grant_on_ui_thread(svc, target.preset_host, user=True)
                 svc.set_target(target, retry=True)   # a new address connects at once; the same one now
@@ -617,7 +724,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
+                "bridge": bridge_state()}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (
@@ -632,8 +740,13 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             start_link()
         except Exception as e:
             log("Spooler discovery not started: %r" % e)
+        try:
+            sync_bridge(lambda: self.post_message(self._config_message()))
+        except Exception as e:
+            log("upload bridge not started: %r" % e)
 
     def on_unload(self):
+        stop_bridge()
         stop_link()
         _unuse("page")
 
@@ -1224,14 +1337,18 @@ class KobraControl(orca.base):
         _storage()
         hosts = known_hosts()
         _granted.update(hosts)
+        try:   # the upload bridge listens on 127.0.0.1: asked for at load only when it is on
+            local = ["http://" + bridge.HOST] if get_store().effective()["bridge_enabled"] else []
+        except Exception:
+            local = []
         # Network I/O runs on the plugin's own threads. fs_read: OrcaSlicer's per-user temp folder, where Print and
         # Send hand over the sliced .3mf (the certificate is read from the plugin's own package, which needs no
         # grant; Anycubic Slicer Next's folders are read only when the user asks, and asked for then). network:
         # every printer address known now and the SSDP multicast group the network search sends to (a canonical
         # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
         # contact.
-        orca.request_permissions(threading=True, fs_read=job_read_grants(),
-                                 network=["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP])
+        network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
+        orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)
         orca.register_capability(CheckConnection)
