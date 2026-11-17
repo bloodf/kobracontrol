@@ -4,6 +4,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changed
+
+- The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
+  of the Spoolman spool linked to each slot (bands for a multi-colour spool), else the colour the ACE reports, and an
+  empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
+  shows its number. Screen readers hear each slot's colour and material. Printer photo: Anycubic product image.
+
 ### Fixed
 
 - OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
