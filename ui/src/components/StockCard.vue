@@ -18,6 +18,8 @@ import type { Spool } from '../app/types';
 // the link to a slot. The per-slot pickers are in the slot cards. The stock list shows only when Spooler says it is
 // usable (`available`); every other reason hides it.
 const configured = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
+/** The Spoolman in use: what the stock banners are about (their dismissal comes back for another one). */
+const smUrl = computed(() => s.located?.spoolman_url || config.value?.settings.spoolman_url || '');
 // One visible spool source per screen: when Spooler's stock uses the same Spoolman, say so.
 const source = computed(() => {
   if (!configured.value && !s.spoolsLoaded) return t('sm.notConfigured');
@@ -86,9 +88,10 @@ async function link(r: Spool) {
 
     <div v-if="stockVisible" class="sc-body" data-test="stock-card">
       <div role="status" aria-live="polite" class="sc-notes">
-        <OuiBanner v-if="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" />
-        <OuiBanner v-else-if="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" />
-        <OuiBanner v-if="why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })" />
+        <OuiBanner :show="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" dismissible :dismiss-key="`stock-other-spoolman:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" dismissible :dismiss-key="`stock-fallback:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="!!why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })"
+                   dismissible :dismiss-key="`stock-why:${why}`" :close-label="t('common.close')" />
       </div>
       <OuiToolbar class="sc-bar" :summary="t('stock.count', { shown: shown.length, n: rows.length })" :label="t('stock.searchLabel')">
         <InputText v-model="q" type="search" size="small" :placeholder="t('stock.search')" :aria-label="t('stock.searchLabel')" class="sc-q" />

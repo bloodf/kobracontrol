@@ -14,6 +14,7 @@ import orca
 
 import ace
 import bambu
+import camera
 import certs
 import i18n
 import locate
@@ -448,6 +449,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
+            elif kind == "check":   # Settings' "Check again": look for the certificate, ffmpeg and Spooler now
+                self.post_message(self._config_message())
+                self.post_message({"type": "reply", "id": data.get("id"), "result": {"checked": True}})
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
                 target = _target()
@@ -468,7 +472,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
+                "ffmpeg": camera.find_ffmpeg(cfg["ffmpeg_path"]) or ""}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (

@@ -55,6 +55,7 @@ export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
   version: string; limits: Limits; located?: Located | null; agent_id?: string;
+  /** Where the plugin found ffmpeg ('' = not found); absent from a plugin that does not look. */ ffmpeg?: string;
 }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;
