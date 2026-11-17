@@ -271,6 +271,21 @@ class PrintFlow(Base):
         self.upload(False)
         self.assertIsNone(self.svc.bridge_pending_for(self.fake.host))
 
+    def test_send_of_the_same_name_drops_the_waiting_print(self):
+        self.upload(True)
+        self.svc.send_file(self.fake.host, self.path, "cube")   # OrcaSlicer's Send, not the bridge
+        self.assertIsNone(self.svc.bridge_pending_for(self.fake.host))
+
+    def test_start_refused_when_the_file_changed_on_the_printer(self):
+        self.upload(True)
+        pending = self.svc.bridge_pending_for(self.fake.host)
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "cube.gcode", "size": 7, "timestamp": 2}]},
+                        code=200)   # replaced by someone else meanwhile
+        self.assertIn("not the file OrcaSlicer sent", self.run_cmd("bridge_start", id=pending["id"])["error"])
+        time.sleep(0.2)
+        self.assertFalse(self.sent("print", "start"))
+        self.assertIsNone(self.svc.bridge_pending_for(self.fake.host))
+
     def test_no_printer_selected(self):
         self.svc.target = None
         with self.assertRaises(bridge.Refused) as e:

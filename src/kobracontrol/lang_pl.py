@@ -268,7 +268,6 @@ TEXT = {
     'that print request is no longer waiting; nothing was started': 'to zlecenie wydruku już nie czeka; nic nie uruchomiono',
     'the purge add-on found no bed size (printable_area) in the sliced file; nothing was sent': 'dodatek czyszczenia nie znalazł rozmiaru stołu (printable_area) w pociętym pliku; nic nie wysłano',
     'the purge add-on found no first-layer bed temperature in the sliced file; nothing was sent': 'dodatek czyszczenia nie znalazł temperatury stołu dla pierwszej warstwy w pociętym pliku; nic nie wysłano',
-    'the purge add-on needs absolute moves (G90) and relative extrusion (M83) at each tool change; nothing was sent': 'dodatek czyszczenia wymaga ruchów bezwzględnych (G90) i ekstruzji względnej (M83) przy każdej zmianie narzędzia; nic nie wysłano',
     'the upload ended early': 'przesyłanie zakończyło się przedwcześnie',
     'the upload has no file': 'przesyłanie nie zawiera pliku',
     'the upload is too large': 'przesyłany plik jest za duży',
@@ -276,4 +275,7 @@ TEXT = {
     'too many requests; wait a minute': 'za dużo żądań; odczekaj minutę',
     'upload failed: %s': 'przesyłanie nie powiodło się: %s',
     'use http://127.0.0.1:%d as the OctoPrint host': 'użyj http://127.0.0.1:%d jako hosta OctoPrint',
+    'the purge add-on needs absolute moves (G90) at each tool change; nothing was sent': 'dodatek czyszczenia wymaga ruchów bezwzględnych (G90) przy każdej zmianie narzędzia; nic nie wysłano',
+    'the purge add-on has room for %d purges on this bed and the file changes filament more often; nothing was sent': 'dodatek czyszczenia ma na tym stole miejsce na %d czyszczeń, a plik zmienia filament częściej; nic nie wysłano',
+    '%s on the printer is not the file OrcaSlicer sent; nothing was started': '%s na drukarce to nie plik wysłany przez OrcaSlicer; nic nie uruchomiono',
 }

@@ -264,8 +264,8 @@ def bridge_key(renew=False):
 def _bridge_upload(path, filename, plate_index, start):
     """The bridge's thread: the file to the printer Kobra Control has selected (located now if the tab never was open)."""
     svc = service()
-    if svc.target is None:
-        svc.set_target(_target())
+    if svc.target is None:   # never read the presets here: the UI thread does (preset_hints_from_worker)
+        svc.set_target(_target(preset_hints_from_worker(svc)))
     try:
         svc.wait_located(CHECK_SECONDS)
     except Exception as e:

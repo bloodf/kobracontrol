@@ -11,7 +11,7 @@ export const config = ref<Config | null>(null);
 const DEFAULT_NAME = 'Anycubic Kobra X';
 export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera: true, leveling: true, vibration: true, flow: false, timelapse: false,
   spoolman: '', spoolmanAuto: true, usage: true,
-  bridge: false, bridgePort: 8765, purge: false, purgeLength: 30, purgeSpeed: 5, purgeCorner: 'front_left' as PurgeCorner });
+  bridge: false, bridgePort: 8765, purge: false, purgeLength: 15, purgeSpeed: 5, purgeCorner: 'front_left' as PurgeCorner });
 export const saving = ref(false);
 /** A Spoolman address is set here or comes from Spooler: linking spools to slots needs one. */
 export const spoolmanSet = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
@@ -24,7 +24,7 @@ const fromSettings = (st: Record<string, any>): Form => ({
   timelapse: st.timelapse === true, spoolman: st.spoolman_url || '',
   spoolmanAuto: st.spoolman_auto !== false, usage: st.spoolman_report_usage !== false,
   bridge: st.bridge_enabled === true, bridgePort: Number(st.bridge_port) || 8765, purge: st.purge_enabled === true,
-  purgeLength: Number(st.purge_length) || 30, purgeSpeed: Number(st.purge_speed) || 5, purgeCorner: st.purge_corner || 'front_left' });
+  purgeLength: Number(st.purge_length) || 15, purgeSpeed: Number(st.purge_speed) || 5, purgeCorner: st.purge_corner || 'front_left' });
 const toSettings = (f: Form): Record<string, unknown> => ({
   host: f.host.trim(), printer_name: f.name.trim() || DEFAULT_NAME, ffmpeg_path: f.ffmpeg.trim(), camera_enabled: f.camera,
   auto_leveling: f.leveling, vibration_compensation: f.vibration, flow_calibration: f.flow, timelapse: f.timelapse, spoolman_url: f.spoolman.trim(),

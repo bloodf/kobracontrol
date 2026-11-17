@@ -28,12 +28,12 @@ DEFAULTS = {
     "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
     "bridge_port": 8765,
     "purge_enabled": False,              # purge-and-bed-wait add-on (purge.py): opt-in, needs a test print first
-    "purge_length": 30.0,                # mm
+    "purge_length": 15.0,                # mm
     "purge_speed": 5.0,                  # mm/s
     "purge_corner": "front_left",
 }
 PORT_RANGE = (1024, 65535)
-NUMBERS = {"purge_length": (1.0, 100.0), "purge_speed": (1.0, 20.0)}   # purge.LIMITS
+NUMBERS = {"purge_length": (1.0, 50.0), "purge_speed": (1.0, 20.0)}   # purge.LIMITS
 CHOICES = {"purge_corner": ("front_left", "front_right", "back_left", "back_right")}   # purge.CORNERS
 
 

@@ -171,11 +171,16 @@ class JobsMixin:
 
     def send_file(self, host, path, name, plate_index=1, progress=None, cancelled=None):
         """Upload only (OrcaSlicer's Send): the plate's G-code goes to the printer's storage; returns its name."""
+        return self._send(host, path, name, plate_index, progress, cancelled)[0]
+
+    def _send(self, host, path, name, plate_index=1, progress=None, cancelled=None):
+        """send_file -> (name, bytes sent)."""
         conn = self.ready(host)
         filename = remote_name(name or os.path.basename(path))
+        self._forget_pending(filename)   # a waiting bridge print of that name would start this file instead
         with self.job_source(path, plate_index) as (source, size, _):
             self._upload(conn, filename, source, size, progress, cancelled)
-        return filename
+        return filename, size
 
     def print_job(self, host, path, plate_index=1, name="", tray_ids=(), filaments=(), task=None, progress=None,
                   cancelled=None, stage=None):
@@ -186,6 +191,7 @@ class JobsMixin:
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
         filename = remote_name(name or os.path.basename(path))
+        self._forget_pending(filename)
         with self.job_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
             self._upload(conn, filename, source, size, progress, cancelled)
@@ -245,21 +251,23 @@ class JobsMixin:
                 raise bridge.Refused(409, tr("the printer is %s; nothing was sent") % tr(data["state"]))
             if data["state"] in ("printing", "paused") and data.get("filename") == name:
                 raise bridge.Refused(409, tr("%s is the file being printed; nothing was sent") % name)
-            name = self.send_file(target.host, path, filename, plate_index)
+            name, size = self._send(target.host, path, filename, plate_index)
         except kobra.KobraError as e:
             raise bridge.Refused(502, str(e)) from None
-        with self.lock:
-            if self.bridge_pending and self.bridge_pending["name"] == name:   # its content just changed
-                self.bridge_pending = None
         if not start:
             return {"name": name}
-        pending = {"id": secrets.token_hex(8), "name": name, "host": target.host,
+        pending = {"id": secrets.token_hex(8), "name": name, "size": size, "host": target.host,
                    "task": {k: bool((task or {}).get(k)) for k in PRINT_OPTIONS}, "at": time.time()}
         with self.lock:
             self.bridge_pending = pending
         text = tr("%s is on the printer. Start the print in Kobra Control.") % name
         self._notice(text)
         return {"name": name, "pending": True, "message": text}
+
+    def _forget_pending(self, name):
+        with self.lock:
+            if self.bridge_pending and self.bridge_pending["name"] == name:
+                self.bridge_pending = None
 
     def bridge_pending_for(self, host):
         """The pending print for `host` as the page sees it, None when there is none (or it waited too long)."""
@@ -275,6 +283,10 @@ class JobsMixin:
         pending = self.bridge_pending
         if not pending or pending["id"] != id or self.bridge_pending_for(conn.host) is None:
             raise kobra.KobraError(tr(GONE))
+        listed = next((f for f in self._printer().list_files() if f.get("filename") == pending["name"]), None)
+        if listed is None or listed.get("size") != pending["size"]:   # deleted or replaced on the printer meanwhile
+            self._forget_pending(pending["name"])
+            raise kobra.KobraError(tr("%s on the printer is not the file OrcaSlicer sent; nothing was started") % pending["name"])
         result = self.cmd_file_print(pending["name"], **pending["task"])
         with self.lock:
             if self.bridge_pending is pending:

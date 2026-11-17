@@ -265,7 +265,6 @@ TEXT = {
     'that print request is no longer waiting; nothing was started': 'dieser Druckauftrag wartet nicht mehr; nichts wurde gestartet',
     'the purge add-on found no bed size (printable_area) in the sliced file; nothing was sent': 'der Spül-Zusatz hat keine Bettgröße (printable_area) in der geslicten Datei gefunden; nichts wurde gesendet',
     'the purge add-on found no first-layer bed temperature in the sliced file; nothing was sent': 'der Spül-Zusatz hat keine Betttemperatur der ersten Schicht in der geslicten Datei gefunden; nichts wurde gesendet',
-    'the purge add-on needs absolute moves (G90) and relative extrusion (M83) at each tool change; nothing was sent': 'der Spül-Zusatz braucht absolute Bewegungen (G90) und relative Extrusion (M83) bei jedem Werkzeugwechsel; nichts wurde gesendet',
     'the upload ended early': 'der Upload endete zu früh',
     'the upload has no file': 'der Upload enthält keine Datei',
     'the upload is too large': 'der Upload ist zu groß',
@@ -276,4 +275,7 @@ TEXT = {
     'requests from web pages are not accepted': 'Anfragen von Webseiten werden nicht angenommen',
     'see the OrcaSlicer log': 'siehe das OrcaSlicer-Protokoll',
     '%s is the file being printed; nothing was sent': '%s ist die Datei, die gerade gedruckt wird; nichts wurde gesendet',
+    'the purge add-on needs absolute moves (G90) at each tool change; nothing was sent': 'der Spül-Zusatz braucht absolute Bewegungen (G90) bei jedem Werkzeugwechsel; nichts wurde gesendet',
+    'the purge add-on has room for %d purges on this bed and the file changes filament more often; nothing was sent': 'der Spül-Zusatz hat auf diesem Bett Platz für %d Spülungen und die Datei wechselt öfter das Filament; nichts wurde gesendet',
+    '%s on the printer is not the file OrcaSlicer sent; nothing was started': '%s auf dem Drucker ist nicht die Datei, die OrcaSlicer gesendet hat; nichts wurde gestartet',
 }

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build  # noqa: E402
 
 UI = ROOT / "src" / "kobracontrol" / "ui"
-MAX_BUILT_BYTES = 600_000   # the wheel measures ~554 kB: five languages, the Kobra X photo and the photo spool layers (foundation 4.1.0+)
+MAX_BUILT_BYTES = 650_000   # the wheel measures ~615 kB: six languages, the Kobra X photo, the photo spool layers (foundation 4.1.0+), the upload bridge and purge add-on
 
 
 class UiAssets(unittest.TestCase):

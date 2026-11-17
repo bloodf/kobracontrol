@@ -1516,7 +1516,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true,
-    bridge_enabled: false, bridge_port: 8765, purge_enabled: false, purge_length: 30, purge_speed: 5, purge_corner: 'front_left'}, 'every setting, by its name');
+    bridge_enabled: false, bridge_port: 8765, purge_enabled: false, purge_length: 15, purge_speed: 5, purge_corner: 'front_left'}, 'every setting, by its name');
   assert(!text(q('.notices')).includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
@@ -1593,13 +1593,13 @@ test('settings: upload bridge is off by default; key, copy, new key and OrcaSlic
   assert(text(byTest('bridge-state')).includes('Address already in use'), 'error shown: ' + text(byTest('bridge-state')));
 `);
 
-test('settings: purge add-on is off, warns it changes the G-code, previews the plugin lines', `
+test('settings: purge add-on is off, warns it is untried and changes the G-code, previews the plugin lines', `
   await ready(VIEW());
   await tab('settings');
   eq(q('input#c-purge').checked, false, 'off by default');
-  assert(text(byTest('purge-warning')).includes('It changes the G-code sent to the printer'), 'warning');
+  assert(text(byTest('purge-warning')).includes('Not yet tried on a Kobra X'), 'warning');
   await until(() => last('purge_preview'), 'preview asked');
-  eq(last('purge_preview').purge, {length: 30, speed: 5, corner: 'front_left'}, 'form values');
+  eq(last('purge_preview').purge, {length: 15, speed: 5, corner: 'front_left'}, 'form values');
   await reply(last('purge_preview'), {bed_wait: ['; >>>', 'M190 S<first-layer bed temperature>', '; <<<'],
     purge: ['; >>>', 'G1 X5 Y5 F12000', 'G1 E30 F300', '; <<<'], point: ['5', '5']});
   await until(() => byTest('purge-preview'), 'preview shown');
@@ -1610,7 +1610,7 @@ test('settings: purge add-on is off, warns it changes the G-code, previews the p
   await click(q('input#c-purge'));
   await click(byTest('save-top'));
   const st = last('save_settings').settings;
-  eq([st.purge_enabled, st.purge_corner, st.purge_length], [true, 'back_right', 30], 'saved');
+  eq([st.purge_enabled, st.purge_corner, st.purge_length], [true, 'back_right', 15], 'saved');
 `);
 
 test('upload bridge: a print from OrcaSlicer waits for Start; refused while the printer is busy', `

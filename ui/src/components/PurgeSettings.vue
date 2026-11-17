@@ -38,7 +38,7 @@ watch(() => [config.value !== null, form.purgeLength, form.purgeSpeed, form.purg
     <div class="kc-pad"><OuiBanner tone="warn" :title="t('purge.warnTitle')" data-test="purge-warning">{{ t('purge.warnBody') }}</OuiBanner></div>
     <OuiFormRow :label="t('purge.enable')" for="c-purge"><ToggleSwitch v-model="form.purge" input-id="c-purge" data-test="purge-enable" /></OuiFormRow>
     <OuiFormRow :label="t('purge.length')" for="c-purge-len">
-      <InputNumber v-bind="dot" v-model="form.purgeLength" :locale="locale" input-id="c-purge-len" :min="1" :max="100" :max-fraction-digits="1" :use-grouping="false"
+      <InputNumber v-bind="dot" v-model="form.purgeLength" :locale="locale" input-id="c-purge-len" :min="1" :max="50" :max-fraction-digits="1" :use-grouping="false"
                    :allow-empty="false" size="small" data-test="purge-length" />
     </OuiFormRow>
     <OuiFormRow :label="t('purge.speed')" for="c-purge-speed">

@@ -1122,12 +1122,37 @@ class AddOns(Base):
             plugin.KobraControl().register_capabilities()
             self.assertIn("http://127.0.0.1", orca.permissions[-1]["network"])
 
+    def test_upload_with_no_target_reads_presets_on_the_ui_thread(self):
+        """The bridge's thread never reads presets itself: with no printer selected yet it has the UI thread do it
+        (queue_on_main), as the Check script does."""
+        readers, real = [], plugin.preset_hints
+
+        def hints():
+            readers.append(threading.current_thread().name)
+            return real()
+
+        def queue(task):
+            threading.Thread(target=task, name="ui").start()
+        self.enterContext(mock.patch.object(plugin, "preset_hints", hints))
+        self.addCleanup(setattr, plugin, "_queue_on_main", plugin._queue_on_main)
+        plugin._queue_on_main = queue
+        self.fake.reply("file", "listLocal", {"records": []}, code=200)
+        path = os.path.join(self.tmp, "up.part")
+        with open(path, "wb") as f:
+            f.write(b"G90\nM83\nG1 X1\n")
+        plugin._service.target = None
+        result = run_off_main(lambda: plugin._bridge_upload(path, "cube.gcode", 1, False))
+        self.assertEqual(result, {"name": "cube.gcode"})
+        self.assertTrue(readers)
+        self.assertEqual(set(readers), {"ui"})
+        self.assertEqual(self.fake.uploads[-1]["filename"], "cube.gcode")
+
     def test_purge_switch_and_preview(self):
         self.save(purge_enabled=True, purge_length=20, purge_corner="back_right")
         self.assertEqual(plugin._service.purge_options, {"length": 20.0, "speed": 5.0, "corner": "back_right"})
         self.page.on_message({"type": "purge_preview", "id": 7, "purge": {"length": 15, "speed": 3, "corner": "front_right"}})
         preview = self.page.posted[-1]["result"]
         self.assertEqual(preview["point"], ["255", "5"])   # the fake preset has no printable_area: 260 x 260
-        self.assertIn("G1 E15 F180", preview["purge"])
+        self.assertIn("G1 X225 Y5 E15 F360", preview["purge"])
         self.save(purge_enabled=False)
         self.assertIsNone(plugin._service.purge_options)

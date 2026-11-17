@@ -265,7 +265,6 @@ TEXT = {
     'that print request is no longer waiting; nothing was started': '该打印请求已不再等待；未开始任何打印',
     'the purge add-on found no bed size (printable_area) in the sliced file; nothing was sent': '冲刷附加功能在切片文件中找不到热床尺寸（printable_area）；未发送任何内容',
     'the purge add-on found no first-layer bed temperature in the sliced file; nothing was sent': '冲刷附加功能在切片文件中找不到首层热床温度；未发送任何内容',
-    'the purge add-on needs absolute moves (G90) and relative extrusion (M83) at each tool change; nothing was sent': '冲刷附加功能要求每次换料时为绝对移动（G90）和相对挤出（M83）；未发送任何内容',
     'the upload ended early': '上传提前结束',
     'the upload has no file': '上传中没有文件',
     'the upload is too large': '上传文件太大',
@@ -276,4 +275,7 @@ TEXT = {
     'requests from web pages are not accepted': '不接受来自网页的请求',
     'see the OrcaSlicer log': '请查看 OrcaSlicer 日志',
     '%s is the file being printed; nothing was sent': '%s 是正在打印的文件；未发送任何内容',
+    'the purge add-on needs absolute moves (G90) at each tool change; nothing was sent': '冲刷附加功能要求每次换料时为绝对移动（G90）；未发送任何内容',
+    'the purge add-on has room for %d purges on this bed and the file changes filament more often; nothing was sent': '冲刷附加功能在此热床上最多可容纳 %d 次冲刷，而文件换料次数更多；未发送任何内容',
+    '%s on the printer is not the file OrcaSlicer sent; nothing was started': '打印机上的 %s 不是 OrcaSlicer 发送的文件；未开始任何打印',
 }
