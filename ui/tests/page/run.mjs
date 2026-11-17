@@ -448,6 +448,16 @@ test('Spoolman: bind per slot asks first; unbind too', `
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
 
+test('status: a long file name wraps after _ - . first, two lines at most, full name in the tooltip', `
+  await ready(PRINTING({filename: 'desk_organiser_plate-1.gcode'}));
+  const n = byTest('job-name');
+  eq(text(n), 'desk_organiser_plate-1.gcode', 'whole name shown');
+  eq(n.getAttribute('title'), 'desk_organiser_plate-1.gcode', 'tooltip');
+  eq(n.querySelectorAll('wbr').length, 4, 'a break opportunity after each _ - .');
+  eq(getComputedStyle(n).webkitLineClamp, '2', 'two lines at most');
+  eq(qa('[data-test="job-card"] .oui-job-name, [data-test="job-card"] .kc-job-name').filter(e => e.offsetParent).length, 1, 'the name is shown once');
+`);
+
 test('status: the photo spools are the print head slots, coloured like their slot cards; Spoolman first, then the ACE', `
   const MULTI = {id: 12, name: 'Rainbow', vendor: 'Acme', material: 'PLA', colour: '#ff0000', colours: ['#ff0000', '#00ff00', '#0000ff'], remaining: 250, initial: 1000};
   const HEAD = () => SLOTS().map(s => (s.global_index === 0 ? {...s, color: [250, 250, 250], spool_id: 11} : s.global_index === 2 ? {...s, spool_id: 12} : s));

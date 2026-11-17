@@ -32,6 +32,9 @@ const detail = computed(() => {
 });
 const lastKnown = computed(() => (stale.value ? t('status.lastKnown', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''));
 const job = computed(() => printing.value || !!st.value?.filename);
+// The file name may wrap after "_", "-" or "." before it breaks inside a word (desk_organiser_plate_1.gcode).
+const jobName = computed(() => st.value?.filename || stateName.value);
+const nameParts = computed(() => jobName.value.match(/[^_.-]*[_.-]?/g)?.filter(Boolean) ?? []);
 const pct = computed(() => (typeof st.value?.progress === 'number' ? Math.max(0, Math.min(100, st.value.progress)) : null));
 const layer = computed(() => (st.value?.layer ? t('status.layer', { n: st.value.layer, total: st.value.total_layers || '?' }) : ''));
 const eta = computed(() => {
@@ -105,11 +108,12 @@ async function skip() {
   <OuiPanel flush :aria-label="t('status.title')" data-test="job-card">
     <OuiEmpty v-if="!st" compact :state="link === 'offline' ? 'offline' : 'loading'" :title="t('status.noStatus')" />
 
-    <OuiJob v-else-if="job" class="kc-hero" hero :stale="stale" :name="st.filename || stateName" :progress="pct" :progress-label="t('status.progress')" :detail="layer">
+    <OuiJob v-else-if="job" class="kc-hero" hero :stale="stale" :name="jobName" :progress="pct" :progress-label="t('status.progress')" :detail="layer">
       <template #thumb><PrinterFigure :spools="spools" :state="state" :stale="stale" /></template>
       <template #status>
         <span class="kc-state"><OuiStatus :state="chip" data-test="state">{{ stateName }}</OuiStatus>
           <span v-if="detail || lastKnown" class="kc-state-detail" data-test="state-detail">{{ detail || lastKnown }}</span></span>
+        <p class="kc-job-name" :title="jobName" data-test="job-name"><template v-for="(part, i) in nameParts" :key="i"><wbr v-if="i" />{{ part }}</template></p>
       </template>
       <template v-if="printing">
         <OuiReadout :icon="clock" :label="t('status.elapsed')" :value="fmt.duration(st.elapsed_s)" size="sm" :stale="stale" />
@@ -169,6 +173,10 @@ async function skip() {
 <style>
 .kc-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s1) var(--oui-s2); min-width: 0; }
 .kc-state-detail { font-size: var(--oui-text-sm); font-weight: 600; }
+/* The hero's file name, drawn here so it can wrap at _ - . (OuiJob's own name line is hidden); two lines at most. */
+.kc-hero.oui-job[data-hero] .oui-job-id > .oui-job-name { display: none; }
+.kc-job-name { margin-top: 4px; font-size: var(--oui-text-lg); font-weight: 700; line-height: 1.3; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .kc-idle { display: flex; align-items: center; gap: var(--oui-s3); border-radius: var(--oui-radius-lg) var(--oui-radius-lg) 0 0; }
 .kc-idle-id { display: grid; gap: 2px; min-width: 0; }
 .kc-idle-id > .kc-state { margin-bottom: 4px; }
