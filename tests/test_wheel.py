@@ -98,6 +98,30 @@ class WheelTests(unittest.TestCase):
         self.assertNotIn("__BOOT__", page)
         self.assertNotIn("__ICONS__", page)
 
+    def test_no_preset_read_until_loaded(self):
+        """OrcaSlicer 2.5.1 crashed (SIGSEGV in PresetBundle::full_fff_config, plugin load thread, under
+        PythonPluginBridge::finalize_plugin_capture) when the plugin read the preset bundle while the UI thread was
+        still loading presets. Nothing preset-related may run at import, class definition, capability construction,
+        register_capabilities or on_load."""
+        orca = fake_orca.install_orca()
+        touched = []
+
+        def guard(name):
+            def call(*a, **k):
+                touched.append(name)
+                raise AssertionError("orca.host.%s read during plugin load" % name)
+            return call
+        orca.host.preset_bundle = guard("preset_bundle")
+        orca.host.preset = type("Guard", (), {"__getattr__": lambda self, n: guard("preset." + n)()})()
+        orca.registered.clear()
+        ns = fake_orca.load_wheel(self.path)   # import and class definitions
+        ns["KobraControl"]().register_capabilities()
+        for cls in list(orca.registered):
+            cap = cls()
+            if hasattr(cap, "on_load"):
+                cap.on_load()
+        self.assertEqual(touched, [])
+
     def test_installed_wheel_uses_its_bundled_certificate_without_writing(self):
         """A fresh install (OrcaSlicer unpacks the wheel into its plugin folder): the bundled pair is found next to the
         modules and loads, so no first-run certificate card and no Find certificate are needed, and nothing is
