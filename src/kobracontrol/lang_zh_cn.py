@@ -154,6 +154,7 @@ TEXT = {
     'Starting print...': '正在开始打印...',
     'Print started': '打印已开始',
     "Couldn't reach the Kobra X: %s": "无法连接 Kobra X：%s",
+    "Open the Kobra Control tab to allow or choose the printer.": "请打开 Kobra Control 标签页以允许或选择打印机。",
     '%s at %s (firmware %s), %s. %s': '%s，地址 %s（固件 %s），%s。%s',
     'No filament loaded.': '未装载耗材丝。',
     'No storage folder to keep the certificate in.': '没有用于保存证书的存储文件夹。',

@@ -273,6 +273,14 @@ class Locate(unittest.TestCase):
         self.assertEqual(cm.exception.pending, ["10.25.7.41"])
         self.assertIn("connects by itself", str(cm.exception))
 
+    def test_ungranted_preset_address_is_not_probed(self):
+        """The preset's address is no longer declared at load: until it is allowed it is offered, not probed from
+        this worker thread (each refused attempt there queues another OrcaSlicer dialog)."""
+        with self.assertRaises(locate.NotFound) as cm:
+            locate.locate("", "10.25.7.41", probe=self.never, search=lambda: [("10.25.7.41", {})],
+                          allowed=lambda ip: False)
+        self.assertEqual(cm.exception.pending, ["10.25.7.41"])
+
     def test_several_ungranted_candidates_are_never_asked_about_by_themselves(self):
         """MEDIUM-2: spoofed empty replies must not each raise an OrcaSlicer dialog: the user picks."""
         replies = [("10.25.%d.1" % i, {}) for i in range(3)]

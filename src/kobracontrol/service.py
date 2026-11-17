@@ -31,6 +31,7 @@ from connection import camera_url_for, find_and_save_certificate  # noqa: F401  
 import kobra
 import locate
 import peers
+import requirements
 import settings
 import spoolman as sm
 import usage
@@ -179,6 +180,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.lease_until, self.camera_on = 0.0, False
         self.camera_mse = False      # the page plays H.264 itself (lease `mse`): Relay, no ffmpeg
         self._relay_refused = None   # the stream URL Relay found not to be FLV/H.264: ffmpeg plays that one
+        self._told_no_ffmpeg = False   # the ffmpeg path is needed but ffmpeg is missing: told the page once
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
             self.log("kobracontrol: " + self.ledger.restore_notice)
@@ -187,6 +189,11 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._reset_printer_state()
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
         self.relay = relay_factory(self._camera_url, self._on_video, self._on_relay_error, log=log)
+        # ffmpeg and Anycubic Slicer Next: checked once on a thread of their own when the page first asks
+        # (check_requirements), never here. agent_seen: plugin.py's answer to "is our printer agent in use".
+        self.requirements, self.agent_seen = requirements.Checker(self._publish_requirements, log), False
+        self.host_requirements = ()   # certificate and Spooler, set by plugin.py from its config message
+        self._requirements_lock = threading.Lock()
         self.jobs = queue.Queue()
         self.worker = self._thread(self._work, "worker")
         self.monitor = self._thread(self._watch, "monitor")
@@ -497,7 +504,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             with self.lock:
                 target, gen = self.target, self.generation
                 active = now < self.lease_until and target is not None
-                cam = active and self.camera_on   # camera_enabled only turns it on when the page opens (the page's job)
+                cam = active and self.camera_on   # without ffmpeg the page's own player still runs (_camera_tick)
             if not active:
                 self._guard("camera", self.stop_cameras)
                 self._closing.wait(0.25)
@@ -540,14 +547,39 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if self.camera_mse and url.lower().startswith("http://") and url != self._relay_refused:
             self.camera.stop()
             self.relay.start()
-        else:   # an RTSP stream, a page that cannot play H.264, or a stream Relay could not read
-            self.relay.stop()
-            self.camera.set_ffmpeg(target.ffmpeg_path)
-            self.camera.start()
+            self._told_no_ffmpeg = False
+            return
+        # ffmpeg: an RTSP stream, a page that cannot play H.264, or a stream Relay could not read
+        self.relay.stop()
+        if self.requirements.ffmpeg() == "":   # known missing: not started, said once
+            self.camera.stop()
+            if not self._told_no_ffmpeg:
+                self._told_no_ffmpeg = True
+                self.publish({"type": "camera_error", "reason": "no_ffmpeg", "error": tr("ffmpeg was not found")})
+            return
+        self.camera.set_ffmpeg(self.requirements.ffmpeg() or target.ffmpeg_path)
+        self.camera.start()
 
     def stop_cameras(self):
         self.camera.stop()
         self.relay.stop()
+        self._told_no_ffmpeg = False
+
+    def check_requirements(self, ffmpeg_setting, force=False):
+        """Start the file checks unless they are cached for this ffmpeg setting (force: Check again); their answer
+        is published when they finish. Publishes the requirements as they stand now (UI thread: no I/O)."""
+        self.requirements.ensure(ffmpeg_setting, force)
+        self._publish_requirements()
+
+    def requirements_message(self):
+        with self.lock:
+            target = self.target
+        return requirements.message(self.requirements, self.agent_seen, target.spoolman_url if target else "",
+                                    self.host_requirements)
+
+    def _publish_requirements(self):
+        with self._requirements_lock:   # built and sent together: a finished check is never followed by an older state
+            self.publish(self.requirements_message())
 
     def _on_frame(self, jpeg):
         self.publish({"type": "frame", "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()})
@@ -564,6 +596,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._on_camera_error(reason, text)
 
     def _on_camera_error(self, reason, text):
+        if reason == "no_ffmpeg":   # gone since the check: missing now, so the monitor stops starting the camera
+            self.requirements.mark_missing("ffmpeg")
         self.publish({"type": "camera_error", "reason": reason, "error": text})
 
     def _track_loop(self):

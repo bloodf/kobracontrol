@@ -12,6 +12,8 @@ const DEFAULT_NAME = 'Anycubic Kobra X';
 export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera: true, leveling: true, vibration: true, flow: false, timelapse: false,
   spoolman: '', spoolmanAuto: true, usage: true });
 export const saving = ref(false);
+/** A Spoolman address is set here or comes from Spooler: linking spools to slots needs one. */
+export const spoolmanSet = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
 let cameraApplied = false;
 
 type Form = typeof form;

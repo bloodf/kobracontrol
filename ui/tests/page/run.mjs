@@ -41,6 +41,10 @@ const SETTINGS = {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ff
   spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false};
 const CONFIG = extra => ({type: 'config', settings: SETTINGS, certificate: CERT, spooler: {installed: true, url: 'https://example.org/spooler', dismissed: false}, version: '0.1.0',
   limits: {nozzle_max: 300, bed_max: 100}, ...extra});
+const REQS = (o) => ({type: 'requirements', checking: false, items: [{id: 'ffmpeg', state: 'missing', details: ''},
+  {id: 'anycubic_slicer', state: 'missing', details: ''}, {id: 'printer_agents', state: 'missing', details: ''},
+  {id: 'spoolman', state: 'ok', details: 'http://box:7912'}, {id: 'certificate', state: 'ok', details: 'bundled'},
+  {id: 'spooler', state: 'ok', details: ''}].map(i => ({...i, ...((o || {})[i.id] || {})}))});
 async function connect(gen) {
   await until(() => last('hello'), 'hello sent');
   await reply(last('hello'), {address: '192.168.1.50', printer: 'Bench Kobra', generation: gen || 1});
@@ -48,7 +52,7 @@ async function connect(gen) {
 async function ready(view, gen) { await connect(gen); await post(CONFIG()); await post({type: 'status', data: view || VIEW()}); }
 async function tab(name) { await click(q('[data-tab="' + name + '"]')); }
 async function pick(root, label) {
-  assert(root, 'select to open'); root.click(); await until(() => q('.p-select-overlay') && !q('.p-select-overlay[class*="enter-active"]'), 'select overlay open');
+  assert(root, 'select to open'); await reveal(root); root.click(); await until(() => q('.p-select-overlay') && !q('.p-select-overlay[class*="enter-active"]'), 'select overlay open');
   // the overlay is positioned when the option stops moving (a filtered list shifts while it focuses its search field)
   const first = qa('.p-select-overlay [role=option]')[0];
   let at = '', steady = 0;
@@ -57,7 +61,10 @@ async function pick(root, label) {
   assert(opt, 'option ' + label + ' in ' + qa('.p-select-overlay [role=option]').map(text).join('|'));
   opt.click(); await settle(); await until(() => !q('.p-select-overlay'), 'overlay closed'); await settle();
 }
-const alerts = () => qa('[role=alert] .oui-banner').map(text).join(' | ');
+// Errors: banners in an alert region and error toasts (role=alert). What commands answered is a toast, bottom-left.
+const toastText = el => [text(q('.oui-toast-text > strong', el)), text(q('.oui-toast-body', el))].filter(Boolean).join(' ');
+const alerts = () => [...qa('[role=alert] .oui-banner').map(text), ...qa('.oui-toast[role=alert]').map(toastText)].join(' | ');
+const toasts = () => qa('.oui-toast').map(toastText).join(' | ');
 // The job's state chip, then what the printer is doing in it (phase, pause or error reason).
 const statusText = () => [text(q('[data-test="state"]')), text(q('[data-test="state-detail"]'))].filter(Boolean).join(' · ');
 const ROWS = [{id: 7, filament_id: 70, name: 'Matte Black', vendor: 'Generic', material: 'ABS', colour: '#111111', colours: [], remaining: 500, initial: 1000, low: false, use_first: false, location: 'Shelf A'},
@@ -158,8 +165,8 @@ test('pending commands show what is awaited; errors persist with the reason', `
   assert(alerts().includes('Pause failed: printer refused the pause'), 'error shown: ' + alerts());
   await post({type: 'status', data: PRINTING()});
   assert(alerts().includes('printer refused'), 'error persists across status updates');
-  await click(btn('Dismiss', q('[role=alert]')));
-  assert(!alerts(), 'dismissed by the user');
+  await click(q('.oui-toast[role=alert] .oui-toast-close'));
+  await until(() => !alerts(), 'closed by the user');
 `);
 
 // ------------------------------------------------------------------ protected actions
@@ -173,7 +180,7 @@ test('stop asks first: cancel sends nothing, confirm sends stop', `
   await yes();
   eq(cmds('stop').map(m => [m.args, m.gen]), [[{}, 3]], 'confirmed stop for generation 3');
   await reply(last('cmd', 'stop'), true);
-  await until(() => text(q('.notices')).includes('Stop sent'), 'result shown');
+  await until(() => toasts().includes('Stop sent'), 'result shown');
 `);
 
 test('dialog keeps focus inside and returns it', `
@@ -235,18 +242,18 @@ test('confirmed:false shows "sent, waiting"; confirmed:true shows success; a sec
   await ready(PRINTING());
   await click(q('[data-test="pause"]'));
   await reply(last('cmd', 'pause'), {confirmed: false});
-  assert(text(q('.notices')).includes('Pause sent; waiting for the printer'), 'waiting text: ' + text(q('.notices')));
-  assert(!qa('.notices .oui-banner[data-tone="success"]').length, 'not shown as success');
+  assert(toasts().includes('Pause sent; waiting for the printer'), 'waiting text: ' + toasts());
+  assert(!qa('.oui-toast[data-toast-tone="success"]').length, 'not shown as success');
   await post({type: 'status', data: PRINTING({state: 'paused', can: {pause: false, resume: true, stop: true, move: true, heat: true, feed: true, print: false}})});
   await click(q('[data-test="resume"]'));
   await reply(last('cmd', 'resume'), {confirmed: true});
-  assert(text(q('.notices')).includes('Resume sent.') && qa('.notices .oui-banner[data-tone="success"]').length === 1, 'confirmed: plain success: ' + text(q('.notices')));
+  assert(toasts().includes('Resume sent.') && qa('.oui-toast[data-toast-tone="success"]').length === 1, 'confirmed: plain success: ' + toasts());
   await click(q('[data-move="x+"]'));
   await reply(last('cmd', 'move'), {confirmed: false});
-  assert(text(q('.notices')).includes('Move sent; waiting'), 'move waits');
+  assert(toasts().includes('Move sent; waiting'), 'move waits');
   await click(q('[data-home="z"]')); await yes();
   await reply(last('cmd', 'home'), {confirmed: false});
-  assert(text(q('.notices')).includes('Home sent; waiting'), 'home waits');
+  assert(toasts().includes('Home sent; waiting'), 'home waits');
   await click(q('[data-home="xy"]')); await yes();
   await fail(last('cmd', 'home'), 'home is already running; try again when it ends');
   assert(alerts().includes('home is already running'), 'error persists: ' + alerts());
@@ -564,9 +571,9 @@ test('filament use: nothing pending shows no card, and the page asked for it', `
   await until(() => last('cmd', 'usage'), 'usage asked');
   eq(last('cmd', 'usage').args, {}, 'no arguments');
   await reply(last('cmd', 'usage'), USAGE());
-  assert(!byTest('usage-card'), 'no empty card');
+  assert(!byTest('usage-card')?.checkVisibility(), 'no empty card');
   await post({type: 'status', data: VIEW()});
-  assert(!byTest('usage-card'), 'still none');
+  assert(!byTest('usage-card')?.checkVisibility(), 'still none');
 `);
 
 test('filament use: a pending booking is shown with its slots and grams, and goes when it is booked', `
@@ -603,7 +610,7 @@ test('filament use: a failed booking lists its identity and reason; marking it c
   eq(cmds('usage_ack').map(m => m.args), [{id: 'abc'}], 'only the local acknowledgement');
   assert(!sent().slice(before).some(m => m.type === 'cmd' && !['usage_ack', 'usage', 'stock', 'spools'].includes(m.cmd)), 'no booking command');
   await reply(last('cmd', 'usage_ack'), USAGE({acknowledged: [{...ENTRY, acknowledged_at: 1794300000}], acknowledged_total: 1}));
-  assert(!byTest('usage-card'), 'nothing left to show once checked: no empty card');
+  assert(!byTest('usage-card')?.checkVisibility(), 'nothing left to show once checked: no empty card');
 `);
 
 test('filament use: a failed acknowledgement keeps the entry and says why', `
@@ -698,6 +705,107 @@ test('the camera starts on only when the saved setting says so', `
   assert(q('.cam-view') && last('lease').camera === true, 'camera on from the setting');
 `);
 
+// ------------------------------------------------------------------ requirements
+test('requirements: no ffmpeg keeps the built-in player; a page without it turns the camera off with one reason', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
+  await post({type: 'status', data: VIEW()});
+  await post(REQS());
+  assert(q('.cam-view') && last('lease').mse === true, 'the built-in player needs no ffmpeg');
+  MediaSource.isTypeSupported = () => false;   // a webview without H.264 (possible on Linux)
+  if (window.ManagedMediaSource) ManagedMediaSource.isTypeSupported = () => false;
+  await post({...REQS(), checking: true}); await post(REQS());
+  assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
+  assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
+  assert(byTest('camera').disabled, 'Turn on is off');
+  await post({...REQS(), checking: true});
+  assert(text(byTest('cam-why')).includes('Looking for ffmpeg'), 'a re-check says so: ' + text(byTest('cam-why')));
+  await post(REQS());
+  await click(byTest('cam-req'));
+  assert(q('[data-need="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
+  await tab('dash');
+  await until(() => q('.cam-view'), 'found again: the camera is back on');
+`);
+
+test('requirements: before the first check the camera can be turned on and says it is starting', `
+  await ready(VIEW());
+  await post({type: 'requirements', checking: true, items: [{id: 'ffmpeg', state: 'unknown', details: ''}]});
+  assert(!byTest('camera').disabled, 'not off without a reason');
+  assert(text(q('.cam-card')).includes('Looking for ffmpeg'), 'says it is checking: ' + text(q('.cam-card')));
+  await click(byTest('camera'));
+  assert(text(q('.cam-empty')).length > 0 && q('.cam-view'), 'starting, with its text: ' + text(q('.cam-empty')));
+`);
+
+test('requirements: Settings lists each one with its state, why and how; Check again asks the plugin', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="needs-h"]'));
+  const row = id => q('[data-need="' + id + '"]');
+  const state = id => q('.oui-status', row(id));
+  eq(qa('[data-need]').map(r => r.dataset.need), ['certificate', 'ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman', 'spooler'], 'one row each, one section');
+  eq(qa('[data-test="requirements"]').length, 1, 'one Requirements section');
+  eq(text(state('ffmpeg')), 'Not installed (optional)', 'ffmpeg missing: optional, the page plays the camera itself');
+  assert(text(row('ffmpeg')).includes('brew install ffmpeg') && text(row('ffmpeg')).includes('winget install Gyan.FFmpeg')
+    && text(row('ffmpeg')).includes('sudo apt install ffmpeg') && text(row('ffmpeg')).includes('ffmpeg path'), 'install help per OS: ' + text(row('ffmpeg')));
+  eq(q('a', row('ffmpeg')).getAttribute('href'), 'https://ffmpeg.org/download.html', 'official link');
+  assert(text(row('anycubic_slicer')).includes('optional') && text(row('anycubic_slicer')).includes('bundled certificate stops working'), 'slicer optional');
+  eq(text(state('printer_agents')), 'Not detected', 'agents: warn, not error');
+  assert(text(row('printer_agents')).includes('Use printer agents instead of print hosts') && text(row('printer_agents')).includes('restart OrcaSlicer'), 'agent steps');
+  eq(text(state('spoolman')), 'Configured', 'spoolman');
+  assert(text(row('spoolman')).includes('http://box:7912'), 'says which Spoolman: ' + text(row('spoolman')));
+  assert(!q('a', row('spoolman')), 'no install help once there');
+  assert(text(row('certificate')).includes('Found') && text(row('certificate')).includes('built in'), 'certificate: ' + text(row('certificate')));
+  assert(text(row('spooler')).includes('Found'), 'Spooler: ' + text(row('spooler')));
+  await post(REQS({printer_agents: {state: 'unknown'}, ffmpeg: {state: 'ok', details: '/usr/bin/ffmpeg'}}));
+  eq(text(state('printer_agents')), 'Not checked yet', 'unknown is not a warning');
+  eq(state('printer_agents').dataset.state, 'idle', 'no warn badge');
+  assert(text(row('ffmpeg')).includes('/usr/bin/ffmpeg'), 'says where: ' + text(row('ffmpeg')));
+  const navWarn = () => !!q('.oui-settings-link[data-section="needs-h"][data-state="warn"]');
+  assert(!navWarn(), 'no warning on the nav either');
+  await post(REQS());
+  eq(state('printer_agents').dataset.state, 'warn', 'not detected warns');
+  assert(navWarn(), 'and the nav says so');
+  await click(q('.oui-req-check', row('ffmpeg')));
+  assert(last('check_requirements'), 'Check again sent');
+  assert(text(state('ffmpeg')).includes('Checking'), 'checking: ' + text(state('ffmpeg')));
+  assert(q('.oui-req-check', row('ffmpeg')).disabled, 'no second check while one runs');
+  await post({...REQS(), checking: true});
+  eq(text(state('ffmpeg')), 'Checking…', 'checking');
+  await post(REQS());
+  await until(() => last('cmd', 'spools'), 'spools asked on connect');
+  await reply(last('cmd', 'spools'), {spools: []});
+  await until(() => text(row('spoolman')).includes('0 spools'), 'the count from Spoolman: ' + text(row('spoolman')));
+  const spools = cmds('spools').length;
+  await click(q('.oui-req-check', row('spoolman')));
+  eq(cmds('spools').length, spools + 1, 'Spoolman: Check again also loads the spools');
+`);
+
+test('requirements: no Anycubic Slicer Next turns off the default search only; a typed path still searches', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('[data-test="cert-advanced"] summary'));
+  assert(byTest('find-cert').disabled, 'Find certificate off without an install');
+  assert(text(q('#set-cert-why')).includes('isn’t in its usual folder'), 'says why: ' + text(q('#set-cert-why')));
+  await type(q('#set-cert-path'), '/opt/anycubic');
+  assert(!byTest('find-cert').disabled, 'a typed path can be searched');
+  await click(byTest('find-cert'));
+  eq(cmds('find_certificate').map(m => m.args), [{path: '/opt/anycubic'}], 'path sent');
+`);
+
+test('requirements: without Spoolman, refreshing and linking spools are off', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
+  await post({type: 'status', data: VIEW()});
+  assert(q('[data-focus-key="sm-refresh"]').disabled, 'Spools refresh off on the Dashboard');
+  await tab('settings');
+  const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
+  assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
+  assert(text(q('#sm-s-h').closest('section')).includes('No Spoolman address'), 'says why');
+`);
+
 // ------------------------------------------------------------------ first-run, offline, stale
 test('first run: no certificate is one clear task, and Find certificate recovers', `
   await until(() => last('hello'));
@@ -713,7 +821,7 @@ test('first run: no certificate is one clear task, and Find certificate recovers
   assert(text(q('.notices')).includes('Find certificate: waiting'), 'awaited: ' + text(q('.notices')));
   await reply(last('cmd', 'find_certificate'), {found: true, source: 'AnycubicSlicerNext.app'});
   await until(() => sent().filter(m => m.type === 'hello').length === 2, 'reconnects after finding it');
-  assert(text(q('.notices')).includes('Certificate found'), 'success shown');
+  assert(toasts().includes('Certificate found'), 'success shown');
   await reply(last('hello'), {address: 'x', printer: 'Bench Kobra', generation: 1});
   await post({type: 'status', data: VIEW()});
   assert(byTest('ace-card'), 'the dashboard is back');
@@ -908,8 +1016,8 @@ test('settings: the address in use, how it was found, Search again, and the othe
   await reply(last('hello'), {address: '10.25.7.41', printer: 'Bench Kobra', generation: 1, source: 'discovered',
     note: 'The printer preset points to 10.25.16.41, which is not a Kobra X in LAN mode; found the Kobra X at 10.25.7.41 and using that.'});
   await post({type: 'status', data: VIEW()});
-  assert(text(q('.notices')).includes('points to 10.25.16.41'), 'one quiet line: ' + text(q('.notices')));
-  assert(text(q('.notices')).includes('“moonraker” printer agent'), 'agent note once: ' + text(q('.notices')));
+  assert(toasts().includes('points to 10.25.16.41'), 'one quiet line: ' + toasts());
+  assert(toasts().includes('“moonraker” printer agent'), 'agent note once: ' + toasts());
   await tab('settings');
   eq(text(byTest('in-use')), 'In use: 10.25.7.41 (found on the network).', 'in use');
   assert(text(byTest('other-agent')).includes('Printer Agent > kobracontrol'), 'how to switch: ' + text(byTest('other-agent')));
@@ -1065,7 +1173,7 @@ test('printer panel: Print Assist switches ask first, then send; only reported o
   await click(q('#assist-breakAlert')); await yes();
   eq(cmds('assist').map(m => m.args), [{option: 'breakAlert', on: true}], 'assist sent');
   await reply(last('cmd', 'assist'), {confirmed: true});
-  await until(() => text(q('.notices')).includes('Filament break alert is on'), 'result shown');
+  await until(() => toasts().includes('Filament break alert is on'), 'result shown');
   await click(q('#assist-autoFeed')); await yes();
   eq(cmds('assist').map(m => m.args)[1], {option: 'autoFeed', on: true}, 'auto-feed for every ACE');
 `);
@@ -1088,11 +1196,11 @@ test('printer panel: rename asks for the name and checks it', `
   eq(input.value, 'Bench Kobra', 'starts from the current name');
   await type(input, 'Shop <X>'); await yes();
   eq(cmds('rename'), [], 'an invalid name is not sent');
-  await until(() => text(q('.notices')).includes('without quotes'), 'says why');
+  await until(() => toasts().includes('without quotes'), 'says why');
   await click(byTest('rename'));
   await type(q('.p-dialog input'), 'é'.repeat(17)); await yes();
   eq(cmds('rename'), [], '34 bytes is too long, as the plugin counts it');
-  await until(() => text(q('.notices')).includes('without quotes'), 'says why');
+  await until(() => toasts().includes('without quotes'), 'says why');
   await click(byTest('rename'));
   await type(q('.p-dialog input'), '  Shop   Kobra '); await yes();
   eq(cmds('rename').map(m => m.args), [{name: 'Shop Kobra'}], 'rename sent, spaces tidied');
@@ -1185,7 +1293,7 @@ test('time-lapses: delete asks first, sends the file name, refreshes the list an
   await reply(last('cmd', 'videos'), {videos: VIDEOS().slice(0, 1)});
   eq(qa('[data-video]').length, 1, 'the deleted video is gone');
   eq(text(byTest('videos-count')), '1 video', 'count follows');
-  assert(text(q('.notices')).includes('Time-lapse deleted.'), 'says it is deleted: ' + text(q('.notices')));
+  assert(toasts().includes('Time-lapse deleted.'), 'says it is deleted: ' + toasts());
   await until(() => document.activeElement === byTest('videos-refresh'), 'focus moved to Refresh, not lost');
   eq(cmds('file_delete'), [], 'never the file command');
 `);
@@ -1223,7 +1331,7 @@ test('time-lapses: empty list, a list error with retry, and a refused delete rea
   await until(() => cmds('videos').length === 4, 'the list is read again: it shows what is on the printer');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
   assert(videoRow(CUBE) && !q('[data-video-delete]', videoRow(CUBE)).disabled, 'the video stays and can be tried again');
-  assert(!text(q('.notices')).includes('Time-lapse deleted.'), 'not reported as deleted');
+  assert(!toasts().includes('Time-lapse deleted.'), 'not reported as deleted');
 `);
 
 test('time-lapses: offered only for a connected printer, also while it prints', `
@@ -1332,6 +1440,73 @@ test('tls: a changed printer certificate is shown, the fingerprint is in Setting
   assert(byTest('tls-changed'), 'the warning stays on every tab');
 `);
 
+// ------------------------------------------------------------------ notices (foundation 4.2.0)
+test('toasts: a command result appears bottom-left with a Close button and goes away when closed', `
+  await ready(PRINTING());
+  await click(q('[data-test="pause"]'));
+  await fail(last('cmd', 'pause'), 'printer refused the pause');
+  const t = q('.oui-toast[role=alert]');
+  assert(t && toastText(t) === 'Pause failed: printer refused the pause', 'error toast: ' + toasts());
+  eq(q('.oui-toasts').getAttribute('aria-label'), 'Notifications', 'the region is named');
+  const r = t.getBoundingClientRect();
+  assert(r.left < 40 && innerHeight - r.bottom < 40, 'bottom-left: ' + JSON.stringify(r));
+  assert(!q('.notices .oui-banner'), 'not a banner under the app bar');
+  const close = q('.oui-toast-close', t);
+  eq(close.getAttribute('aria-label'), 'Close', 'close button named');
+  await post({type: 'status', data: PRINTING()});
+  assert(q('.oui-toast[role=alert]'), 'an error stays across status updates');
+  await click(close);
+  await until(() => !q('.oui-toast'), 'closed');
+`);
+
+test('banners: a closed banner stays closed while its condition lasts and comes back when it changes', `
+  const tls = (fp, from) => VIEW({tls: {fingerprint: fp, changed_from: from}});
+  await ready(tls('ab'.repeat(32), 'cd'.repeat(32)));
+  await until(() => byTest('tls-changed'), 'warning');
+  const close = q('.oui-banner-close', byTest('tls-changed'));
+  eq(close.getAttribute('aria-label'), 'Close', 'close button named');
+  await click(close);
+  assert(!byTest('tls-changed'), 'closed');
+  for (let i = 0; i < 3; i++) await post({type: 'status', data: tls('ab'.repeat(32), 'cd'.repeat(32))});
+  await tab('files'); await tab('dash');
+  assert(!byTest('tls-changed'), 'same certificate: stays closed across polls and re-renders');
+  await post({type: 'status', data: tls('ef'.repeat(32), 'ab'.repeat(32))});
+  await until(() => byTest('tls-changed'), 'another certificate: the warning is back');
+`);
+
+test('banners: the unconfirmed filament use banner can be closed and returns for another entry', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
+  await until(() => byTest('usage-banner'), 'banner');
+  await click(q('.oui-banner-close', byTest('usage-banner')));
+  assert(!byTest('usage-banner'), 'closed');
+  for (const view of [USAGE({unconfirmed: [ENTRY]}), USAGE({unconfirmed: [ENTRY, {...ENTRY, id: 'def', file: 'gcodes/cube.gcode'}]})]) {
+    const n = cmds('usage').length;
+    await until(() => cmds('usage').length > n, 'the page polls the use again', 15000);   // every 10 s
+    await reply(last('cmd', 'usage'), view);
+    if (view.unconfirmed.length === 1) assert(!byTest('usage-banner'), 'same entry: stays closed');
+  }
+  await until(() => byTest('usage-banner'), 'another entry: the banner is back');
+  assert(text(byTest('usage-banner')).includes('2 filament uses are not confirmed'), 'says both: ' + text(byTest('usage-banner')));
+`);
+
+test('banners: a closed banner shows again when its condition clears and the same entries come back', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
+  await until(() => byTest('usage-banner'), 'banner');
+  await click(q('.oui-banner-close', byTest('usage-banner')));
+  assert(!byTest('usage-banner'), 'closed');
+  for (const view of [USAGE(), USAGE({unconfirmed: [ENTRY]})]) {
+    const n = cmds('usage').length;
+    await until(() => cmds('usage').length > n, 'the page polls the use again', 15000);   // every 10 s
+    await reply(last('cmd', 'usage'), view);
+    if (!view.unconfirmed.length) assert(!byTest('usage-banner') && !byTest('usage-card')?.checkVisibility(), 'cleared: nothing shown');
+  }
+  await until(() => byTest('usage-banner'), 'the same entry again: the banner is back');
+`);
+
 test('pt-BR: the new file, finish-time and certificate texts are translated', `
   const at = Math.floor(Date.now() / 1000);
   await ready(PRINTING({updated_at: at, remaining_s: 7000, tls: {fingerprint: 'ab'.repeat(32), changed_from: 'cd'.repeat(32)}}));
@@ -1366,9 +1541,9 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true}, 'every setting, by its name');
-  assert(!text(q('.notices')).includes('Settings saved'), 'not saved before the answer');
+  assert(!toasts().includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
-  assert(text(q('.notices')).includes('Settings saved'), 'saved after the answer');
+  assert(toasts().includes('Settings saved'), 'saved after the answer');
   await until(() => sent().filter(x => x.type === 'hello').length === 2, 'reconnects with the new address');
 `);
 
@@ -1422,6 +1597,7 @@ test('settings: the language choice is posted; the version shows; the Spooler hi
   await ready(VIEW());
   await tab('settings');
   assert(text(byTest('version')).includes('Kobra Control 0.1.0'), 'version: ' + text(byTest('version')));
+  await post(REQS());   // the plugin sends it with every config
   assert(text(q('.sv')).includes('Spooler detected'), 'Spooler hint');
   await pick(byTest('lang'), 'Português (Brasil)');
   eq(last('ui_language').value, 'pt-BR', 'choice posted');
@@ -1499,7 +1675,7 @@ test('the tabs switch panels and the lease follows the visible tab', `
 test('one main landmark holds the three tab panels', `
   await ready(VIEW());
   eq(qa('main').length, 1, 'one main');
-  eq(qa('main [role=tabpanel]').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
+  eq(qa('main [role=tabpanel]:not(.oui-settings-body)').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
 `);
 
 test('skip objects says why it is off when Stop still works', `

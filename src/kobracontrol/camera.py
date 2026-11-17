@@ -11,7 +11,8 @@ backoff, and a restart when the printer rotates the stream token (`State.view()[
 on_frame(jpeg_bytes) gets the LATEST frame, at most MAX_FPS per second, never before the previous one was
 acknowledged (ACK_TIMEOUT s later it goes on anyway, a lost ack must not freeze the picture).
 on_error(reason, text): reason is "no_ffmpeg", "no_stream" or "failed" (ffmpeg ended without a frame; text
-is the last line of its stderr). Called again only when the reason or text changes.
+is the last line of its stderr). Called again only when the reason or text changes. "no_ffmpeg" ends the reader:
+it is reported once, not looked up again every second (the service marks ffmpeg missing and stops asking).
 
 Relay is the default without ffmpeg: it reads the printer's HTTP-FLV itself and hands fragmented MP4 to the
 page's own player (fmp4.py). Same start/stop/close; on_video({"codec", "init"}) then on_video({"data"}); its
@@ -179,8 +180,7 @@ class Camera:
                 exe = find_ffmpeg(self.ffmpeg_path)
                 if exe is None:
                     self._fail("no_ffmpeg", tr("ffmpeg was not found"))
-                    stop.wait(1.0)
-                    continue
+                    return
                 url = self.get_url()
                 try:
                     cmd = argv(url, exe)
