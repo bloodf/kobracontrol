@@ -291,11 +291,15 @@ def preset_hints_from_worker(svc):
     """Worker thread: preset_hints() read on the UI thread through queue_on_main (and the preset's address asked
     about there, a script being a user action), waited for at most UI_WAIT s. Presets are never read off the UI
     thread: without queue_on_main, or when the UI thread does not answer in time, the hints the tab last read."""
-    queue, box, done = _queue_on_main, {}, threading.Event()
+    queue, box, done, lock = _queue_on_main, {}, threading.Event(), threading.Lock()
     if queue is None:
         return _last_hints
 
     def task():
+        with lock:   # the worker gave up waiting: the script has moved on, so no read and no dialog any more
+            if box.get("cancelled"):
+                return
+            box["started"] = True
         try:
             box["hints"] = ui_preset_hints()
             grant_on_ui_thread(svc, box["hints"][0], user=True)
@@ -306,7 +310,13 @@ def preset_hints_from_worker(svc):
     except Exception as e:
         log("queue_on_main failed: %r" % e)
         return _last_hints
-    return box.get("hints", _last_hints) if done.wait(UI_WAIT) else _last_hints
+    if not done.wait(UI_WAIT):
+        with lock:
+            if not box.get("started"):
+                box["cancelled"] = True
+                return _last_hints
+        done.wait()   # already running on the UI thread (its dialog is up): its answer is the script's
+    return box.get("hints", _last_hints)
 
 
 def _target(hints=None):

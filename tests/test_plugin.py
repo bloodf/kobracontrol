@@ -238,11 +238,13 @@ class Registration(unittest.TestCase):
         self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
         self.assertEqual(readers, ["ui"])
 
-        def stuck(task):   # a UI thread that does not answer in time
-            pass
-        plugin._queue_on_main = stuck
+        late = []
+        plugin._queue_on_main = late.append   # a UI thread that does not answer in time
         with mock.patch.object(plugin, "UI_WAIT", 0.05):
             self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
+        late[0]()   # the UI thread gets to it after the script gave up: no preset read, no dialog
+        self.assertEqual(readers, ["ui"])
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1")])
 
     def test_raising_queued_callback_is_caught(self):
         """A callback queued to OrcaSlicer's UI thread that raises must not escape: OnExceptionInMainLoop would end
