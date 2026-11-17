@@ -150,6 +150,16 @@ on. Auto-leveling follows the same rule with its setting (on by default), since 
 ticked. Vibration compensation is never offered (`SelectMachine.cpp` passes false), so the plugin's own
 setting is used for OrcaSlicer prints.
 
+### What the printer reads from the G-code
+
+Observed on firmware 2.0.2.8: `file/fileDetails` for a file on the printer gives the picture as a PNG
+(`thumbnail`, `png_image`, base64), `printer_model`, `paint_infos` (each filament's `material_type`,
+`paint_color` and `filament_used`), `layer_count`, `estimated_time_s` and `print_parameters` (layer height,
+infill, walls, speeds, temperatures). OrcaSlicer writes the picture in the thumbnail block after the header
+and the settings in the config block at the end. A file without either has not been tried, so what the
+screen shows then is not known; the plugin warns before sending such a file (`gcode_check.py`,
+[setup.md](setup.md) section 7) and sends it unchanged.
+
 ## Time-lapse videos
 
 | Message | Data | On the printer |
