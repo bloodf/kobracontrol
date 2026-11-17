@@ -25,6 +25,10 @@ been reviewed by native speakers yet.
 
 ### Changed
 
+- The README (now also in Portuguese, `README.pt-BR.md`), the Orca Cloud description
+  (`docs/orca-cloud-description.md`) and the listing, social and README images were redone. The images carry real
+  screenshots of the page and are rebuilt with `scripts/marketing_images.py`. `docs/release.md` describes a release
+  and the listing.
 - Deleting a time-lapse was confirmed on a Kobra X (firmware 2.0.2.8); it is no longer listed as untried.
 - Printer names, file names and firmware texts are shown exactly as the printer gives them, in every language.
 
