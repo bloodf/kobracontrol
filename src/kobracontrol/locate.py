@@ -259,8 +259,8 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
     def mine(info):
         return bool(record.get("id")) and info.get("id") == record["id"]
     for host, source in ((record.get("ip"), "remembered"), (preset_host, "preset")):
-        if not host or host in tried:
-            continue
+        if not host or host in tried or (allowed is not None and not allowed(host)):
+            continue   # an ungranted address is not probed here; the search offers it if a Kobra X is there
         tried.append(host)
         try:
             info = probe(host)

@@ -11,14 +11,29 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   when it has no PNG preview picture. The Kobra X screen probably reads the filament and print details and the
   picture from those blocks. The warning names the OrcaSlicer setting to change (Skip G-code config block, G-code
   thumbnails), shows in the Print dialog's last line and as an OrcaSlicer notification, and never stops the print.
-  Check Kobra X connection names the same settings when the selected Kobra X printer preset has them. See
-  `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on a Kobra X.
+  Check Kobra X connection names the same settings when the selected Kobra X printer preset has them. See `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on
+  a Kobra X.
 
 ### Changed
 
 - The README, its Portuguese version and the Orca Cloud description show what was verified on the printer, with the
   firmware and the date, and what the plugin can access: each OrcaSlicer permission, what is sent where, and that
   there is no telemetry.
+- The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
+  of the Spoolman spool linked to each slot (bands for a multi-colour spool), else the colour the ACE reports, and an
+  empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
+  shows its number. Screen readers hear each slot's colour and material. Printer photo: Anycubic product image.
+
+### Fixed
+
+- The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
+  (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
+  on by itself.
+- OrcaSlicer could fail to start, or crash, after Kobra Control was installed and a Kobra X printer preset was
+  edited: the plugin read the printer preset while OrcaSlicer was still loading its presets. It now reads only its
+  own files while loading and asks about the preset's printer address later, once OrcaSlicer is up.
+- OrcaSlicer could close by itself at start-up, or while the Device tab was open, if one of the status updates
+  Kobra Control hands to it failed. Such a failure is now written to the log and OrcaSlicer keeps running.
 
 ## [0.7.0] - 2026-11-16
 

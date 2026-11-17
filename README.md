@@ -230,4 +230,6 @@ Bug reports, logs and pull requests are welcome. Start with [CONTRIBUTING.md](CO
 
 GPL-3.0-only. See [LICENSE](LICENSE).
 
+Printer photo: Anycubic product image (see [NOTICE.md](NOTICE.md)).
+
 <p align="center"><sub>by bloodf</sub></p>
