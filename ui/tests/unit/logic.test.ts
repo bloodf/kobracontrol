@@ -67,12 +67,14 @@ test('bound spools: the live status wins; a null live value unbinds', () => {
 
 test('locale resolution: explicit choice, host, browser, English', () => {
   const cases: [unknown, string | null][] = [['pt_BR', 'pt-BR'], ['en-GB', 'en'], ['es', 'es'], ['es_ES', 'es'], ['es-419', 'es'],
-    ['de', 'de'], ['de_AT', 'de'], ['zh_CN', 'zh-CN'], ['zh_TW', 'zh-CN'], ['zh-Hant-TW', 'zh-CN'], ['fr', null], ['', null], [null, null]];
+    ['de', 'de'], ['de_AT', 'de'], ['zh_CN', 'zh-CN'], ['zh_TW', 'zh-CN'], ['zh-Hant-TW', 'zh-CN'], ['pl', 'pl'], ['pl_PL', 'pl'], ['pl-PL', 'pl'], ['PL', 'pl'], ['fr', null], ['', null], [null, null]];
   for (const [code, want] of cases) assert.equal(normalizeLocale(code), want, String(code));
   assert.equal(resolveLocale('pt-BR', 'en', ['en']), 'pt-BR');
   assert.equal(resolveLocale('de', 'zh_CN', ['es']), 'de');
   assert.equal(resolveLocale('auto', 'pt', ['en']), 'pt-BR');
   assert.equal(resolveLocale('auto', 'zh_TW', ['en']), 'zh-CN');
+  assert.equal(resolveLocale('auto', 'pl_PL', ['en']), 'pl');
+  assert.equal(resolveLocale('auto', null, ['fr', 'pl-PL']), 'pl');
   assert.equal(resolveLocale('auto', 'ja', ['fr', 'es-MX']), 'es');
   assert.equal(resolveLocale('auto', null, ['fr']), 'en');
   assert.equal(interpolate('{a} and {b}', { a: 1 }), '1 and {b}');

@@ -179,7 +179,7 @@ Not yet. The printer has no known way to hand a video over the local network, so
 
 ## 🌍 Languages
 
-English, Brazilian Portuguese, Spanish, German and Simplified Chinese. The tab follows OrcaSlicer's language, and **Settings > Language** changes it.
+English, Brazilian Portuguese, Spanish, German, Simplified Chinese and Polish. The tab follows OrcaSlicer's language, and **Settings > Language** changes it.
 
 ## 🧩 More plugins by bloodf
 

@@ -1013,6 +1013,15 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.spools, self.bindings = spools, sm.bindings_from_locations(spools, target.name)
             return {"spools": spools, "bindings": {str(k): v for k, v in self.bindings.items()}}
 
+    def links_for(self, target):
+        """(spools, {slot: spool id}) for target from Spoolman, for the printer agent before (or without) the tab;
+        the tab's own spools and links are left alone. ([], {}) without a Spoolman address."""
+        target.spooler_origin = self._spooler_origin
+        if not target.spoolman_url:
+            return [], {}
+        spools = [sm.spool_view(s) for s in self._spoolman(target).spools()]
+        return spools, sm.bindings_from_locations(spools, target.name)
+
     def cmd_bind(self, slot, spool_id):
         """Link a spool to a slot: its Spoolman location becomes "<printer name> S<n>" (the printer is not written)."""
         if not isinstance(slot, int) or isinstance(slot, bool) or slot < 0:
