@@ -7,6 +7,7 @@ import os
 import threading
 
 import i18n
+import purge
 import spoolman
 
 DEFAULT_PRINTER_NAME = "Anycubic Kobra X"
@@ -33,8 +34,8 @@ DEFAULTS = {
     "purge_corner": "front_left",
 }
 PORT_RANGE = (1024, 65535)
-NUMBERS = {"purge_length": (1.0, 50.0), "purge_speed": (1.0, 20.0)}   # purge.LIMITS
-CHOICES = {"purge_corner": ("front_left", "front_right", "back_left", "back_right")}   # purge.CORNERS
+NUMBERS = {"purge_" + k: v for k, v in purge.LIMITS.items()}
+CHOICES = {"purge_corner": purge.CORNERS}
 
 
 def printer_label(name):

@@ -129,6 +129,39 @@ class Server(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.request("GET", "/api/version")[0], 200)   # and they did not lock OrcaSlicer out
 
+    def test_dripped_headers_time_out(self):
+        with mock.patch.object(bridge, "HEADER_DEADLINE", 0.5):
+            self.bridge.stop()
+            self.bridge = bridge.Bridge(0, lambda: KEY, self.on_upload, self.work, log=lambda m: None).start()
+            self.port = self.bridge.port
+            sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+            sock.sendall(b"GET /api/version HTTP/1.1\r\n")
+            started = time.monotonic()
+            for _ in range(10):   # a byte at a time, each well inside the per-read timeout
+                time.sleep(0.2)
+                try:
+                    sock.sendall(b"X")
+                except OSError:
+                    break
+            sock.settimeout(3)
+            try:
+                closed = sock.recv(100) == b""
+            except OSError:
+                closed = True
+            sock.close()
+        self.assertTrue(closed)
+        self.assertLess(time.monotonic() - started, 4)
+        self.assertEqual(self.request("GET", "/api/version")[0], 200)   # the slot is free again
+
+    def test_odd_plate_index_is_plate_1(self):
+        self.assertEqual(self.request("POST", "/api/files/local", orca_body(plate="²"))[0], 201)
+        self.assertEqual(self.calls[0][2], 1)
+
+    def test_refusal_is_read_by_the_client(self):   # the body is drained, so the client gets the answer, not a reset
+        status, data, _ = self.request("POST", "/api/files/local", orca_body(b"x" * 40000), key="wrong")
+        self.assertEqual(status, 403)
+        self.assertIn("API key", data["error"])
+
     def test_too_many_parts(self):
         part = '--%s\r\nContent-Disposition: form-data; name="x"\r\n\r\n1\r\n' % BOUNDARY
         body = (part * (bridge.PARTS_MAX + 1)).encode() + orca_body()
@@ -175,6 +208,9 @@ class Key(unittest.TestCase):
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, bridge.KEY_FILE)).st_mode), 0o600)
         self.assertNotEqual(bridge.write_key(folder, bridge.new_key()), key)
+        self.assertEqual(sorted(os.listdir(folder)), [bridge.KEY_FILE])   # replaced in place, no temp file left
+        if os.name == "posix":
+            self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, bridge.KEY_FILE)).st_mode), 0o600)
 
     def test_not_in_settings(self):
         self.assertFalse(any("key" in k for k in settings.DEFAULTS))

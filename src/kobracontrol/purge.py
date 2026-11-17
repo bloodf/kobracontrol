@@ -9,7 +9,7 @@ along the edge), so purges never land on one another; a file with more tool chan
 is LIFT plus the height the purged line can reach. Purges happen only between the first `;LAYER_CHANGE` and the end
 G-code (`; MACHINE_END_GCODE_START` or `; EXECUTABLE_BLOCK_END`), so never before the start G-code's heat-up waits or
 in the end G-code. Positioning must be absolute (G90) at a tool change; the extrusion mode is set to relative (M83)
-for the purge and restored exactly afterwards (M82 with `G92 E<last E>`, or M83). The bed wait uses the
+for the purge (again after each G90, which also sets absolute E on Marlin-style firmware) and restored exactly afterwards (M82 with `G92 E<last E>`, or M83). The bed wait uses the
 first-layer bed temperature the file itself sets before its first layer (`M140 S<t>`, or the Kobra X start
 macro's `G9111 bedTemp=<t>`)."""
 
@@ -30,7 +30,7 @@ ROW_GAP = 5.0         # mm between rows of lanes along the edge
 FILAMENT_AREA = math.pi * 1.75 ** 2 / 4   # mm^2 of 1.75 mm filament
 BEAD_WIDTH = 1.0      # mm: the purged line is taken to be at least this wide when its height is estimated
 TRAVEL_F = 12000      # mm/min, the profile's own travel after a tool change
-LIMITS = {"length": (1.0, 50.0), "speed": (1.0, 20.0)}   # mm, mm/s
+LIMITS = {"length": (1.0, 50.0), "speed": (1.0, 10.0)}   # 10 mm/s of 1.75 mm filament is ~24 mm^3/s   # mm, mm/s
 DEFAULTS = {"length": 15.0, "speed": 5.0, "corner": "front_left"}
 TOOLS = 16            # T0..T15: the ACE slots (4 units x 4); T255 and friends are not filament loads
 START, END = "; >>> kobracontrol purge add-on", "; <<< kobracontrol purge add-on"
@@ -38,11 +38,12 @@ FIRST_LAYER = b";LAYER_CHANGE"
 END_GCODE = (b"; MACHINE_END_GCODE_START", b"; EXECUTABLE_BLOCK_END")
 
 _TOOL = re.compile(rb"^T(\d+)\s*(;.*)?$")
-_E = re.compile(rb"\bE(-?\d+(?:\.\d*)?|-?\.\d+)")
+_MOVE = re.compile(rb"^G0*[0-3](?![0-9.])")   # G0..G3, also written G01 or with no space before the first word
+_E = re.compile(rb"(?<![A-Z])E(-?\d+(?:\.\d*)?|-?\.\d+)")
 _AREA = re.compile(rb"^;\s*printable_area\s*=\s*(.+)$")
 _BED = re.compile(rb"^(?:M140|M190)\b[^;]*?\bS(\d+(?:\.\d+)?)")
 _G9111 = re.compile(rb"^G9111\b[^;]*?\bbedTemp=(\d+(?:\.\d+)?)", re.I)
-_WORD = re.compile(rb"\b([XY])(-?\d+(?:\.\d*)?|-?\.\d+)")
+_WORD = re.compile(rb"(?<![A-Z])([XY])(-?\d+(?:\.\d*)?|-?\.\d+)")
 
 
 class PurgeError(ValueError):
@@ -116,7 +117,7 @@ def purge_lines(opts, bed, back, index=0, restore=("M83",)):
     # the move along the lane takes as long as the extrusion at the chosen speed: feed rate in mm/min of XY
     feed = max(1, round(LANE_LEN / (opts["length"] / opts["speed"]) * 60))
     lines = [START, "M83", "G91", "G1 Z%s F1200" % up, "G90", "G1 X%s Y%s F%d" % (_num(x0), _num(y), TRAVEL_F),
-             "G91", "G1 Z-%s F1200" % up, "G90", "G1 X%s Y%s E%s F%d" % (_num(x1), _num(y), _num(opts["length"]), feed),
+             "G91", "G1 Z-%s F1200" % up, "G90", "M83", "G1 X%s Y%s E%s F%d" % (_num(x1), _num(y), _num(opts["length"]), feed),
              "G91", "G1 Z%s F1200" % up, "G90"]
     if back is not None:
         lines.append("G1 X%s Y%s F%d" % (_num(back[0]), _num(back[1]), TRAVEL_F))
@@ -185,7 +186,7 @@ def transform(lines, write, opts, info):
         elif code[:4] == b"G92 ":
             m = _E.search(code)
             last_e = float(m.group(1)) if m else last_e
-        elif code[:3] in (b"G0 ", b"G1 "):
+        elif _MOVE.match(code):
             if absolute_xy:
                 for axis, value in _WORD.findall(code):
                     xy[0 if axis == b"X" else 1] = float(value)

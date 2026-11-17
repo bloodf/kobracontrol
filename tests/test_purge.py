@@ -69,7 +69,7 @@ class Fixtures(unittest.TestCase):
         self.assertGreater(purge.lift(OPTS), purge.LIFT)          # raised for the purged line's own height
         t1 = block_after(lines, "T1")
         self.assertEqual(t1, [purge.START, "M83", "G91", "G1 Z%s F1200" % up, "G90", "G1 X5 Y5 F12000", "G91",
-                              "G1 Z-%s F1200" % up, "G90", "G1 X35 Y5 E15 F600", "G91", "G1 Z%s F1200" % up, "G90",
+                              "G1 Z-%s F1200" % up, "G90", "M83", "G1 X35 Y5 E15 F600", "G91", "G1 Z%s F1200" % up, "G90",
                               "G1 X110 Y100 F12000", "G91", "G1 Z-%s F1200" % up, "G90", "M83", purge.END])
         t2 = block_after(lines, "T2 ; next filament")
         self.assertIn("G1 X35 Y8 E15 F600", t2)    # the next lane, never on top of the first
@@ -106,6 +106,17 @@ class Fixtures(unittest.TestCase):
         t2 = block_after(lines, "T2")
         self.assertEqual(t2[1], "M83")
         self.assertEqual(t2[-3:], ["M82", "G92 E2.5", purge.END])   # back to M82 at the E the file had reached
+
+    def test_arcs_and_compact_moves_update_the_return_point(self):
+        data = fixture("multi.gcode").replace(b"G1 X100 Y110 E0.6\n", b"G1X100Y110E0.6\nG2 X90 Y120 I-5 J5 E1\n")
+        lines, _ = run(data)
+        self.assertIn("G1 X90 Y120 F12000", block_after(lines, "T2 ; next filament"))
+
+    def test_m83_again_after_g90_before_extruding(self):
+        lines, _ = run(fixture("edges.gcode"))
+        t2 = block_after(lines, "T2")
+        i = next(i for i, l in enumerate(t2) if " E" in l and l.startswith("G1 X"))
+        self.assertEqual(t2[i - 2:i], ["G90", "M83"])
 
     def test_existing_m190_is_not_doubled(self):
         lines, done = run(fixture("has_m190.gcode"))

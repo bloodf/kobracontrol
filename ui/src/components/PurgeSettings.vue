@@ -42,7 +42,7 @@ watch(() => [config.value !== null, form.purgeLength, form.purgeSpeed, form.purg
                    :allow-empty="false" size="small" data-test="purge-length" />
     </OuiFormRow>
     <OuiFormRow :label="t('purge.speed')" for="c-purge-speed">
-      <InputNumber v-bind="dot" v-model="form.purgeSpeed" :locale="locale" input-id="c-purge-speed" :min="1" :max="20" :max-fraction-digits="1" :use-grouping="false"
+      <InputNumber v-bind="dot" v-model="form.purgeSpeed" :locale="locale" input-id="c-purge-speed" :min="1" :max="10" :max-fraction-digits="1" :use-grouping="false"
                    :allow-empty="false" size="small" data-test="purge-speed" />
     </OuiFormRow>
     <OuiFormRow :label="t('purge.corner')" :hint="t('purge.cornerHint')">

@@ -41,6 +41,7 @@ _granted = set()   # printer addresses declared at load or allowed since: the se
 _refused = set()   # addresses refused in OrcaSlicer's dialog this session: asked again only on a user action
 _queue_on_main = None   # OrcaSlicer's queue_on_main, once it hands it to the printer agent
 _last_hints = ("", "", "")   # preset_hints() as last read on the UI thread, for the script's worker thread
+STOP_WAIT = 1.0    # s a restarted bridge waits for the previous one to let go of its port
 UI_WAIT = 5.0      # s a worker thread waits for the UI thread to read the presets
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
@@ -250,12 +251,17 @@ def apply_addons(svc):
 
 # ---------------------------------------------------------------------- upload bridge (opt-in)
 
-def bridge_key(renew=False):
-    """The bridge's API key: kept in the storage folder (mode 0600), else for this session only."""
+def bridge_key(renew=False, create=True):
+    """The bridge's API key: kept in the storage folder (mode 0600), else for this session only. create=False only
+    reads it ("" when there is none yet): the bridge's requests and Settings while the bridge is off."""
     global _bridge_key
     folder = _storage()
     if folder:
-        return bridge.write_key(folder, bridge.new_key()) if renew else bridge.key_for(folder)
+        if renew:
+            return bridge.write_key(folder, bridge.new_key())
+        return bridge.key_for(folder) if create else bridge.read_key(folder)
+    if not create and not renew:
+        return _bridge_key
     if renew or not _bridge_key:
         _bridge_key = bridge.new_key()
     return _bridge_key
@@ -286,23 +292,42 @@ def sync_bridge():
         _bridge_error = tr("no storage folder for the uploads")
     elif want and _bridge is None:
         try:
-            _bridge = bridge.Bridge(cfg["bridge_port"], bridge_key, _bridge_upload, folder, log).start()
+            bridge_key()   # made once here; requests only read it
+            _bridge = _start_bridge(cfg["bridge_port"], folder)
         except OSError as e:
             _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
             log("upload bridge not started: %s" % _bridge_error)
 
 
+_stopping = None   # the thread stopping the previous bridge, while it runs
+
+
+def _start_bridge(port, folder):
+    """A started Bridge; when the previous one on this port is still stopping (off and on again quickly, or a
+    reload during an upload), waits a moment for it and tries once more."""
+    make = lambda: bridge.Bridge(port, lambda: bridge_key(create=False), _bridge_upload, folder, log).start()
+    try:
+        return make()
+    except OSError:
+        stopping = _stopping
+        if stopping is None or not stopping.is_alive():
+            raise
+        stopping.join(STOP_WAIT)
+        return make()
+
+
 def stop_bridge():
-    global _bridge
+    global _bridge, _stopping
     running, _bridge = _bridge, None
     if running is not None:   # shutdown waits for a request in progress: never on the UI thread
-        threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True).start()
+        _stopping = threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True)
+        _stopping.start()
 
 
 def bridge_state():
     cfg = get_store().effective()
     return {"enabled": cfg["bridge_enabled"], "running": _bridge is not None, "port": _bridge.port if _bridge else cfg["bridge_port"],
-            "host": bridge.HOST, "key": bridge_key(), "error": _bridge_error}
+            "host": bridge.HOST, "key": bridge_key(create=cfg["bridge_enabled"]), "error": _bridge_error}
 
 
 def bed_of_preset():

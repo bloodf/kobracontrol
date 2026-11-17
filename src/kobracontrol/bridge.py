@@ -20,7 +20,9 @@ import json
 import os
 import re
 import secrets
+import socket
 import socketserver
+import sys
 import tempfile
 import threading
 import time
@@ -35,7 +37,9 @@ FIELD_MAX = 1024                # bytes of a form field other than the file
 REQUESTS_PER_MINUTE = 30
 WRONG_KEYS_PER_MINUTE = 5
 SOCKET_TIMEOUT = 30.0           # s per read once the request is admitted
-HEADER_TIMEOUT = 5.0            # s per read before that (a client dripping its headers holds the only slot)
+HEADER_TIMEOUT = 5.0            # s per read before that
+HEADER_DEADLINE = 10.0          # s for the request line and all headers together
+DRAIN_MAX = 64 * 1024           # bytes of a refused request's body read before answering
 PARTS_MAX = 16
 VERSION = {"api": "0.1", "server": "1.0.0", "text": "OctoPrint 1.0.0 (Kobra Control bridge)"}
 CHUNK = 64 * 1024
@@ -66,12 +70,14 @@ def read_key(folder):
 
 def write_key(folder, key):
     """The key in its own file, readable by the user only (0600; created that way, never widened)."""
-    path = os.path.join(folder, KEY_FILE)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    if hasattr(os, "fchmod"):   # an older file with a wider mode is narrowed too
-        os.fchmod(fd, 0o600)
-    with os.fdopen(fd, "w", encoding="ascii") as f:
-        f.write(key)
+    fd, tmp = tempfile.mkstemp(prefix="bridge_key-", dir=folder)   # created 0600
+    try:
+        with os.fdopen(fd, "w", encoding="ascii") as f:
+            f.write(key)
+        os.replace(tmp, os.path.join(folder, KEY_FILE))   # a reader sees the old key or the new one, never an empty file
+    except BaseException:
+        os.remove(tmp)
+        raise
     return key
 
 
@@ -86,11 +92,15 @@ class _Body:
     """The request body: at most `length` bytes of rfile, with bytes pushed back."""
 
     def __init__(self, rfile, length):
-        self.rfile, self.left, self.back = rfile, length, b""
+        self.rfile, self.left, self.back, self.at = rfile, length, b"", 0
+
+    def push(self, data):
+        self.back, self.at = data + self.back[self.at:], 0
 
     def read(self, n):
-        if self.back:
-            out, self.back = self.back[:n], self.back[n:]
+        if self.at < len(self.back):
+            out = self.back[self.at:self.at + n]
+            self.at += len(out)
             return out
         data = self.rfile.read(min(n, self.left)) if self.left > 0 else b""
         self.left -= len(data)
@@ -140,7 +150,7 @@ def _copy_part(body, delim, sink, cap):
             if written > cap:
                 raise Refused(413, tr("the upload is too large"))
             sink(buf[:i])
-            body.back = buf[i + len(delim):] + body.back
+            body.push(buf[i + len(delim):])
             return written
         keep = len(buf) - len(delim) + 1
         if keep > 0:
@@ -199,6 +209,11 @@ class _Limiter:
 class _Server(http.server.HTTPServer):
     allow_reuse_address = os.name != "nt"   # on Windows SO_REUSEADDR would let another program take the port
 
+    log = print
+
+    def handle_error(self, request, client_address):   # one line in the plugin log, not a traceback on stderr
+        self.log("kobracontrol: upload bridge request ended early: %r" % (sys.exc_info()[1],))
+
     def server_bind(self):   # HTTPServer's own also looks up the host name (socket.getfqdn): not needed here
         socketserver.TCPServer.server_bind(self)
         self.server_name, self.server_port = HOST, self.server_address[1]
@@ -226,6 +241,7 @@ class Bridge:
         class Handler(_Handler):
             owner = bridge
         self.server = _Server((HOST, self.port), Handler)   # one request at a time
+        self.server.log = self.log
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, name="kobracontrol-bridge", daemon=True)
         self.thread.start()
@@ -250,6 +266,37 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):   # the default logs every request line and address to stderr
         pass
 
+    def setup(self):
+        super().setup()
+        # one deadline for the whole request line and headers: a client sending a byte every few seconds can't hold
+        # the only slot; cancelled once the request is admitted
+        self._deadline = threading.Timer(HEADER_DEADLINE, self._expire)
+        self._deadline.daemon = True
+        self._deadline.start()
+
+    def _expire(self):
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def finish(self):
+        self._deadline.cancel()
+        super().finish()
+
+    def _drain(self):
+        """Read (and drop) up to DRAIN_MAX of a refused request's body, so the client reads the answer instead of a
+        connection reset."""
+        try:
+            left = min(int(self.headers.get("Content-Length") or 0), DRAIN_MAX)
+            while left > 0:
+                data = self.rfile.read(min(left, CHUNK))
+                if not data:
+                    break
+                left -= len(data)
+        except (OSError, ValueError):
+            pass
+
     def _answer(self, status, data):
         body = json.dumps(data).encode()
         self.send_response(status)
@@ -261,6 +308,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
 
     def _refuse(self, status, message):
+        if self.command == "POST" and not getattr(self, "_reading", False):
+            self._drain()
         self._answer(status, {"error": message})
 
     def _admitted(self):
@@ -282,6 +331,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             owner.limiter.wrong_key()
             self._refuse(403, tr("invalid API key: copy it from Kobra Control > Settings > Upload bridge"))
             return False
+        self._deadline.cancel()
         self.connection.settimeout(SOCKET_TIMEOUT)
         return True
 
@@ -322,6 +372,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not m:
             raise Refused(415, tr("expected multipart/form-data"))
         fd, path = tempfile.mkstemp(prefix="bridge-", suffix=".part", dir=owner.work_dir)
+        self._reading = True   # the body is being read: a refusal from here on can't drain what is left
         try:
             with os.fdopen(fd, "wb") as out:
                 fields, filename = parse_upload(self.rfile, length, m.group(1).encode(), lambda: out)
@@ -329,10 +380,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 raise Refused(400, tr("the upload has no file"))
             start = fields.get("print", "").strip().lower() == "true"
             plate = fields.get("plateindex", "").strip()
+            plate = plate if re.fullmatch(r"[0-9]{1,3}", plate) else ""
             owner.log("kobracontrol: upload bridge received %r (%d bytes, print %s)" % (filename, os.path.getsize(path),
                                                                                       "asked" if start else "no"))
             result = owner.on_upload(path, os.path.basename(filename.replace("\\", "/")),
-                                     int(plate) if plate.isdigit() else 1, start)
+                                     int(plate) if plate else 1, start)
         finally:
             os.remove(path)
         return {"done": True, "files": {"local": {"name": result["name"], "origin": "local"}}, **result}

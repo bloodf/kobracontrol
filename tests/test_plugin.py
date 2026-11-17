@@ -1073,8 +1073,8 @@ class AddOns(Base):
         self.assertIsNone(plugin._service.purge_options)
         self.page.on_message({"type": "hello", "id": 1})
         state = self.config()["bridge"]
-        self.assertEqual((state["enabled"], state["running"], state["host"]), (False, False, "127.0.0.1"))
-        self.assertGreaterEqual(len(state["key"]), 20)
+        self.assertEqual((state["enabled"], state["running"], state["host"], state["key"]), (False, False, "127.0.0.1", ""))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, plugin.bridge.KEY_FILE)))   # no key made while off
 
     def test_bridge_switch_starts_and_stops_the_server(self):
         port = free_port()

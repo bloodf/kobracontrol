@@ -122,6 +122,12 @@ What the bridge does and does not do:
   drops that waiting print.
 - It speaks only the two requests OrcaSlicer's OctoPrint client makes (`GET /api/version` and
   `POST /api/files/local`). It is not a full OctoPrint server.
+- A program already running on this computer can keep it busy (for example by sending wrong keys, which locks
+  uploads for a minute) but cannot upload or print without the key. The request line and headers must arrive
+  within 10 seconds.
+- An **Upload** (without print) is accepted while the printer prints, as OrcaSlicer's Send is; Upload and Print is
+  not.
+- The API key file is made the first time the bridge is turned on (or New key is pressed), not before.
 - Turning it off in Settings, or unloading the plugin, stops it.
 
 ## Optional: Purge and bed wait
@@ -153,6 +159,7 @@ G1 X5 Y5 F12000      ; to this purge's own lane, 5 mm inside the corner
 G91
 G1 Z-3.203 F1200     ; back down to the layer height
 G90
+M83                  ; again: on some firmware G90 also makes extrusion absolute
 G1 X35 Y5 E15 F600   ; extrude while moving 30 mm along the lane (takes length / speed seconds)
 G91
 G1 Z3.203 F1200
@@ -166,7 +173,7 @@ M83                  ; the extrusion mode as it was: M83, or M82 followed by G92
 
 Each purge after that takes the next lane, 3 mm further in from the edge (5 lanes in a 15 mm strip), then the next
 30 mm row along the same edge, so no two purges land on one another. A 260 mm bed has room for 35 purges; a file
-with more tool changes is refused. Purge length (1-50 mm), speed (1-20 mm/s) and corner (front left, front right,
+with more tool changes is refused. Purge length (1-50 mm), speed (1-10 mm/s) and corner (front left, front right,
 back left, back right) are set in **Settings > Purge and bed wait**.
 
 **The risk:** the purge strip is the 15 mm along the front (or back) edge of the bed from the chosen corner. Keep it
