@@ -115,7 +115,7 @@ class LocatingMixin:
         if moved:
             self.log("kobracontrol: the printer moved from %s to %s" % (previous, found.host))
             self.release(previous)
-            self.camera.stop()
+            self.stop_cameras()
             self.publish({"type": "selection_changed"})   # the page says hello again for the new address
 
     def allow(self, hosts, user=False):

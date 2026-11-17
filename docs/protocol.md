@@ -247,7 +247,9 @@ Observed on firmware 2.0.2.8:
 The printer announces the stream URL in `info/report` (`urls.rtspUrl`). On firmware 2.0.2.8 it is
 an HTTP-FLV URL and plays without `video/startCapture`. The plugin sets the Device tab's stream mode
 from the URL's scheme (`http`, `https` or `rtsp`). MQTT `video/startCapture` asks the printer to
-start the stream. The tab's camera needs `ffmpeg` installed. The Device tab camera plays the URL the
+start the stream. The stream is H.264 (High, 1280x720, about 10 fps, a keyframe a second) in FLV,
+video only, about 370 kbit/s (measured on a Kobra X). The tab's camera remuxes it to fragmented MP4
+for the page's own player (`fmp4.py`); `ffmpeg` is the fallback. The Device tab camera plays the URL the
 plugin returns, with OrcaSlicer's own ffmpeg.
 
 ## Verified on a real printer

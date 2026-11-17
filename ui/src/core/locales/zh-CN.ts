@@ -434,7 +434,7 @@ export const zhCN: Record<MessageKey, string> = {
   'camset.title': "摄像头",
   'camset.ffmpeg': "ffmpeg 路径",
   'camset.ffmpegPh': "留空 = 在 PATH 中查找 ffmpeg",
-  'camset.ffmpegHelp': "摄像头画面需要安装 ffmpeg。",
+  'camset.ffmpegHelp': "仅在内置播放器无法播放摄像头画面时需要。",
   'camset.default': "打开页面时开启摄像头",
   'printdef.title': "打印默认值",
   'printdef.help': "从“文件”标签页开始的每次打印的初始选项。",

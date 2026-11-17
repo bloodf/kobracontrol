@@ -106,7 +106,7 @@ class Base(unittest.TestCase):
         self.published, self.logs = [], []
         self.svc = service.Service(self.published.append, self.logs.append, cert_dir=self.tmp, tls=lambda: None,
                                    http_port=f.http_port, mqtt_port=f.mqtt_port, camera_factory=FakeCamera,
-                                   spoolman_factory=FakeSpoolman)
+                                   relay_factory=FakeCamera, spoolman_factory=FakeSpoolman)
         self.addCleanup(self.svc.close)
         self.svc.set_target(service.Target(f.host, spoolman_url="http://spoolman.invalid"))
         self.conn = self.svc.connections[f.host]
@@ -841,6 +841,44 @@ class CameraTurnedOn(Base):
         self.svc.target.camera_enabled = False
         self.svc.touch(camera=True)
         wait(lambda: "start" in self.svc.camera.calls)
+
+
+class CameraPlayer(Base):
+    """The page plays H.264 itself (lease mse): Relay streams the printer's HTTP-FLV and ffmpeg is not run. RTSP,
+    a page without the player, or a stream Relay cannot read go to ffmpeg."""
+
+    def use(self, url, mse):
+        self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                         "data": {"urls": {"rtspUrl": url}}})
+        wait(lambda: self.conn.view()["camera_url"] == url)
+        self.svc.touch(camera=True, mse=mse)
+
+    def test_the_page_player_runs_without_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.assertNotIn("start", self.svc.camera.calls)
+
+    def test_ffmpeg_without_the_page_player_or_for_rtsp(self):
+        self.use("http://127.0.0.1:18088/live/t", False)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn("start", self.svc.relay.calls)
+        self.svc.camera.calls.clear()
+        self.use("rtsp://127.0.0.1/live", True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn("start", self.svc.relay.calls)
+
+    def test_a_stream_the_relay_cannot_read_falls_back_to_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.svc._on_relay_error("unsupported", "not an FLV stream")
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn({"type": "camera_error", "reason": "unsupported", "error": "not an FLV stream"}, self.published)
+
+    def test_fragments_reach_the_page_as_base64(self):
+        self.svc._on_video({"codec": "avc1.64c028", "init": b"\x00\x01"})
+        self.svc._on_video({"data": b"\xff"})
+        self.assertEqual([m for m in self.published if m["type"] == "video"],
+                         [{"type": "video", "codec": "avc1.64c028", "init": "AAE="}, {"type": "video", "data": "/w=="}])
 
 
 class CameraHost(Base):

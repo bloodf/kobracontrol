@@ -669,6 +669,28 @@ test('camera errors: a plain explanation per reason', `
   await until(() => q('.cam-view img'), 'recovers when frames come back');
 `);
 
+// The printer's real stream (tests/kobra_x_camera.flv, 3.5 s from a Kobra X) remuxed by fmp4.py, as Relay sends it.
+const CAMERA = JSON.parse(execFileSync('python3', ['-c', `import base64, json, sys
+sys.path.insert(0, "src/kobracontrol")
+import fmp4
+ev = fmp4.Remuxer().feed(open("tests/kobra_x_camera.flv", "rb").read())
+b = lambda x: base64.b64encode(x).decode()
+print(json.dumps({"codec": ev[0][1], "init": b(ev[0][2]), "media": [b(e[1]) for e in ev[1:]]}))`], { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 }));
+
+test('camera: the page plays the printer stream itself (no ffmpeg) and says it can in the lease', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  assert(last('lease').mse === true, 'lease: this page plays H.264');
+  const cam = ${JSON.stringify(CAMERA)};
+  await post({type: 'video', codec: cam.codec, init: cam.init});
+  for (const data of cam.media) await post({type: 'video', data});
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && v.videoHeight === 720 && v.currentTime > 0, 'the stream plays: ' + v.videoWidth + 'x' + v.videoHeight + ' t=' + v.currentTime + ' err=' + (v.error && v.error.message));
+  assert(!q('.cam-empty') && !q('.cam-view img'), 'no placeholder, no JPEG');
+  await post({type: 'camera_error', error: 'gone', reason: 'failed'});
+  assert(q('.cam-empty') && getComputedStyle(v).display === 'none', 'an error replaces the picture');
+`);
+
 test('the camera starts on only when the saved setting says so', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));

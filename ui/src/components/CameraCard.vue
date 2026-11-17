@@ -1,15 +1,28 @@
 <script setup lang="ts">
-import { computed, nextTick } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, lease, controlsOff, link, printerName } from '../app/store';
 import { t } from '../core/i18n';
+import { Player } from '../core/player';
+
+// The stream from the plugin's Relay, played here; ffmpeg's JPEG frames (the fallback) still come as `frame`.
+const vid = ref<HTMLVideoElement | null>(null);
+let player: Player | null = null;
+watch(vid, el => { player?.close(); player = el ? new Player(el) : null; });
+let unlisten = () => {};
+onMounted(() => { unlisten = bridge.onMessage(m => {
+  if (m?.type !== 'video' || !player) return;
+  if (typeof m.init === 'string') player.init(String(m.codec), m.init);
+  else if (typeof m.data === 'string') player.append(m.data);
+}); });
+onBeforeUnmount(() => { unlisten(); player?.close(); player = null; });
 
 async function toggle() {
   s.camOn = !s.camOn;
-  if (!s.camOn) { s.frame = ''; s.camError = ''; s.camReason = ''; }
+  if (!s.camOn) { s.frame = ''; s.video = false; s.camError = ''; s.camReason = ''; }
   lease();
   await nextTick();   // Turn on and Turn off are different buttons: keep the keyboard on the one that replaced the other
   if (document.activeElement === document.body) document.querySelector<HTMLElement>('[data-focus-key="camera"]')?.focus();
@@ -38,8 +51,9 @@ const off = computed(() => link.value !== 'connected' && !s.camOn);
                                  data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiEmpty>
     <div v-else class="cam-view">
-      <img v-if="s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
-      <div v-else class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
+      <video v-show="s.video" ref="vid" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="t('cam.alt', { printer: printerName })"></video>
+      <img v-if="!s.video && s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
+      <div v-else-if="!s.video" class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
         <OuiEmpty :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg">
           <template v-if="s.camReason === 'no_ffmpeg'" #actions>
             <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
@@ -54,6 +68,6 @@ const off = computed(() => link.value !== 'connected' && !s.camOn);
 /* The picture area: always black behind the picture, whatever the theme (it is the camera's frame, not a surface). */
 .cam-view { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; aspect-ratio: 16 / 9; background: #000;
   border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); }
-.cam-view img { width: 100%; height: 100%; object-fit: contain; }
+.cam-view img, .cam-view video { width: 100%; height: 100%; object-fit: contain; }
 .cam-view .cam-empty { background: none; max-width: 560px; text-align: center; }
 </style>

@@ -458,7 +458,7 @@ export const es: Record<MessageKey, string> = {
   'camset.title': "Cámara",
   'camset.ffmpeg': "Ruta de ffmpeg",
   'camset.ffmpegPh': "En blanco = buscar ffmpeg en el PATH",
-  'camset.ffmpegHelp': "La imagen de la cámara necesita ffmpeg instalado.",
+  'camset.ffmpegHelp': "Solo hace falta cuando el reproductor integrado no puede mostrar la cámara.",
   'camset.default': "Encender la cámara al abrir la página",
   'printdef.title': "Valores de impresión predeterminados",
   'printdef.help': "La opción inicial de cada impresión iniciada desde la pestaña Archivos.",

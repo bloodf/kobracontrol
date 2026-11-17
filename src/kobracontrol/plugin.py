@@ -369,7 +369,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
                 self.post_message(self._config_message())
             elif kind == "lease":
-                svc.touch(camera=data.get("camera"), stock=data.get("stock") is True)
+                svc.touch(camera=data.get("camera"), stock=data.get("stock") is True, mse=data.get("mse") is True)
             elif kind == "frame_ack":
                 svc.ack_frame()
             elif kind == "cmd":

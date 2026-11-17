@@ -43,7 +43,8 @@ works on its own.
 | `kobra.py` | Credential recovery, printer commands, upload, print start, `State` (reports folded into one view) | no |
 | `ace.py` | ACE and print-head slot model, slot mapping for a print, drying | no |
 | `bambu.py` | Translates the view to the Device tab's status JSON and Device tab commands to printer commands | no |
-| `camera.py` | Camera start and, for the tab, `ffmpeg` to JPEG frames | no |
+| `fmp4.py` | The printer's HTTP-FLV (H.264) as fragmented MP4 for the page's player | no |
+| `camera.py` | For the tab: `Relay` (the stream, through `fmp4.py`, to the page's player) and the `ffmpeg` to JPEG fallback | no |
 | `files.py` | Printer file list, details, delete, print; time-lapse video list and delete | no |
 | `spoolman.py`, `peers.py`, `spooler_bridge.py`, `stockview.py`, `usage.py` | Spoolman, Spooler presence and stock, filament use | no |
 | `settings.py` | Settings store | no |
@@ -100,7 +101,7 @@ Page to plugin:
 | type | fields | effect |
 |---|---|---|
 | `hello` | `id`, `retry` | resolve the printer, connect, send `config`; a connection that already failed answers its last error at once and keeps its retry delay, unless `retry` is `true` (the page's Retry button), which tries again now and answers at that attempt's result; the result carries `source` (`override`, `remembered`, `preset`, `discovered`) and `note` (one line when the preset's address was not the printer); when no Kobra X is found the error reply has `no_target: true` and `candidates` (`[{ip, name, model}]`, when several answered: the page offers them and sends `cmd choose_printer {host}`) and `pending` (addresses found that OrcaSlicer does not let the plugin reach yet: the page sends `allow_hosts {id, hosts}` once, which the plugin handles on the UI thread so OrcaSlicer's dialog shows at once and a Yes is saved, then says hello again); `cmd search_printer` searches again; with no certificate it has `no_certificate: true`. The `offline` message carries `retry_at` (unix s of the next automatic attempt, 0 when none is planned) |
-| `lease` | `camera`, `stock` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen |
+| `lease` | `camera`, `stock`, `mse` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen; `mse`: the page plays H.264 itself (Media Source Extensions), so the camera uses `Relay`, else `ffmpeg` |
 | `cmd` | `id`, `cmd`, `args`, `gen` | run `Service.cmd_<cmd>(**args)` for printer generation `gen` |
 | `frame_ack` | | the page has shown the last camera frame |
 | `save_settings` | `id`, `settings` | validate and store settings |
@@ -112,7 +113,8 @@ Plugin to page:
 |---|---|
 | `reply` | `id`, `result` or `error` |
 | `status` | `data` (below), `gen` |
-| `frame` | `image` (JPEG data URL) |
+| `video` | `codec` and `init` (base64 init segment: a new stream, the player starts over), else `data` (base64 fragment, one frame) |
+| `frame` | `image` (JPEG data URL, the `ffmpeg` fallback) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
 | `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
 | `notice` | `text` |
@@ -243,7 +245,7 @@ is written around that:
   compares one host per entry, and the Plugins dialog refuses wildcards (docs/HLSD/plugin-permissions.md,
   "Persistence and editing"). There is no CIDR or "local network" grant, so the found printer's address
   cannot be declared at load before it is known.
-- The tab's camera starts `ffmpeg`, which OrcaSlicer matches by its full command line.
+- When the page's player can't play the camera, the tab starts `ffmpeg`, which OrcaSlicer matches by its full command line.
 
 `tests/audit_guard.py` models these checks so the tests run Print, Send, Find certificate and
 connect under them. It is a model: only a real OrcaSlicer shows the real behaviour.

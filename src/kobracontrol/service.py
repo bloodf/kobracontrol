@@ -160,7 +160,7 @@ def _background(fn, name):
 
 class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
-                 fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
+                 fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera, relay_factory=camera.Relay,
                  spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
@@ -177,6 +177,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._closing = threading.Event()
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
+        self.camera_mse = False      # the page plays H.264 itself (lease `mse`): Relay, no ffmpeg
+        self._relay_refused = None   # the stream URL Relay found not to be FLV/H.264: ffmpeg plays that one
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
             self.log("kobracontrol: " + self.ledger.restore_notice)
@@ -184,6 +186,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._camera_refused = set()
         self._reset_printer_state()
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
+        self.relay = relay_factory(self._camera_url, self._on_video, self._on_relay_error, log=log)
         self.jobs = queue.Queue()
         self.worker = self._thread(self._work, "worker")
         self.monitor = self._thread(self._watch, "monitor")
@@ -311,18 +314,20 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             previous, self.target = self.target.host, None
             self.generation += 1
             self._reset_printer_state()
-        _background(self.camera.stop, "camera-stop")
+        _background(self.stop_cameras, "camera-stop")
         self.release(previous)
 
-    def touch(self, camera=None, stock=None):
+    def touch(self, camera=None, stock=None, mse=None):
         if stock:
             self.want_stock()
         with self.lock:
             self.lease_until = time.monotonic() + LEASE_SECONDS
             if camera is not None:
                 self.camera_on = bool(camera)
+            if mse is not None:
+                self.camera_mse = bool(mse)
         if camera is False:
-            _background(self.camera.stop, "camera-stop")
+            _background(self.stop_cameras, "camera-stop")
 
     def ack_frame(self):
         self.camera.ack()
@@ -368,6 +373,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.jobs.put(None)
         self._changed.set()
         self.camera.close()
+        self.relay.close()
         for t in (self.worker, self.monitor, self.tracker):
             if t is not threading.current_thread():
                 t.join(1.0)
@@ -493,13 +499,13 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 active = now < self.lease_until and target is not None
                 cam = active and self.camera_on   # camera_enabled only turns it on when the page opens (the page's job)
             if not active:
-                self._guard("camera", self.camera.stop)
+                self._guard("camera", self.stop_cameras)
                 self._closing.wait(0.25)
                 continue
             if now >= next_status:
                 next_status = now + STATUS_EVERY
                 self._guard("status", lambda: self._push_status(target, gen))
-            self._guard("camera", lambda: self._camera_tick(target) if cam else self.camera.stop())
+            self._guard("camera", lambda: self._camera_tick(target) if cam else self.stop_cameras())
             self._closing.wait(0.1)
 
     def _push_status(self, target, gen):
@@ -530,11 +536,32 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if key != self._capture:
             self._capture = key
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
-        self.camera.set_ffmpeg(target.ffmpeg_path)
-        self.camera.start()
+        url = self._camera_url()
+        if self.camera_mse and url.lower().startswith("http://") and url != self._relay_refused:
+            self.camera.stop()
+            self.relay.start()
+        else:   # an RTSP stream, a page that cannot play H.264, or a stream Relay could not read
+            self.relay.stop()
+            self.camera.set_ffmpeg(target.ffmpeg_path)
+            self.camera.start()
+
+    def stop_cameras(self):
+        self.camera.stop()
+        self.relay.stop()
 
     def _on_frame(self, jpeg):
         self.publish({"type": "frame", "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()})
+
+    def _on_video(self, part):
+        b64 = {k: base64.b64encode(v).decode() if isinstance(v, bytes) else v for k, v in part.items()}
+        self.publish({"type": "video", **b64})
+
+    def _on_relay_error(self, reason, text):
+        if reason == "unsupported":   # not FLV/H.264: hand this stream to ffmpeg on the next tick
+            self._relay_refused = self._camera_url()
+            self.log("kobracontrol camera: %s; using ffmpeg" % text)
+            return
+        self._on_camera_error(reason, text)
 
     def _on_camera_error(self, reason, text):
         self.publish({"type": "camera_error", "reason": reason, "error": text})
