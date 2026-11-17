@@ -14,6 +14,7 @@ import zipfile
 import ace
 import bridge
 import connection
+import gcode_check
 import kobra
 import purge
 from i18n import lazy, tr
@@ -168,6 +169,20 @@ class JobsMixin:
         if not upload_url:
             raise kobra.KobraError(tr("the printer has not announced its upload address yet; try again"))
         conn.printer.upload(filename, source, upload_url, size=size, progress=progress, cancelled=cancelled)
+
+    def check_gcode(self, path, plate_index=1):
+        """Translated warnings about the job's G-code (gcode_check.inspect), each logged. Read-only and never
+        fails: a file that can't be read gives [] here and its error from the upload."""
+        try:
+            with plate_source(path, plate_index) as (source, size, _):
+                found = gcode_check.inspect(source, size)
+        except Exception as e:
+            self.log("kobracontrol: G-code not checked: %s" % e)
+            return []
+        warnings = [tr(text) for text in found]
+        for text in warnings:
+            self.log("kobracontrol: G-code check: " + text)
+        return warnings
 
     def send_file(self, host, path, name, plate_index=1, progress=None, cancelled=None):
         """Upload only (OrcaSlicer's Send): the plate's G-code goes to the printer's storage; returns its name."""
