@@ -55,6 +55,7 @@ Filament use (`usage.py`) is booked by Kobra Control in its Spoolman, which is S
 here. Spooler 0.26 never books a Kobra X print: its Kobra link reads only slots (`kx_report` gives no print
 state, so `usage_track` never runs for it). A Spooler that does must list `"anycubic"` in its presence
 `provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
+| `gcode_check.py` | Read-only checks of the plate G-code (settings block, PNG preview) and of the printer preset | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |

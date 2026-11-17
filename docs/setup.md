@@ -84,6 +84,27 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
    through the ACE slots before the first layer (about 11 minutes in one test, for a 5 minute
    print). It is not hung.
 
+## 7. G-code checks before sending
+
+When OrcaSlicer's Print or Send goes through kobracontrol, the plugin reads the plate's G-code before the
+upload: the first 1 MB and the last 256 kB. It never changes the file, and a warning never stops the print.
+Each warning shows in the Print dialog's last line ("Print started" or "File uploaded"), as an OrcaSlicer
+notification, and in the log. Plugins > **Check Kobra X connection** names the same settings when the
+selected Kobra X printer preset has them.
+
+| Check | Warning when | What to change in the printer preset |
+|---|---|---|
+| Settings block | No `; CONFIG_BLOCK_END` in the file. | Turn off **Printer settings > Basic information > Advanced > Skip G-code config block** and slice again. |
+| Preview picture | No `; thumbnail ... begin` block. | Set **Printer settings > Basic information > Advanced > G-code thumbnails**, for example to `300x300/PNG`, and slice again. |
+| PNG preview | Thumbnails only in JPG, QOI or another format. | Use `/PNG` sizes in **G-code thumbnails**. |
+
+Why these two blocks: on firmware 2.0.2.8 the printer's file details (`file/fileDetails`, see
+[protocol.md](protocol.md)) carry the picture as a PNG and the printer model, each filament's type,
+colour and weight, the layer height, temperatures and speeds, which OrcaSlicer writes in the preview
+block and in the settings block. That the screen needs them is inferred from that answer: a file without
+them has not been tried on a Kobra X, so the warnings say "probably" and "likely cause". The settings
+block finding was first reported for the Kobra 3 V2. Both settings are in OrcaSlicer's Advanced mode.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -94,6 +115,7 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
 | "Something answers at … but it is not a Kobra X in LAN mode" | The address is another device, often a bridge such as Kobralink, or LAN mode is off. Leave Settings > Printer address blank so the tab searches, or enter the printer's own IP there. |
 | "No Kobra X answered the network search" | The printer is off, on another network, in LAN mode off, or the network blocks multicast. Enter its IP under Settings > Printer address. |
 | Connection check fails with a timeout or connection refused | The address is wrong, or the printer is on another network. Use the printer's current IP. |
+| The printer's screen shows no filament or no picture for a file sent from OrcaSlicer | Likely the printer preset skips the G-code settings block or writes no PNG preview. See section 7. |
 
 Not supported: Anycubic Cloud and access from outside the LAN, a G-code console (the printer's LAN
 protocol has none), and other Kobra models.

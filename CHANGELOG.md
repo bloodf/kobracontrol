@@ -4,6 +4,22 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Added
+
+- **G-code checks before sending.** OrcaSlicer's Print and Send through kobracontrol read the plate's G-code first
+  (only its first 1 MB and last 256 kB, never changing it) and warn when the settings block at its end is missing or
+  when it has no PNG preview picture. The Kobra X screen probably reads the filament and print details and the
+  picture from those blocks. The warning names the OrcaSlicer setting to change (Skip G-code config block, G-code
+  thumbnails), shows in the Print dialog's last line and as an OrcaSlicer notification, and never stops the print.
+  Check Kobra X connection names the same settings when the selected Kobra X printer preset has them. See
+  `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on a Kobra X.
+
+### Changed
+
+- The README, its Portuguese version and the Orca Cloud description show what was verified on the printer, with the
+  firmware and the date, and what the plugin can access: each OrcaSlicer permission, what is sent where, and that
+  there is no telemetry.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked

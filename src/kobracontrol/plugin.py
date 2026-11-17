@@ -15,6 +15,7 @@ import orca
 import ace
 import bambu
 import certs
+import gcode_check
 import i18n
 import locate
 import kobra
@@ -270,6 +271,35 @@ def preset_hints():
         return "", preset.name, agent
     host = host_of(preset.config_value("print_host")) or host_of(bundle.full_config_value("print_host"))
     return host, preset.name, agent
+
+
+def preset_gcode_warnings():
+    """Translated warnings about the selected Kobra X printer preset's G-code settings (gcode_check.preset_problems);
+    [] for another printer or when OrcaSlicer can't tell."""
+    try:
+        bundle = orca.host.preset_bundle()
+        preset = bundle.current_printer_preset()
+        agent = clean(preset.config_value("printer_agent")) or clean(bundle.full_config_value("printer_agent"))
+        if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
+                                                preset.config_value("inherits")):
+            return []
+        found = gcode_check.preset_problems(preset.config_value("gcode_skip_config_block"),
+                                            preset.config_value("thumbnails"))
+    except Exception as e:
+        log("printer preset not checked (%s)" % e)
+        return []
+    return [tr(text) % values if values else tr(text) for text, values in found]
+
+
+def warn(warnings):
+    """OrcaSlicer's warning notification for each text; a failed notification is only logged."""
+    try:
+        ui = orca.host.ui
+        level = getattr(ui.NotificationLevel, "WarningNotificationLevel", None) or ui.NotificationLevel.RegularNotificationLevel
+        for text in warnings:
+            ui.push_notification(level, "Kobra Control: " + text)
+    except Exception as e:
+        log("notification failed: %r" % e)
 
 
 def _target():
@@ -745,6 +775,8 @@ class KobraAgent(pa.PrinterAgentBase):
                 return ERR_CONNECT
         if update_fn:
             update_fn(STAGE_CREATE, 0, tr("Preparing..."))
+        warnings = service().check_gcode(params.filename, getattr(params, "plate_index", 1))
+        warn(warnings)
         try:
             service().send_file(host, params.filename, clean(params.project_name) or clean(params.task_name),
                                 getattr(params, "plate_index", 1), self._progress(update_fn), cancel_fn)
@@ -753,7 +785,7 @@ class KobraAgent(pa.PrinterAgentBase):
         except Exception as e:
             return self._fail(update_fn, ERR_SG_UPLOAD, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, tr("File uploaded"))
+            update_fn(STAGE_FINISHED, 100, " ".join([tr("File uploaded")] + warnings))
         return OK
 
     def start_local_print(self, params, update_fn, cancel_fn):
@@ -766,6 +798,8 @@ class KobraAgent(pa.PrinterAgentBase):
         path = params.dst_file if getattr(params, "dst_file", "") and os.path.exists(params.dst_file) else params.filename
         trays, filaments = job_filaments(params)
         task = job_task(params, get_store().effective())
+        warnings = service().check_gcode(path, getattr(params, "plate_index", 1))
+        warn(warnings)
         stage = ["prepare"]
 
         def on_stage(name):
@@ -783,7 +817,7 @@ class KobraAgent(pa.PrinterAgentBase):
             code = {"upload": ERR_LP_UPLOAD, "start": ERR_LP_PUBLISH}.get(stage[0], ERR_LP_PUBLISH)
             return self._fail(update_fn, code, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, tr("Print started"))
+            update_fn(STAGE_FINISHED, 100, " ".join([tr("Print started")] + warnings))
         return OK
 
     def start_local_print_with_record(self, params, update_fn, cancel_fn, wait_fn):
@@ -864,12 +898,13 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
             host = svc.wait_located(CHECK_SECONDS).host
             conn = svc.ready(host, timeout=max(1.0, deadline - time.monotonic()))
         except Exception as e:
-            return orca.ExecutionResult.skipped(tr("Couldn't reach the Kobra X: %s") % e)
+            return orca.ExecutionResult.skipped(" ".join([tr("Couldn't reach the Kobra X: %s") % e] + preset_gcode_warnings()))
         view = conn.view()
         data, _ = status_data(view)
         loaded = ", ".join("S%d %s" % (s["global_index"] + 1, s["type"] or "?") for s in data["slots"] if s["status"] == 5)
-        return orca.ExecutionResult.success(tr("%s at %s (firmware %s), %s. %s") % (
-            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded.")))
+        return orca.ExecutionResult.success(" ".join([tr("%s at %s (firmware %s), %s. %s") % (
+            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded."))]
+            + preset_gcode_warnings()))
 
 
 class FindCertificate(orca.script.ScriptPluginCapabilityBase):
