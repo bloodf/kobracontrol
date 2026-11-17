@@ -5,17 +5,24 @@ _data(conn), log and remember_job (usage.UsageMixin). Free of the `orca` module.
 import contextlib
 import os
 import re
+import secrets
+import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 
 import ace
+import bridge
 import connection
 import kobra
+import purge
 from i18n import lazy, tr
 
 CONNECT_WAIT = 10.0             # s a print job waits for the session
 GCODE_MAX = 1024 ** 3           # BAMBU_NETWORK_ERR_PRINT_LP_FILE_OVER_SIZE: 1 GB
 SLICE_INFO_MAX = 8 * 1024 * 1024 # Metadata/slice_info.config read only up to this declared size
+PENDING_TTL = 600.0             # s an Upload-and-Print from the bridge waits for Start in the tab
+GONE = lazy("that print request is no longer waiting; nothing was started")
 
 
 def remote_name(name):
@@ -106,6 +113,42 @@ def supported_task(view, task):
 
 
 class JobsMixin:
+    purge_options = None   # purge.options(...) while the purge add-on is on (Settings); None = files go as sliced
+    work_dir = ""          # the plugin's storage folder: the add-on's copy of the G-code is written there
+
+    @contextlib.contextmanager
+    def job_source(self, path, plate_index=1):
+        """plate_source, or with the purge add-on on, its processed copy (written to work_dir, removed afterwards);
+        the sliced file itself is never changed."""
+        with plate_source(path, plate_index) as (source, size, weights):
+            opts = self.purge_options
+            if not opts:
+                yield source, size, weights
+                return
+            copy = self._purged_copy(source, opts)
+            try:
+                with open(copy, "rb") as f:
+                    yield f, os.path.getsize(copy), weights
+            finally:
+                os.remove(copy)
+
+    def _purged_copy(self, source, opts):
+        if not self.work_dir:
+            raise kobra.KobraError(tr("no storage folder for the purge add-on's copy of the G-code; nothing was sent"))
+        info = purge.scan(source)
+        source.seek(0)
+        fd, copy = tempfile.mkstemp(prefix="purge-", suffix=".gcode", dir=self.work_dir)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                done = purge.transform(source, out.write, opts, info)
+        except BaseException as e:
+            os.remove(copy)
+            if isinstance(e, purge.PurgeError):
+                raise kobra.KobraError(str(e)) from None
+            raise
+        self.log("kobracontrol: purge add-on: %d purge(s), bed wait %s" % (done["purges"], "added" if done["bed_wait"] else "already there"))
+        return copy
+
     def ready(self, host, timeout=CONNECT_WAIT):
         """The connected Connection for `host`, waiting up to timeout; KobraError when it does not connect."""
         conn = self.connection(host)
@@ -130,7 +173,7 @@ class JobsMixin:
         """Upload only (OrcaSlicer's Send): the plate's G-code goes to the printer's storage; returns its name."""
         conn = self.ready(host)
         filename = remote_name(name or os.path.basename(path))
-        with plate_source(path, plate_index) as (source, size, _):
+        with self.job_source(path, plate_index) as (source, size, _):
             self._upload(conn, filename, source, size, progress, cancelled)
         return filename
 
@@ -143,7 +186,7 @@ class JobsMixin:
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
         filename = remote_name(name or os.path.basename(path))
-        with plate_source(path, plate_index) as (source, size, weights):
+        with self.job_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
             self._upload(conn, filename, source, size, progress, cancelled)
         if cancelled and cancelled():
@@ -183,3 +226,64 @@ class JobsMixin:
             self.remember_job(filename, used, filaments, host=host)
         except Exception as e:   # usage tracking must never fail a print that started
             self.log("kobracontrol: usage not tracked for %s: %r" % (filename, e))
+
+    # Upload-and-Print bridge (bridge.py): the upload is stored on the printer at once; a print waits for Start in
+    # the tab, so nothing starts without the user at the plugin. -----------------------------------------------------
+    bridge_pending = None   # {"id", "name", "host", "task", "at"}
+
+    def bridge_upload(self, path, filename, plate_index, start, task):
+        """bridge.Bridge's on_upload: the file to the selected printer through Send's own path; with `start`, refused
+        unless the printer is idle, then kept as the one pending print. Returns OrcaSlicer's answer."""
+        with self.lock:
+            target = self.target
+        if target is None or not target.host:
+            raise bridge.Refused(503, tr("no Kobra X selected in Kobra Control; nothing was sent"))
+        name = remote_name(filename)
+        try:
+            data = self._data(self.ready(target.host))
+            if start and not data["can"]["print"]:
+                raise bridge.Refused(409, tr("the printer is %s; nothing was sent") % tr(data["state"]))
+            if data["state"] in ("printing", "paused") and data.get("filename") == name:
+                raise bridge.Refused(409, tr("%s is the file being printed; nothing was sent") % name)
+            name = self.send_file(target.host, path, filename, plate_index)
+        except kobra.KobraError as e:
+            raise bridge.Refused(502, str(e)) from None
+        with self.lock:
+            if self.bridge_pending and self.bridge_pending["name"] == name:   # its content just changed
+                self.bridge_pending = None
+        if not start:
+            return {"name": name}
+        pending = {"id": secrets.token_hex(8), "name": name, "host": target.host,
+                   "task": {k: bool((task or {}).get(k)) for k in PRINT_OPTIONS}, "at": time.time()}
+        with self.lock:
+            self.bridge_pending = pending
+        text = tr("%s is on the printer. Start the print in Kobra Control.") % name
+        self._notice(text)
+        return {"name": name, "pending": True, "message": text}
+
+    def bridge_pending_for(self, host):
+        """The pending print for `host` as the page sees it, None when there is none (or it waited too long)."""
+        with self.lock:
+            p = self.bridge_pending
+            if p and time.time() - p["at"] > PENDING_TTL:
+                self.bridge_pending = p = None
+        return {"id": p["id"], "name": p["name"], "at": p["at"]} if p and p["host"] == host else None
+
+    def cmd_bridge_start(self, id):
+        """The tab's Start: the pending file through the Files tab's print path (idle check and print/start)."""
+        conn = self._conn()
+        pending = self.bridge_pending
+        if not pending or pending["id"] != id or self.bridge_pending_for(conn.host) is None:
+            raise kobra.KobraError(tr(GONE))
+        result = self.cmd_file_print(pending["name"], **pending["task"])
+        with self.lock:
+            if self.bridge_pending is pending:
+                self.bridge_pending = None
+        return result
+
+    def cmd_bridge_cancel(self, id):
+        """The tab's Cancel: forget the pending print; the file stays on the printer."""
+        with self.lock:
+            if self.bridge_pending and self.bridge_pending["id"] == id:
+                self.bridge_pending = None
+        return {"cancelled": True}

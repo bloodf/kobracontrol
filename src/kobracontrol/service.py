@@ -161,13 +161,14 @@ def _background(fn, name):
 class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
-                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
+                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None, work_dir=""):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
         self.pins = certs.Pins(os.path.join(cert_dir, certs.PINS_FILE)) if cert_dir else None
         self.http_port, self.mqtt_port, self.fetch = http_port, mqtt_port, fetch
         self.spoolman_factory = spoolman_factory
+        self.work_dir = work_dir
         self.lock = threading.RLock()
         self._op = threading.local()
         self.connections = {}
@@ -506,7 +507,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         conn = self.connections.get(target.host)
         if conn is None:
             return
-        data = self._data(conn)
+        data = {**self._data(conn), "bridge_pending": self.bridge_pending_for(conn.host)}
         if self._current(gen):
             self.publish({"type": "status", "data": data, "gen": gen})
             if not data["connected"]:

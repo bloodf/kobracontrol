@@ -724,3 +724,93 @@ class Guarded(Base):
         reply = wait(lambda: next((m for m in page.posted if m.get("id") == 1), None))
         self.assertIn("result", reply)
         self.assertEqual(audit_guard.denials(), [])
+
+
+def free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class AddOns(Base):
+    """Settings switch the upload bridge and the purge add-on on and off; both are off by default."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(plugin.stop_bridge)
+        self.page = plugin.KobraControlPage()
+        self.page.posted = []
+
+    def config(self):
+        return [m for m in self.page.posted if m.get("type") == "config"][-1]
+
+    def save(self, **values):
+        self.page.on_message({"type": "save_settings", "id": 5, "settings": values})
+        return self.config()
+
+    def test_off_by_default(self):
+        self.page.on_load()
+        self.addCleanup(self.page.on_unload)
+        self.assertIsNone(plugin._bridge)
+        self.assertIsNone(plugin._service.purge_options)
+        self.page.on_message({"type": "hello", "id": 1})
+        state = self.config()["bridge"]
+        self.assertEqual((state["enabled"], state["running"], state["host"]), (False, False, "127.0.0.1"))
+        self.assertGreaterEqual(len(state["key"]), 20)
+
+    def test_bridge_switch_starts_and_stops_the_server(self):
+        port = free_port()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertEqual((state["running"], state["port"], state["error"]), (True, port, ""))
+        self.assertEqual(plugin._bridge.server.server_address, ("127.0.0.1", port))
+        key_file = os.path.join(self.tmp, plugin.bridge.KEY_FILE)
+        if os.name == "posix":
+            self.assertEqual(os.stat(key_file).st_mode & 0o777, 0o600)
+        self.assertNotIn(state["key"], json.dumps(plugin.get_store().raw()))   # not in settings.json
+        running = plugin._bridge
+        self.assertFalse(self.save(bridge_enabled=False)["bridge"]["running"])
+        wait(lambda: running.server is None)
+
+    def test_new_key_replaces_the_old_one(self):
+        self.page.on_message({"type": "hello", "id": 1})
+        old = self.config()["bridge"]["key"]
+        self.page.on_message({"type": "bridge_new_key", "id": 6})
+        self.assertNotEqual(self.config()["bridge"]["key"], old)
+        self.assertEqual(plugin.bridge_key(), self.config()["bridge"]["key"])
+
+    def test_port_in_use_is_reported(self):
+        import socket
+        with socket.socket() as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen()
+            state = self.save(bridge_enabled=True, bridge_port=busy.getsockname()[1])["bridge"]
+        self.assertFalse(state["running"])
+        self.assertIn("could not be opened", state["error"])
+
+    def test_unload_stops_the_bridge(self):
+        self.save(bridge_enabled=True, bridge_port=free_port())
+        running = plugin._bridge
+        self.page.on_load()
+        self.page.on_unload()
+        self.assertIsNone(plugin._bridge)
+        wait(lambda: running.server is None)
+
+    def test_load_asks_for_loopback_only_when_on(self):
+        with mock.patch.object(plugin, "known_hosts", return_value=["192.168.1.5"]):
+            orca.permissions.clear()
+            plugin.KobraControl().register_capabilities()
+            self.assertNotIn("http://127.0.0.1", orca.permissions[-1]["network"])
+            plugin.get_store().update({"bridge_enabled": True})
+            plugin.KobraControl().register_capabilities()
+            self.assertIn("http://127.0.0.1", orca.permissions[-1]["network"])
+
+    def test_purge_switch_and_preview(self):
+        self.save(purge_enabled=True, purge_length=20, purge_corner="back_right")
+        self.assertEqual(plugin._service.purge_options, {"length": 20.0, "speed": 5.0, "corner": "back_right"})
+        self.page.on_message({"type": "purge_preview", "id": 7, "purge": {"length": 15, "speed": 3, "corner": "front_right"}})
+        preview = self.page.posted[-1]["result"]
+        self.assertEqual(preview["point"], ["255", "5"])   # the fake preset has no printable_area: 260 x 260
+        self.assertIn("G1 E15 F180", preview["purge"])
+        self.save(purge_enabled=False)
+        self.assertIsNone(plugin._service.purge_options)

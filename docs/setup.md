@@ -84,6 +84,83 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
    through the ACE slots before the first layer (about 11 minutes in one test, for a 5 minute
    print). It is not hung.
 
+## Optional: Upload bridge (OrcaSlicer's OctoPrint host)
+
+Off by default. With it on, OrcaSlicer's own **Upload** and **Upload and Print** buttons (the OctoPrint
+host type, which the stock Kobra X preset already uses) reach the printer through Kobra Control. No printer agent
+is needed for it.
+
+1. In the Kobra Control tab, open **Settings > Upload bridge**, turn on **Accept uploads from OrcaSlicer**,
+   keep or change the port (8765 by default) and press **Save settings**. OrcaSlicer may ask once to let
+   Kobra Control use the network address 127.0.0.1: answer Yes. The status then reads
+   "Listening on 127.0.0.1:8765".
+2. Press **Copy** next to the API key.
+3. In OrcaSlicer, edit the Kobra X printer preset and open its connection settings (the icon next to the printer):
+   - **Host type**: OctoPrint
+   - **Hostname, IP or URL**: `127.0.0.1:8765` (the port from step 1)
+   - **API Key / Password**: paste the key
+4. Press **Test**. OrcaSlicer should report a successful connection.
+
+**Upload** stores the plate's G-code on the printer. **Upload and Print** stores it too, then waits: the Kobra
+Control tab shows "A print from OrcaSlicer is waiting" with **Start print** and **Don't print**. Nothing prints
+until you press Start, and Start is refused unless the printer is idle; an Upload and Print sent while the
+printer is busy is refused before anything is uploaded. A waiting print is forgotten after 10 minutes (the file
+stays on the printer). Start uses the print options from **Settings > Print defaults** and the loaded ACE slots in
+order, as a print from the Files tab does.
+
+What the bridge does and does not do:
+
+- It listens on 127.0.0.1 only. Other computers on the network cannot reach it.
+- Every request needs the API key. The key is kept in the plugin's storage folder in its own file
+  (`bridge_key.txt`, readable by your user only), never in the settings file. **New key** replaces it at once;
+  paste the new key into OrcaSlicer afterwards.
+- It accepts one request at a time, 30 requests a minute, and locks out for a minute after 5 wrong keys.
+  Uploads larger than 1 GB are refused. Requests whose Host is not 127.0.0.1 or localhost, and requests from web
+  pages (an `Origin` or `Sec-Fetch-Site` header), are refused.
+- It never overwrites the file the printer is printing, and a new upload with the name of a waiting print
+  drops that waiting print.
+- It speaks only the two requests OrcaSlicer's OctoPrint client makes (`GET /api/version` and
+  `POST /api/files/local`). It is not a full OctoPrint server.
+- Turning it off in Settings, or unloading the plugin, stops it.
+
+## Optional: Purge and bed wait
+
+Off by default. With it on, every print Kobra Control sends (OrcaSlicer's Print and Send with the `kobracontrol`
+agent, and the Upload bridge) goes out as a processed **copy** of the sliced G-code; the sliced file itself is never
+changed. Settings shows the exact lines for the values you choose. The copy gets two kinds of lines, each wrapped in
+`; >>> kobracontrol purge add-on` and `; <<< kobracontrol purge add-on` comments.
+
+**Before the first layer** (right before the first `;LAYER_CHANGE`), unless the file already has an `M190` there:
+
+```gcode
+M190 S<t> ; wait for the first-layer bed temperature
+```
+
+`<t>` is the first-layer bed temperature the file itself sets before its first layer: the first `M140 S<t>`, or the
+Kobra X start macro's `G9111 bedTemp=<t>`.
+
+**After every tool change line** (`T0`, `T1`, ...: each ACE filament load), with the defaults (30 mm at 5 mm/s,
+front-left corner, 260 x 260 mm bed):
+
+```gcode
+G91
+G1 Z2 F1200          ; lift 2 mm
+G90
+G1 X5 Y5 F12000      ; 5 mm inside the chosen corner of the bed (printable_area in the sliced file)
+G1 E30 F300          ; purge length at purge speed (mm/s x 60), relative extrusion
+G1 X<x> Y<y> F12000  ; back to the last X/Y before the tool change (left out before the first move)
+G91
+G1 Z-2 F1200         ; down 2 mm again
+G90
+```
+
+Purge length (1-100 mm), speed (1-20 mm/s) and corner (front left, front right, back left, back right) are set in
+**Settings > Purge and bed wait**. The purge blob lands in that corner of the bed: keep it clear of parts.
+
+A file that cannot take these lines is refused with a message and nothing is sent: no bed size (`printable_area`)
+in the file, no first-layer bed temperature when an `M190` is needed, or absolute extrusion (`M82`) or relative
+moves (`G91`) at a tool change.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

@@ -4,6 +4,16 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Added
+
+- **Upload bridge** (opt-in, off by default): OrcaSlicer's OctoPrint host type (Upload, Upload and Print) reaches
+  the Kobra X through Kobra Control on 127.0.0.1. Every request needs an API key the plugin makes (Settings, with
+  Copy, New key and the OrcaSlicer steps). Upload and Print never starts by itself: the tab shows the waiting print
+  with Start and Don't print, and refuses while the printer is busy. Loopback only, rate and size limited.
+- **Purge and bed wait** add-on (opt-in, off by default): sent prints go out as a copy with a purge after each
+  filament change and an `M190` bed wait before the first layer; Settings previews the lines, and docs/setup.md
+  lists exactly what is inserted.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked

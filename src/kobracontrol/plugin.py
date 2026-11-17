@@ -2,6 +2,7 @@
 that imports `orca`. Printer work runs in service.py on the plugin's own threads; everything here that runs
 on OrcaSlicer's UI thread only queues work and returns."""
 
+import glob
 import json
 import os
 import re
@@ -14,11 +15,13 @@ import orca
 
 import ace
 import bambu
+import bridge
 import certs
 import i18n
 import locate
 import kobra
 import peers
+import purge
 import settings
 import spooler_bridge
 from i18n import tr
@@ -47,6 +50,9 @@ _link = None
 _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
+_bridge = None            # the running upload bridge (bridge.Bridge), None while off
+_bridge_error = ""       # why it is not running although on (shown in Settings)
+_bridge_key = ""         # the key when there is no storage folder to keep it in (this session only)
 
 
 def log(msg):
@@ -197,11 +203,93 @@ def service(publish=None):
             _service = Service(publish or (lambda m: None), log, cert_dir=cert_dir(),
                                ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None,
                                addresses_path=os.path.join(folder, ADDRESSES_FILE) if folder else None, granted=_granted,
-                               **_service_options)
+                               work_dir=folder, **_service_options)
+            apply_addons(_service)
+            _sweep(folder, "purge-*.gcode")   # copies left by a crash
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
         return _service
+
+
+def _sweep(folder, pattern):
+    for stale in glob.glob(os.path.join(glob.escape(folder), pattern)) if folder else ():
+        try:
+            os.remove(stale)
+        except OSError as e:
+            log("can't remove %s (%s)" % (stale, e))
+
+
+def apply_addons(svc):
+    """The purge add-on's options for the jobs of `svc` (None while off in Settings)."""
+    cfg = get_store().effective()
+    svc.purge_options = purge.options(cfg) if cfg["purge_enabled"] else None
+
+
+# ---------------------------------------------------------------------- upload bridge (opt-in)
+
+def bridge_key(renew=False):
+    """The bridge's API key: kept in the storage folder (mode 0600), else for this session only."""
+    global _bridge_key
+    folder = _storage()
+    if folder:
+        return bridge.write_key(folder, bridge.new_key()) if renew else bridge.key_for(folder)
+    if renew or not _bridge_key:
+        _bridge_key = bridge.new_key()
+    return _bridge_key
+
+
+def _bridge_upload(path, filename, plate_index, start):
+    """The bridge's thread: the file to the printer Kobra Control has selected (located now if the tab never was open)."""
+    svc = service()
+    if svc.target is None:
+        svc.set_target(_target())
+    try:
+        svc.wait_located(CHECK_SECONDS)
+    except Exception as e:
+        raise bridge.Refused(503, str(e)) from None
+    return svc.bridge_upload(path, filename, plate_index, start, get_store().effective())
+
+
+def sync_bridge():
+    """Start, restart or stop the bridge as Settings say. Binds on the caller's thread: OrcaSlicer asks for the
+    127.0.0.1 network permission there when it was not granted at load."""
+    global _bridge, _bridge_error
+    cfg = get_store().effective()
+    want, folder = cfg["bridge_enabled"], _storage()   # an upload is written to the storage folder first
+    if _bridge is not None and (not want or _bridge.port != cfg["bridge_port"]):
+        stop_bridge()
+    _bridge_error = ""
+    if want and _bridge is None and not folder:
+        _bridge_error = tr("no storage folder for the uploads")
+    elif want and _bridge is None:
+        try:
+            _bridge = bridge.Bridge(cfg["bridge_port"], bridge_key, _bridge_upload, folder, log).start()
+        except OSError as e:
+            _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
+            log("upload bridge not started: %s" % _bridge_error)
+
+
+def stop_bridge():
+    global _bridge
+    running, _bridge = _bridge, None
+    if running is not None:   # shutdown waits for a request in progress: never on the UI thread
+        threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True).start()
+
+
+def bridge_state():
+    cfg = get_store().effective()
+    return {"enabled": cfg["bridge_enabled"], "running": _bridge is not None, "port": _bridge.port if _bridge else cfg["bridge_port"],
+            "host": bridge.HOST, "key": bridge_key(), "error": _bridge_error}
+
+
+def bed_of_preset():
+    """The selected printer preset's bed (purge.parse_area), the Kobra X's 260 x 260 when unreadable."""
+    try:
+        bed = purge.parse_area(clean(orca.host.preset_bundle().current_printer_preset().config_value("printable_area")))
+    except Exception:
+        bed = None
+    return bed or (0.0, 0.0, 260.0, 260.0)
 
 
 def start_link():
@@ -380,11 +468,21 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "allow_hosts":   # UI thread: OrcaSlicer's dialog for a printer the search found
                 result = svc.allow(data.get("hosts"), user=data.get("user") is True)
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+            elif kind == "bridge_new_key":   # the old key stops working at once
+                bridge_key(renew=True)
+                self.post_message(self._config_message())
+                self.post_message({"type": "reply", "id": data.get("id"), "result": {"renewed": True}})
+            elif kind == "purge_preview":
+                opts = purge.options({"purge_" + k: v for k, v in dict(data.get("purge") or {}).items()})
+                self.post_message({"type": "reply", "id": data.get("id"), "result": purge.preview(
+                    opts, bed_of_preset(), "<%s>" % tr("first-layer bed temperature"))})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
+                apply_addons(svc)
+                sync_bridge()
                 svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
                 self.post_message(self._config_message())
@@ -401,7 +499,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
+                "bridge": bridge_state()}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (
@@ -416,8 +515,13 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             start_link()
         except Exception as e:
             log("Spooler discovery not started: %r" % e)
+        try:
+            sync_bridge()
+        except Exception as e:
+            log("upload bridge not started: %r" % e)
 
     def on_unload(self):
+        stop_bridge()
         stop_link()
         _unuse("page")
 
@@ -897,14 +1001,18 @@ class KobraControl(orca.base):
         _storage()
         hosts = known_hosts()
         _granted.update(hosts)
+        try:   # the upload bridge listens on 127.0.0.1: asked for at load only when it is on
+            local = ["http://" + bridge.HOST] if get_store().effective()["bridge_enabled"] else []
+        except Exception:
+            local = []
         # Network I/O runs on the plugin's own threads. fs_read: OrcaSlicer's per-user temp folder, where Print and
         # Send hand over the sliced .3mf (the certificate is read from the plugin's own package, which needs no
         # grant; Anycubic Slicer Next's folders are read only when the user asks, and asked for then). network:
         # every printer address known now and the SSDP multicast group the network search sends to (a canonical
         # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
         # contact.
-        orca.request_permissions(threading=True, fs_read=job_read_grants(),
-                                 network=["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP])
+        network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
+        orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)
         orca.register_capability(CheckConnection)

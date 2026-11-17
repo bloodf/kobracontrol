@@ -1,5 +1,6 @@
 """One flat, validated settings store (page, printer agent, scripts). Free of the `orca` module.
-No secrets are kept here: the printer's MQTT credentials live in memory only."""
+No secrets are kept here: the printer's MQTT credentials live in memory only, the upload bridge's key in its own
+file (bridge.py)."""
 
 import json
 import os
@@ -24,7 +25,16 @@ DEFAULTS = {
     "spoolman_auto": True,               # bind a spool when a slot changes
     "spoolman_report_usage": True,       # deduct each slot's grams when a print finishes
     "spooler_hint_dismissed": False,
+    "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
+    "bridge_port": 8765,
+    "purge_enabled": False,              # purge-and-bed-wait add-on (purge.py): opt-in, needs a test print first
+    "purge_length": 30.0,                # mm
+    "purge_speed": 5.0,                  # mm/s
+    "purge_corner": "front_left",
 }
+PORT_RANGE = (1024, 65535)
+NUMBERS = {"purge_length": (1.0, 100.0), "purge_speed": (1.0, 20.0)}   # purge.LIMITS
+CHOICES = {"purge_corner": ("front_left", "front_right", "back_left", "back_right")}   # purge.CORNERS
 
 
 def printer_label(name):
@@ -37,6 +47,13 @@ def _clean(key, value):
     default = DEFAULTS[key]
     if key == "ui_language":
         return value if value in UI_LANGUAGES else None
+    if key in CHOICES:
+        return value if value in CHOICES[key] else None
+    if key in NUMBERS:   # JSON has no int/float distinction: 30 is as good as 30.0
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool) and NUMBERS[key][0] <= value <= NUMBERS[key][1]
+        return float(value) if ok else None
+    if key == "bridge_port":
+        return value if type(value) is int and PORT_RANGE[0] <= value <= PORT_RANGE[1] else None
     if type(value) is not type(default):
         return None
     if key == "spoolman_url":

@@ -23,6 +23,8 @@ export interface Status {
   stats?: { print_minutes?: number; print_count?: number; filament_g?: number };
   /** Print Assist switches by option number (JSON keys are strings); null until the printer answered. */
   assist?: Record<string, boolean> | null;
+  /** An Upload and Print from OrcaSlicer (upload bridge) waiting for Start here; null when there is none. */
+  bridge_pending?: { id: string; name: string; at: number } | null;
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string;
   source?: AddressSource; note?: string }
@@ -54,8 +56,12 @@ export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
-  version: string; limits: Limits; located?: Located | null; agent_id?: string;
+  version: string; limits: Limits; located?: Located | null; agent_id?: string; bridge?: BridgeState;
 }
+/** The upload bridge: on in Settings, listening, where, its API key and why it is not running. */
+export interface BridgeState { enabled: boolean; running: boolean; port: number; host: string; key: string; error: string }
+export type PurgeCorner = 'front_left' | 'front_right' | 'back_left' | 'back_right';
+export interface PurgePreview { bed_wait: string[]; purge: string[]; point: string[] }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;
   job?: string; printer: string; printer_name?: string; spoolman?: string; acknowledged_at?: number }
