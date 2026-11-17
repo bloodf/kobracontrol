@@ -161,6 +161,8 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": "5"}, "filament": filament}), "Filament PLA")
         self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": '"  "'}}), "")
         self.assertEqual(sm.linked_preset({"extra": "junk", "filament": {"extra": None}}), "")
+        for value in ("null", "true", "false", "[\"My PLA\"]", "{\"a\": \"My PLA\"}", "12"):   # JSON, but no text
+            self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": value}}), "", value)
         self.assertEqual(sm.spool_view({"id": 8, "filament": filament})["orca_preset"], "Filament PLA")
 
     def test_colour_helpers(self):

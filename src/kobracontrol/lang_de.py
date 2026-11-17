@@ -252,4 +252,5 @@ TEXT = {
     "Spoolman updated with this print's filament use": 'Spoolman mit dem Filamentverbrauch dieses Drucks aktualisiert',
     'No Spoolman spool was linked to %s; that filament use was not recorded.': 'Mit %s war keine Spoolman-Spule verknüpft; dieser Filamentverbrauch wurde nicht verbucht.',
     'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman nennt das Filamentprofil "%s", das keines Ihrer eigenen Profile für diesen Drucker in OrcaSlicer ist. Der Slot behält das übliche Profil.',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman nennt das Filamentprofil "%s", das ohne Beachtung der Groß- und Kleinschreibung zu mehreren Ihrer Profile in OrcaSlicer passt. Der Slot behält das übliche Profil.',
 }

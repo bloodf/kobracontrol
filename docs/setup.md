@@ -111,7 +111,8 @@ the reported `filament_id`):
   hand after syncing, or detach it.
 - A preset whose file has no `filament_id` also keeps the usual id.
 
-If the name isn't one of your own presets compatible with the printer, the slot keeps the usual preset and the
+If the name isn't one of your own presets compatible with the printer, or matches several of them when upper and
+lower case are ignored, the slot keeps the usual preset and the
 Kobra Control tab shows a notice once per name in each OrcaSlicer session. The colour, the spool link and the
 Spoolman usage booking are not affected.
 

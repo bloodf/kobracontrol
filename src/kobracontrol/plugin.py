@@ -55,6 +55,7 @@ _store_lock = threading.Lock()
 _storage_dir = None
 _agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 _preset_notices = set()   # orca_filament_preset names already reported as not usable this session
+_user_presets_failed = False
 
 
 def log(msg):
@@ -300,6 +301,18 @@ def user_presets():
             out.append({"name": preset.name, "compatible": bool(preset.is_compatible), "file": preset.file or "",
                         "inherits": clean(preset.config_value("inherits"))})
     return out
+
+
+def _user_presets_safe():
+    """user_presets(), or [] when they can't be read (logged once a session): the rest of the catalog still works."""
+    global _user_presets_failed
+    try:
+        return user_presets()
+    except Exception as e:
+        if not _user_presets_failed:
+            _user_presets_failed = True
+            log("own filament presets not readable (%s); orca_filament_preset is ignored" % e)
+        return []
 
 
 def certificate_state():
@@ -631,7 +644,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
         self._links_busy = threading.Lock()
         self._user_presets = None            # user_presets(), once read on the UI thread
-        self._file_ids = {}                  # preset file -> spooler_bridge.standalone_id, read again with the catalog
+        self._file_ids = {}                  # (preset file, mtime) -> spooler_bridge.standalone_id
         self._was_connected = False
         self._dirty = threading.Event()
         self._stop = threading.Event()
@@ -771,7 +784,7 @@ class KobraAgent(pa.PrinterAgentBase):
         Spoolman on a thread of their own, so sync from AMS knows them without the tab ever opening."""
         try:
             presets, label = filament_catalog()
-            users = user_presets()
+            users = _user_presets_safe()
             target = _target()
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
@@ -806,7 +819,6 @@ class KobraAgent(pa.PrinterAgentBase):
         """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
         if time.time() - self._catalog_at >= CATALOG_EVERY:   # this thread may read files, not presets
             self._catalog_at = time.time()
-            self._file_ids = {}
             folder = spooler_bridge.data_dir(_storage())
             profiles = spooler_bridge.read_json(folder, spooler_bridge.PROFILES_FILE)
             with self._lock:
@@ -827,21 +839,29 @@ class KobraAgent(pa.PrinterAgentBase):
         name, users = (spool or {}).get("orca_preset"), self._user_presets
         if not name or users is None:
             return ""
-        preset = spooler_bridge.find_user_preset(name, users)
+        preset, problem = spooler_bridge.find_user_preset(name, users)
         if preset is None:
-            self._preset_notice(name)
+            self._preset_notice(name, problem)
             return ""
-        if preset["file"] not in self._file_ids:
-            self._file_ids[preset["file"]] = spooler_bridge.standalone_id(preset)
-        return self._file_ids[preset["file"]]
+        try:
+            key = (preset["file"], os.path.getmtime(preset["file"]))
+        except (OSError, ValueError):
+            key = (preset["file"], None)
+        if key not in self._file_ids:   # read once per file version; a bad file is logged once
+            self._file_ids[key] = spooler_bridge.standalone_id(preset, log)
+        return self._file_ids[key]
 
     @staticmethod
-    def _preset_notice(name):
+    def _preset_notice(name, problem):
         if name in _preset_notices:
             return
         _preset_notices.add(name)
-        text = tr('Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in '
-                  'OrcaSlicer. Its slot keeps the usual preset.') % name
+        if problem == "ambiguous":
+            text = tr('Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer '
+                      'when upper and lower case are ignored. Its slot keeps the usual preset.') % name
+        else:
+            text = tr('Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer '
+                      'in OrcaSlicer. Its slot keeps the usual preset.') % name
         log(text)
         if _service is not None:
             _service.publish({"type": "notice", "text": text})

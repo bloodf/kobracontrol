@@ -252,4 +252,5 @@ TEXT = {
     "Spoolman updated with this print's filament use": "已将本次打印的耗材丝用量更新到 Spoolman",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': '%s 未关联 Spoolman 料盘；该耗材丝用量未记录。',
     'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”不是您在 OrcaSlicer 中适用于此打印机的自定义预设。该槽位继续使用原来的预设。',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”在忽略大小写时与您在 OrcaSlicer 中的多个预设匹配。该槽位继续使用原来的预设。',
 }

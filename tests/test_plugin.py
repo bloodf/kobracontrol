@@ -369,6 +369,43 @@ class Agent(Base):
         self.assertEqual(len(notices), 1)
         self.assertIn('"My PLA"', notices[0])
 
+    def test_ambiguous_linked_preset_says_so(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        trays = self.linked_trays([self.user_preset("My PLA"), self.user_preset("my pla")], {"orca_preset": "MY PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+        notices = [m["text"] for m in self.published if m.get("type") == "notice"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("several", notices[0])
+
+    def test_preset_file_read_once_per_version(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        with mock.patch.object(plugin.spooler_bridge, "standalone_id", wraps=plugin.spooler_bridge.standalone_id) as read:
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["P1234567"] * 3)
+            self.assertEqual(read.call_count, 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                json.dump({"name": "My PLA", "filament_id": "P7654321"}, f)
+            os.utime(preset["file"], (time.time() + 5, time.time() + 5))
+            self.assertEqual(self.agent._linked_id(spool), "P7654321")
+            self.assertEqual(read.call_count, 2)
+
+    def test_unreadable_user_presets_leave_the_catalog_working(self):
+        """user_presets() raising must not stop the Spooler catalog: no linked presets, logged once."""
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        logged = []
+        with mock.patch.object(plugin, "user_presets", side_effect=RuntimeError("boom")), \
+                mock.patch.object(plugin, "filament_catalog", return_value=([{"name": "x"}], "Anycubic Kobra X")), \
+                mock.patch.object(plugin, "log", side_effect=logged.append), \
+                mock.patch.object(plugin._service, "links_for", return_value=([], {})):
+            self.agent._refresh_catalog({})
+            self.agent._refresh_catalog({})
+        self.assertEqual(self.agent._catalog[0], [{"name": "x"}])
+        self.assertEqual(self.agent._user_presets, [])
+        self.assertEqual(len([m for m in logged if "own filament presets" in m]), 1)
+
     def test_user_presets_are_read_only_through_queue_on_main(self):
         """Presets are read on the UI thread only: the push thread queues the catalog read, never does it itself."""
         threads = []
@@ -384,7 +421,7 @@ class Agent(Base):
             self.agent._preferred()
             self.assertEqual(threads, [])
             self.assertEqual(len(queued), 1)
-            with mock.patch.object(plugin, "user_presets", side_effect=RuntimeError("boom")):
+            with mock.patch.object(plugin, "filament_catalog", side_effect=RuntimeError("boom")):
                 queued[0]()   # nothing escapes a queued call
         self.assertIsNone(self.agent._user_presets)
 
