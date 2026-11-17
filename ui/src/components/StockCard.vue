@@ -88,9 +88,9 @@ async function link(r: Spool) {
 
     <div v-if="stockVisible" class="sc-body" data-test="stock-card">
       <div role="status" aria-live="polite" class="sc-notes">
-        <OuiBanner v-if="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" dismissible :dismiss-key="`stock-other-spoolman:${smUrl}`" :close-label="t('common.close')" />
-        <OuiBanner v-else-if="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" dismissible :dismiss-key="`stock-fallback:${smUrl}`" :close-label="t('common.close')" />
-        <OuiBanner v-if="why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })"
+        <OuiBanner :show="s.stock!.same_spoolman === false" tone="error" :title="t('stock.otherSpoolman')" dismissible :dismiss-key="`stock-other-spoolman:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="s.stock!.same_spoolman === 'fallback'" tone="info" :title="t('stock.fallback')" dismissible :dismiss-key="`stock-fallback:${smUrl}`" :close-label="t('common.close')" />
+        <OuiBanner :show="!!why && !pageWhy" id="stock-why" tone="warn" data-test="stock-why" :title="t('stock.blocked', { reason: why })"
                    dismissible :dismiss-key="`stock-why:${why}`" :close-label="t('common.close')" />
       </div>
       <OuiToolbar class="sc-bar" :summary="t('stock.count', { shown: shown.length, n: rows.length })" :label="t('stock.searchLabel')">

@@ -15,8 +15,8 @@ const dismiss = () => bridge.post({ type: 'save_settings', settings: { spooler_h
 </script>
 
 <template>
-  <OuiBanner v-if="show && sp" :icon="spool" tone="info" :title="t('spooler.title')" dismissible :dismiss-key="`spooler-suggest:${sp.url}`" :close-label="t('common.close')">
-    {{ t('spooler.suggest') }} <a :href="sp.url">{{ sp.url }}</a>
+  <OuiBanner :show="show" :icon="spool" tone="info" :title="t('spooler.title')" dismissible :dismiss-key="`spooler-suggest:${sp?.url}`" :close-label="t('common.close')">
+    {{ t('spooler.suggest') }} <a :href="sp?.url">{{ sp?.url }}</a>
     <template #actions><Button size="small" severity="secondary" text :label="t('spooler.dismiss')" @click="dismiss" /></template>
   </OuiBanner>
 </template>

@@ -567,9 +567,9 @@ test('filament use: nothing pending shows no card, and the page asked for it', `
   await until(() => last('cmd', 'usage'), 'usage asked');
   eq(last('cmd', 'usage').args, {}, 'no arguments');
   await reply(last('cmd', 'usage'), USAGE());
-  assert(!byTest('usage-card'), 'no empty card');
+  assert(!byTest('usage-card')?.checkVisibility(), 'no empty card');
   await post({type: 'status', data: VIEW()});
-  assert(!byTest('usage-card'), 'still none');
+  assert(!byTest('usage-card')?.checkVisibility(), 'still none');
 `);
 
 test('filament use: a pending booking is shown with its slots and grams, and goes when it is booked', `
@@ -606,7 +606,7 @@ test('filament use: a failed booking lists its identity and reason; marking it c
   eq(cmds('usage_ack').map(m => m.args), [{id: 'abc'}], 'only the local acknowledgement');
   assert(!sent().slice(before).some(m => m.type === 'cmd' && !['usage_ack', 'usage', 'stock', 'spools'].includes(m.cmd)), 'no booking command');
   await reply(last('cmd', 'usage_ack'), USAGE({acknowledged: [{...ENTRY, acknowledged_at: 1794300000}], acknowledged_total: 1}));
-  assert(!byTest('usage-card'), 'nothing left to show once checked: no empty card');
+  assert(!byTest('usage-card')?.checkVisibility(), 'nothing left to show once checked: no empty card');
 `);
 
 test('filament use: a failed acknowledgement keeps the entry and says why', `
@@ -1362,6 +1362,22 @@ test('banners: the unconfirmed filament use banner can be closed and returns for
   }
   await until(() => byTest('usage-banner'), 'another entry: the banner is back');
   assert(text(byTest('usage-banner')).includes('2 filament uses are not confirmed'), 'says both: ' + text(byTest('usage-banner')));
+`);
+
+test('banners: a closed banner shows again when its condition clears and the same entries come back', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'usage'));
+  await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
+  await until(() => byTest('usage-banner'), 'banner');
+  await click(q('.oui-banner-close', byTest('usage-banner')));
+  assert(!byTest('usage-banner'), 'closed');
+  for (const view of [USAGE(), USAGE({unconfirmed: [ENTRY]})]) {
+    const n = cmds('usage').length;
+    await until(() => cmds('usage').length > n, 'the page polls the use again', 15000);   // every 10 s
+    await reply(last('cmd', 'usage'), view);
+    if (!view.unconfirmed.length) assert(!byTest('usage-banner') && !byTest('usage-card')?.checkVisibility(), 'cleared: nothing shown');
+  }
+  await until(() => byTest('usage-banner'), 'the same entry again: the banner is back');
 `);
 
 test('settings: requirements say what was found, how to get what is missing, and Check again asks the plugin', `

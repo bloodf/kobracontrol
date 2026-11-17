@@ -43,14 +43,15 @@ async function ack(e: UsageEntry) {
 </script>
 
 <template>
-  <div v-if="show" class="oui-stack" data-test="usage-card">
+  <!-- v-show, not v-if: the banners stay mounted so a closed one is forgotten when its condition clears. -->
+  <div v-show="show" class="oui-stack" data-test="usage-card">
     <div role="alert" class="kc-live uc-alerts">
-      <OuiBanner v-if="s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" dismissible :dismiss-key="`usage-load:${s.usageError}`" :close-label="t('common.close')" />
-      <OuiBanner v-if="u?.save_error" tone="error" :title="t('usage.saveError', { error: u.save_error })" dismissible :dismiss-key="`usage-save:${u.save_error}`" :close-label="t('common.close')" />
-      <OuiBanner v-if="u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u.restore_notice })" dismissible :dismiss-key="`usage-restore:${u.restore_notice}`" :close-label="t('common.close')" />
+      <OuiBanner :show="!!s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" dismissible :dismiss-key="`usage-load:${s.usageError}`" :close-label="t('common.close')" />
+      <OuiBanner :show="!!u?.save_error" tone="error" :title="t('usage.saveError', { error: u?.save_error })" dismissible :dismiss-key="`usage-save:${u?.save_error}`" :close-label="t('common.close')" />
+      <OuiBanner :show="!!u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u?.restore_notice })" dismissible :dismiss-key="`usage-restore:${u?.restore_notice}`" :close-label="t('common.close')" />
     </div>
 
-    <OuiBanner v-if="failed.length" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner"
+    <OuiBanner :show="failed.length > 0" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner"
                dismissible :dismiss-key="`unconfirmed:${failed.map(e => e.id).join(',')}`" :close-label="t('common.close')">
       {{ first }}
       <template #actions>
@@ -59,7 +60,7 @@ async function ack(e: UsageEntry) {
       </template>
     </OuiBanner>
 
-    <OuiBanner v-if="waiting.length" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending"
+    <OuiBanner :show="waiting.length > 0" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending"
                dismissible :dismiss-key="`usage-pending:${waiting.map(w => w.printer + '|' + w.file).join(',')}`" :close-label="t('common.close')">
       <template v-for="(w, i) in waiting" :key="w.printer + w.file"><template v-if="i"> · </template><strong>{{ fileName(w.file) }}</strong> ({{ grams(w.grams) }})</template>
     </OuiBanner>

@@ -9,6 +9,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.
 - Settings are tabs: one section at a time, and the save bar stays on screen at any window height.
 - Notifications appear bottom-left and each one can be closed; warnings and notices on the page can be dismissed.
+- Notifications wait while OrcaSlicer is in another tab or app; errors stay until closed. A closed warning comes back when
+  its problem clears and later returns, and a closed out-of-date warning stays closed while the status stays out of date.
 - Settings lists what the certificate, the camera (ffmpeg), Spoolman and Spooler need on this computer, whether each was found, and how to install it.
 
 - The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
