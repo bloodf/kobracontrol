@@ -14,7 +14,7 @@ Where each asset goes in this repo:
 | Asset | File |
 |---|---|
 | Symbol / app icon | `assets/kobracontrol-icon.svg` (and `.png`) |
-| Tab icon (24x24) | `src/kobracontrol/ui/icon.svg`, replaced in 0.7.1 by the brand tile (`src/kobracontrol/ui/icon.png`, 64x64) |
+| Tab icon (24x24) | `src/kobracontrol/ui/icon.svg`, replaced in 0.7.1 by the brand tile (`src/kobracontrol/ui/icon.png`, 40x40) |
 | Feature icons | `assets/features/feature-*.svg` |
 | How it works diagram | `assets/diagrams/how-it-works-{light,dark}.*` |
 | Works with Spooler | `assets/diagrams/kobracontrol-works-with-spooler-{light,dark}.*` |
