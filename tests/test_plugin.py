@@ -781,8 +781,9 @@ class Guarded(Base):
         return folder
 
     def job_dir(self):
-        folder = os.path.join(plugin.slicer_temp_root(), "kobracontrol-test")
-        os.makedirs(folder, exist_ok=True)
+        root = plugin.slicer_temp_root()
+        os.makedirs(root, exist_ok=True)
+        folder = tempfile.mkdtemp(prefix="kobracontrol-test-", dir=root)   # unique: overlapping runs never share it
         self.addCleanup(shutil.rmtree, folder, True)
         return folder
 
