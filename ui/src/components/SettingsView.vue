@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
@@ -8,10 +8,10 @@ import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirem
 import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, wrench } from '../../shared/src/icons';
 import { UI_VERSION } from '../../shared/src';
 import CertFinder from './CertFinder.vue';
-import * as bridge from '../core/bridge';
-import { message } from '../core/tracker';
-import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, toast } from '../app/store';
-import { config, form, changed, dirty, saving, save, discard } from '../app/settings';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, requirement, checkRequirements } from '../app/store';
+import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
+import type { Requirement, RequirementId } from '../app/types';
+import type { MessageKey } from '../core/messages';
 import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
 import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
@@ -24,30 +24,43 @@ const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.f
 // The address in use and how it was found; a blank "Printer address" means "find it by itself".
 const inUse = computed(() => (s.info?.address ? t('conn.inUse', { address: s.info.address, how: t(`conn.source.${s.info.source || 'override'}`) }) : ''));
 const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form.spoolman ? t('conn.smFromSpooler', { url: s.located.spoolman_url }) : ''));
-const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded')));
-// What Kobra Control needs on this computer. "Check again" asks the plugin to look for the certificate, ffmpeg and
-// Spooler now (it answers with a fresh config); for Spoolman it loads the spools again.
+const smInfo = computed(() => (!spoolmanSet.value ? t('sm.notConfigured') : s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded'))));
+const smWhy = computed(() => controlsOff.value || (spoolmanSet.value ? '' : t('sm.notConfigured')));
+// Settings > Requirements: one row per item of the plugin's `requirements` message (src/kobracontrol/requirements.py).
+// "Check again" asks the plugin to look at all of them again; for Spoolman it also loads the spools again.
 type Need = 'found' | 'missing' | 'checking' | 'unknown';
-const looking = ref(false);
-async function checkAgain() {
-  if (looking.value) return;
-  looking.value = true;
-  try { await Promise.race([bridge.request({ type: 'check' }), new Promise(r => setTimeout(r, 10000))]); }
-  catch (e) { toast('error', t('msg.plugin', { error: message(e) })); }
-  finally { looking.value = false; }
-}
-const NEED_LABEL = { found: 'req.found', missing: 'req.missing', checking: 'req.checking', unknown: 'req.unknown' } as const;
-const needLabel = (st: Need) => t(NEED_LABEL[st]);
-const certNeed = computed<Need>(() => (looking.value ? 'checking' : !cert.value ? 'unknown' : cert.value.found ? 'found' : 'missing'));
-const ffmpeg = computed(() => config.value?.ffmpeg);
-const ffmpegNeed = computed<Need>(() => (looking.value ? 'checking' : ffmpeg.value == null ? 'unknown' : ffmpeg.value ? 'found' : 'missing'));
-const smNeed = computed<Need>(() => (tracker.isBusy('spools') ? 'checking' : s.spoolsError ? 'missing' : s.spoolsLoaded ? 'found' : 'unknown'));
-const FFMPEG_URL = 'https://ffmpeg.org/download.html', SPOOLMAN_URL = 'https://github.com/Donkie/Spoolman';
-const smBusy = computed(() => tracker.isBusy('spools') || !!controlsOff.value);
-const smWhere = computed(() => s.located?.spoolman_url || config.value?.settings.spoolman_url || '');
-const smDetail = computed(() => (s.spoolsError || [smWhere.value, s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : ''].filter(Boolean).join(' · ')));
+interface Row { name: string | MessageKey; why: MessageKey; ok: MessageKey; missing: MessageKey; how: MessageKey[]; url?: string; label?: string; fileCheck?: boolean }
+const ROWS: Record<RequirementId, Row> = {
+  certificate: { name: 'req.cert.name', why: 'req.cert.why', ok: 'req.found', missing: 'req.missing', how: ['req.cert.install'] },
+  ffmpeg: { name: 'ffmpeg', why: 'req.ffmpeg.why', ok: 'req.found', missing: 'req.missing', fileCheck: true,
+    how: ['req.ffmpeg.mac', 'req.ffmpeg.win', 'req.ffmpeg.linux', 'req.ffmpeg.path'], url: 'https://ffmpeg.org/download.html', label: 'ffmpeg.org' },
+  anycubic_slicer: { name: 'Anycubic Slicer Next', why: 'req.slicer.why', ok: 'req.slicer.ok', missing: 'req.slicer.missing', fileCheck: true,
+    how: ['req.slicer.mac', 'req.slicer.win', 'req.slicer.linux'], url: 'https://www.anycubic.com/pages/anycubic-slicer', label: 'anycubic.com' },
+  printer_agents: { name: 'req.agents.name', why: 'req.agents.why', ok: 'req.agents.ok', missing: 'req.agents.unknown', how: ['req.agents.step1', 'req.agents.step2', 'req.agents.note'] },
+  spoolman: { name: 'Spoolman', why: 'req.spoolman.why', ok: 'req.spoolman.ok', missing: 'req.spoolman.missing', how: ['req.spoolman.how'],
+    url: 'https://github.com/Donkie/Spoolman', label: 'Spoolman' },
+  spooler: { name: 'spooler.title', why: 'req.spooler.why', ok: 'req.found', missing: 'req.missing', how: ['spooler.suggest'] },
+};
+const ORDER: RequirementId[] = ['certificate', 'ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman', 'spooler'];
+const items = computed(() => ORDER.map(id => requirement(id)).filter((r): r is Requirement => !!r));
+const isKey = (k: string): k is MessageKey => k.includes('.');   // else a product name, the same in every language
+// "unknown" is "not checked yet" (no warning); a re-check shows "Checking…" on the rows it looks at again.
+const need = (r: Requirement): Need => (s.checking && ROWS[r.id].fileCheck ? 'checking' : r.state === 'ok' ? 'found' : r.state);
+const needLabel = (r: Requirement) => {
+  const n = need(r), row = ROWS[r.id];
+  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : row.missing);
+};
+const smDetail = computed(() => [requirement('spoolman')?.details, s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : '')].filter(Boolean).join(' · '));
+const detail = (r: Requirement) => (r.state !== 'ok' ? undefined : r.id === 'certificate' ? certText.value : r.id === 'spooler' ? t('spooler.installed')
+  : r.id === 'spoolman' ? smDetail.value || undefined : r.details || undefined);
 const spooler = computed(() => config.value?.spooler ?? null);
-const spoolerNeed = computed<Need>(() => (looking.value ? 'checking' : !spooler.value ? 'unknown' : spooler.value.installed ? 'found' : 'missing'));
+const rowUrl = (r: Requirement) => (r.id === 'spooler' ? spooler.value?.url : ROWS[r.id].url);
+function checkAgain(r: Requirement) {
+  checkRequirements();
+  if (r.id === 'spoolman' && spoolmanSet.value && !controlsOff.value) void loadSpools(false);
+}
+// What the camera, the connection or OrcaSlicer's own Print/Device tab need is missing (optional ones never warn).
+const reqWarn = computed(() => !s.checking && (noFfmpeg.value || ['certificate', 'printer_agents'].some(id => requirement(id as RequirementId)?.state === 'missing')));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
   ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);
@@ -55,9 +68,9 @@ const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'conn-h', label: t('conn.title'), icon: linkIcon },
   { id: 'cert-h', label: t('cert.section'), icon: shieldCheck, ...(cert.value && !cert.value.found ? { state: 'warn' as const } : {}) },
   { id: 'print-h', label: t('printdef.title'), icon: printer },
-  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' ? { state: 'warn' as const } : {}) },
+  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' || noFfmpeg.value ? { state: 'warn' as const } : {}) },
   { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
-  { id: 'needs-h', label: t('req.tab'), icon: wrench, ...(certNeed.value === 'missing' || ffmpegNeed.value === 'missing' ? { state: 'warn' as const } : {}) },
+  { id: 'needs-h', label: t('req.tab'), icon: wrench, ...(reqWarn.value ? { state: 'warn' as const } : {}) },
   { id: 'lang-h', label: t('lang.title'), icon: languages },
   { id: 'about-h', label: t('about.title'), icon: info },
 ]);
@@ -119,7 +132,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
 
       <div class="oui-stack">
         <OuiFormSection id="cam-s-h" :icon="camera" tone="sky" :title="t('camset.title')">
-          <template v-if="s.camReason === 'no_ffmpeg'" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
+          <template v-if="s.camReason === 'no_ffmpeg' || noFfmpeg" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
           <OuiFormRow :label="t('camset.default')" for="c-cam"><ToggleSwitch v-model="form.camera" input-id="c-cam" data-test="cam-default" /></OuiFormRow>
           <OuiFormRow :label="t('camset.ffmpeg')" for="c-ffmpeg" :hint="t('camset.ffmpegHelp')">
             <InputText id="c-ffmpeg" v-model="form.ffmpeg" class="oui-mono" :placeholder="t('camset.ffmpegPh')" @keydown.enter="onEnter" />
@@ -135,24 +148,18 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
           <OuiFormRow :label="t('sm.usage')" for="c-sm-usage"><ToggleSwitch v-model="form.usage" input-id="c-sm-usage" /></OuiFormRow>
           <OuiFormRow :label="t('sm.spools')">
             <span class="oui-muted" role="status">{{ smInfo }}</span>
-            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!controlsOff" :aria-describedby="controlsOff ? 'kc-why' : undefined"
+            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!smWhy" :title="smWhy || undefined" :aria-describedby="controlsOff ? 'kc-why' : undefined"
                     :loading="tracker.isBusy('spools')" @click="loadSpools(false)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
           </OuiFormRow>
         </OuiFormSection>
 
         <OuiFormSection id="needs-h" :icon="wrench" tone="sky" :title="t('req.title')" :description="t('req.help')">
-          <div class="sv-needs" data-test="requirements">
-            <OuiRequirement :name="t('req.cert.name')" :why="t('req.cert.why')" :status="certNeed" :status-label="needLabel(certNeed)" :detail="cert?.found ? certText : undefined"
-                            :install-text="t('req.cert.install')" :check-label="t('req.check')" :checking="looking" data-need="cert" @check="checkAgain" />
-            <OuiRequirement name="ffmpeg" :why="t('req.ffmpeg.why')" :status="ffmpegNeed" :status-label="needLabel(ffmpegNeed)" :detail="ffmpeg || undefined"
-                            :install-text="t('req.ffmpeg.install')" :install-url="FFMPEG_URL" install-label="ffmpeg.org"
-                            :check-label="t('req.check')" :checking="looking" data-need="ffmpeg" @check="checkAgain" />
-            <OuiRequirement name="Spoolman" :why="t('req.sm.why')" :status="smNeed" :status-label="needLabel(smNeed)" :detail="smDetail || undefined"
-                            :install-text="t('req.sm.install')" :install-url="SPOOLMAN_URL" install-label="Spoolman"
-                            :check-label="t('req.check')" :checking="smBusy" data-need="spoolman" @check="loadSpools(false)" />
-            <OuiRequirement :name="t('spooler.title')" :why="t('req.spooler.why')" :status="spoolerNeed" :status-label="needLabel(spoolerNeed)"
-                            :detail="spooler?.installed ? t('spooler.installed') : undefined" :install-text="t('spooler.suggest')" :install-url="spooler?.url"
-                            :check-label="t('req.check')" :checking="looking" data-need="spooler" @check="checkAgain" />
+          <div class="sv-needs" data-test="requirements" aria-live="polite">
+            <OuiRequirement v-for="r in items" :key="r.id" :name="isKey(ROWS[r.id].name) ? t(ROWS[r.id].name as MessageKey) : ROWS[r.id].name" :why="t(ROWS[r.id].why)"
+                            :status="need(r)" :status-label="needLabel(r)" :detail="detail(r)" :install-text="ROWS[r.id].how.map(k => t(k)).join(' · ')"
+                            :install-url="rowUrl(r)" :install-label="ROWS[r.id].label" :check-label="t('req.check')"
+                            :checking="s.checking || (r.id === 'spoolman' && tracker.isBusy('spools'))" :data-need="r.id" @check="checkAgain(r)" />
+            <p v-if="!items.length" class="oui-meta kc-pad">{{ t('req.checking') }}</p>
           </div>
           <p v-if="spooler?.installed && !stockVisible" class="oui-meta kc-pad" data-test="spooler-no-stock">{{ t('spooler.noStock') }}</p>
         </OuiFormSection>

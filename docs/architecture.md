@@ -105,6 +105,7 @@ Page to plugin:
 | `frame_ack` | | the page has shown the last camera frame |
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
+| `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
 
 Plugin to page:
 
@@ -115,6 +116,7 @@ Plugin to page:
 | `frame` | `image` (JPEG data URL) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
 | `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
+| `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`, `certificate`, `spooler` (the last two as the config just read them); `state` `ok`, `missing`, `unknown` = not checked yet; for `printer_agents` `missing` means not detected). Sent after `hello`, `save_settings` and `check_requirements` (each also sends `config` first), and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a Settings save; without ffmpeg the monitor never starts the camera |
 | `notice` | `text` |
 | `offline` | `error` |
 | `selection_changed` | |

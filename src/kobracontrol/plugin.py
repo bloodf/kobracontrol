@@ -14,12 +14,12 @@ import orca
 
 import ace
 import bambu
-import camera
 import certs
 import i18n
 import locate
 import kobra
 import peers
+import requirements
 import settings
 import spooler_bridge
 from i18n import tr
@@ -52,6 +52,7 @@ _link = None
 _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
+_agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 
 
 def log(msg):
@@ -172,6 +173,21 @@ def page_html(language="auto"):
 
 
 # ---------------------------------------------------------------------- service and Spooler link
+
+def note_agent():
+    """Whether "Use printer agents instead of print hosts" is on, as far as a plugin can tell (OrcaSlicer.conf is
+    not readable): OrcaSlicer created a KobraAgent this session, or orca.host.selected_printer() reports our agent.
+    UI thread only (a host call); a host without that call, or one that fails, leaves the answer "not detected"."""
+    global _agent_seen
+    if not _agent_seen:
+        try:
+            selected = orca.host.selected_printer()
+            agent = selected.get("agent") if hasattr(selected, "get") else getattr(selected, "agent", "")
+            _agent_seen = clean(agent) == AGENT_ID
+        except Exception:
+            pass
+    return _agent_seen
+
 
 _service_options = {}   # extra Service keyword arguments (tests only: ports and fakes of a loopback printer)
 _users = set()          # loaded capabilities that use the service: closed once none is left
@@ -433,7 +449,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.set_target(target)   # locates the printer and starts its connection on their own threads
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
-                self.post_message(self._config_message())
+                self._requirements(svc, self._post_config())
+            elif kind == "check_requirements":   # Settings > Requirements > Check again: all of them, now
+                self._requirements(svc, self._post_config(), force=True)
             elif kind == "lease":
                 svc.touch(camera=data.get("camera"), stock=data.get("stock") is True)
             elif kind == "frame_ack":
@@ -449,19 +467,32 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
-            elif kind == "check":   # Settings' "Check again": look for the certificate, ffmpeg and Spooler now
-                self.post_message(self._config_message())
-                self.post_message({"type": "reply", "id": data.get("id"), "result": {"checked": True}})
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
                 target = _target()
                 grant_on_ui_thread(svc, target.preset_host, user=True)
                 svc.set_target(target, retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
-                self.post_message(self._config_message())
+                self._requirements(svc, self._post_config(), force=True)   # a Settings save checks again too
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
+
+    def _post_config(self):
+        config = self._config_message()
+        self.post_message(config)
+        return config
+
+    def _requirements(self, svc, config, force=False):
+        """Publish the requirements: the certificate and Spooler as the config just read them, the printer agent as
+        seen now (UI thread), ffmpeg and Anycubic Slicer Next from the cached check (started on its own thread)."""
+        cert, spooler = config["certificate"], config["spooler"]
+        svc.host_requirements = (
+            requirements.item("certificate", requirements.OK if cert.get("found") else requirements.MISSING,
+                              cert.get("source", "") if cert.get("found") else ""),
+            requirements.item("spooler", requirements.OK if spooler.get("installed") else requirements.MISSING))
+        svc.agent_seen = note_agent()
+        svc.check_requirements(clean(get_store(self).effective().get("ffmpeg_path")), force)
 
     def _config_message(self):
         cfg = get_store(self).effective()
@@ -472,8 +503,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
-                "ffmpeg": camera.find_ffmpeg(cfg["ffmpeg_path"]) or ""}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (
@@ -556,7 +586,9 @@ class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
     def __init__(self):
+        global _agent_seen
         super().__init__()
+        _agent_seen = True   # OrcaSlicer makes printer agents only with "Use printer agents instead of print hosts" on
         self._cb = {}
         self._lock = threading.Lock()
         self.selected = ""

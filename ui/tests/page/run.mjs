@@ -41,6 +41,10 @@ const SETTINGS = {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ff
   spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false};
 const CONFIG = extra => ({type: 'config', settings: SETTINGS, certificate: CERT, spooler: {installed: true, url: 'https://example.org/spooler', dismissed: false}, version: '0.1.0',
   limits: {nozzle_max: 300, bed_max: 100}, ...extra});
+const REQS = (o) => ({type: 'requirements', checking: false, items: [{id: 'ffmpeg', state: 'missing', details: ''},
+  {id: 'anycubic_slicer', state: 'missing', details: ''}, {id: 'printer_agents', state: 'missing', details: ''},
+  {id: 'spoolman', state: 'ok', details: 'http://box:7912'}, {id: 'certificate', state: 'ok', details: 'bundled'},
+  {id: 'spooler', state: 'ok', details: ''}].map(i => ({...i, ...((o || {})[i.id] || {})}))});
 async function connect(gen) {
   await until(() => last('hello'), 'hello sent');
   await reply(last('hello'), {address: '192.168.1.50', printer: 'Bench Kobra', generation: gen || 1});
@@ -677,6 +681,103 @@ test('the camera starts on only when the saved setting says so', `
   await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
   await post({type: 'status', data: VIEW()});
   assert(q('.cam-view') && last('lease').camera === true, 'camera on from the setting');
+`);
+
+// ------------------------------------------------------------------ requirements
+test('requirements: no ffmpeg turns the camera off with one reason and leads to Settings', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
+  await post({type: 'status', data: VIEW()});
+  await post(REQS());
+  assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
+  assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
+  assert(byTest('camera').disabled, 'Turn on is off');
+  await post({...REQS(), checking: true});
+  assert(text(byTest('cam-why')).includes('Looking for ffmpeg'), 'a re-check says so: ' + text(byTest('cam-why')));
+  await post(REQS());
+  await click(byTest('cam-req'));
+  assert(q('[data-need="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
+  await tab('dash');
+  await until(() => q('.cam-view'), 'found again: the camera is back on');
+`);
+
+test('requirements: before the first check the camera can be turned on and says it is starting', `
+  await ready(VIEW());
+  await post({type: 'requirements', checking: true, items: [{id: 'ffmpeg', state: 'unknown', details: ''}]});
+  assert(!byTest('camera').disabled, 'not off without a reason');
+  assert(text(q('.cam-card')).includes('Looking for ffmpeg'), 'says it is checking: ' + text(q('.cam-card')));
+  await click(byTest('camera'));
+  assert(text(q('.cam-empty')).length > 0 && q('.cam-view'), 'starting, with its text: ' + text(q('.cam-empty')));
+`);
+
+test('requirements: Settings lists each one with its state, why and how; Check again asks the plugin', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="needs-h"]'));
+  const row = id => q('[data-need="' + id + '"]');
+  const state = id => q('.oui-status', row(id));
+  eq(qa('[data-need]').map(r => r.dataset.need), ['certificate', 'ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman', 'spooler'], 'one row each, one section');
+  eq(qa('[data-test="requirements"]').length, 1, 'one Requirements section');
+  eq(text(state('ffmpeg')), 'Not found', 'ffmpeg missing');
+  assert(text(row('ffmpeg')).includes('brew install ffmpeg') && text(row('ffmpeg')).includes('winget install Gyan.FFmpeg')
+    && text(row('ffmpeg')).includes('sudo apt install ffmpeg') && text(row('ffmpeg')).includes('ffmpeg path'), 'install help per OS: ' + text(row('ffmpeg')));
+  eq(q('a', row('ffmpeg')).getAttribute('href'), 'https://ffmpeg.org/download.html', 'official link');
+  assert(text(row('anycubic_slicer')).includes('optional') && text(row('anycubic_slicer')).includes('bundled certificate stops working'), 'slicer optional');
+  eq(text(state('printer_agents')), 'Not detected', 'agents: warn, not error');
+  assert(text(row('printer_agents')).includes('Use printer agents instead of print hosts') && text(row('printer_agents')).includes('restart OrcaSlicer'), 'agent steps');
+  eq(text(state('spoolman')), 'Configured', 'spoolman');
+  assert(text(row('spoolman')).includes('http://box:7912'), 'says which Spoolman: ' + text(row('spoolman')));
+  assert(!q('a', row('spoolman')), 'no install help once there');
+  assert(text(row('certificate')).includes('Found') && text(row('certificate')).includes('built in'), 'certificate: ' + text(row('certificate')));
+  assert(text(row('spooler')).includes('Found'), 'Spooler: ' + text(row('spooler')));
+  await post(REQS({printer_agents: {state: 'unknown'}, ffmpeg: {state: 'ok', details: '/usr/bin/ffmpeg'}}));
+  eq(text(state('printer_agents')), 'Not checked yet', 'unknown is not a warning');
+  eq(state('printer_agents').dataset.state, 'idle', 'no warn badge');
+  assert(text(row('ffmpeg')).includes('/usr/bin/ffmpeg'), 'says where: ' + text(row('ffmpeg')));
+  const navWarn = () => !!q('.oui-settings-link[data-section="needs-h"][data-state="warn"]');
+  assert(!navWarn(), 'no warning on the nav either');
+  await post(REQS());
+  eq(state('printer_agents').dataset.state, 'warn', 'not detected warns');
+  assert(navWarn(), 'and the nav says so');
+  await click(q('.oui-req-check', row('ffmpeg')));
+  assert(last('check_requirements'), 'Check again sent');
+  assert(text(state('ffmpeg')).includes('Checking'), 'checking: ' + text(state('ffmpeg')));
+  assert(q('.oui-req-check', row('ffmpeg')).disabled, 'no second check while one runs');
+  await post({...REQS(), checking: true});
+  eq(text(state('ffmpeg')), 'Checking…', 'checking');
+  await post(REQS());
+  await until(() => last('cmd', 'spools'), 'spools asked on connect');
+  await reply(last('cmd', 'spools'), {spools: []});
+  await until(() => text(row('spoolman')).includes('0 spools'), 'the count from Spoolman: ' + text(row('spoolman')));
+  const spools = cmds('spools').length;
+  await click(q('.oui-req-check', row('spoolman')));
+  eq(cmds('spools').length, spools + 1, 'Spoolman: Check again also loads the spools');
+`);
+
+test('requirements: no Anycubic Slicer Next turns off the default search only; a typed path still searches', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('[data-test="cert-advanced"] summary'));
+  assert(byTest('find-cert').disabled, 'Find certificate off without an install');
+  assert(text(q('#set-cert-why')).includes('isn’t in its usual folder'), 'says why: ' + text(q('#set-cert-why')));
+  await type(q('#set-cert-path'), '/opt/anycubic');
+  assert(!byTest('find-cert').disabled, 'a typed path can be searched');
+  await click(byTest('find-cert'));
+  eq(cmds('find_certificate').map(m => m.args), [{path: '/opt/anycubic'}], 'path sent');
+`);
+
+test('requirements: without Spoolman, refreshing and linking spools are off', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
+  await post({type: 'status', data: VIEW()});
+  assert(q('[data-focus-key="sm-refresh"]').disabled, 'Spools refresh off on the Dashboard');
+  await tab('settings');
+  const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
+  assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
+  assert(text(q('#sm-s-h').closest('section')).includes('No Spoolman address'), 'says why');
 `);
 
 // ------------------------------------------------------------------ first-run, offline, stale
@@ -1380,34 +1481,6 @@ test('banners: a closed banner shows again when its condition clears and the sam
   await until(() => byTest('usage-banner'), 'the same entry again: the banner is back');
 `);
 
-test('settings: requirements say what was found, how to get what is missing, and Check again asks the plugin', `
-  await ready(VIEW());
-  await tab('settings');
-  await click(q('.oui-settings-link[data-section="needs-h"]'));
-  const row = name => q('[data-need="' + name + '"]');
-  assert(text(row('cert')).includes('Anycubic certificate') && text(row('cert')).includes('Found'), 'certificate: ' + text(row('cert')));
-  assert(text(row('ffmpeg')).includes('Not checked yet'), 'an older plugin does not say: ' + text(row('ffmpeg')));
-  assert(text(row('spooler')).includes('Found') && text(row('spooler')).includes('Spooler detected'), 'Spooler: ' + text(row('spooler')));
-  await post(CONFIG({ffmpeg: ''}));
-  assert(text(row('ffmpeg')).includes('Not found') && text(row('ffmpeg')).includes('brew install ffmpeg'), 'missing, with how to install: ' + text(row('ffmpeg')));
-  eq(q('a', row('ffmpeg')).getAttribute('href'), 'https://ffmpeg.org/download.html', 'install link');
-  const n = __t.sent.filter(m => m.type === 'check').length;
-  await click(q('.oui-req-check', row('ffmpeg')));
-  eq(__t.sent.filter(m => m.type === 'check').length, n + 1, 'Check again sends the check');
-  assert(text(row('ffmpeg')).includes('Checking'), 'checking: ' + text(row('ffmpeg')));
-  assert(q('.oui-req-check', row('ffmpeg')).disabled, 'no second check while one runs');
-  await post(CONFIG({ffmpeg: '/opt/homebrew/bin/ffmpeg'}));
-  await reply(last('check'), {checked: true});
-  await until(() => text(row('ffmpeg')).includes('Found'), 'found after the check');
-  assert(text(row('ffmpeg')).includes('/opt/homebrew/bin/ffmpeg'), 'says where: ' + text(row('ffmpeg')));
-  await until(() => last('cmd', 'spools'), 'spools asked on connect');
-  await reply(last('cmd', 'spools'), {spools: []});
-  await until(() => text(row('spoolman')).includes('Found') && text(row('spoolman')).includes('http://box:7912'), 'Spoolman answered: ' + text(row('spoolman')));
-  const spools = cmds('spools').length;
-  await click(q('.oui-req-check', row('spoolman')));
-  eq(cmds('spools').length, spools + 1, 'Spoolman: Check again loads the spools');
-`);
-
 test('pt-BR: the new file, finish-time and certificate texts are translated', `
   const at = Math.floor(Date.now() / 1000);
   await ready(PRINTING({updated_at: at, remaining_s: 7000, tls: {fingerprint: 'ab'.repeat(32), changed_from: 'cd'.repeat(32)}}));
@@ -1498,6 +1571,7 @@ test('settings: the language choice is posted; the version shows; the Spooler hi
   await ready(VIEW());
   await tab('settings');
   assert(text(byTest('version')).includes('Kobra Control 0.1.0'), 'version: ' + text(byTest('version')));
+  await post(REQS());   // the plugin sends it with every config
   assert(text(q('.sv')).includes('Spooler detected'), 'Spooler hint');
   await pick(byTest('lang'), 'Português (Brasil)');
   eq(last('ui_language').value, 'pt-BR', 'choice posted');

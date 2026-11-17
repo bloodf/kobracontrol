@@ -50,6 +50,9 @@ export interface FileDetails { name: string; thumbnail?: string | null; info?: F
  *  `empty` when nothing was recorded (the print ended before the first frame). */
 export interface VideoEntry { filename: string; name: string; created: number; duration: number; size: number; empty: boolean }
 export interface VideosResult { videos: VideoEntry[] }
+/** Something the plugin needs and cannot install itself (src/kobracontrol/requirements.py). */
+export type RequirementId = 'ffmpeg' | 'anycubic_slicer' | 'printer_agents' | 'spoolman' | 'certificate' | 'spooler';
+export interface Requirement { id: RequirementId; state: 'ok' | 'missing' | 'unknown'; details: string }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
