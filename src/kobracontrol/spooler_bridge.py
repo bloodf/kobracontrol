@@ -169,3 +169,21 @@ def tray_filament_id(spool, presets, profiles=None, printer_label=""):
     name = preset_for_spool(presets, spool, profiles, printer_label)
     ids = {_bare(str(k)).casefold(): v for k, v in profiles["ids"].items() if isinstance(v, str)}
     return ids.get(_bare(name).casefold(), "") if name else ""
+
+
+def find_user_preset(name, presets):
+    """The preset a spool's orca_filament_preset names, or None. presets: the user's own filament presets as
+    {"name", "compatible", "file", "inherits"}. The exact name, else the only case-insensitive match; only one
+    OrcaSlicer counts as compatible with the selected printer."""
+    found = [p for p in presets if p["name"] == name] or [p for p in presets if p["name"].casefold() == name.casefold()]
+    return found[0] if len(found) == 1 and found[0]["compatible"] else None
+
+
+def standalone_id(preset):
+    """The filament_id OrcaSlicer's sync from AMS loads this user preset by, or "". Sync only loads a preset that
+    is its own base: one inheriting a parent carries the parent's id and loads the parent, so it gets "". A
+    standalone preset's id is the "filament_id" in its JSON file (OrcaSlicer's plugin API doesn't show it)."""
+    path = (preset.get("file") or "") if preset and not preset.get("inherits") else ""
+    data = read_json(os.path.dirname(path), os.path.basename(path)) if path else None
+    fid = data.get("filament_id") if data else None
+    return fid.strip() if isinstance(fid, str) else ""

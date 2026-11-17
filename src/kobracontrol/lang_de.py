@@ -251,4 +251,5 @@ TEXT = {
     "Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before adding it by hand; kobracontrol won't repeat it.": 'Spoolman hat %s g auf Spule #%d (S%d) möglicherweise nicht verbucht: %s. Prüfen Sie Spule #%d, bevor Sie den Verbrauch von Hand eintragen; kobracontrol wiederholt es nicht.',
     "Spoolman updated with this print's filament use": 'Spoolman mit dem Filamentverbrauch dieses Drucks aktualisiert',
     'No Spoolman spool was linked to %s; that filament use was not recorded.': 'Mit %s war keine Spoolman-Spule verknüpft; dieser Filamentverbrauch wurde nicht verbucht.',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman nennt das Filamentprofil "%s", das keines Ihrer eigenen Profile für diesen Drucker in OrcaSlicer ist. Der Slot behält das übliche Profil.',
 }

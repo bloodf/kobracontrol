@@ -251,4 +251,5 @@ TEXT = {
     "Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before adding it by hand; kobracontrol won't repeat it.": "Spoolman 可能未记录 %s g（料盘 #%d，S%d）：%s。手动添加前请先检查料盘 #%d；kobracontrol 不会重复记录。",
     "Spoolman updated with this print's filament use": "已将本次打印的耗材丝用量更新到 Spoolman",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': '%s 未关联 Spoolman 料盘；该耗材丝用量未记录。',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”不是您在 OrcaSlicer 中适用于此打印机的自定义预设。该槽位继续使用原来的预设。',
 }

@@ -149,6 +149,20 @@ class MatchTests(unittest.TestCase):
         self.assertEqual((multi["colour"], multi["colours"]), ("#00FF00", ["#00FF00", "#0000FF"]))
         self.assertEqual(sm.spool_view({"id": 7})["vendor"], "Generic")
 
+    def test_linked_preset_spool_first_then_filament(self):
+        """orca_filament_preset: Spoolman keeps extra values JSON-encoded; a raw text is taken as written."""
+        enc = lambda v: {"orca_filament_preset": json.dumps(v)}   # noqa: E731
+        filament = {"extra": enc("Filament PLA")}
+        self.assertEqual(sm.linked_preset({"extra": enc(" My PLA @Anycubic Kobra X "), "filament": filament}),
+                         "My PLA @Anycubic Kobra X")
+        self.assertEqual(sm.linked_preset({"extra": enc(""), "filament": filament}), "Filament PLA")
+        self.assertEqual(sm.linked_preset({"filament": filament}), "Filament PLA")
+        self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": "Raw name"}}), "Raw name")
+        self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": "5"}, "filament": filament}), "Filament PLA")
+        self.assertEqual(sm.linked_preset({"extra": {"orca_filament_preset": '"  "'}}), "")
+        self.assertEqual(sm.linked_preset({"extra": "junk", "filament": {"extra": None}}), "")
+        self.assertEqual(sm.spool_view({"id": 8, "filament": filament})["orca_preset"], "Filament PLA")
+
     def test_colour_helpers(self):
         self.assertEqual(sm.norm_colour("ff0000ff"), "#FF0000")
         self.assertIsNone(sm.norm_colour("red"))

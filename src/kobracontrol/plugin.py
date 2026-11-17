@@ -54,6 +54,7 @@ _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
 _agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
+_preset_notices = set()   # orca_filament_preset names already reported as not usable this session
 
 
 def log(msg):
@@ -286,6 +287,19 @@ def filament_catalog():
         presets.append({"name": preset.name, "bundle_id": spooler_bridge.BUNDLE_ID, "vendor": first("filament_vendor"),
                         "colour": first("default_filament_colour") or first("filament_colour")})
     return presets, clean(printer.config_value("printer_model")) or printer.name
+
+
+def user_presets():
+    """The user's own filament presets, for a spool's orca_filament_preset (spooler_bridge.find_user_preset); UI
+    thread, no I/O. Not system or default presets, and not a plugin bundle's (named "_local/...")."""
+    collection = orca.host.preset_bundle().filaments
+    out = []
+    for i in range(collection.size()):
+        preset = collection.preset(i)
+        if preset.is_user() and not preset.name.startswith("_local/"):
+            out.append({"name": preset.name, "compatible": bool(preset.is_compatible), "file": preset.file or "",
+                        "inherits": clean(preset.config_value("inherits"))})
+    return out
 
 
 def certificate_state():
@@ -616,6 +630,8 @@ class KobraAgent(pa.PrinterAgentBase):
         self._catalog_at = 0.0
         self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
         self._links_busy = threading.Lock()
+        self._user_presets = None            # user_presets(), once read on the UI thread
+        self._file_ids = {}                  # preset file -> spooler_bridge.standalone_id, read again with the catalog
         self._was_connected = False
         self._dirty = threading.Event()
         self._stop = threading.Event()
@@ -755,11 +771,13 @@ class KobraAgent(pa.PrinterAgentBase):
         Spoolman on a thread of their own, so sync from AMS knows them without the tab ever opening."""
         try:
             presets, label = filament_catalog()
+            users = user_presets()
             target = _target()
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
             return
         self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+        self._user_presets = users
         threading.Thread(target=self._load_links, args=(target,), name="kobracontrol-links", daemon=True).start()
 
     def _load_links(self, target):
@@ -788,18 +806,45 @@ class KobraAgent(pa.PrinterAgentBase):
         """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
         if time.time() - self._catalog_at >= CATALOG_EVERY:   # this thread may read files, not presets
             self._catalog_at = time.time()
+            self._file_ids = {}
             folder = spooler_bridge.data_dir(_storage())
             profiles = spooler_bridge.read_json(folder, spooler_bridge.PROFILES_FILE)
             with self._lock:
                 queue = self._cb.get("queue_on_main")
             if queue is not None:
-                queue(lambda: self._refresh_catalog(profiles or {}))
+                queue(lambda: call_safely("filament catalog", self._refresh_catalog, profiles or {}))
         bound = self._bound_spools()
         presets, label, profiles = self._catalog
 
         def preferred(slot):
-            return spooler_bridge.tray_filament_id(bound.get(slot["global_index"]), presets, profiles, label)
+            spool = bound.get(slot["global_index"])
+            return self._linked_id(spool) or spooler_bridge.tray_filament_id(spool, presets, profiles, label)
         return preferred
+
+    def _linked_id(self, spool):
+        """The filament_id of the user preset a spool names in Spoolman (orca_filament_preset), or "" to keep the
+        usual id. A name that isn't a compatible user preset is reported once a session."""
+        name, users = (spool or {}).get("orca_preset"), self._user_presets
+        if not name or users is None:
+            return ""
+        preset = spooler_bridge.find_user_preset(name, users)
+        if preset is None:
+            self._preset_notice(name)
+            return ""
+        if preset["file"] not in self._file_ids:
+            self._file_ids[preset["file"]] = spooler_bridge.standalone_id(preset)
+        return self._file_ids[preset["file"]]
+
+    @staticmethod
+    def _preset_notice(name):
+        if name in _preset_notices:
+            return
+        _preset_notices.add(name)
+        text = tr('Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in '
+                  'OrcaSlicer. Its slot keeps the usual preset.') % name
+        log(text)
+        if _service is not None:
+            _service.publish({"type": "notice", "text": text})
 
     def _on_change(self, conn):   # the connection's threads: no I/O, no host calls here
         self._dirty.set()
