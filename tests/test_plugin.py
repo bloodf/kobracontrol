@@ -712,8 +712,8 @@ class Scripts(Base):
 
 
 class GcodeChecks(Base):
-    """Read-only G-code checks: a warning in the Print dialog's last line and an OrcaSlicer notification, never a
-    refusal, and the file goes to the printer as it is."""
+    """Read-only G-code checks: an OrcaSlicer notification and a pointer to it in the Print dialog's last line,
+    never a refusal, and the file goes to the printer as it is."""
 
     def gcode_3mf(self, name):
         with open(os.path.join(ROOT, "tests", "fixtures", "gcode", name), "rb") as f:
@@ -736,8 +736,8 @@ class GcodeChecks(Base):
         self.assertEqual(self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False), 0)
         self.assertEqual(self.fake.uploads[0]["data"], gcode)
         self.assertEqual(stages[-1][:2], (plugin.STAGE_FINISHED, 100))
-        self.assertTrue(stages[-1][2].startswith("Print started "))
-        self.assertIn("Skip G-code config block", stages[-1][2])
+        self.assertEqual(stages[-1][2], "Print started G-code warning: see the notification.")
+        wait(lambda: orca.notifications)
         self.assertEqual(len(orca.notifications), 1)
         self.assertIn("Skip G-code config block", orca.notifications[0])
 
@@ -749,6 +749,7 @@ class GcodeChecks(Base):
                                 ams_mapping_info=json.dumps([{"ams": 0, "sourceColor": "#FF0000", "filamentType": "PLA"}]))
         self.assertEqual(self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False), 0)
         self.assertEqual(stages[-1][2], "Print started")
+        time.sleep(0.1)
         self.assertEqual(orca.notifications, [])
 
     def test_send_warns_without_thumbnail(self):
@@ -758,8 +759,8 @@ class GcodeChecks(Base):
         params = pa.PrintParams(project_name="cube", filename=path, plate_index=1)
         self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, lambda *a: stages.append(a), lambda: False, None), 0)
         self.assertEqual(self.fake.uploads[0]["data"], gcode)
-        self.assertIn("G-code thumbnails", stages[-1][2])
-        self.assertIn("G-code thumbnails", orca.notifications[0])
+        self.assertEqual(stages[-1][2], "File uploaded G-code warning: see the notification.")
+        self.assertIn("G-code thumbnails", wait(lambda: orca.notifications)[0])
 
     def bundle(self, name="Anycubic Kobra X 0.4 nozzle", **values):
         preset = types.SimpleNamespace(name=name, config_value=lambda k: {
@@ -780,6 +781,43 @@ class GcodeChecks(Base):
                        self.bundle("Other printer", printer_model="Other", gcode_skip_config_block="1")):
             with mock.patch.object(orca.host, "preset_bundle", lambda: bundle):
                 self.assertEqual(plugin.preset_gcode_warnings(), [])
+
+    def test_preset_read_goes_through_the_ui_thread(self):
+        """The script's worker never reads the preset: queue_on_main runs the read on the UI thread; without a queue
+        or an answer in time the check is skipped and the preset left alone."""
+        readers = []
+        bundle = self.bundle(gcode_skip_config_block="1", thumbnails="300x300/PNG")
+
+        def read():
+            readers.append(threading.current_thread().name)
+            return bundle
+
+        def queue(task):   # OrcaSlicer runs it later on the UI thread
+            threading.Thread(target=task, name="ui").start()
+        self.enterContext(mock.patch.object(orca.host, "preset_bundle", read))
+        plugin._queue_on_main = queue
+        found = run_off_main(plugin.preset_gcode_warnings)
+        self.assertEqual(len(found), 1)
+        self.assertIn("Skip G-code config block", found[0])
+        self.assertEqual(readers, ["ui"])
+
+        plugin._queue_on_main = None
+        self.assertEqual(run_off_main(plugin.preset_gcode_warnings), [])
+        late = []
+        plugin._queue_on_main = late.append   # a UI thread that does not answer in time
+        with mock.patch.object(plugin, "UI_WAIT", 0.05):
+            self.assertEqual(run_off_main(plugin.preset_gcode_warnings), [])
+        late[0]()   # it gets to it after the worker gave up: no read
+        self.assertEqual(readers, ["ui"])
+
+    def test_cancel_after_the_check_sends_nothing(self):
+        self.connect()
+        path, _ = self.gcode_3mf("good.gcode")
+        params = pa.PrintParams(project_name="cube", filename=path, plate_index=1)
+        calls = []
+        self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, None, lambda: calls.append(1) or True, None),
+                         plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
 
 
 if __name__ == "__main__":

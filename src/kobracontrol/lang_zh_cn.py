@@ -252,6 +252,7 @@ TEXT = {
     "Spoolman updated with this print's filament use": "已将本次打印的耗材丝用量更新到 Spoolman",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': '%s 未关联 Spoolman 料盘；该耗材丝用量未记录。',
     # G-code checks before sending (gcode_check.py)
+    'G-code warning: see the notification.': 'G-code 警告：请查看通知。',
     'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'G-code 末尾没有设置块。Kobra X 的屏幕很可能从中读取耗材和打印信息。可能的原因：已开启“跳过 G-code 配置块”。请在“打印机设置 > 基础信息 > 高级”中关闭它，然后重新切片。',
     'The G-code has no preview picture, so the Kobra X screen probably shows the file without one. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG, and slice again.': 'G-code 没有预览图，因此 Kobra X 的屏幕很可能显示不带图片的文件。请在“打印机设置 > 基础信息 > 高级”中设置“G-code缩略图尺寸”，例如 300x300/PNG，然后重新切片。',
     "The G-code's preview picture is not a PNG, and the Kobra X screen probably shows only PNG pictures. Use /PNG sizes in Printer settings > Basic information > Advanced > G-code thumbnails, for example 300x300/PNG, and slice again.": 'G-code 的预览图不是 PNG，而 Kobra X 的屏幕很可能只显示 PNG 图片。请在“打印机设置 > 基础信息 > 高级 > G-code缩略图尺寸”中使用 /PNG 尺寸，例如 300x300/PNG，然后重新切片。',

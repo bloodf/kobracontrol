@@ -288,41 +288,50 @@ def ui_preset_hints():
     return _last_hints
 
 
-def preset_hints_from_worker(svc):
-    """Worker thread: preset_hints() read on the UI thread through queue_on_main (and the preset's address asked
-    about there, a script being a user action), waited for at most UI_WAIT s. Presets are never read off the UI
-    thread: without queue_on_main, or when the UI thread does not answer in time, the hints the tab last read."""
+def on_main(key, fn, default):
+    """Worker thread: fn() run on the UI thread through queue_on_main, waited for at most UI_WAIT s; default without
+    queue_on_main, when fn raises, or when the UI thread has not started fn in time (fn then never runs). Once fn has
+    started (a dialog of its own may be up) its answer is waited for."""
     queue, box, done, lock = _queue_on_main, {}, threading.Event(), threading.Lock()
     if queue is None:
-        return _last_hints
+        return default
 
     def task():
-        with lock:   # the worker gave up waiting: the script has moved on, so no read and no dialog any more
+        with lock:   # the worker gave up waiting: it has moved on, so no read and no dialog any more
             if box.get("cancelled"):
                 return
             box["started"] = True
         try:
-            box["hints"] = ui_preset_hints()
-            grant_on_ui_thread(svc, box["hints"][0], user=True)
+            box["value"] = fn()
         finally:
             done.set()
     try:
-        queue(lambda: call_safely("check_connection", task))
+        queue(lambda: call_safely(key, task))
     except Exception as e:
         log("queue_on_main failed: %r" % e)
-        return _last_hints
+        return default
     if not done.wait(UI_WAIT):
         with lock:
             if not box.get("started"):
                 box["cancelled"] = True
-                return _last_hints
-        done.wait()   # already running on the UI thread (its dialog is up): its answer is the script's
-    return box.get("hints", _last_hints)
+                return default
+        done.wait()
+    return box.get("value", default)
 
 
-def preset_gcode_warnings():
-    """Translated warnings about the selected Kobra X printer preset's G-code settings (gcode_check.preset_problems);
-    [] for another printer or when OrcaSlicer can't tell."""
+def preset_hints_from_worker(svc):
+    """Worker thread: preset_hints() read on the UI thread (and the preset's address asked about there, a script
+    being a user action). Presets are never read off the UI thread: without an answer, the hints the tab last read."""
+    def read():
+        hints = ui_preset_hints()
+        grant_on_ui_thread(svc, hints[0], user=True)
+        return hints
+    return on_main("check_connection", read, _last_hints)
+
+
+def ui_preset_gcode_problems():
+    """UI thread only: gcode_check.preset_problems() of the selected printer preset when it is a Kobra X (or uses
+    this agent); [] for another printer or when it can't be read."""
     try:
         bundle = orca.host.preset_bundle()
         preset = bundle.current_printer_preset()
@@ -330,23 +339,43 @@ def preset_gcode_warnings():
         if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
                                                 preset.config_value("inherits")):
             return []
-        found = gcode_check.preset_problems(preset.config_value("gcode_skip_config_block"),
-                                            preset.config_value("thumbnails"))
+        return gcode_check.preset_problems(preset.config_value("gcode_skip_config_block"),
+                                           preset.config_value("thumbnails"))
     except Exception as e:
         log("printer preset not checked (%s)" % e)
         return []
-    return [tr(text) % values if values else tr(text) for text, values in found]
+
+
+def preset_gcode_warnings():
+    """Worker thread: translated warnings about the selected Kobra X preset's G-code settings, read on the UI thread;
+    [] (the check skipped) when OrcaSlicer does not answer in time."""
+    try:
+        return [tr(text) % values if values else tr(text)
+                for text, values in on_main("check_gcode", ui_preset_gcode_problems, [])]
+    except Exception as e:
+        log("printer preset not checked (%s)" % e)
+        return []
 
 
 def warn(warnings):
-    """OrcaSlicer's warning notification for each text; a failed notification is only logged."""
-    try:
-        ui = orca.host.ui
-        level = getattr(ui.NotificationLevel, "WarningNotificationLevel", None) or ui.NotificationLevel.RegularNotificationLevel
-        for text in warnings:
-            ui.push_notification(level, "Kobra Control: " + text)
-    except Exception as e:
-        log("notification failed: %r" % e)
+    """OrcaSlicer's warning notification for each text, from a short thread of its own: push_notification hands the
+    call to the UI thread itself and waits for it (PluginHostUi.cpp v2.5.1:672, run_on_ui_blocking), and a print job
+    should not wait on the UI thread. A failed notification is only logged."""
+    def push():
+        try:
+            ui = orca.host.ui
+            level = getattr(ui.NotificationLevel, "WarningNotificationLevel", None) or ui.NotificationLevel.RegularNotificationLevel
+            for text in warnings:
+                ui.push_notification(level, "Kobra Control: " + text)
+        except Exception as e:
+            log("notification failed: %r" % e)
+    if warnings:
+        threading.Thread(target=push, name="kobracontrol-notify", daemon=True).start()
+
+
+def finished_line(text, warnings):
+    """The Print dialog's last line: short, the full warnings are in the notification."""
+    return text + " " + tr("G-code warning: see the notification.") if warnings else text
 
 
 def _target(hints=None):
@@ -858,7 +887,10 @@ class KobraAgent(pa.PrinterAgentBase):
                 return ERR_CONNECT
         if update_fn:
             update_fn(STAGE_CREATE, 0, tr("Preparing..."))
+        # A .3mf member is deflated: reaching its tail decompresses all of it once (about 0.1 s for 72 MB on a laptop).
         warnings = service().check_gcode(params.filename, getattr(params, "plate_index", 1))
+        if cancel_fn and cancel_fn():
+            return ERR_CANCELED
         warn(warnings)
         try:
             service().send_file(host, params.filename, clean(params.project_name) or clean(params.task_name),
@@ -868,7 +900,7 @@ class KobraAgent(pa.PrinterAgentBase):
         except Exception as e:
             return self._fail(update_fn, ERR_SG_UPLOAD, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, " ".join([tr("File uploaded")] + warnings))
+            update_fn(STAGE_FINISHED, 100, finished_line(tr("File uploaded"), warnings))
         return OK
 
     def start_local_print(self, params, update_fn, cancel_fn):
@@ -881,7 +913,9 @@ class KobraAgent(pa.PrinterAgentBase):
         path = params.dst_file if getattr(params, "dst_file", "") and os.path.exists(params.dst_file) else params.filename
         trays, filaments = job_filaments(params)
         task = job_task(params, get_store().effective())
-        warnings = service().check_gcode(path, getattr(params, "plate_index", 1))
+        warnings = service().check_gcode(path, getattr(params, "plate_index", 1))   # see start_send_gcode_to_sdcard
+        if cancel_fn and cancel_fn():
+            return ERR_CANCELED
         warn(warnings)
         stage = ["prepare"]
 
@@ -900,7 +934,7 @@ class KobraAgent(pa.PrinterAgentBase):
             code = {"upload": ERR_LP_UPLOAD, "start": ERR_LP_PUBLISH}.get(stage[0], ERR_LP_PUBLISH)
             return self._fail(update_fn, code, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, " ".join([tr("Print started")] + warnings))
+            update_fn(STAGE_FINISHED, 100, finished_line(tr("Print started"), warnings))
         return OK
 
     def start_local_print_with_record(self, params, update_fn, cancel_fn, wait_fn):

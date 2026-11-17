@@ -88,8 +88,8 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
 
 When OrcaSlicer's Print or Send goes through kobracontrol, the plugin reads the plate's G-code before the
 upload: the first 1 MB and the last 256 kB. It never changes the file, and a warning never stops the print.
-Each warning shows in the Print dialog's last line ("Print started" or "File uploaded"), as an OrcaSlicer
-notification, and in the log. Plugins > **Check Kobra X connection** names the same settings when the
+Each warning shows as an OrcaSlicer notification and in the log; the Print dialog's last line ("Print
+started" or "File uploaded") says to look at the notification. Plugins > **Check Kobra X connection** names the same settings when the
 selected Kobra X printer preset has them.
 
 | Check | Warning when | What to change in the printer preset |
