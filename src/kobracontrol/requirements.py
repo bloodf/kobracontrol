@@ -5,6 +5,8 @@
     printer_agents    OrcaSlicer's "Use printer agents instead of print hosts": Print/Send and the Device tab
                       ("missing" here means "not detected": a plugin can't read the preference itself)
     spoolman          slot <-> spool links and usage booking (missing: those actions are off)
+    certificate       the client certificate in use (bundled or saved); plugin.py reads it with the config
+    spooler           the sibling plugin, for its stock on the Dashboard; plugin.py reads it with the config
 
 Each item is {"id", "state": "ok" | "missing" | "unknown", "details"}. The two file checks run on a thread of their
 own, never at import or registration and never on OrcaSlicer's UI thread, and are kept until Check again or a
@@ -103,7 +105,9 @@ class Checker:
         return found["details"] if found["state"] == OK else ""
 
 
-def message(checker, agent_seen, spoolman_url):
+def message(checker, agent_seen, spoolman_url, host_items=()):
+    """host_items: the certificate and Spooler items plugin.py took from its config message (UI thread)."""
     return {"type": "requirements", "checking": checker.checking,
             "items": checker.items() + [item("printer_agents", OK if agent_seen else MISSING),
-                                        item("spoolman", OK if spoolman_url else MISSING, spoolman_url or "")]}
+                                        item("spoolman", OK if spoolman_url else MISSING, spoolman_url or "")]
+            + list(host_items)}

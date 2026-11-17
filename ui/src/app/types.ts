@@ -51,13 +51,14 @@ export interface FileDetails { name: string; thumbnail?: string | null; info?: F
 export interface VideoEntry { filename: string; name: string; created: number; duration: number; size: number; empty: boolean }
 export interface VideosResult { videos: VideoEntry[] }
 /** Something the plugin needs and cannot install itself (src/kobracontrol/requirements.py). */
-export type RequirementId = 'ffmpeg' | 'anycubic_slicer' | 'printer_agents' | 'spoolman';
+export type RequirementId = 'ffmpeg' | 'anycubic_slicer' | 'printer_agents' | 'spoolman' | 'certificate' | 'spooler';
 export interface Requirement { id: RequirementId; state: 'ok' | 'missing' | 'unknown'; details: string }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
   version: string; limits: Limits; located?: Located | null; agent_id?: string;
+  /** Where the plugin found ffmpeg ('' = not found); absent from a plugin that does not look. */ ffmpeg?: string;
 }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;

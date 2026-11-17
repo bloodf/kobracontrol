@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue';
 import * as bridge from '../core/bridge';
-import { Tracker, message, type RunOptions } from '../core/tracker';
+import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
+import { showToast } from '../../shared/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { boundSlots } from '../core/logic';
@@ -48,9 +49,18 @@ export const s = reactive({
   checking: false,
 });
 
+// What commands answered goes to the page's toasts (bottom-left): "Pause failed: timeout" is a title and its detail.
+// An unknown outcome stays until closed, like an error: the user has to look at the printer.
+const TOAST_TONE = { error: 'error', unknown: 'warn', success: 'success', info: 'info' } as const;
+export function toast(kind: NoticeKind, text: string, key?: string): void {
+  const i = text.indexOf(': ');
+  showToast({ tone: TOAST_TONE[kind], title: i < 0 ? text : text.slice(0, i + 1), body: i < 0 ? undefined : text.slice(i + 2), key,
+    ...(kind === 'unknown' ? { timeout: 0 } : {}) });
+}
 export const tracker = new Tracker(
   (cmd, args) => bridge.command(cmd, args, s.info?.generation),
   (key, params) => t(key, params),
+  toast,
 );
 export const run = (o: RunOptions) => tracker.run(o);
 export const requirement = (id: RequirementId) => s.requirements.find(r => r.id === id);

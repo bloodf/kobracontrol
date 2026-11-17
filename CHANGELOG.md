@@ -4,6 +4,31 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changed
+- Spools are drawn with the photo spool again.
+- The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.
+- Settings are tabs: one section at a time, and the save bar stays on screen at any window height.
+- Notifications appear bottom-left and each one can be closed; warnings and notices on the page can be dismissed.
+- Notifications wait while OrcaSlicer is in another tab or app; errors stay until closed. A closed warning comes back when
+  its problem clears and later returns, and a closed out-of-date warning stays closed while the status stays out of date.
+- Settings lists what the certificate, the camera (ffmpeg), Spoolman and Spooler need on this computer, whether each was found, and how to install it.
+
+- The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
+  of the Spoolman spool linked to each slot (bands for a multi-colour spool), else the colour the ACE reports, and an
+  empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
+  shows its number. Screen readers hear each slot's colour and material. Printer photo: Anycubic product image.
+
+### Fixed
+
+- The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
+  (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
+  on by itself.
+- OrcaSlicer could fail to start, or crash, after Kobra Control was installed and a Kobra X printer preset was
+  edited: the plugin read the printer preset while OrcaSlicer was still loading its presets. It now reads only its
+  own files while loading and asks about the preset's printer address later, once OrcaSlicer is up.
+- OrcaSlicer could close by itself at start-up, or while the Device tab was open, if one of the status updates
+  Kobra Control hands to it failed. Such a failure is now written to the log and OrcaSlicer keeps running.
+
 ### Added
 
 - **Settings > Requirements** lists what Kobra Control needs and can't install itself: ffmpeg (the tab's camera),

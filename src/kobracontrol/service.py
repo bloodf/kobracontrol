@@ -188,6 +188,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         # ffmpeg and Anycubic Slicer Next: checked once on a thread of their own when the page first asks
         # (check_requirements), never here. agent_seen: plugin.py's answer to "is our printer agent in use".
         self.requirements, self.agent_seen = requirements.Checker(self._publish_requirements, log), False
+        self.host_requirements = ()   # certificate and Spooler, set by plugin.py from its config message
         self._requirements_lock = threading.Lock()
         self.jobs = queue.Queue()
         self.worker = self._thread(self._work, "worker")
@@ -549,7 +550,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def requirements_message(self):
         with self.lock:
             target = self.target
-        return requirements.message(self.requirements, self.agent_seen, target.spoolman_url if target else "")
+        return requirements.message(self.requirements, self.agent_seen, target.spoolman_url if target else "",
+                                    self.host_requirements)
 
     def _publish_requirements(self):
         with self._requirements_lock:   # built and sent together: a finished check is never followed by an older state
