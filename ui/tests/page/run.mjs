@@ -448,23 +448,36 @@ test('Spoolman: bind per slot asks first; unbind too', `
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
 
-test('status: the printer photo takes each slot colour from Spoolman, else the ACE; empty reel; feeding slot outlined', `
+test('status: the photo spools are the print head slots, coloured like their slot cards; Spoolman first, then the ACE', `
   const MULTI = {id: 12, name: 'Rainbow', vendor: 'Acme', material: 'PLA', colour: '#ff0000', colours: ['#ff0000', '#00ff00', '#0000ff'], remaining: 250, initial: 1000};
-  await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 3 ? {...s, spool_id: 7} : s.global_index === 6 ? {...s, spool_id: 12} : s))}));
+  const HEAD = () => SLOTS().map(s => (s.global_index === 0 ? {...s, color: [250, 250, 250], spool_id: 11} : s.global_index === 2 ? {...s, spool_id: 12} : s));
+  await ready(VIEW({slots: HEAD(), loaded_slot: 0}));
   const fig = () => q('[data-test="printer-figure"]');
-  assert(fig() && fig().getAttribute('role') === 'img', 'figure in the status card');
-  eq(qa('[data-test="printer-figure"] [data-figure-slot]').map(g => g.getAttribute('data-colors') || ''), ['#e5484d', '#141414', '', '#e5484d'], 'before Spoolman: ACE colours');
+  const spool = n => q('[data-test="printer-figure"] [data-figure-slot="' + n + '"]');
+  const colours = () => [1, 2, 3, 4].map(n => spool(n).getAttribute('data-colors') || '');
+  assert(fig() && fig().getAttribute('role') === 'img', 'photo in the status card');
+  eq(colours(), ['#fafafa', '', '#e5484d', ''], 'before Spoolman answers: the ACE colours of the print head slots');
   await reply(last('cmd', 'spools'), {spools: [...ROWS, MULTI], bindings: {}, via: 'direct'});
-  eq(qa('[data-test="printer-figure"] [data-figure-slot]').map(g => g.getAttribute('data-colors') || ''), ['#111111', '#141414', '', '#ff0000 #00ff00 #0000ff'], 'Spoolman colours, multi-colour bands');
-  assert(q('[data-test="printer-figure"] [data-figure-slot="3"]').hasAttribute('data-empty'), 'empty slot is an empty reel');
-  assert(q('[data-test="printer-figure"] [data-figure-slot="1"]').hasAttribute('data-active'), 'loaded slot outlined');
+  eq(colours(), ['#fafafa', '', '#ff0000 #00ff00 #0000ff', ''], 'Spoolman colours, one band per colour');
+  // each spool is painted like its slot card on the same page
+  for (const n of [1, 2, 3]) {
+    const head = q('[data-slot="' + (n - 1) + '"] .oui-slot-sample'), card = getComputedStyle(head);
+    const bands = qa('[data-test="printer-figure"] [data-figure-slot="' + n + '"] .kx-band').map(r => getComputedStyle(r).fill);
+    if (head.hasAttribute('data-unknown')) { assert(spool(n).hasAttribute('data-empty') && !bands.length, 'slot ' + n + ': empty card, empty reel'); continue; }
+    if (bands.length === 1) eq(bands[0], card.backgroundColor, 'slot ' + n + ' colour matches its card');
+    else assert(bands.every(c => card.backgroundImage.includes(c)), 'slot ' + n + ' bands ' + bands.join() + ' in the card ' + card.backgroundImage);
+  }
+  assert(spool(4).hasAttribute('data-empty'), 'the fourth spool is empty: the head reports three slots next to an ACE');
+  assert(spool(1).hasAttribute('data-active') && !spool(3).hasAttribute('data-active'), 'loaded slot marked');
   eq(text(byTest('figure-digit')), '1', 'toolhead shows the feeding slot');
-  eq(fig().getAttribute('aria-label'), 'The printer and its spools: Slot 1 black ABS (feeding), Slot 2 black ABS, Slot 3 empty, Slot 4 multicolour PLA', 'label');
-  await post({type: 'status', data: PRINTING({slots: SLOTS().map(s => (s.global_index === 6 ? {...s, spool_id: 12} : s)), loaded_slot: 6})});
+  eq(fig().getAttribute('aria-label'), 'The printer and its spools: Slot 1 white PETG (feeding), Slot 2 empty, Slot 3 multicolour PLA, Slot 4 empty', 'label');
+  await post({type: 'status', data: PRINTING({slots: HEAD(), loaded_slot: 2})});
   assert(byTest('figure-tube-active'), 'the feeding tube glows');
   eq(fig().getAttribute('data-tone'), 'busy', 'printing tone');
-  eq(text(byTest('figure-digit')), '4', 'feeding slot 4');
-  assert(fig().getAttribute('aria-label').includes('Slot 4 multicolour PLA (feeding)'), 'label follows the feeding slot');
+  eq(text(byTest('figure-digit')), '3', 'feeding slot 3');
+  assert(fig().getAttribute('aria-label').includes('Slot 3 multicolour PLA (feeding)'), 'label follows the feeding slot');
+  await post({type: 'status', data: PRINTING({slots: HEAD(), loaded_slot: 3})});
+  assert(!byTest('figure-digit') && !byTest('figure-tube-active'), 'an ACE slot feeding: none of the four is marked');
 `);
 
 test('Spoolman without an address says where to set it', `

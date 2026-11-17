@@ -1,4 +1,4 @@
-// What the printer drawing shows on its four spools: pure rules, tested in tests/unit/figure.test.ts.
+// What the printer photo shows on its four spools: pure rules, tested in tests/unit/figure.test.ts.
 import { hexOf } from './logic.ts';
 
 export interface FigureSlotIn { global_index: number; box_id: number; index: number; status: number; color: number[]; type: string;
@@ -18,12 +18,14 @@ export function hexColour(raw: unknown): string {
 }
 
 /**
- * The four spools on the holder: the ACE's slots (or the print head's when there is no ACE), first four by unit and
- * slot. The colour comes from the Spoolman spool bound to the slot, else from what the ACE reports.
+ * The four spools on the printer's own holder feed the print head (box -1), slot 1..4. With the head and an ACE
+ * together the head reports three slots and the fourth spool is drawn empty; with no head box (ACE straight to the
+ * printer) the first ACE unit's four slots stand in. The colour comes from the Spoolman spool bound to the slot, else from what the ACE reports.
  */
 export function figureSpools(slots: readonly FigureSlotIn[], spools: readonly FigureSpoolIn[], bound: Record<number, number>, loaded: number): FigureSpool[] {
-  const box = slots.filter(sl => sl.box_id >= 0);
-  const four = [...(box.length ? box : slots)].sort((a, b) => a.box_id - b.box_id || a.index - b.index).slice(0, 4);
+  const head = slots.filter(sl => sl.box_id < 0);
+  const first = Math.min(...slots.map(sl => sl.box_id));
+  const four = [...(head.length ? head : slots.filter(sl => sl.box_id === first))].sort((a, b) => a.index - b.index).slice(0, 4);
   return [0, 1, 2, 3].map(i => {
     const sl = four[i];
     if (!sl || sl.status !== 5) return { n: i + 1, empty: true, colors: [], material: '', active: false, source: 'empty' as const };

@@ -43,19 +43,23 @@ test('a spool id Spoolman does not list falls back to the ACE', () => {
   assert.equal(a.source, 'ace');
 });
 
-test('empty slots and missing slots are empty reels; always four, ACE first, in slot order', () => {
-  const list = figureSpools([slot(0, -1, 0, { color: [1, 2, 3] }), slot(5, 0, 2, { status: 0 }), slot(4, 0, 1), slot(3, 0, 0)], [], {}, 4);
+test('the print head slots are the four spools; a missing fourth (head with ACE) is empty', () => {
+  const list = figureSpools([slot(3, 0, 0), slot(2, -1, 2, { status: 0 }), slot(1, -1, 1), slot(0, -1, 0, { color: [1, 2, 3] })], [], {}, 1);
   assert.equal(list.length, 4);
   assert.deepEqual(list.map(x => x.n), [1, 2, 3, 4]);
   assert.deepEqual(list.map(x => x.empty), [false, false, true, true]);
   assert.deepEqual(list.map(x => x.active), [false, true, false, false]);
+  assert.deepEqual(list[0].colors, ['#010203']);
   assert.deepEqual(list[2], { n: 3, empty: true, colors: [], material: '', active: false, source: 'empty' });
 });
 
-test('without an ACE the print head slots are drawn', () => {
-  const list = figureSpools([slot(0, -1, 0, { color: [0, 0, 255] })], [], {}, -1);
-  assert.deepEqual(list[0].colors, ['#0000ff']);
-  assert.equal(list[1].empty, true);
+test('an ACE slot loaded through the head is not one of the four', () => {
+  assert.ok(figureSpools([slot(0, -1, 0), slot(3, 0, 0)], [], {}, 3).every(x => !x.active));
+});
+
+test('without a head box the first ACE unit stands in, in slot order', () => {
+  const list = figureSpools([slot(5, 1, 0, { color: [9, 9, 9] }), slot(1, 0, 1, { color: [0, 0, 255] }), slot(0, 0, 0)], [], {}, -1);
+  assert.deepEqual(list.map(x => x.colors[0] ?? ''), ['#e5484d', '#0000ff', '', '']);
 });
 
 test('hexColour accepts Spoolman forms only', () => {
