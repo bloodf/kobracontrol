@@ -4,6 +4,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-16
+
+### Changed
+
+- The plugin icon is the new brand tile: the Kobra Control tab in OrcaSlicer shows the purple tile instead of the
+  old line drawing.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked

@@ -76,5 +76,5 @@ uv run --no-project --with pillow scripts/marketing_images.py   # needs node and
 ```
 
 The camera picture in the status images is a crop of the cover artwork fed to the mock camera. No printer, camera or
-network is involved. The tile is for the listing and the README only; the tab icon inside OrcaSlicer is
-`src/kobracontrol/ui/icon.svg` and is a different drawing.
+network is involved. The tab icon inside OrcaSlicer is the same tile, scaled to 64x64 in
+`src/kobracontrol/ui/icon.png`; export it again when the tile changes (`tests/test_tab_icon.py` checks they match).

@@ -63,9 +63,6 @@ class UiAssets(unittest.TestCase):
         self.assertNotIn("__ICONS__", build.page_html("app.html"))
         self.assertIn("__BOOT__", build.page_html("app.html"))   # filled per page by plugin.page_html
 
-    def test_tab_icon_is_not_scriptable(self):
-        self.assertNotRegex((UI / "icon.svg").read_text("utf-8"), r"(?i)<script|\bon\w+\s*=|javascript:")
-
     def test_built_size_reasonable(self):
         size = self.artifact.stat().st_size
         print("built size: %d bytes" % size)
