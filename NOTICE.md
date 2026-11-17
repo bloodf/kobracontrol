@@ -29,6 +29,12 @@ The Kobra X LAN protocol was reverse-engineered by those projects for interopera
 
 Unlike those projects, kobracontrol does not include Anycubic's TLS client certificate or key, in the repository or in the wheel. It reads them locally from the user's own Anycubic Slicer Next installation (or a file the user picks) and keeps a copy in the plugin's storage folder.
 
+## Printer photo
+
+Printer photo: Anycubic product image. The status card shows a cut-out of Anycubic's Kobra X product photo
+(`ui/src/assets/kobra-x.webp`, with the spool mask and shading made from it); it is not covered by the GPL licence
+of the code.
+
 ## Affiliation and trademarks
 
 kobracontrol is independent. It is not affiliated with, made by or supported by Anycubic. Anycubic, Kobra, OrcaSlicer, Spoolman and other names are trademarks of their owners.
