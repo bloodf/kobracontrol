@@ -6,6 +6,7 @@ export interface Drying { status: number; target_temp: number; duration: number;
 export interface AceUnit { id: number; auto_feed: boolean; humidity?: number | null; temp?: number | null; status?: number; model_id?: number; drying: Drying }
 export interface Can { pause: boolean; resume: boolean; stop: boolean; move: boolean; heat: boolean; feed: boolean; print: boolean }
 export interface Status {
+  camera_url?: string;   // the printer's stream: rtsp:// needs ffmpeg, http:// plays in the page
   connected: boolean; state: string; preparing: boolean; kobra_state: string; printer_name: string; model: string; firmware: string;
   filename: string; progress: number; layer: number; total_layers: number; elapsed_s: number; remaining_s: number; task_id: string;
   nozzle_temp: number; nozzle_target: number; bed_temp: number; bed_target: number; fan_pct: number; light_on: boolean; speed_mode: number;

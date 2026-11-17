@@ -18,6 +18,7 @@ TEXT = {
     'not a camera stream URL': 'não é um endereço de transmissão da câmera',
     'ffmpeg was not found': 'o ffmpeg não foi encontrado',
     'the printer has not announced a camera stream': 'a impressora não anunciou uma transmissão da câmera',
+    'the camera stream ended': 'o vídeo da câmera foi interrompido',
     'ffmpeg ended': 'o ffmpeg encerrou',
     "OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.": "O OrcaSlicer não deixou o kobracontrol ler %s. Permita no diálogo de permissão do OrcaSlicer (Plugins > Permissões) e toque em Procurar certificado de novo. Até lá, é usado o certificado incluído no plugin.",
     "%s is nested deeper than %d folders; point to the slicer's library folder": "%s tem mais de %d níveis de pastas; aponte para a pasta de bibliotecas do fatiador",
@@ -278,6 +279,8 @@ TEXT = {
     'the purge add-on needs absolute moves (G90) at each tool change; nothing was sent': 'o complemento de purga precisa de movimentos absolutos (G90) em cada troca de ferramenta; nada foi enviado',
     'the purge add-on has room for %d purges on this bed and the file changes filament more often; nothing was sent': 'o complemento de purga tem espaço para %d purgas nesta mesa e o arquivo troca de filamento mais vezes; nada foi enviado',
     '%s on the printer is not the file OrcaSlicer sent; nothing was started': '%s na impressora não é o arquivo que o OrcaSlicer enviou; nada foi iniciado',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'O Spoolman indica o perfil de filamento "%s", que não é um dos seus perfis para esta impressora no OrcaSlicer. O slot continua com o perfil de sempre.',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'O Spoolman indica o perfil de filamento "%s", que corresponde a vários perfis seus no OrcaSlicer quando maiúsculas e minúsculas são ignoradas. O slot continua com o perfil de sempre.',
     # G-code checks before sending (gcode_check.py)
     'G-code warning: see the notification.': 'Aviso sobre o G-code: veja a notificação.',
     'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'O G-code não tem o bloco de configurações no final. A tela da Kobra X provavelmente lê dele os filamentos e os detalhes da impressão. Causa provável: Omitir o bloco de configuração do G-code está ligado. Desligue em Configurações da Impressora > Informações básicas > Avançado e fatie de novo.',

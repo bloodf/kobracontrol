@@ -445,7 +445,7 @@ export const de: Record<MessageKey, string> = {
   'camset.title': "Kamera",
   'camset.ffmpeg': "ffmpeg-Pfad",
   'camset.ffmpegPh': "Leer = ffmpeg im PATH suchen",
-  'camset.ffmpegHelp': "Die Kameraansicht benötigt ein installiertes ffmpeg.",
+  'camset.ffmpegHelp': "Nur nötig, wenn der eingebaute Player die Kamera nicht abspielen kann.",
   'camset.default': "Kamera beim Öffnen der Seite einschalten",
   'printdef.title': "Druckvorgaben",
   'printdef.help': "Die Vorauswahl für jeden Druck, der im Tab Dateien gestartet wird.",
@@ -606,7 +606,7 @@ export const de: Record<MessageKey, string> = {
   'unit.min': "min",
   // requirements (Settings > Requirements)
   'req.help': "Was Kobra Control von diesem Computer und OrcaSlicer braucht und nicht selbst installieren kann. Eine Funktion, deren Voraussetzung fehlt, bleibt aus.",
-  'req.ffmpeg.why': "Für die Kamera in diesem Tab nötig. Die Kamera im Device-Tab funktioniert ohne.",
+  'req.ffmpeg.why': "Optional. Die Kamera in diesem Tab nutzt einen eingebauten Player; ffmpeg wird nur verwendet, wenn dieser es nicht kann (ein RTSP-Stream oder ein System ohne H.264-Video). Die Kamera im Device-Tab funktioniert ohne.",
   'req.ffmpeg.mac': "macOS: brew install ffmpeg",
   'req.ffmpeg.win': "Windows: winget install Gyan.FFmpeg",
   'req.ffmpeg.linux': "Linux: sudo apt install ffmpeg oder das ffmpeg-Paket Ihrer Distribution",

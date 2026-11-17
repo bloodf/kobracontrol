@@ -445,7 +445,7 @@ export const zhCN: Record<MessageKey, string> = {
   'camset.title': "摄像头",
   'camset.ffmpeg': "ffmpeg 路径",
   'camset.ffmpegPh': "留空 = 在 PATH 中查找 ffmpeg",
-  'camset.ffmpegHelp': "摄像头画面需要安装 ffmpeg。",
+  'camset.ffmpegHelp': "仅在内置播放器无法播放摄像头画面时需要。",
   'camset.default': "打开页面时开启摄像头",
   'printdef.title': "打印默认值",
   'printdef.help': "从“文件”标签页开始的每次打印的初始选项。",
@@ -606,7 +606,7 @@ export const zhCN: Record<MessageKey, string> = {
   'unit.min': "分钟",
   // requirements (Settings > Requirements)
   'req.help': "Kobra Control 需要本机和 OrcaSlicer 提供、但无法自行安装的内容。缺少要求时，相关功能保持关闭。",
-  'req.ffmpeg.why': "本标签页的摄像头需要它。Device 标签页的摄像头不需要。",
+  'req.ffmpeg.why': "可选。本标签页的摄像头使用内置播放器；只有内置播放器无法播放时（RTSP 视频流，或系统不支持 H.264 视频）才会用到 ffmpeg。Device 标签页的摄像头不需要它。",
   'req.ffmpeg.mac': "macOS：brew install ffmpeg",
   'req.ffmpeg.win': "Windows：winget install Gyan.FFmpeg",
   'req.ffmpeg.linux': "Linux：sudo apt install ffmpeg，或使用发行版的 ffmpeg 软件包",

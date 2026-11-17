@@ -32,6 +32,7 @@ import plugin  # noqa: E402
 import service  # noqa: E402
 
 pa = orca.printer_agent
+real_read_json = plugin.spooler_bridge.read_json
 
 
 def isolate(test):
@@ -320,6 +321,157 @@ class Agent(Base):
         with svc.lock:   # another printer in the tab: the agent's own links
             svc.target = service.Target("10.9.9.9")
         self.assertEqual(list(self.agent._bound_spools()), [0])
+
+    def linked_trays(self, users, spool, users_error=None):
+        """Connect with slot 0 linked to `spool`, the user presets `users` and Spooler's preset for the spool; the
+        trays of the next status push."""
+        name = "_local/spooler/Acme PLA Red @Anycubic Kobra X"
+        mine = {"name": name, "bundle_id": "spooler", "vendor": "Acme", "colour": "#FF0000"}
+        profiles = {"version": 1, "filaments": {"9": {"Anycubic Kobra X": name}}, "ids": {name: "SPL0123456789"}}
+        spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101", **spool}
+        with mock.patch.object(plugin, "filament_catalog", return_value=([mine], "Anycubic Kobra X")), \
+                mock.patch.object(plugin, "user_presets", return_value=users, side_effect=users_error), \
+                mock.patch.object(plugin.spooler_bridge, "read_json", wraps=lambda folder, file: (
+                    profiles if file == plugin.spooler_bridge.PROFILES_FILE else real_read_json(folder, file))), \
+                mock.patch.object(plugin._service, "links_for", return_value=([spool], {0: 5})):
+            self.connect()
+            wait(lambda: self.agent._links[1])
+            self.events["message"].clear()
+            self.agent._dirty.set()
+            msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        return msg["print"]["ams"]["ams"][0]["tray"]
+
+    def user_preset(self, name, inherits="", filament_id="P1234567"):
+        path = os.path.join(self.tmp, name + ".json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"name": name, "inherits": inherits, "filament_id": filament_id}, f)
+        return {"name": name, "compatible": True, "file": path, "inherits": inherits}
+
+    def test_slot_linked_to_a_standalone_user_preset_reports_its_id(self):
+        """orca_filament_preset names a standalone user preset: its own filament_id, so sync from AMS loads it."""
+        trays = self.linked_trays([self.user_preset("My PLA")], {"orca_preset": "my pla"})
+        self.assertEqual(trays[0]["tray_info_idx"], "P1234567")
+        self.assertEqual(trays[1]["tray_info_idx"], "OFYPdQJh")   # not linked: Generic PETG
+        self.assertEqual([m for m in self.published if m.get("type") == "notice"], [])
+
+    def test_slot_linked_to_an_inheriting_user_preset_keeps_the_usual_id(self):
+        """A preset that inherits carries its parent's id and sync would load the parent: the Spooler id stays."""
+        trays = self.linked_trays([self.user_preset("My PLA", inherits="Generic PLA @System", filament_id="OFDSrzZ8")],
+                                  {"orca_preset": "My PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+
+    def test_unknown_linked_preset_keeps_the_usual_id_and_says_so_once(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        trays = self.linked_trays([self.user_preset("My PLA") | {"compatible": False}], {"orca_preset": "My PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+        self.agent._dirty.set()
+        time.sleep(1.2)   # more pushes, the same name: no second notice
+        notices = [m["text"] for m in self.published if m.get("type") == "notice"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn('"My PLA"', notices[0])
+
+    def test_ambiguous_linked_preset_says_so(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        trays = self.linked_trays([self.user_preset("My PLA"), self.user_preset("my pla")], {"orca_preset": "MY PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+        notices = [m["text"] for m in self.published if m.get("type") == "notice"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("several", notices[0])
+
+    def test_unreadable_user_presets_keep_the_usual_ids(self):
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        trays = self.linked_trays([], {"orca_preset": "My PLA"}, users_error=RuntimeError("boom"))
+        self.assertEqual((trays[0]["tray_info_idx"], trays[1]["tray_info_idx"]), ("SPL0123456789", "OFYPdQJh"))
+
+    def test_a_fixed_link_that_breaks_again_warns_again(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        spool = {"orca_preset": "My PLA"}
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.agent._user_presets = [self.user_preset("My PLA")]
+        self.assertEqual(self.agent._linked_id(spool), "P1234567")
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.assertEqual(len([m for m in self.published if m.get("type") == "notice"]), 2)
+
+    def test_missing_or_bad_preset_file_keeps_the_usual_id_and_logs_once(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        logged = []
+        with mock.patch.object(plugin, "log", side_effect=logged.append):
+            self.assertEqual(self.agent._linked_id(spool), "P1234567")
+            os.remove(preset["file"])   # gone between refreshes
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                f.write("{not json")
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 2)
+
+    def test_preset_file_read_once_per_version(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        with mock.patch.object(plugin.spooler_bridge, "standalone_id", wraps=plugin.spooler_bridge.standalone_id) as read:
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["P1234567"] * 3)
+            self.assertEqual(read.call_count, 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                json.dump({"name": "My PLA", "filament_id": "P7654321"}, f)
+            os.utime(preset["file"], (time.time() + 5, time.time() + 5))
+            self.assertEqual(self.agent._linked_id(spool), "P7654321")
+            self.assertEqual(read.call_count, 2)
+
+    def test_unreadable_user_presets_leave_the_catalog_working(self):
+        """user_presets() raising must not stop the Spooler catalog: no linked presets, logged once."""
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        logged = []
+        with mock.patch.object(plugin, "user_presets", side_effect=RuntimeError("boom")), \
+                mock.patch.object(plugin, "filament_catalog", return_value=([{"name": "x"}], "Anycubic Kobra X")), \
+                mock.patch.object(plugin, "log", side_effect=logged.append), \
+                mock.patch.object(plugin._service, "links_for", return_value=([], {})):
+            self.agent._refresh_catalog({})
+            self.agent._refresh_catalog({})
+        self.assertEqual(self.agent._catalog[0], [{"name": "x"}])
+        self.assertEqual(self.agent._user_presets, [])
+        self.assertEqual(len([m for m in logged if "own filament presets" in m]), 1)
+
+    def test_user_presets_are_read_only_through_queue_on_main(self):
+        """Presets are read on the UI thread only: the push thread queues the catalog read, never does it itself."""
+        threads = []
+
+        def users():
+            threads.append(threading.current_thread())
+            return []
+        with mock.patch.object(plugin, "user_presets", side_effect=users), \
+                mock.patch.object(plugin, "filament_catalog", return_value=([], "Anycubic Kobra X")):
+            queued = []
+            self.agent.set_queue_on_main_fn(queued.append)
+            self.agent._catalog_at = 0.0
+            self.agent._preferred()
+            self.assertEqual(threads, [])
+            self.assertEqual(len(queued), 1)
+            with mock.patch.object(plugin, "filament_catalog", side_effect=RuntimeError("boom")):
+                queued[0]()   # nothing escapes a queued call
+        self.assertIsNone(self.agent._user_presets)
+
+    def test_user_presets_lists_own_compatible_and_incompatible_presets(self):
+        meta = {"Generic PLA @System": {}, "_local/spooler/X": {"is_user": True},
+                "My PLA": {"is_user": True, "file": "/u/My PLA.json", "inherits": '"Generic PLA @System"'},
+                "My PETG": {"is_user": True, "is_compatible": False}}
+        names = list(meta)
+        fake = fake_orca.install_orca(filament_names=names, filament_meta=meta)
+        sys.modules["orca"] = orca
+        with mock.patch.object(plugin.orca.host, "preset_bundle", fake.host.preset_bundle):
+            found = plugin.user_presets()
+        self.assertEqual(found, [{"name": "My PLA", "compatible": True, "file": "/u/My PLA.json",
+                                  "inherits": "Generic PLA @System"},
+                                 {"name": "My PETG", "compatible": False, "file": "", "inherits": ""}])
 
     def test_links_for_reads_spoolman_without_touching_the_tab(self):
         svc = plugin._service

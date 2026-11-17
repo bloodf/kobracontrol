@@ -18,6 +18,7 @@ TEXT = {
     'not a camera stream URL': '不是摄像头视频流地址',
     'ffmpeg was not found': '未找到 ffmpeg',
     'the printer has not announced a camera stream': '打印机尚未提供摄像头视频流',
+    'the camera stream ended': '摄像头视频流已中断',
     'ffmpeg ended': 'ffmpeg 已退出',
     "OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.": "OrcaSlicer 未允许 kobracontrol 读取 %s。请在 OrcaSlicer 的权限对话框（插件 > 权限）中允许，然后再次点击“查找证书”。在此之前，将使用插件内置的证书。",
     "%s is nested deeper than %d folders; point to the slicer's library folder": "%s 的文件夹层级超过 %d 层；请指向切片软件的库文件夹",
@@ -278,6 +279,8 @@ TEXT = {
     'the purge add-on needs absolute moves (G90) at each tool change; nothing was sent': '冲刷附加功能要求每次换料时为绝对移动（G90）；未发送任何内容',
     'the purge add-on has room for %d purges on this bed and the file changes filament more often; nothing was sent': '冲刷附加功能在此热床上最多可容纳 %d 次冲刷，而文件换料次数更多；未发送任何内容',
     '%s on the printer is not the file OrcaSlicer sent; nothing was started': '打印机上的 %s 不是 OrcaSlicer 发送的文件；未开始任何打印',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”不是您在 OrcaSlicer 中适用于此打印机的自定义预设。该槽位继续使用原来的预设。',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”在忽略大小写时与您在 OrcaSlicer 中的多个预设匹配。该槽位继续使用原来的预设。',
     # G-code checks before sending (gcode_check.py)
     'G-code warning: see the notification.': 'G-code 警告：请查看通知。',
     'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'G-code 末尾没有设置块。Kobra X 的屏幕很可能从中读取耗材和打印信息。可能的原因：已开启“跳过 G-code 配置块”。请在“打印机设置 > 基础信息 > 高级”中关闭它，然后重新切片。',

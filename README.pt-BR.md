@@ -44,7 +44,7 @@ A partir de um arquivo (os menus do OrcaSlicer aparecem aqui com os nomes em ing
 |---|---|
 | OrcaSlicer | 2.5.0 ou mais novo, na versão oficial. Não precisa de versão modificada. |
 | Impressora | Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado. Conferido no firmware 2.0.2.8. |
-| `ffmpeg` | Só para a câmera da aba Kobra Control. A câmera da aba Device funciona sem ele. |
+| `ffmpeg` | Opcional. A aba Kobra Control mostra a câmera com o player embutido; o `ffmpeg` só é necessário quando esse player não consegue (uma transmissão RTSP, ou um sistema sem suporte a vídeo H.264, possível no Linux). A câmera da aba Device funciona sem ele. |
 | Anycubic Slicer Next | Não é necessário. O certificado de cliente que a impressora exige vem no plugin. |
 | Spoolman | Opcional, para acompanhar as bobinas. |
 
@@ -178,7 +178,7 @@ Pode. Deixe o seu perfil de impressora como está. A aba Kobra Control encontra 
 <details>
 <summary>Por que o OrcaSlicer pede permissão para executar o ffmpeg?</summary>
 
-A câmera da aba Kobra Control usa o `ffmpeg` para transformar a transmissão da impressora em imagens. Quando a câmera liga, o OrcaSlicer mostra o comando completo, com o endereço da transmissão, e pergunta. Ele pergunta de novo quando esse endereço muda, o que acontece quando a impressora reinicia. A câmera da aba Device não precisa do `ffmpeg`.
+Só quando o player embutido não consegue mostrar a câmera a aba Kobra Control usa o `ffmpeg` para transformar a transmissão da impressora em imagens. Quando ele inicia, o OrcaSlicer mostra o comando completo, com o endereço da transmissão, e pergunta. Ele pergunta de novo quando esse endereço muda, o que acontece quando a impressora reinicia. A câmera da aba Device não precisa do `ffmpeg`.
 </details>
 
 <details>
@@ -197,6 +197,12 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 <summary>O perfil de impressora não tem o Printer Agent kobracontrol.</summary>
 
 **Use printer agents instead of print hosts** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
+</details>
+
+<details>
+<summary>Um carretel pode usar o meu próprio perfil de filamento ajustado?</summary>
+
+Sim, pela sincronização do AMS do OrcaSlicer. No Spoolman, adicione um campo extra de texto com a chave `orca_filament_preset` em carretéis ou filamentos (**Settings > Extra fields**) e escreva nele o nome do seu perfil; o valor do carretel vale mais que o do filamento. Precisa ser um perfil seu e compatível com a impressora. A sincronização só carrega um perfil independente (que não herda de nenhum, como uma cópia desvinculada); um perfil criado com **Salvar como** herda do pai e a sincronização carregaria o pai, então o slot fica com o perfil de sempre. Um nome não encontrado mostra um aviso uma vez. Detalhes em [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
 </details>
 
 <details>

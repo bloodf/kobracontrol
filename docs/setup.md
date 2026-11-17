@@ -106,6 +106,37 @@ block and in the settings block. That the screen needs them is inferred from tha
 them has not been tried on a Kobra X, so the warnings say "probably" and "likely cause". The settings
 block finding was first reported for the Kobra 3 V2. Both settings are in OrcaSlicer's Advanced mode.
 
+## 8. Use your own filament preset for a spool (optional)
+
+OrcaSlicer's sync from AMS in the Print dialog picks a filament preset for each ACE slot from the id the
+Device tab reports for it. A slot linked to a Spoolman spool gets that spool's Spooler preset, else the
+Generic preset of its material. To have it pick a preset you tuned yourself:
+
+1. In Spoolman, open **Settings > Extra fields** and add a field under **Spool**, **Filament** or both:
+   key `orca_filament_preset`, type **Text**. Kobra Control only reads the field; [Spooler](https://github.com/bloodf/spooler)
+   can create it and fill it from its spool editor.
+2. Type the name of your OrcaSlicer filament preset in that field, as OrcaSlicer shows it, for example
+   `My PLA @Anycubic Kobra X`. The spool's value wins; an empty spool field falls back to the filament's.
+3. The preset must be one of your own (a user preset, not a system or Spooler one) and compatible with the
+   selected printer. The exact name is used first, then a name that differs only in upper and lower case.
+
+What sync from AMS can do with it (OrcaSlicer loads the first compatible preset that is its own base and carries
+the reported `filament_id`):
+
+- **A standalone preset** (one that inherits nothing, such as a copy made with **Detach from system preset**):
+  the Device tab reports the `filament_id` from the preset's own file, so sync loads it. If another compatible
+  standalone or system preset has the same id (a detached copy keeps its parent's id), OrcaSlicer takes whichever
+  comes first in its list, which may not be yours.
+- **A preset that inherits from another** (what **Save as** makes by default): it carries its parent's id, so
+  OrcaSlicer's sync can never pick it and would load the parent. The slot keeps the usual id; pick the preset by
+  hand after syncing, or detach it.
+- A preset whose file has no `filament_id` also keeps the usual id.
+
+If the name isn't one of your own presets compatible with the printer, or matches several of them when upper and
+lower case are ignored, the slot keeps the usual preset and the
+Kobra Control tab shows a notice once per name in each OrcaSlicer session. The colour, the spool link and the
+Spoolman usage booking are not affected.
+
 ## Optional: Upload bridge (OrcaSlicer's OctoPrint host)
 
 Off by default. With it on, OrcaSlicer's own **Upload** and **Upload and Print** buttons (the OctoPrint

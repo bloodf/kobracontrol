@@ -43,6 +43,8 @@ from usage import UsageMixin
 from i18n import lazy, tr
 
 LEASE_SECONDS = 6.0
+RELAY_RETRY_S = (60.0, 3600.0)   # a stream the built-in player refused goes to ffmpeg 60 s, then 5x longer each
+                                # time it is refused again (5 min, 25 min, 1 h at most), then is tried again
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
@@ -161,7 +163,7 @@ def _background(fn, name):
 
 class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
-                 fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera,
+                 fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera, relay_factory=camera.Relay,
                  spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None, work_dir=""):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
@@ -179,6 +181,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._closing = threading.Event()
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
+        self.camera_mse = False      # the page plays H.264 itself (lease `mse`): Relay, no ffmpeg
+        self._relay_refused = {}   # stream URL -> (times refused, until): Relay or the page could not play it
+        self._told_no_ffmpeg = False   # the ffmpeg path is needed but ffmpeg is missing: told the page once
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
             self.log("kobracontrol: " + self.ledger.restore_notice)
@@ -186,6 +191,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._camera_refused = set()
         self._reset_printer_state()
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
+        self.relay = relay_factory(self._camera_url, self._on_video, self._on_relay_error, log=log)
         # ffmpeg and Anycubic Slicer Next: checked once on a thread of their own when the page first asks
         # (check_requirements), never here. agent_seen: plugin.py's answer to "is our printer agent in use".
         self.requirements, self.agent_seen = requirements.Checker(self._publish_requirements, log), False
@@ -318,18 +324,21 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             previous, self.target = self.target.host, None
             self.generation += 1
             self._reset_printer_state()
-        _background(self.camera.stop, "camera-stop")
+        _background(self.stop_cameras, "camera-stop")
         self.release(previous)
 
-    def touch(self, camera=None, stock=None):
+    def touch(self, camera=None, stock=None, mse=None):
         if stock:
             self.want_stock()
         with self.lock:
             self.lease_until = time.monotonic() + LEASE_SECONDS
             if camera is not None:
                 self.camera_on = bool(camera)
+            if mse is not None:
+                self.camera_mse = bool(mse)
         if camera is False:
-            _background(self.camera.stop, "camera-stop")
+            self._relay_refused = {}   # turned off by the user: the next Turn on tries the built-in player again
+            _background(self.stop_cameras, "camera-stop")
 
     def ack_frame(self):
         self.camera.ack()
@@ -375,6 +384,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.jobs.put(None)
         self._changed.set()
         self.camera.close()
+        self.relay.close()
         for t in (self.worker, self.monitor, self.tracker):
             if t is not threading.current_thread():
                 t.join(1.0)
@@ -498,17 +508,15 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             with self.lock:
                 target, gen = self.target, self.generation
                 active = now < self.lease_until and target is not None
-                # no ffmpeg: the camera is not started at all, so nothing fails every second (not checked yet: it
-                # starts and looks for ffmpeg once itself; a no_ffmpeg then marks it missing)
-                cam = active and self.camera_on and self.requirements.ffmpeg() != ""
+                cam = active and self.camera_on   # without ffmpeg the page's own player still runs (_camera_tick)
             if not active:
-                self._guard("camera", self.camera.stop)
+                self._guard("camera", self.stop_cameras)
                 self._closing.wait(0.25)
                 continue
             if now >= next_status:
                 next_status = now + STATUS_EVERY
                 self._guard("status", lambda: self._push_status(target, gen))
-            self._guard("camera", lambda: self._camera_tick(target) if cam else self.camera.stop())
+            self._guard("camera", lambda: self._camera_tick(target) if cam else self.stop_cameras())
             self._closing.wait(0.1)
 
     def _push_status(self, target, gen):
@@ -539,8 +547,49 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if key != self._capture:
             self._capture = key
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
+        url = self._camera_url()
+        if self.camera_mse and not url.lower().startswith("rtsp://") and not self._refused(url):   # "" -> no_stream
+            self.camera.stop()
+            self.relay.start()
+            self._told_no_ffmpeg = False
+            return
+        # ffmpeg: an RTSP stream, a page that cannot play H.264, or a stream Relay could not read
+        self.relay.stop()
+        if self.requirements.ffmpeg() == "":   # known missing: not started, said once
+            self.camera.stop()
+            if not self._told_no_ffmpeg:
+                self._told_no_ffmpeg = True
+                self.publish({"type": "camera_error", "reason": "no_ffmpeg", "error": tr("ffmpeg was not found")})
+            return
         self.camera.set_ffmpeg(self.requirements.ffmpeg() or target.ffmpeg_path)
         self.camera.start()
+
+    def video_reset(self):
+        """The page's player (re)attached or lost its init segment: send the current stream's init again."""
+        self.relay.resend_init()
+
+    def video_error(self):
+        """The page's player could not play this stream: ffmpeg (or its no_ffmpeg reason) takes it from here."""
+        url = self._camera_url()
+        if url and not self._refused(url):
+            self._refuse(url, "the page could not play the stream")
+
+    def video_ack(self):
+        self.relay.ack()
+
+    def _refused(self, url):
+        return time.monotonic() < self._relay_refused.get(url, (0, 0.0))[1]
+
+    def _refuse(self, url, why):
+        times = self._relay_refused.get(url, (0, 0.0))[0] + 1
+        wait = min(RELAY_RETRY_S[0] * 5 ** (times - 1), RELAY_RETRY_S[1])
+        self._relay_refused = {**self._relay_refused, url: (times, time.monotonic() + wait)}
+        self.log("kobracontrol camera: %s; using ffmpeg for %d s" % (why, wait))
+
+    def stop_cameras(self):
+        self.camera.stop()
+        self.relay.stop()
+        self._told_no_ffmpeg = False
 
     def check_requirements(self, ffmpeg_setting, force=False):
         """Start the file checks unless they are cached for this ffmpeg setting (force: Check again); their answer
@@ -560,6 +609,16 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def _on_frame(self, jpeg):
         self.publish({"type": "frame", "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()})
+
+    def _on_video(self, part):
+        b64 = {k: base64.b64encode(v).decode() if isinstance(v, bytes) else v for k, v in part.items()}
+        self.publish({"type": "video", **b64})
+
+    def _on_relay_error(self, reason, text):
+        if reason == "unsupported":   # not FLV/H.264: hand this stream to ffmpeg on the next tick
+            self._refuse(self._camera_url(), text)
+            return
+        self._on_camera_error(reason, text)
 
     def _on_camera_error(self, reason, text):
         if reason == "no_ffmpeg":   # gone since the check: missing now, so the monitor stops starting the camera
