@@ -208,10 +208,13 @@ granted and every temp-file creation, and it matches a `urllib` request by its f
 is written around that:
 
 - It asks at load for: threads; read access to OrcaSlicer's own temp tree, where the sliced `.3mf`
-  lives (`plugin.slicer_temp_root()`); network access to the printer addresses it already knows (the
-  Settings address, the Kobra X preset's address and the addresses found before, `addresses.json`) and to
-  the SSDP multicast group `239.255.255.250` for the network search (a canonical `http://host` grant also
-  covers raw sockets, docs/HLSD/plugin-permissions.md). Nothing for Anycubic Slicer Next: the bundled
+  lives (`plugin.slicer_temp_root()`); network access to the printer addresses its own files name (the
+  Settings address and the addresses found before, `addresses.json`) and to the SSDP multicast group
+  `239.255.255.250` for the network search (a canonical `http://host` grant also covers raw sockets,
+  docs/HLSD/plugin-permissions.md). It never reads the printer preset at load: OrcaSlicer loads plugins on a
+  thread of its own while its UI thread is still loading the presets (GUI_App.cpp), so that read races it.
+  The preset's address and the Device tab's printer are asked about later on the UI thread (the tab's hello,
+  Save, `connect_printer`), the same way as `allow_hosts` below; a Yes saved earlier passes silently. Nothing for Anycubic Slicer Next: the bundled
   certificate is read from the plugin's own package (inside `data_dir()`, no grant needed). Find
   certificate reads Anycubic Slicer Next only when the user asks; OrcaSlicer then asks about that one file.
 - No `chmod` and no `open()` of a file descriptor: OrcaSlicer's audit sees no path in those events and

@@ -101,9 +101,60 @@ class Registration(unittest.TestCase):
                                            plugin.FindCertificate])
         perms = orca.permissions[-1]
         self.assertTrue(perms["threading"])
-        self.assertEqual(perms["network"], ["http://127.0.0.1", "http://239.255.255.250"])   # + the SSDP group
+        # Not the preset's 127.0.0.1: plugins load while OrcaSlicer's UI thread still loads the presets
+        self.assertEqual(perms["network"], ["http://239.255.255.250"])   # the SSDP group only
         self.assertEqual(perms["fs_read"], plugin.job_read_grants())   # no Anycubic Slicer Next folder by default
         self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
+
+    def test_register_capabilities_reads_no_preset(self):
+        """Plugins load on a thread of their own while OrcaSlicer's UI thread loads the presets: reading them then
+        races it. Only the plugin's own storage folder and files are read."""
+        touched = []
+
+        class Host:
+            plugin = orca.host.plugin
+
+            def __getattr__(self, name):
+                touched.append(name)
+                raise AssertionError("orca.host.%s read at load" % name)
+        folder = tempfile.mkdtemp()
+        with open(os.path.join(folder, plugin.ADDRESSES_FILE), "w", encoding="utf-8") as f:
+            json.dump({"printers": {"Anycubic Kobra X 0.4 nozzle": {"ip": "192.168.1.30"}}}, f)
+        plugin._storage_dir, plugin._store = folder, None
+        orca.permissions.clear()
+        with mock.patch.object(orca, "host", Host()):
+            plugin.KobraControl().register_capabilities()
+        self.assertEqual(touched, [])
+        self.assertEqual(orca.permissions[-1]["network"], ["http://192.168.1.30", "http://239.255.255.250"])
+
+    def test_preset_address_is_granted_on_the_ui_thread(self):
+        """connect_printer and the page's hello ask OrcaSlicer about the preset's address (getaddrinfo, the audited
+        event) once; a refusal is logged, nothing raised."""
+        with mock.patch.object(plugin.socket, "getaddrinfo") as ask:
+            plugin.grant_on_ui_thread("192.168.1.77")
+            plugin.grant_on_ui_thread("192.168.1.77")
+            plugin.grant_on_ui_thread("printer.example.com")   # not a numeric LAN address: no lookup on the UI thread
+        self.assertEqual(ask.call_count, 1)
+        self.assertIn("192.168.1.77", plugin._granted)
+        with mock.patch.object(plugin.socket, "getaddrinfo", side_effect=PermissionError("denied")):
+            plugin.grant_on_ui_thread("192.168.1.78")
+        self.assertNotIn("192.168.1.78", plugin._granted)
+
+    def test_raising_queued_callback_is_caught(self):
+        """A callback queued to OrcaSlicer's UI thread that raises must not escape: OnExceptionInMainLoop would end
+        OrcaSlicer."""
+        agent, queued, logged = plugin.KobraAgent(), [], []
+        agent.set_queue_on_main_fn(queued.append)
+
+        def boom(*args):
+            raise RuntimeError("host gone")
+        agent.set_on_printer_connected_fn(boom)
+        agent._emit("printer_connected", "dev")
+        with mock.patch.object(plugin, "log", logged.append):
+            queued[0]()   # what OrcaSlicer's CallAfter runs later: must return normally
+        self.assertEqual(len(logged), 1)
+        self.assertIn("printer_connected", logged[0])
+        self.assertIn("host gone", logged[0])
 
     def test_agent_info(self):
         info = plugin.KobraAgent().get_agent_info()
@@ -612,7 +663,8 @@ class Guarded(Base):
         self.addCleanup(setattr, plugin.certs, "default_locations", self.old_locations)
         plugin.KobraControl().register_capabilities()
         self.perms = orca.permissions[-1]
-        audit_guard.enable(self.perms, self.tmp)
+        # the preset's printer is no longer declared at load: model the Yes OrcaSlicer saved for it on the UI thread
+        audit_guard.enable({**self.perms, "network_socket": ["127.0.0.1"]}, self.tmp)
         self.addCleanup(audit_guard.disable)
 
     def ungranted_dir(self, prefix):

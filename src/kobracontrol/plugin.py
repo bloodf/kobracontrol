@@ -5,6 +5,7 @@ on OrcaSlicer's UI thread only queues work and returns."""
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -307,21 +308,36 @@ def job_read_grants():
 
 
 def known_hosts():
-    """Printer addresses known at load, for the network permission request: the Settings address, the Kobra X
-    preset's address (a hint the tab tries once) and the addresses found for presets before."""
+    """Printer addresses known at load, for the network permission request: the Settings address and the addresses
+    found for presets before. Only the plugin's own files: plugins load on a thread of their own while OrcaSlicer's
+    UI thread is still loading presets, so reading the printer preset here races it (and can crash OrcaSlicer).
+    The preset's address is granted later, on the UI thread (grant_on_ui_thread)."""
     hosts = set()
     try:
         hosts.add(host_of(get_store().effective().get("host")))
     except Exception as e:
         log("settings not readable at load (%s)" % e)
-    try:
-        hosts.add(preset_hints()[0])
-    except Exception as e:
-        log("printer preset not readable at load (%s)" % e)
     folder = _storage()
     if folder:
         hosts.update(locate.Addresses(os.path.join(folder, ADDRESSES_FILE)).hosts())
     return sorted(h for h in hosts if h)
+
+
+def grant_on_ui_thread(host):
+    """UI thread only: let OrcaSlicer ask about a printer address not granted at load (the preset's print_host, the
+    Device tab's printer). The audited event (getaddrinfo of a numeric LAN address, no network I/O) shows its dialog
+    inline and saves a Yes; an address allowed in an earlier session passes silently. Off the UI thread each refused
+    attempt would queue another dialog instead."""
+    if not host or host in _granted or not locate.lan_address(host):
+        return
+    try:
+        socket.getaddrinfo(host, 18910, socket.AF_INET, socket.SOCK_STREAM)
+    except PermissionError:
+        log("network access to %s not allowed" % host)
+        return
+    except OSError:
+        pass
+    _granted.add(host)
 
 
 # ====================================================================== Kobra Control tab
@@ -364,7 +380,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         try:
             if kind == "hello":
                 sync_language()
-                svc.set_target(_target())   # locates the printer and starts its connection on their own threads
+                target = _target()
+                grant_on_ui_thread(target.preset_host)
+                svc.set_target(target)   # locates the printer and starts its connection on their own threads
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
                 self.post_message(self._config_message())
@@ -385,7 +403,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
-                svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
+                target = _target()
+                grant_on_ui_thread(target.preset_host)
+                svc.set_target(target, retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
                 self.post_message(self._config_message())
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
@@ -468,6 +488,18 @@ def job_task(params, defaults):
             "timelapse": opt("task_record_timelapse") and defaults.get("timelapse") is True}
 
 
+def call_safely(key, fn, *args):
+    """Run a host callback queued to OrcaSlicer's UI thread. Nothing may escape: an exception leaving a queued call
+    ends OrcaSlicer (GUI_App::OnExceptionInMainLoop returns false)."""
+    try:
+        fn(*args)
+    except Exception as e:   # pybind's error_already_set arrives as an Exception too; never re-raised
+        try:
+            log("host callback %s failed: %r" % (key, e))
+        except Exception:
+            pass
+
+
 class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
@@ -515,7 +547,7 @@ class KobraAgent(pa.PrinterAgentBase):
             return
         try:
             if queue is not None:
-                queue(lambda: fn(*args))
+                queue(lambda: call_safely(key, fn, *args))
             else:
                 fn(*args)
         except Exception as e:
@@ -562,6 +594,7 @@ class KobraAgent(pa.PrinterAgentBase):
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
         sync_language()
+        grant_on_ui_thread(host)
         previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._filament_ids = self._generic_ids()
