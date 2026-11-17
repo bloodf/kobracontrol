@@ -22,7 +22,7 @@ const slotName = (g: number | string) => {
   const n = sl ? sl.index + 1 : Number(g) + 1;
   return sl && sl.box_id >= 0 ? `${t('ace.unit', { n: sl.box_id + 1 })} · ${t('slot.name', { n })}` : t('slot.name', { n });
 };
-const grams = (g: Record<string, number>) => Object.entries(g).map(([k, v]) => `${slotName(k)}: ${fmt.number(v, 1)} g`).join(', ');
+const grams = (g: Record<string, number>) => fmt.list(Object.entries(g).map(([k, v]) => fmt.pair(slotName(k), `${fmt.number(v, 1)} g`)));
 const open = ref(false);
 watch(() => failed.value.length, n => { if (!n) open.value = false; });
 const first = computed(() => {

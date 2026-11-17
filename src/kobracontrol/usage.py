@@ -24,6 +24,7 @@ import uuid
 import ace
 import settings
 import spoolman as sm
+from i18n import tr
 
 JOB_TTL = 3 * 24 * 3600.0       # a job that never finishes is dropped after this long
 RETRY_AFTER = 60.0              # slots not yet attempted (Spoolman unreachable before any write) retry after this
@@ -111,9 +112,9 @@ class LedgerStore:
         except FileNotFoundError:
             return [], [], "", []
         except (OSError, ValueError) as e:
-            return [], [], self._set_aside("unreadable (%s)" % e), []
+            return [], [], self._set_aside(tr("unreadable (%s)") % e), []
         if not isinstance(data, dict) or data.get("version") != LEDGER_VERSION:
-            return [], [], self._set_aside("of an unknown format"), []
+            return [], [], self._set_aside(tr("of an unknown format")), []
         jobs, bad = [], 0
         for entry in data.get("jobs") if isinstance(data.get("jobs"), list) else []:
             try:
@@ -127,10 +128,12 @@ class LedgerStore:
         acknowledged = [u for u in acked if isinstance(u, dict)][-MAX_ACKNOWLEDGED:]
         notes = []
         if bad:
-            notes.append("%d unreadable job(s) in %s were skipped" % (bad, self.path))
+            notes.append(tr("%d unreadable job(s) in %s were skipped") % (bad, self.path))
         if bad_entries:
-            notes.append("%d unreadable unconfirmed entr%s in %s were skipped; check Spoolman for prints that "
-                         "finished meanwhile" % (bad_entries, "y" if bad_entries == 1 else "ies", self.path))
+            notes.append((tr("%d unreadable unconfirmed entry in %s were skipped; check Spoolman for prints that finished "
+                             "meanwhile") if bad_entries == 1 else
+                          tr("%d unreadable unconfirmed entries in %s were skipped; check Spoolman for prints that finished "
+                             "meanwhile")) % (bad_entries, self.path))
         return jobs, unconfirmed[-MAX_UNCONFIRMED:], "; ".join(notes), acknowledged
 
     def _set_aside(self, why):
@@ -138,9 +141,9 @@ class LedgerStore:
         try:
             os.replace(self.path, aside)
         except OSError as e:
-            return "the print ledger %s is %s and could not be moved aside (%s); it was not used" % (self.path, why, e)
-        return "the print ledger was %s; it was kept as %s and not used. Check Spoolman for prints that " \
-               "finished meanwhile." % (why, aside)
+            return tr("the print ledger %s is %s and could not be moved aside (%s); it was not used") % (self.path, why, e)
+        return tr("the print ledger was %s; it was kept as %s and not used. Check Spoolman for prints that "
+                  "finished meanwhile.") % (why, aside)
 
     def save(self, jobs, unconfirmed, acknowledged=()):
         """Raises OSError when the file can't be written."""
@@ -178,7 +181,7 @@ class Ledger:
             for job in jobs:
                 for slot, grams in sorted(job.sending.items()):   # closed or crashed during this call
                     self.unconfirmed.append(_unconfirmed(job, slot, job.per_slot.pop(slot, grams),
-                                                         "OrcaSlicer closed while this was being recorded"))
+                                                         tr("OrcaSlicer closed while this was being recorded")))
                 job.sending = {}
                 key = ("retry", job.id) if job.retry_at is not None else ("restored", job.id) if job.booking else job.key
                 job.booking = False   # read back mid-booking: waits again, and restored + armed decides it
@@ -194,7 +197,7 @@ class Ledger:
         try:
             self.store.save(list(self.jobs.values()), self.unconfirmed, self.acknowledged)
         except OSError as e:
-            self.save_error = "can't save the print ledger (%s); pending prints won't survive a restart" % e
+            self.save_error = tr("can't save the print ledger (%s); pending prints won't survive a restart") % e
             return False
         self.save_error = ""
         return True
@@ -296,7 +299,7 @@ class Ledger:
         with self.lock:
             entry = next((u for u in self.unconfirmed if u.get("id") == entry_id), None)
             if entry is None:
-                raise ValueError("That unconfirmed entry is no longer listed; nothing was changed.")
+                raise ValueError(tr("That unconfirmed entry is no longer listed; nothing was changed."))
             done = {**entry, "acknowledged_at": time.time() if now is None else now}
             self.unconfirmed = [u for u in self.unconfirmed if u is not entry]
             self.acknowledged = (self.acknowledged + [done])[-MAX_ACKNOWLEDGED:]
@@ -419,24 +422,24 @@ class UsageMixin:
                 self._book(job)
             except Exception as e:  # keep the caller alive; the job was taken out, so say so
                 self.log("kobracontrol: booking %s failed: %r" % (job.path, e))
-                self._notice("Spoolman usage for %s not recorded: %s" % (job.path, e))
+                self._notice(tr("Spoolman usage for %s not recorded: %s") % (job.path, e))
             finally:
                 self.ledger.end_booking(job)
         elif outcome in ("ambiguous", "restart"):
-            why = ("printing before OrcaSlicer closed; how it ended wasn't seen" if outcome == "restart"
-                   else "finished without being seen printing")
+            why = (tr("printing before OrcaSlicer closed; how it ended wasn't seen") if outcome == "restart"
+                   else tr("finished without being seen printing"))
             for slot, grams in sorted(job.per_slot.items()):
                 self.ledger.unconfirmed_use(_unconfirmed(job, slot, grams, why))
             if outcome == "restart":
-                self._notice("%s was printing before OrcaSlicer closed and kobracontrol didn't see how it ended, so "
-                             "its filament use was not recorded. Check Spoolman." % job.path)
+                self._notice(tr("%s was printing before OrcaSlicer closed and kobracontrol didn't see how it ended, so "
+                             "its filament use was not recorded. Check Spoolman.") % job.path)
             else:
-                self._notice("%s finished, but kobracontrol never saw it printing, so its filament use was not "
-                             "recorded. Check Spoolman." % job.path)
+                self._notice(tr("%s finished, but kobracontrol never saw it printing, so its filament use was not "
+                             "recorded. Check Spoolman.") % job.path)
         elif outcome == "failed":
-            self._notice("%s was cancelled or failed; its filament use was not recorded." % job.path)
+            self._notice(tr("%s was cancelled or failed; its filament use was not recorded.") % job.path)
         elif outcome == "expired":
-            self._notice("kobracontrol stopped waiting for %s to finish; its filament use was not recorded." % job.path)
+            self._notice(tr("kobracontrol stopped waiting for %s to finish; its filament use was not recorded.") % job.path)
 
     def _book(self, job):
         """Book one finished job, one Spoolman call per slot, each saved as "sending" first. A failed call may
@@ -450,7 +453,7 @@ class UsageMixin:
                 bindings = sm.bindings_from_locations([sm.spool_view(s) for s in client.spools()], job.printer_name)
         except (sm.SpoolmanError, OSError, ValueError) as e:
             self.ledger.retry_later(job)
-            self._notice("Spoolman usage for %s waits for a retry: %s" % (job.path, e))
+            self._notice(tr("Spoolman usage for %s waits for a retry: %s") % (job.path, e))
             return
         job.bindings = bindings
         booked, unlinked = [], []
@@ -462,24 +465,24 @@ class UsageMixin:
                 continue
             if not self.ledger.begin_use(job, slot, grams):
                 self.ledger.retry_later(job)   # nothing sent for this slot; try again once the file can be saved
-                self._notice("Spoolman usage for %s waits: %s." % (job.path, self.ledger.save_error))
+                self._notice(tr("Spoolman usage for %s waits: %s.") % (job.path, self.ledger.save_error))
                 return
             job.per_slot.pop(slot)
             try:
                 client.use_weight(sid, grams)
             except (sm.SpoolmanError, OSError, ValueError) as e:
                 self.ledger.end_use(job, slot, False, str(e))
-                self._notice("Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before "
-                             "adding it by hand; kobracontrol won't repeat it." % (round(grams, 2), sid, slot + 1, e, sid))
+                self._notice(tr("Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before "
+                             "adding it by hand; kobracontrol won't repeat it.") % (round(grams, 2), sid, slot + 1, e, sid))
                 if job.per_slot:
                     self.ledger.retry_later(job)
                 return
             self.ledger.end_use(job, slot, True)
             booked.append(slot)
         if booked:
-            self._notice("Spoolman updated with this print's filament use")
+            self._notice(tr("Spoolman updated with this print's filament use"))
         if unlinked:
-            self._notice("No Spoolman spool was linked to %s; that filament use was not recorded." % ", ".join(unlinked))
+            self._notice(tr("No Spoolman spool was linked to %s; that filament use was not recorded.") % ", ".join(unlinked))
 
     def cmd_usage(self):
         """What the page shows about filament use: unconfirmed entries (with identity), the last acknowledged

@@ -15,6 +15,7 @@ import urllib.parse
 
 import certs
 import kobra
+from i18n import lazy, tr
 
 POLL_EVERY = 5.0                # s between read-only polls while connected
 RETRY_FIRST, RETRY_MAX = 2.0, 60.0
@@ -42,10 +43,10 @@ def tls_from(cert_dir):
             try:
                 return certs.context(*shipped)
             except certs.CertError as e:   # the loop would show it as "unexpected answer from the printer"
-                raise NoCertificate("the bundled Anycubic Slicer certificate does not load (%s): run Find Anycubic "
-                                    "certificate (needs Anycubic Slicer Next installed)" % e) from None
-        raise NoCertificate("no Anycubic Slicer certificate: run Find Anycubic certificate "
-                            "(needs Anycubic Slicer Next installed)")
+                raise NoCertificate(tr("the bundled Anycubic Slicer certificate does not load (%s): run Find Anycubic "
+                                    "certificate (needs Anycubic Slicer Next installed)") % e) from None
+        raise NoCertificate(tr("no Anycubic Slicer certificate: run Find Anycubic certificate "
+                            "(needs Anycubic Slicer Next installed)"))
     return load
 
 
@@ -53,14 +54,14 @@ def _explain(host, error, origin="", http=False):
     """The error to show. code "denied" (kobra: OrcaSlicer's audit refused the connection) says what to do; a
     refused /info (http) means something else answers at this address. origin: where the address came from."""
     if getattr(error, "code", None) == "denied" or isinstance(error, PermissionError):
-        return ("OrcaSlicer has not let kobracontrol reach %s yet. Allow kobracontrol to reach %s in the dialog "
+        return tr("OrcaSlicer has not let kobracontrol reach %s yet. Allow kobracontrol to reach %s in the dialog "
                 "OrcaSlicer just showed, then press Retry. If no dialog appeared, restart OrcaSlicer once so the "
-                "saved address is granted when the plugin loads." % (host, host))
+                "saved address is granted when the plugin loads.") % (host, host)
     text = str(error)
     if http and refused(text):
-        return ("Something answers at %s, but it is not a Kobra X in LAN mode: port 18910 refused the connection. "
+        return tr("Something answers at %s, but it is not a Kobra X in LAN mode: port 18910 refused the connection. "
                 "Check that %s is the printer itself (not a bridge such as Kobralink or Moonraker) and that LAN mode "
-                "is on at the printer.%s" % (host, host, " The address comes from %s." % origin if origin else ""))
+                "is on at the printer.%s") % (host, host, tr(" The address comes from %s.") % tr(origin) if origin else "")
     return text
 
 
@@ -231,7 +232,7 @@ class Connection:
         except Exception as e:   # anything else a hostile or broken answer can raise (RecursionError, ...)
             if printer:
                 printer.close()
-            self._fail("unexpected answer from the printer (%s: %s)" % (type(e).__name__, e), False)
+            self._fail(tr("unexpected answer from the printer (%s: %s)") % (type(e).__name__, e), False)
             return False
         if self._stop.is_set():
             printer.close()
@@ -240,15 +241,15 @@ class Connection:
             printer.close()
             self.mismatch = printer.tls_fingerprint or "none"
             self._stop.set()   # never retried: the service offers this printer as a choice instead
-            self._fail("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
-                       "knows. It was not used." % self.host, False)
+            self._fail(tr("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+                       "knows. It was not used.") % self.host, False)
             return False
         self._note_certificate(printer.tls_fingerprint)
         self.printer = printer
         self._poll(initial=True)   # the first snapshot, before anyone sees the printer as connected
         if not printer.connected:
-            self._fail("the printer closed the session right after it opened; another app connected to the printer may "
-                       "be the cause", False)
+            self._fail(tr("the printer closed the session right after it opened; another app connected to the printer may "
+                       "be the cause"), False)
             return False
         self.state.connected = True
         self._opened_at = time.monotonic()
@@ -308,10 +309,10 @@ class Connection:
         self._connected.clear()
         opened = self._opened_at
         if opened is not None and time.monotonic() - opened < STABLE_AFTER:
-            error = ("the printer closed the session soon after it opened (%s); another app connected to the printer may "
-                     "be the cause. Retrying with a growing delay" % (reason or "closed"))
+            error = tr("the printer closed the session soon after it opened (%s); another app connected to the printer may "
+                     "be the cause. Retrying with a growing delay") % (reason or tr("closed"))
         else:
-            error = "connection to the printer lost (%s); reconnecting" % (reason or "closed")
+            error = tr("connection to the printer lost (%s); reconnecting") % (reason or tr("closed"))
         self.error = error
         self.log("kobracontrol: %s: %s" % (self.host, error))
         self._notify()
@@ -351,7 +352,7 @@ def camera_url_for(view, host, log=None, logged=None):
     return url
 
 
-DENIED_PATH = ("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
+DENIED_PATH = lazy("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
                "Permissions), then press Find certificate again.")
 
 
@@ -360,18 +361,18 @@ def find_and_save_certificate(cert_dir, path=None):
     holds tree grants for) and save it in cert_dir. Key matching writes its candidates under cert_dir (the plugin
     storage folder), never through tempfile, which OrcaSlicer denies off the main thread."""
     if not cert_dir:
-        raise certs.CertError("no storage folder to keep the certificate in")
+        raise certs.CertError(tr("no storage folder to keep the certificate in"))
     if path:
         real = os.path.realpath(str(path))
         if not os.path.exists(real):
-            raise ValueError("%s does not exist" % path)
+            raise ValueError(tr("%s does not exist") % path)
         try:   # a read OrcaSlicer denies off the main thread must say so, not "nothing found"
             if os.path.isdir(real):
                 os.listdir(real)
             else:
                 open(real, "rb").close()
         except PermissionError:
-            raise certs.CertError(DENIED_PATH % path) from None
+            raise certs.CertError(tr(DENIED_PATH) % path) from None
         where = [real]
     else:
         where = certs.default_locations()

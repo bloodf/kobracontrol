@@ -24,6 +24,7 @@ orca = fake_orca.install_orca(preset={"name": "Anycubic Kobra X 0.4 nozzle", "pr
                               filament_names=["Generic PLA @System"],
                               filament_meta={"Generic PLA @System": {"filament_id": "OGFL99"}})
 import certs  # noqa: E402
+import i18n  # noqa: E402
 import kobra  # noqa: E402
 import plugin  # noqa: E402
 import service  # noqa: E402
@@ -37,6 +38,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.fake = FakeKobra().start()
         self.addCleanup(self.fake.stop)
+        self.addCleanup(i18n.set_language, "en")   # a test that picks a language must not leave it to the next
         f = self.fake
         f.reply("info", "query", {"printerName": "KX", "version": "2.1.0", "project": {"state": self.state, "taskid": "9"},
                                   "urls": {"fileUploadurl": f.upload_url, "rtspUrl": "rtsp://127.0.0.1:1/live"}})
@@ -481,6 +483,41 @@ class Page(Base):
         # a delete asked for the printer that was selected before is dropped
         self.assertIn("selected printer changed", answer(5, "video_delete", {"name": name}, gen + 1)["error"])
         self.assertEqual(len(self.sent("file", "deleteVideo")), 1)
+
+
+class Language(Base):
+    """The plugin's own texts (Print dialog progress, errors, script results) follow Settings, then OrcaSlicer."""
+
+    def host_language(self, code):
+        if not hasattr(orca.host, "app_language"):
+            self.addCleanup(delattr, orca.host, "app_language")
+        orca.host.app_language = code
+
+    def test_follows_orcaslicer_then_the_settings_choice(self):
+        self.host_language("de_DE")
+        plugin.sync_language()
+        self.assertEqual(i18n.language(), "de")
+        self.assertEqual(plugin.tr("Print started"), i18n.CATALOGUES["de"]["Print started"])
+        self.host_language("zh_TW")
+        plugin.sync_language()
+        self.assertEqual(i18n.language(), "zh-CN")
+        plugin.get_store().update({"ui_language": "es"})
+        self.addCleanup(plugin.get_store().update, {"ui_language": "auto"})
+        plugin.sync_language()
+        self.assertEqual(i18n.language(), "es")
+
+    def test_unknown_language_reads_english(self):
+        self.host_language("ja_JP")
+        plugin.sync_language()
+        self.assertEqual(i18n.language(), "en")
+        self.assertEqual(plugin.tr("Print started"), "Print started")
+
+    def test_agent_texts_in_the_host_language(self):
+        self.host_language("es_ES")
+        self.connect()   # connect_printer reads the language: OrcaSlicer runs the agent before any page
+        self.assertEqual(i18n.language(), "es")
+        self.assertEqual(self.agent.get_agent_info().description,
+                         i18n.CATALOGUES["es"]["Anycubic Kobra X over the LAN (MQTT), by kobracontrol"])
 
 
 class OneSession(Base):

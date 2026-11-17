@@ -12,6 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from i18n import tr
+
 MAX_SLOTS = 32                  # slot numbers above this in a location are not ours
 LOCATION_MAX = 64
 MAX_BODY = 8 * 1024 * 1024      # a Spoolman answer larger than this is refused
@@ -39,7 +41,7 @@ def clean_url(url, strict=True):
         host, port = None, None
     if not host or parts.scheme.lower() not in ("http", "https"):
         if strict:
-            raise SpoolmanError("the Spoolman address must be an http:// or https:// URL with a host")
+            raise SpoolmanError(tr("the Spoolman address must be an http:// or https:// URL with a host"))
         return None
     netloc = ("[%s]" % host if ":" in host else host) + (":%d" % port if port else "")
     return "%s://%s%s" % (parts.scheme.lower(), netloc, parts.path.rstrip("/"))
@@ -72,7 +74,7 @@ class Spoolman:
 
     def connect(self):
         if not self.url:
-            raise SpoolmanError("no address set: enter one under Settings, or use Spooler with Spoolman")
+            raise SpoolmanError(tr("no address set: enter one under Settings, or use Spooler with Spoolman"))
         self.call("GET", "/v1/health")
         return {"via": "direct"}
 
@@ -86,15 +88,15 @@ class Spoolman:
                 raw = resp.read(MAX_BODY + 1)
         except urllib.error.HTTPError as e:
             e.close()
-            raise SpoolmanError("Spoolman said HTTP %d" % e.code) from None
+            raise SpoolmanError(tr("Spoolman said HTTP %d") % e.code) from None
         except (OSError, ValueError) as e:
-            raise SpoolmanError("can't reach Spoolman at %s (%s)" % (self.url, getattr(e, "reason", e))) from None
+            raise SpoolmanError(tr("can't reach Spoolman at %s (%s)") % (self.url, getattr(e, "reason", e))) from None
         if len(raw) > MAX_BODY:
-            raise SpoolmanError("Spoolman's answer is too large")
+            raise SpoolmanError(tr("Spoolman's answer is too large"))
         try:
             return json.loads(raw.decode("utf-8")) if raw else None
         except ValueError:
-            raise SpoolmanError("Spoolman sent an answer that is not JSON") from None
+            raise SpoolmanError(tr("Spoolman sent an answer that is not JSON")) from None
 
     # ------------------------------------------------------------------ api
 

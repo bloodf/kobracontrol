@@ -4,12 +4,40 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-16
+
+Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked
+against the repository's tests and screenshots of the page in all five languages; the new translations have not
+been reviewed by native speakers yet.
+
+### Added
+
+- **Español, Deutsch and 简体中文** for the whole tab: Dashboard, ACE slots and drying, Print Assist, the Printer
+  panel, the Files tab and its time-lapses, Settings, confirmations, tooltips, empty states and screen-reader labels.
+  Words follow OrcaSlicer's own translations where it has one.
+- The texts OrcaSlicer shows for the Kobra X outside the tab are translated too: the Print dialog's progress
+  ("Uploading G-code...", "Print started"), the plugin's errors and notices, and the results of the Check connection
+  and Find certificate scripts.
+- The language follows OrcaSlicer's automatically (Traditional Chinese reads Simplified Chinese; a language the
+  plugin doesn't have reads English). Settings > Language can still pick one by hand.
+- Numbers, temperatures, sizes, durations, dates, lists and plural counts are written the way each language writes
+  them (for example "1.234,5 g" in German, "1 小时 5 分钟" in Chinese).
+
 ### Changed
 
 - The README (now also in Portuguese, `README.pt-BR.md`), the Orca Cloud description
   (`docs/orca-cloud-description.md`) and the listing, social and README images were redone. The images carry real
   screenshots of the page and are rebuilt with `scripts/marketing_images.py`. `docs/release.md` describes a release
-  and the listing. Nothing inside the plugin changed.
+  and the listing.
+- Deleting a time-lapse was confirmed on a Kobra X (firmware 2.0.2.8); it is no longer listed as untried.
+- Printer names, file names and firmware texts are shown exactly as the printer gives them, in every language.
+
+### Fixed
+
+- In Brazilian Portuguese, the delete button in the Files list no longer gets cut off by the Print button next to it.
+- A decimal typed or pasted into a number field (temperature targets, fan, drying temperature and time) no longer
+  loses its decimal sign: "22.5" was read as 225, in every language. Now "22.5" and "22,5" both read as 22.5, and
+  temperatures and times are rounded to whole numbers as before.
 
 ## [0.6.0] - 2026-11-16
 

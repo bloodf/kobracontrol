@@ -12,6 +12,7 @@ import threading
 
 import ace
 import kobra
+from i18n import tr
 
 MAX_NAME = 255
 MAX_DELETE = 200
@@ -24,18 +25,18 @@ _DATA_PNG = re.compile(r"^data:image/png;base64,[A-Za-z0-9+/=]+$")
 def valid_name(name):
     """The file name unchanged, or ValueError: no path separators, no control characters, not "." or ".."."""
     if not isinstance(name, str) or not name.strip() or len(name) > MAX_NAME or name in (".", ".."):
-        raise ValueError("not a valid file name")
+        raise ValueError(tr("not a valid file name"))
     if "/" in name or "\\" in name or any(ord(c) < 32 or ord(c) == 127 for c in name):
-        raise ValueError("a file name has no path separators or control characters")
+        raise ValueError(tr("a file name has no path separators or control characters"))
     return name
 
 
 def valid_names(names):
     """Checked, de-duplicated names (order kept) for a delete; ValueError for none, too many or a bad one."""
     if not isinstance(names, (list, tuple)) or not names:
-        raise ValueError("no files chosen")
+        raise ValueError(tr("no files chosen"))
     if len(names) > MAX_DELETE:
-        raise ValueError("too many files at once (at most %d)" % MAX_DELETE)
+        raise ValueError(tr("too many files at once (at most %d)") % MAX_DELETE)
     return list(dict.fromkeys(valid_name(n) for n in names))
 
 
@@ -43,7 +44,7 @@ def valid_video_name(name):
     """A time-lapse video's file name unchanged, or ValueError: a plain file name (valid_name) ending in .mp4."""
     valid_name(name)
     if len(name) <= len(VIDEO_EXT) or not name.lower().endswith(VIDEO_EXT):
-        raise ValueError("a time-lapse video's name ends in %s" % VIDEO_EXT)
+        raise ValueError(tr("a time-lapse video's name ends in %s") % VIDEO_EXT)
     return name
 
 
@@ -102,7 +103,7 @@ def print_payload(files, name, mapping, auto_leveling=False, vibration_compensat
     valid_name(name)
     found = next((f for f in files or [] if isinstance(f, dict) and f.get("filename") == name), None)
     if found is None:
-        raise ValueError("%s is not on the printer" % name)
+        raise ValueError(tr("%s is not on the printer") % name)
     task = {"auto_leveling": bool(auto_leveling), "vibration_compensation": bool(vibration_compensation),
             "flow_calibration": bool(flow_calibration), "timelapse": bool(timelapse),
             "skip_parts": [str(p) for p in skip_parts or []]}

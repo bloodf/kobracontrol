@@ -41,6 +41,8 @@ import tempfile
 import threading
 from collections import namedtuple
 
+from i18n import lazy, tr
+
 CERT_FILE, KEY_FILE = "anycubic_slicer.pem", "anycubic_slicer_key.pem"
 PINS_FILE = "printers.json"
 EXPECTED_CN = b"AnycubicSlicer"
@@ -53,7 +55,7 @@ OVERLAP = 64 * 1024  # far larger than a PEM certificate or RSA key block
 CERT_RE = re.compile(rb"-----BEGIN CERTIFICATE-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
 KEY_RE = re.compile(rb"-----BEGIN ((?:RSA |EC )?PRIVATE KEY)-----[\r\n]+[A-Za-z0-9+/=\r\n]+?-----END \1-----")
 
-DENIED = ("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
+DENIED = lazy("OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > "
           "Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.")
 
 Found = namedtuple("Found", "cert_pem key_pem source key_source")
@@ -110,12 +112,12 @@ def _walk(path, denied):
             denied.append(error.filename or path)
     for folder, dirs, names in os.walk(path, onerror=refused):  # followlinks=False: symlinked folders are skipped
         if folder.count(os.sep) - base > MAX_DEPTH:
-            raise CertError("%s is nested deeper than %d folders; point to the slicer's library folder"
+            raise CertError(tr("%s is nested deeper than %d folders; point to the slicer's library folder")
                             % (path, MAX_DEPTH))
         dirs.sort()
         seen += len(names)
         if seen > MAX_FILES:
-            raise CertError("more than %d files under %s; point to the slicer's library folder" % (MAX_FILES, path))
+            raise CertError(tr("more than %d files under %s; point to the slicer's library folder") % (MAX_FILES, path))
         for name in sorted(names):
             if os.path.splitext(name)[1].lower() in SCAN_EXT:
                 yield os.path.join(folder, name)
@@ -230,16 +232,16 @@ def find(paths, workdir=None):
     paths, denied = list(paths), []
     cert_found, key_found, scanned = _scan(paths, denied)
     if not scanned and denied:   # OrcaSlicer's sandbox, not a missing slicer: say so, or the user keeps retrying
-        raise CertError(DENIED % ", ".join(paths))
+        raise CertError(tr(DENIED) % ", ".join(paths))
     if not scanned:
-        raise CertError("no slicer files to scan in: %s" % ", ".join(paths))
-    counts = "%d certificates, %d keys" % (len(cert_found), len(key_found))
+        raise CertError(tr("no slicer files to scan in: %s") % ", ".join(paths))
+    counts = tr("%d certificates, %d keys") % (len(cert_found), len(key_found))
     candidates = [pem for pem in cert_found if _is_anycubic(pem)]
     if not candidates:
-        raise CertError("no AnycubicSlicer client certificate found (%s in %d files)" % (counts, scanned))
+        raise CertError(tr("no AnycubicSlicer client certificate found (%s in %d files)") % (counts, scanned))
     pair = _match(candidates, list(key_found), workdir)
     if not pair:
-        raise CertError("AnycubicSlicer certificate found but no matching private key (%s)" % counts)
+        raise CertError(tr("AnycubicSlicer certificate found but no matching private key (%s)") % counts)
     return Found(pair[0], pair[1], cert_found[pair[0]], key_found[pair[1]])
 
 
@@ -312,7 +314,7 @@ def save(folder, cert_pem, key_pem):
     except OSError as e:
         for tmp in temps:
             _remove_quietly(tmp)
-        raise CertError("cannot save the client certificate in %s (%s)" % (folder, e.strerror or e)) from None
+        raise CertError(tr("cannot save the client certificate in %s (%s)") % (folder, e.strerror or e)) from None
     return out
 
 
@@ -324,7 +326,7 @@ def load(folder):
                 result.append(f.read())
         return tuple(result)
     except OSError:
-        raise CertError("no saved Anycubic Slicer client certificate in %s" % folder) from None
+        raise CertError(tr("no saved Anycubic Slicer client certificate in %s") % folder) from None
 
 
 def context(cert_path, key_path):
@@ -334,7 +336,7 @@ def context(cert_path, key_path):
     try:
         ctx.load_cert_chain(cert_path, key_path)
     except (ssl.SSLError, OSError) as e:
-        raise CertError("cannot load the client certificate and key (%s)" % (getattr(e, "reason", None) or type(e).__name__)) from None
+        raise CertError(tr("cannot load the client certificate and key (%s)") % (getattr(e, "reason", None) or type(e).__name__)) from None
     return ctx
 
 

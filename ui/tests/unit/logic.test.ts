@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, clipLength, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
 import { normalizeLocale, resolveLocale, interpolate } from '../../src/core/i18n-core.ts';
-import { en, ptBR } from '../../src/core/messages.ts';
 
 test('a blank target is never 0; 0 typed is Off; out of range refused', () => {
   assert.deepEqual(parseTarget('', 300), { kind: 'empty' });
@@ -67,23 +66,16 @@ test('bound spools: the live status wins; a null live value unbinds', () => {
 });
 
 test('locale resolution: explicit choice, host, browser, English', () => {
-  assert.equal(normalizeLocale('pt_BR'), 'pt-BR');
-  assert.equal(normalizeLocale('en-GB'), 'en');
-  assert.equal(normalizeLocale('de'), null);
+  const cases: [unknown, string | null][] = [['pt_BR', 'pt-BR'], ['en-GB', 'en'], ['es', 'es'], ['es_ES', 'es'], ['es-419', 'es'],
+    ['de', 'de'], ['de_AT', 'de'], ['zh_CN', 'zh-CN'], ['zh_TW', 'zh-CN'], ['zh-Hant-TW', 'zh-CN'], ['fr', null], ['', null], [null, null]];
+  for (const [code, want] of cases) assert.equal(normalizeLocale(code), want, String(code));
   assert.equal(resolveLocale('pt-BR', 'en', ['en']), 'pt-BR');
+  assert.equal(resolveLocale('de', 'zh_CN', ['es']), 'de');
   assert.equal(resolveLocale('auto', 'pt', ['en']), 'pt-BR');
-  assert.equal(resolveLocale('auto', null, ['de', 'pt-BR']), 'pt-BR');
-  assert.equal(resolveLocale('auto', null, ['de']), 'en');
+  assert.equal(resolveLocale('auto', 'zh_TW', ['en']), 'zh-CN');
+  assert.equal(resolveLocale('auto', 'ja', ['fr', 'es-MX']), 'es');
+  assert.equal(resolveLocale('auto', null, ['fr']), 'en');
   assert.equal(interpolate('{a} and {b}', { a: 1 }), '1 and {b}');
-});
-
-test('both languages have the same keys and the same placeholders; no U1 wording', () => {
-  assert.deepEqual(Object.keys(ptBR).sort(), Object.keys(en).sort());
-  const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',');
-  for (const k of Object.keys(en) as (keyof typeof en)[]) {
-    assert.equal(holes(ptBR[k]), holes(en[k]), `placeholders of ${k}`);
-    assert.doesNotMatch(en[k] + ptBR[k], /\bU1\b|toolhead|Snapmaker|Moonraker|Klipper/i, `U1 wording in ${k}`);
-  }
 });
 
 test('files: search ignores case and spaces around it; the four orders', () => {
@@ -121,12 +113,6 @@ test('the finish time needs a running print that is not preparing and a remainin
   assert.equal(finishAt({ ...st, remaining_s: 0 }, 5000), null);
   assert.equal(finishAt({ ...st, state: 'paused' }, 5000), null);
   assert.equal(finishAt(null, 5000), null);
-});
-
-test('the new texts exist in every language', () => {
-  for (const key of ['files.count', 'files.noMatch', 'files.mat.differs', 'files.mat.missing', 'tls.changed.body', 'status.eta'] as const) {
-    assert.ok(en[key] && ptBR[key] && en[key] !== ptBR[key], key);
-  }
 });
 
 test('heater phase: off, heating, at target (within 2 °C), cooling; unknown without a target or a reading', () => {

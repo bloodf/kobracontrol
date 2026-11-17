@@ -1,9 +1,11 @@
 // The plugin fills a JSON block before serving the page: the boot payload (version, host language, language
 // preference). During `vite dev` it is absent and the defaults apply.
+import type { LangPref } from './i18n-core';
+
 export interface Boot {
   version: string;
   lang: string | null;
-  pref?: 'auto' | 'en' | 'pt-BR';
+  pref?: LangPref;
 }
 
 function readJson<T>(id: string, fallback: T): T {

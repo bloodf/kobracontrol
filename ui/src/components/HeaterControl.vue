@@ -6,8 +6,12 @@ import { OuiIcon, OuiSpark, type OuiTone } from '../../shared/src/components';
 import { bed, nozzle } from '../../shared/src/icons';
 import { s, run, tracker, controlsOff, printerName, reported, stale } from '../app/store';
 import { ask } from '../core/dialog';
-import { t, fmt } from '../core/i18n';
+import { t, fmt, locale } from '../core/i18n';
+import { acceptDot } from '../core/decimal-input';
 import { heaterPhase, parseTarget } from '../core/logic';
+
+// '.' and the locale's own sign both type a decimal (PrimeVue alone reads only the locale's; '100.4' became 1004).
+const dot = computed(() => acceptDot(locale.value));
 
 // One heater: what it reads, what it is set to, and the field to change it. Safety rules kept here: a blank field
 // never sends 0, an out-of-range value is refused with the real limit from config (not clamped), heating always asks
@@ -65,7 +69,7 @@ async function setTemp() {
       <OuiSpark v-if="(s.history[id] ?? []).length > 1" class="kc-heat-spark" :values="s.history[id] ?? []" :tone="tone" :target="target || null" :width="88" :height="28" :label="t('temps.history', { heater: name })" />
       <span v-else class="kc-heat-spark" aria-hidden="true" />
       <span class="kc-heat-set">
-        <InputNumber :model-value="draft" :input-id="'temp-' + id" :min="0" :max="max" :use-grouping="false" :allow-empty="true" size="small"
+        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="draft" :input-id="'temp-' + id" :min="0" :max="max" :use-grouping="false" :allow-empty="true" size="small"
                      :input-style="{ width: '72px' }" :placeholder="t('temps.range', { min: 0, max })" :aria-label="t('temps.target', { heater: name })"
                      :pt="{ pcInputText: { root: { 'aria-describedby': describedBy } } }" :invalid="invalid" :disabled="!!heatWhy"
                      @input="e => (draft = asNumber(e.value))" @update:model-value="v => (draft = v)" @keydown.enter="setTemp" />

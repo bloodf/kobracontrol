@@ -6,9 +6,13 @@ import { OuiIcon, OuiStatus } from '../../shared/src/components';
 import { drop, flame } from '../../shared/src/icons';
 import { s, run, tracker, controlsOff, printerName, stale } from '../app/store';
 import { ask } from '../core/dialog';
-import { t, fmt } from '../core/i18n';
+import { t, fmt, locale } from '../core/i18n';
+import { acceptDot } from '../core/decimal-input';
 import { parseWhole } from '../core/logic';
 import type { AceUnit } from '../app/types';
+
+// '.' and the locale's own sign both type a decimal (PrimeVue alone reads only the locale's; '100.4' became 1004).
+const dot = computed(() => acceptDot(locale.value));
 
 // One ACE's drying strip (running: what it does and Stop drying; idle: temperature, time, Start).
 const props = defineProps<{ unit: AceUnit; label: string }>();
@@ -57,11 +61,11 @@ const stop = () => run({ key: `dry:${props.unit.id}`, label: t('act.dryStop', { 
       <span class="kc-dry-title"><OuiIcon :icon="flame" :size="14" tone="orange" />{{ t('dry.title') }}</span>
       <span v-if="humidity != null" class="oui-num oui-muted" data-test="unit-humidity"><OuiIcon :icon="drop" :size="13" tone="sky" class="kc-drop" />{{ t('dry.humidity', { value: fmt.number(humidity) }) }}</span>
       <span class="kc-dry-end kc-dry-form">
-        <InputNumber :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true" size="small"
+        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true" size="small"
                      :placeholder="`${TEMP.min}–${TEMP.max} °C`" :input-style="{ width: '84px' }" :aria-label="t('dry.temp')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
                      @input="e => (temp = asNumber(e.value))" @update:model-value="v => (temp = v)" />
-        <InputNumber :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" suffix=" min" :allow-empty="true" size="small"
-                     :placeholder="`${MINUTES.min}–${MINUTES.max} min`" :input-style="{ width: '96px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
+        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" :suffix="' ' + t('unit.min')" :allow-empty="true" size="small"
+                     :placeholder="`${MINUTES.min}–${MINUTES.max} ${t('unit.min')}`" :input-style="{ width: '96px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
                      @input="e => (minutes = asNumber(e.value))" @update:model-value="v => (minutes = v)" />
         <Button severity="secondary" size="small" :label="t('dry.start')" :aria-label="t('dry.startLabel', { ace: label })" :disabled="!!startWhy" :aria-describedby="offId ?? `dry-why-${unit.id}`"
                 :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-start:${unit.id}`" :data-dry-start="unit.id" @click="start">

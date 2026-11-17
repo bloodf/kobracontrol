@@ -27,6 +27,7 @@ import time
 
 import certs
 import kobra
+from i18n import tr
 
 SSDP_GROUP = "239.255.255.250"
 SSDP_ADDR = (SSDP_GROUP, 1900)
@@ -153,7 +154,7 @@ def probe(ip, port=18910, timeout=PROBE_TIMEOUT):
     info = kobra._http_json(ip, port, "/info", timeout, "/info")
     token = info.get("token") if isinstance(info, dict) else None
     if not isinstance(token, str) or len(token) < 32:
-        raise kobra.KobraError("%s answers /info without a LAN token: is LAN mode on?" % ip, code="no_token")
+        raise kobra.KobraError(tr("%s answers /info without a LAN token: is LAN mode on?") % ip, code="no_token")
 
     def text(*keys):
         return next((str(info[k])[:80] for k in keys if isinstance(info.get(k), (str, int)) and info.get(k) != ""), "")
@@ -208,7 +209,7 @@ class Addresses:
             known = self._read()
             for other, rec in known.items():
                 if other != key and rec["ip"] == ip and rec["id"] and ident and rec["id"] != ident:
-                    raise ValueError("%s is already remembered for the printer preset %r" % (ip, other))
+                    raise ValueError(tr("%s is already remembered for the printer preset %r") % (ip, other))
             known[key] = {"ip": ip, "id": ident, "fp": fp}
             os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
             certs._write_private(self.path, json.dumps({"printers": known}, indent=1, sort_keys=True))
@@ -235,10 +236,10 @@ class NotFound(kobra.KobraError):
 
 
 def _found_note(found, preset_host):
-    where = "%s%s at %s" % (found["name"] or "a Kobra X", " (%s)" % found["model"] if found["model"] else "", found["ip"])
-    note = "Connected to %s, found on the network." % where
+    where = tr("%s%s at %s") % (found["name"] or tr("a Kobra X"), " (%s)" % found["model"] if found["model"] else "", found["ip"])
+    note = tr("Connected to %s, found on the network.") % where
     if preset_host and preset_host != found["ip"]:
-        note = ("The printer preset points to %s, which is not a Kobra X in LAN mode. %s" % (preset_host, note))
+        note = tr("The printer preset points to %s, which is not a Kobra X in LAN mode. %s") % (preset_host, note)
     return note
 
 
@@ -288,7 +289,7 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
                 rejected.append(ip)
             continue
         if mine(info):
-            return Found(ip, "discovered", "Found %s again at %s." % (info["name"] or "the Kobra X", ip), info["name"],
+            return Found(ip, "discovered", tr("Found %s again at %s.") % (info["name"] or tr("the Kobra X"), ip), info["name"],
                          info.get("id", ""), record.get("fp", ""), info.get("model", ""))
         (different if record else printers).append(info)
     offered = [{**c, "needs_allow": False, "different": bool(record)} for c in different + printers]
@@ -303,27 +304,27 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
         # it with its growing delay), never another printer.
         return Found(record["ip"], "remembered", expect_fp=record.get("fp", ""), identity=record.get("id", ""))
     if different:
-        raise NotFound("A different Kobra X answered at %s. Use it? Kobra Control does not switch to another printer "
-                       "by itself." % ", ".join(c["ip"] for c in different), offered, rejected=rejected)
+        raise NotFound(tr("A different Kobra X answered at %s. Use it? Kobra Control does not switch to another printer "
+                       "by itself.") % ", ".join(c["ip"] for c in different), offered, rejected=rejected)
     if len(offered) > 1:
-        raise NotFound("%d possible Kobra X printers answer on this network: choose one." % len(offered), offered,
+        raise NotFound(tr("%d possible Kobra X printers answer on this network: choose one.") % len(offered), offered,
                        rejected=rejected)
     if ungranted:   # exactly one: the page has OrcaSlicer ask about it once
-        raise NotFound("Found a printer at %s. Allow Kobra Control to reach it in OrcaSlicer's dialog; it connects "
-                       "by itself afterwards." % ungranted[0], offered, pending=ungranted, rejected=rejected)
+        raise NotFound(tr("Found a printer at %s. Allow Kobra Control to reach it in OrcaSlicer's dialog; it connects "
+                       "by itself afterwards.") % ungranted[0], offered, pending=ungranted, rejected=rejected)
     raise NotFound(_nothing(preset_host, own_agent, errors), rejected=rejected)
 
 
 def _nothing(preset_host, own_agent, errors):
     why = errors.get("search")
-    searched = ("The network search could not run (%s)" % why) if why else "No Kobra X answered the network search"
+    searched = (tr("The network search could not run (%s)") % why) if why else tr("No Kobra X answered the network search")
     if preset_host:
         reason = errors.get(preset_host)
         refused = "refused" in str(reason).lower() or "errno 61" in str(reason).lower() or "errno 111" in str(reason)
-        what = ("something answers at %s but it is not a Kobra X in LAN mode (port 18910 refused)" % preset_host
-                if refused else "no Kobra X answers at %s (%s)" % (preset_host, reason))
-        where = "the printer preset" if not own_agent else "the printer preset (Printer Agent kobracontrol)"
-        return ("%s. The address comes from %s, and %s. Enter the printer's own address under Settings > Printer "
-                "address, and check that LAN mode is on at the printer." % (searched, where, what))
-    return ("%s. Check that the printer is on, on this network and in LAN mode, or enter its address under "
-            "Settings > Printer address." % searched)
+        what = (tr("something answers at %s but it is not a Kobra X in LAN mode (port 18910 refused)") % preset_host
+                if refused else tr("no Kobra X answers at %s (%s)") % (preset_host, reason))
+        where = tr("the printer preset") if not own_agent else tr("the printer preset (Printer Agent kobracontrol)")
+        return tr("%s. The address comes from %s, and %s. Enter the printer's own address under Settings > Printer "
+                  "address, and check that LAN mode is on at the printer.") % (searched, where, what)
+    return tr("%s. Check that the printer is on, on this network and in LAN mode, or enter its address under "
+              "Settings > Printer address.") % searched

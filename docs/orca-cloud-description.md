@@ -49,7 +49,7 @@ Independent project, not made or supported by Anycubic.
 
 ## Languages
 
-English and Brazilian Portuguese.
+English, Brazilian Portuguese, Spanish, German and Simplified Chinese.
 
 ## More plugins by bloodf
 
@@ -113,7 +113,7 @@ Projeto independente, não é feito nem mantido pela Anycubic.
 
 ## Idiomas
 
-Inglês e português do Brasil.
+Inglês, português do Brasil, espanhol, alemão e chinês simplificado.
 
 ## Mais plugins do bloodf
 

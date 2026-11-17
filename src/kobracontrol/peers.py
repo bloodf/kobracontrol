@@ -25,6 +25,8 @@ import threading
 import time
 import urllib.parse
 
+from i18n import lazy
+
 SCHEMA = "orca-plugin-presence"
 VERSION = 1
 STOCK_SCHEMA = "spooler-stock"
@@ -43,12 +45,12 @@ TEXT_MAX = 120
 COLOUR_RE = re.compile(r"^#?([0-9A-Fa-f]{6})(?:[0-9A-Fa-f]{2})?$")
 
 STATE_TEXT = {
-    "active": "Spooler is running in this OrcaSlicer.",
-    "absent": "Spooler isn't running in this OrcaSlicer.",
-    "stopped": "Spooler was unloaded or disabled.",
-    "stale": "Spooler stopped answering.",
-    "other_process": "Spooler is running in another OrcaSlicer window, not this one.",
-    "incompatible": "This Spooler version can't share its stock with Kobra Control.",
+    "active": lazy("Spooler is running in this OrcaSlicer."),
+    "absent": lazy("Spooler isn't running in this OrcaSlicer."),
+    "stopped": lazy("Spooler was unloaded or disabled."),
+    "stale": lazy("Spooler stopped answering."),
+    "other_process": lazy("Spooler is running in another OrcaSlicer window, not this one."),
+    "incompatible": lazy("This Spooler version can't share its stock with Kobra Control."),
 }
 
 

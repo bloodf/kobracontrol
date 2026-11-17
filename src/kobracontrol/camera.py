@@ -20,6 +20,8 @@ import subprocess
 import threading
 import time
 
+from i18n import tr
+
 MAX_FPS = 5.0
 ACK_TIMEOUT = 5.0
 EXTRA_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")   # a GUI app's PATH often lacks Homebrew
@@ -32,7 +34,7 @@ def argv(url, ffmpeg="ffmpeg"):
     """The exact command line (a list, never a shell string; OrcaSlicer matches it verbatim)."""
     if not isinstance(url, str) or not url.lower().startswith(("rtsp://", "http://", "https://")) \
             or "://" in url and not url.split("://", 1)[1]:
-        raise ValueError("not a camera stream URL")
+        raise ValueError(tr("not a camera stream URL"))
     base = ["-fflags", "nobuffer", "-flags", "low_delay", "-timeout", "10000000"]
     if url.lower().startswith("rtsp://"):
         base += ["-probesize", "32", "-analyzeduration", "0", "-rtsp_transport", "tcp"]
@@ -168,14 +170,14 @@ class Camera:
                     return
                 exe = find_ffmpeg(self.ffmpeg_path)
                 if exe is None:
-                    self._fail("no_ffmpeg", "ffmpeg was not found")
+                    self._fail("no_ffmpeg", tr("ffmpeg was not found"))
                     stop.wait(1.0)
                     continue
                 url = self.get_url()
                 try:
                     cmd = argv(url, exe)
                 except ValueError:
-                    self._fail("no_stream", "the printer has not announced a camera stream")
+                    self._fail("no_stream", tr("the printer has not announced a camera stream"))
                     stop.wait(0.5)
                     continue
                 got, text, changed = self._session(cmd, url, stop)
@@ -186,7 +188,7 @@ class Camera:
                 if changed:
                     fails = 0
                     continue
-                self._fail("failed", text or "ffmpeg ended")
+                self._fail("failed", text or tr("ffmpeg ended"))
                 fails += 1
                 stop.wait(min(self.backoff[0] * 2 ** (fails - 1), self.backoff[1]))
         finally:

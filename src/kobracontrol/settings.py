@@ -5,10 +5,11 @@ import json
 import os
 import threading
 
+import i18n
 import spoolman
 
 DEFAULT_PRINTER_NAME = "Anycubic Kobra X"
-UI_LANGUAGES = ("auto", "en", "pt-BR")   # "auto": OrcaSlicer's language, then the system's
+UI_LANGUAGES = ("auto",) + i18n.LANGUAGES   # "auto": OrcaSlicer's language, then the system's
 DEFAULTS = {
     "host": "",                          # printer address override; "" = the one in the printer preset
     "printer_name": DEFAULT_PRINTER_NAME,  # also the Spoolman location prefix of the slot bindings

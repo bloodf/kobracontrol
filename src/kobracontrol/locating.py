@@ -17,10 +17,11 @@ import time
 import kobra
 import locate
 import usage
+from i18n import lazy, tr
 
-ORIGIN_TEXT = {"override": "Settings > Printer address", "preset": "the printer preset",
-               "remembered": "the address found earlier for this printer preset",
-               "discovered": "a search of the local network", "chosen": "the printer you chose"}
+ORIGIN_TEXT = {"override": lazy("Settings > Printer address"), "preset": lazy("the printer preset"),
+               "remembered": lazy("the address found earlier for this printer preset"),
+               "discovered": lazy("a search of the local network"), "chosen": lazy("the printer you chose")}
 RELOCATE_EVERY = 60.0           # s: at most one automatic search per period
 BUSY_STATES = ("printing", "paused")
 
@@ -175,8 +176,8 @@ class LocatingMixin:
             target = self.target if gen == self.generation else None
         if target is not None:
             self._forget_record(target)
-            self._use_address(gen, locate.Found(host, "chosen", "Connected to %s (%s) at %s, as you chose." % (
-                info["name"] or "the Kobra X", info["model"] or "Kobra X", host), info["name"], info.get("id", ""),
+            self._use_address(gen, locate.Found(host, "chosen", tr("Connected to %s (%s) at %s, as you chose.") % (
+                info["name"] or tr("the Kobra X"), info["model"] or "Kobra X", host), info["name"], info.get("id", ""),
                 model=info.get("model", "")))
 
     def _forget_record(self, target):
@@ -221,8 +222,8 @@ class LocatingMixin:
             self._reset_printer_state()
             target.host, target.source = "", ""
             self.locate_error = locate.NotFound(
-                "A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control knows. "
-                "Use it? Kobra Control does not switch to another printer by itself." % conn.host,
+                tr("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control knows. "
+                "Use it? Kobra Control does not switch to another printer by itself.") % conn.host,
                 [{"ip": conn.host, "name": "", "model": "", "id": "", "needs_allow": False, "different": True}])
         self.log("kobracontrol: %s" % self.locate_error)
         self.release(conn.host)
@@ -241,8 +242,8 @@ class LocatingMixin:
         if not due:
             return
         if self._last_state.get(conn.host) in BUSY_STATES or self._tracking(conn.host):
-            self._notice("The Kobra X at %s was printing when it stopped answering. Kobra Control keeps trying that "
-                         "address and does not look for the printer elsewhere until it answers." % conn.host, gen)
+            self._notice(tr("The Kobra X at %s was printing when it stopped answering. Kobra Control keeps trying that "
+                         "address and does not look for the printer elsewhere until it answers.") % conn.host, gen)
             return
         self._start_locate(gen, automatic=True)
 
@@ -257,13 +258,13 @@ class LocatingMixin:
             with self.lock:
                 target, error = self.target, self.locate_error
             if target is None:
-                raise kobra.KobraError("no Kobra X selected")
+                raise kobra.KobraError(tr("no Kobra X selected"))
             if target.host:
                 return target
             if error is not None:
                 raise error
             if time.monotonic() >= deadline or self.closed:
-                raise kobra.KobraError("still searching the network for the Kobra X")
+                raise kobra.KobraError(tr("still searching the network for the Kobra X"))
             time.sleep(0.05)
 
     def cmd_search_printer(self):
@@ -273,7 +274,7 @@ class LocatingMixin:
             gen, target = self.generation, self.target
             self._rejected.clear()
         if target is None:
-            raise kobra.KobraError("no Kobra X selected")
+            raise kobra.KobraError(tr("no Kobra X selected"))
         if target.override:
             return {"address": target.host, "source": "override"}
         self._locate(gen, search_only=not target.host)
@@ -292,7 +293,7 @@ class LocatingMixin:
             gen, target, error = self.generation, self.target, self.locate_error
         offered = {c["ip"] for c in getattr(error, "candidates", [])}
         if target is None or host not in offered:
-            raise ValueError("that printer was not among the ones found; search again")
+            raise ValueError(tr("that printer was not among the ones found; search again"))
         self._adopt(gen, host)
         with self.lock:
             error = self.locate_error if gen == self.generation else None

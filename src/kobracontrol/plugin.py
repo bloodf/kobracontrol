@@ -15,11 +15,13 @@ import orca
 import ace
 import bambu
 import certs
+import i18n
 import locate
 import kobra
 import peers
 import settings
 import spooler_bridge
+from i18n import tr
 from service import (BED_MAX, LIMITS, NOTHING_LOADED, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
                      find_and_save_certificate, status_data)
 
@@ -145,6 +147,17 @@ def _host_language():
     except Exception:
         return None
     return lang if isinstance(lang, str) and lang else None
+
+
+def sync_language():
+    """The plugin's own texts (i18n.py) follow the page: the language chosen in Settings, else OrcaSlicer's. Called
+    from plugin callbacks, where OrcaSlicer answers; while its language can't be read, the last one stays."""
+    try:
+        choice, host = get_store().effective()["ui_language"], _host_language()
+        if choice in i18n.LANGUAGES or host:
+            i18n.set_language(i18n.resolve(choice, host))
+    except Exception as e:
+        log("language not read (%s)" % e)
 
 
 def page_html(language="auto"):
@@ -340,6 +353,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         return {}
 
     def get_ui(self):
+        sync_language()
         return page_html(get_store(self).effective()["ui_language"])
 
     def on_message(self, data):
@@ -349,6 +363,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         svc = service(self.post_message)
         try:
             if kind == "hello":
+                sync_language()
                 svc.set_target(_target())   # locates the printer and starts its connection on their own threads
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
@@ -367,6 +382,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
+                sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
                 svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
@@ -394,6 +410,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
 
     def on_load(self):
         _storage()
+        sync_language()
         _use("page")
         try:
             start_link()
@@ -472,7 +489,7 @@ class KobraAgent(pa.PrinterAgentBase):
         return AGENT_NAME
 
     def get_agent_info(self):
-        return pa.AgentInfo(AGENT_ID, AGENT_NAME, VERSION, "Anycubic Kobra X over the LAN (MQTT), by kobracontrol")
+        return pa.AgentInfo(AGENT_ID, AGENT_NAME, VERSION, tr("Anycubic Kobra X over the LAN (MQTT), by kobracontrol"))
 
     # host callbacks: stored, may be None ------------------------------------------------------------
     def _store(self, key, fn):
@@ -544,6 +561,7 @@ class KobraAgent(pa.PrinterAgentBase):
         host = host_of(getattr(params, "host", ""))
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
+        sync_language()
         previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._filament_ids = self._generic_ids()
@@ -705,7 +723,7 @@ class KobraAgent(pa.PrinterAgentBase):
             pct = int(sent * 100 / total) if total else 100
             if update_fn and pct != last[0]:
                 last[0] = pct
-                update_fn(STAGE_UPLOAD, pct, "Uploading G-code...")
+                update_fn(STAGE_UPLOAD, pct, tr("Uploading G-code..."))
         return progress
 
     @staticmethod
@@ -716,6 +734,7 @@ class KobraAgent(pa.PrinterAgentBase):
         return code
 
     def start_send_gcode_to_sdcard(self, params, update_fn, cancel_fn, wait_fn):
+        sync_language()
         host = self._job_host(params)
         if getattr(params, "project_name", "") == "verify_job":   # PrintJob.cpp: a connectivity check only
             try:
@@ -725,7 +744,7 @@ class KobraAgent(pa.PrinterAgentBase):
                 log("verify: %s" % e)
                 return ERR_CONNECT
         if update_fn:
-            update_fn(STAGE_CREATE, 0, "Preparing...")
+            update_fn(STAGE_CREATE, 0, tr("Preparing..."))
         try:
             service().send_file(host, params.filename, clean(params.project_name) or clean(params.task_name),
                                 getattr(params, "plate_index", 1), self._progress(update_fn), cancel_fn)
@@ -734,12 +753,13 @@ class KobraAgent(pa.PrinterAgentBase):
         except Exception as e:
             return self._fail(update_fn, ERR_SG_UPLOAD, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, "File uploaded")
+            update_fn(STAGE_FINISHED, 100, tr("File uploaded"))
         return OK
 
     def start_local_print(self, params, update_fn, cancel_fn):
+        sync_language()
         if update_fn:
-            update_fn(STAGE_CREATE, 0, "Preparing...")
+            update_fn(STAGE_CREATE, 0, tr("Preparing..."))
         if cancel_fn and cancel_fn():
             return ERR_CANCELED
         host = self._job_host(params)
@@ -752,7 +772,7 @@ class KobraAgent(pa.PrinterAgentBase):
             stage[0] = name
             if update_fn:
                 update_fn(STAGE_UPLOAD if name == "upload" else STAGE_SENDING, 0,
-                          "Uploading G-code..." if name == "upload" else "Starting print...")
+                          tr("Uploading G-code...") if name == "upload" else tr("Starting print..."))
         try:
             service().print_job(host, path, getattr(params, "plate_index", 1),
                                 clean(params.project_name) or clean(params.task_name), trays, filaments, task,
@@ -763,7 +783,7 @@ class KobraAgent(pa.PrinterAgentBase):
             code = {"upload": ERR_LP_UPLOAD, "start": ERR_LP_PUBLISH}.get(stage[0], ERR_LP_PUBLISH)
             return self._fail(update_fn, code, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, "Print started")
+            update_fn(STAGE_FINISHED, 100, tr("Print started"))
         return OK
 
     def start_local_print_with_record(self, params, update_fn, cancel_fn, wait_fn):
@@ -773,13 +793,14 @@ class KobraAgent(pa.PrinterAgentBase):
         return bambu.UNSUPPORTED   # cloud printing: the Kobra X is driven over the LAN only
 
     def start_sdcard_print(self, params, update_fn, cancel_fn):
+        sync_language()
         name = os.path.basename(clean(getattr(params, "dst_file", "")) or clean(params.filename))
         try:
             service().call(self._job_host(params), "file_print", name=name, **job_task(params, get_store().effective()))
         except Exception as e:
             return self._fail(update_fn, ERR_LP_PUBLISH, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, "Print started")
+            update_fn(STAGE_FINISHED, 100, tr("Print started"))
         return OK
 
     # no binding or certificates on this printer -------------------------------------------------------------
@@ -834,6 +855,7 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
     def execute(self):
         # Scripts run on a worker thread of their own (OrcaSlicer docs/HLSD/python-plugin-async-bridge.md, "Per-
         # invocation worker and loop"), never on the UI thread; still, the whole check is bounded to 20 s.
+        sync_language()
         try:
             svc = service()
             if svc.target is None:
@@ -842,12 +864,12 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
             host = svc.wait_located(CHECK_SECONDS).host
             conn = svc.ready(host, timeout=max(1.0, deadline - time.monotonic()))
         except Exception as e:
-            return orca.ExecutionResult.skipped("Couldn't reach the Kobra X: %s" % e)
+            return orca.ExecutionResult.skipped(tr("Couldn't reach the Kobra X: %s") % e)
         view = conn.view()
         data, _ = status_data(view)
         loaded = ", ".join("S%d %s" % (s["global_index"] + 1, s["type"] or "?") for s in data["slots"] if s["status"] == 5)
-        return orca.ExecutionResult.success("%s at %s (firmware %s), %s. %s" % (
-            view["printer_name"] or MODEL, host, view["firmware"] or "?", view["state"], loaded or "No filament loaded."))
+        return orca.ExecutionResult.success(tr("%s at %s (firmware %s), %s. %s") % (
+            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded.")))
 
 
 class FindCertificate(orca.script.ScriptPluginCapabilityBase):
@@ -855,17 +877,18 @@ class FindCertificate(orca.script.ScriptPluginCapabilityBase):
         return "Find Anycubic certificate"
 
     def execute(self):
+        sync_language()
         folder = cert_dir()
         if not folder:
-            return orca.ExecutionResult.skipped("No storage folder to keep the certificate in.")
+            return orca.ExecutionResult.skipped(tr("No storage folder to keep the certificate in."))
         try:
             found = find_and_save_certificate(folder)
         except (certs.CertError, OSError) as e:
-            return orca.ExecutionResult.skipped("No Anycubic Slicer certificate: %s" % e)
+            return orca.ExecutionResult.skipped(tr("No Anycubic Slicer certificate: %s") % e)
         if _service is not None:
             for conn in list(_service.connections.values()):
                 conn.retry()
-        return orca.ExecutionResult.success("Anycubic Slicer certificate saved (found in %s)." % found.source)
+        return orca.ExecutionResult.success(tr("Anycubic Slicer certificate saved (found in %s).") % found.source)
 
 
 @orca.plugin
