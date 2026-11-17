@@ -713,6 +713,10 @@ test('camera: a stream the page cannot decode is handed back to the plugin (vide
   await post({type: 'video', codec: 'avc1.ffffff', init: cam.init});
   await until(() => last('video_error'), 'an unplayable codec reports video_error');
   assert(q('.cam-empty'), 'nothing shown as playing');
+  await post({type: 'video', codec: cam.codec, init: cam.init});   // the next stream (or a retry) plays again
+  for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && !q('.cam-empty'), 'recovers on a new init');
 `);
 
 test('camera: delta frames before a keyframe are skipped, and a long burst still plays', `
@@ -742,9 +746,7 @@ test('requirements: no ffmpeg keeps the built-in player; a page without it turns
   await post({type: 'status', data: VIEW()});
   await post(REQS());
   assert(q('.cam-view') && last('lease').mse === true, 'the built-in player needs no ffmpeg');
-  MediaSource.isTypeSupported = () => false;   // a webview without H.264 (possible on Linux)
-  if (window.ManagedMediaSource) ManagedMediaSource.isTypeSupported = () => false;
-  await post({...REQS(), checking: true}); await post(REQS());
+  await post({type: 'status', data: VIEW({camera_url: 'rtsp://192.168.1.50/live'})});   // only ffmpeg plays RTSP
   assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
   assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
   assert(byTest('camera').disabled, 'Turn on is off');
@@ -753,6 +755,7 @@ test('requirements: no ffmpeg keeps the built-in player; a page without it turns
   await post(REQS());
   await click(byTest('cam-req'));
   assert(q('[data-need="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  assert(text(q('[data-need="ffmpeg"]')).includes('Not found') && !text(q('[data-need="ffmpeg"]')).includes('optional'), 'needed for RTSP, so not optional: ' + text(q('[data-need="ffmpeg"]')));
   await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
   await tab('dash');
   await until(() => q('.cam-view'), 'found again: the camera is back on');

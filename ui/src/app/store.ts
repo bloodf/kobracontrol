@@ -67,8 +67,9 @@ export const tracker = new Tracker(
 export const run = (o: RunOptions) => tracker.run(o);
 export const requirement = (id: RequirementId) => s.requirements.find(r => r.id === id);
 /** ffmpeg was looked for and is not there: the camera is off (the plugin does not start it either). */
-// ffmpeg only matters when this page can't play the camera itself (else it is an optional extra).
-export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing' && !playable());
+// ffmpeg only matters when this page can't play the camera itself: no H.264 here, or an RTSP stream.
+export const pagePlays = computed(() => playable() && !String(s.status?.camera_url ?? '').toLowerCase().startsWith('rtsp://'));
+export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing' && !pagePlays.value);
 /** Anycubic Slicer Next is not in its usual folder: Find certificate searches only a path typed in. */
 export const noSlicer = computed(() => requirement('anycubic_slicer')?.state === 'missing');
 /** Settings > Requirements > Check again: the plugin looks for ffmpeg and Anycubic Slicer Next again. */
