@@ -833,6 +833,16 @@ class CameraPrinterGone(Base):
         self.assertEqual(errors, [])
 
 
+class CameraTurnedOn(Base):
+    """camera_enabled is only whether the page turns the camera on by itself (settings default False). Pressing
+    Turn on must start the reader anyway, else the page waits on "Starting the camera…" forever."""
+
+    def test_turn_on_starts_the_camera_with_the_default_off(self):
+        self.svc.target.camera_enabled = False
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+
+
 class CameraHost(Base):
     """M2: a stream URL that does not point at the printer itself never reaches ffmpeg."""
 
