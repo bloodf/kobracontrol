@@ -43,6 +43,7 @@ else {
   __t.handler({type: 'reply', id: hello.id, result: {address: '192.168.1.50', printer: 'Bench Kobra', generation: 1}});
   __t.handler({type: 'status', data: VIEW});
 }
+if (SCN === 'needs') CONFIG.ffmpeg = '';   // one requirement missing, with how to install it
 __t.handler(CONFIG);
 await settle();
 const ans = (cmd, r) => { const m = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === cmd); if (m) __t.handler({type: 'reply', id: m.id, result: r}); };
@@ -61,7 +62,7 @@ if (SCN === 'usage') { await sleep(50); document.querySelector('[data-test="usag
 if (SCENE === 'store-status') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'frame', image: FRAME}); }
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
 // videos, videos-empty, videos-error, videos-delete: the Files tab's Time-lapses section in each of its states.
-const TAB = SCN.startsWith('videos') ? 'files' : SCN;
+const TAB = SCN.startsWith('videos') ? 'files' : SCN === 'needs' ? 'settings' : SCN;
 if (TAB === 'settings' || TAB === 'files') { document.querySelector('[data-tab="' + TAB + '"]').click(); await sleep(300); }
 if (TAB === 'files') {
   ans('files', {files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {name: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400},
@@ -82,6 +83,10 @@ if (SCN === 'files') {
       {paint_index: 1, material: 'PETG', colour: '#2850a8', grams: 18.8, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}]});
 }
 if (SCN === 'assist') { const sw = document.querySelector('#assist-remain'); sw.scrollIntoView({block: 'center'}); sw.click(); await until(() => document.querySelector('.p-dialog')); }
+// toasts: what commands answered, bottom-left (an info, a success and an error that stays); needs: Settings' requirements.
+if (SCN === 'toasts') { __t.handler({type: 'notice', text: 'Kobra Control found the printer at 192.168.1.50.'}); __t.handler({type: 'reply', id: 987654, error: 'Spoolman timed out'});
+  document.querySelector('[data-test="pause"]')?.click(); await sleep(50); }
+if (SCN === 'needs') { document.querySelector('.oui-settings-link[data-section="needs-h"]').click(); await sleep(200); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
 // once the page has settled: the Filament panel just under the app bar
@@ -108,6 +113,7 @@ const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   ['videos-error', 'dark', 'en', 1280, 900], ['videos-delete', 'dark', 'pt_BR', 1280, 900],
   ['idle', 'light', 'en', 1280, 2200], ['idle', 'dark', 'en', 1900, 1400], ['idle', 'dark', 'pt_BR', 1280, 2200], ['idle', 'light', 'en', 720, 3600],
   ['idle', 'dark', 'en', 400, 4400], ['dash', 'dark', 'en', 1280, 2200], ['assist', 'dark', 'en', 1280, 900], ['assist', 'light', 'pt_BR', 1280, 900],
+  ['toasts', 'light', 'en', 1280, 720], ['toasts', 'dark', 'en', 1280, 720], ['toasts', 'dark', 'en', 380, 900], ['needs', 'light', 'en', 1280, 720], ['needs', 'dark', 'pt_BR', 720, 1000],
   ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'pt_BR', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ]);
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));

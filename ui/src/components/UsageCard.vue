@@ -10,7 +10,8 @@ import type { UsageEntry } from '../app/types';
 
 // Prints whose filament use still has to be booked in Spoolman, or failed to book. Failed ones stay listed with their
 // identity until the user marks them checked; marking is local and audited by the plugin (usage_ack); nothing is booked
-// again from here. One banner says it; Review opens the list with "I checked it in Spoolman".
+// again from here. One banner says it; Review opens the list with "I checked it in Spoolman". Closing a banner holds
+// for the entries it names: a new unconfirmed or waiting print brings it back.
 const u = computed(() => s.usage);
 const failed = computed(() => u.value?.unconfirmed ?? []);
 const waiting = computed(() => u.value?.pending ?? []);
@@ -44,12 +45,13 @@ async function ack(e: UsageEntry) {
 <template>
   <div v-if="show" class="oui-stack" data-test="usage-card">
     <div role="alert" class="kc-live uc-alerts">
-      <OuiBanner v-if="s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" />
-      <OuiBanner v-if="u?.save_error" tone="error" :title="t('usage.saveError', { error: u.save_error })" />
-      <OuiBanner v-if="u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u.restore_notice })" />
+      <OuiBanner v-if="s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" dismissible :dismiss-key="`usage-load:${s.usageError}`" :close-label="t('common.close')" />
+      <OuiBanner v-if="u?.save_error" tone="error" :title="t('usage.saveError', { error: u.save_error })" dismissible :dismiss-key="`usage-save:${u.save_error}`" :close-label="t('common.close')" />
+      <OuiBanner v-if="u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u.restore_notice })" dismissible :dismiss-key="`usage-restore:${u.restore_notice}`" :close-label="t('common.close')" />
     </div>
 
-    <OuiBanner v-if="failed.length" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner">
+    <OuiBanner v-if="failed.length" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner"
+               dismissible :dismiss-key="`unconfirmed:${failed.map(e => e.id).join(',')}`" :close-label="t('common.close')">
       {{ first }}
       <template #actions>
         <Button size="small" severity="secondary" :label="open ? t('usage.hide') : t('usage.review')" :aria-expanded="open" aria-controls="usage-list"
@@ -57,7 +59,8 @@ async function ack(e: UsageEntry) {
       </template>
     </OuiBanner>
 
-    <OuiBanner v-if="waiting.length" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending">
+    <OuiBanner v-if="waiting.length" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending"
+               dismissible :dismiss-key="`usage-pending:${waiting.map(w => w.printer + '|' + w.file).join(',')}`" :close-label="t('common.close')">
       <template v-for="(w, i) in waiting" :key="w.printer + w.file"><template v-if="i"> · </template><strong>{{ fileName(w.file) }}</strong> ({{ grams(w.grams) }})</template>
     </OuiBanner>
 

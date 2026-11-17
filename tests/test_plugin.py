@@ -391,6 +391,17 @@ class Page(Base):
         self.assertEqual(set(config["located"]), {"address", "source", "preset_host", "preset_agent", "spoolman_url",
                                                   "spoolman_source"})
 
+    def test_check_sends_the_config_again_with_ffmpeg(self):
+        """Settings' "Check again" re-reads what the plugin looks for on this computer, ffmpeg included."""
+        page = self.page()
+        with mock.patch.object(plugin.camera, "find_ffmpeg", return_value="/opt/bin/ffmpeg") as find:
+            page.on_message({"type": "check", "id": 7})
+        config = next(m for m in page.posted if m["type"] == "config")
+        self.assertEqual(config["ffmpeg"], "/opt/bin/ffmpeg")
+        self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})
+        find.assert_called_once_with(plugin.get_store().effective()["ffmpeg_path"])
+        self.assertEqual(page.posted[-1], {"type": "reply", "id": 7, "result": {"checked": True}})
+
     def test_allow_hosts_is_answered_on_the_calling_thread(self):
         page = self.page()
         page.on_message({"type": "allow_hosts", "id": 9, "hosts": ["8.8.8.8"]})   # not a pending LAN printer

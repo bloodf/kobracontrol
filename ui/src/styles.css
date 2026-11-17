@@ -17,6 +17,8 @@
 .kc-top .oui-banner { margin-top: var(--oui-s3); }
 .kc-live { display: grid; gap: var(--oui-s2); min-width: 0; }
 .kc-top .kc-live { gap: 0; }
+/* Settings keeps its save bar along the bottom edge: the toasts sit above it. */
+.kc-toasts-raised { --oui-toast-bottom: 76px; }
 
 /* Dashboard: machine on the left, filament in the middle, stock on its own column when wide (DESIGN.md, Layout). */
 .kc-grid { display: grid; gap: var(--oui-s3); grid-template-columns: minmax(0, 1fr); align-items: start; }

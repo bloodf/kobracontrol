@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiSettings, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
-import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman } from '../../shared/src/icons';
+import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirement, OuiSettings, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
+import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, wrench } from '../../shared/src/icons';
 import { UI_VERSION } from '../../shared/src';
 import CertFinder from './CertFinder.vue';
-import SpoolerHint from './SpoolerHint.vue';
-import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent } from '../app/store';
+import * as bridge from '../core/bridge';
+import { message } from '../core/tracker';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, toast } from '../app/store';
 import { config, form, changed, dirty, saving, save, discard } from '../app/settings';
 import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
 import { LOCALES } from '../core/i18n-core';
@@ -24,6 +25,29 @@ const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.f
 const inUse = computed(() => (s.info?.address ? t('conn.inUse', { address: s.info.address, how: t(`conn.source.${s.info.source || 'override'}`) }) : ''));
 const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form.spoolman ? t('conn.smFromSpooler', { url: s.located.spoolman_url }) : ''));
 const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded')));
+// What Kobra Control needs on this computer. "Check again" asks the plugin to look for the certificate, ffmpeg and
+// Spooler now (it answers with a fresh config); for Spoolman it loads the spools again.
+type Need = 'found' | 'missing' | 'checking' | 'unknown';
+const looking = ref(false);
+async function checkAgain() {
+  if (looking.value) return;
+  looking.value = true;
+  try { await Promise.race([bridge.request({ type: 'check' }), new Promise(r => setTimeout(r, 10000))]); }
+  catch (e) { toast('error', t('msg.plugin', { error: message(e) })); }
+  finally { looking.value = false; }
+}
+const NEED_LABEL = { found: 'req.found', missing: 'req.missing', checking: 'req.checking', unknown: 'req.unknown' } as const;
+const needLabel = (st: Need) => t(NEED_LABEL[st]);
+const certNeed = computed<Need>(() => (looking.value ? 'checking' : !cert.value ? 'unknown' : cert.value.found ? 'found' : 'missing'));
+const ffmpeg = computed(() => config.value?.ffmpeg);
+const ffmpegNeed = computed<Need>(() => (looking.value ? 'checking' : ffmpeg.value == null ? 'unknown' : ffmpeg.value ? 'found' : 'missing'));
+const smNeed = computed<Need>(() => (tracker.isBusy('spools') ? 'checking' : s.spoolsError ? 'missing' : s.spoolsLoaded ? 'found' : 'unknown'));
+const FFMPEG_URL = 'https://ffmpeg.org/download.html', SPOOLMAN_URL = 'https://github.com/Donkie/Spoolman';
+const smBusy = computed(() => tracker.isBusy('spools') || !!controlsOff.value);
+const smWhere = computed(() => s.located?.spoolman_url || config.value?.settings.spoolman_url || '');
+const smDetail = computed(() => (s.spoolsError || [smWhere.value, s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : ''].filter(Boolean).join(' · ')));
+const spooler = computed(() => config.value?.spooler ?? null);
+const spoolerNeed = computed<Need>(() => (looking.value ? 'checking' : !spooler.value ? 'unknown' : spooler.value.installed ? 'found' : 'missing'));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
   ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);
@@ -33,6 +57,7 @@ const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'print-h', label: t('printdef.title'), icon: printer },
   { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' ? { state: 'warn' as const } : {}) },
   { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
+  { id: 'needs-h', label: t('req.tab'), icon: wrench, ...(certNeed.value === 'missing' || ffmpegNeed.value === 'missing' ? { state: 'warn' as const } : {}) },
   { id: 'lang-h', label: t('lang.title'), icon: languages },
   { id: 'about-h', label: t('about.title'), icon: info },
 ]);
@@ -113,7 +138,23 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
             <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!controlsOff" :aria-describedby="controlsOff ? 'kc-why' : undefined"
                     :loading="tracker.isBusy('spools')" @click="loadSpools(false)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
           </OuiFormRow>
-          <div class="kc-pad"><SpoolerHint where="settings" /></div>
+        </OuiFormSection>
+
+        <OuiFormSection id="needs-h" :icon="wrench" tone="sky" :title="t('req.title')" :description="t('req.help')">
+          <div class="sv-needs" data-test="requirements">
+            <OuiRequirement :name="t('req.cert.name')" :why="t('req.cert.why')" :status="certNeed" :status-label="needLabel(certNeed)" :detail="cert?.found ? certText : undefined"
+                            :install-text="t('req.cert.install')" :check-label="t('req.check')" :checking="looking" data-need="cert" @check="checkAgain" />
+            <OuiRequirement name="ffmpeg" :why="t('req.ffmpeg.why')" :status="ffmpegNeed" :status-label="needLabel(ffmpegNeed)" :detail="ffmpeg || undefined"
+                            :install-text="t('req.ffmpeg.install')" :install-url="FFMPEG_URL" install-label="ffmpeg.org"
+                            :check-label="t('req.check')" :checking="looking" data-need="ffmpeg" @check="checkAgain" />
+            <OuiRequirement name="Spoolman" :why="t('req.sm.why')" :status="smNeed" :status-label="needLabel(smNeed)" :detail="smDetail || undefined"
+                            :install-text="t('req.sm.install')" :install-url="SPOOLMAN_URL" install-label="Spoolman"
+                            :check-label="t('req.check')" :checking="smBusy" data-need="spoolman" @check="loadSpools(false)" />
+            <OuiRequirement :name="t('spooler.title')" :why="t('req.spooler.why')" :status="spoolerNeed" :status-label="needLabel(spoolerNeed)"
+                            :detail="spooler?.installed ? t('spooler.installed') : undefined" :install-text="t('spooler.suggest')" :install-url="spooler?.url"
+                            :check-label="t('req.check')" :checking="looking" data-need="spooler" @check="checkAgain" />
+          </div>
+          <p v-if="spooler?.installed && !stockVisible" class="oui-meta kc-pad" data-test="spooler-no-stock">{{ t('spooler.noStock') }}</p>
         </OuiFormSection>
 
         <OuiFormSection id="lang-h" :icon="languages" tone="neutral" :title="t('lang.title')">
@@ -147,5 +188,6 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
 .sv-inuse { margin-inline-end: auto; }
 .sv-notes { padding: 0 var(--oui-s4) var(--oui-s3); }
 .sv-fp { overflow-wrap: anywhere; }
+.sv-needs > * + * { border-top: 1px solid var(--oui-border); }
 .sv-adv { padding: var(--oui-s3) var(--oui-s4); border-top: 1px solid var(--oui-border); }
 </style>
