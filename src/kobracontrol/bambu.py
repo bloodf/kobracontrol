@@ -35,7 +35,7 @@ CHAMBER_LIGHT = "chamber_light"
 # Material -> OrcaFilamentLibrary family, from MRA:794-841 map_filament_type_to_generic_id. The id itself is
 # looked up from the system preset "Generic <family> @System" (filament_id), never hard-coded (MRA:847-851).
 FILAMENT_FAMILIES = {
-    "PLA": "PLA", "PLA-CF": "PLA-CF", "PLA SILK": "PLA Silk", "PLA-SILK": "PLA Silk",
+    "PLA": "PLA", "PLA-CF": "PLA-CF", "PLA SILK": "PLA Silk", "PLA-SILK": "PLA Silk", "PLA MATTE": "PLA Matte",
     "PLA HIGH SPEED": "PLA High Speed", "PLA-HS": "PLA High Speed", "PLA HS": "PLA High Speed",
     "ABS": "ABS", "ASA": "ASA", "PETG": "PETG", "PET": "PETG", "PCTG": "PCTG",
     "PA": "PA", "NYLON": "PA", "PA-CF": "PA-CF", "PPA": "PPA-CF", "PPA-CF": "PPA-CF", "PPA-GF": "PPA-GF",
@@ -56,8 +56,13 @@ PRINT_STAGE = {"printing": 1, "paused": 2, "finished": 3, "error": 4}   # MRA:21
 
 
 def generic_preset_name(material):
-    """'Generic <family> @System' for a slot's material, or None when the family is unknown."""
-    family = FILAMENT_FAMILIES.get(" ".join(str(material or "").split()).upper())
+    """'Generic <family> @System' for a slot's material, or None when the family is unknown. A material not
+    in the table takes the longest family named in it as a whole word ("PLA+" and "PETG HF" -> PLA, PETG), as
+    OrcaSlicer's own similarity fallback does: an empty tray id makes its AMS sync pick "Generic PLA"."""
+    text = " ".join(str(material or "").split()).upper()
+    family = FILAMENT_FAMILIES.get(text) or next(
+        (FILAMENT_FAMILIES[k] for k in sorted(FILAMENT_FAMILIES, key=len, reverse=True)
+         if re.search(r"(?<![A-Z0-9])%s(?![A-Z0-9])" % re.escape(k), text)), None)
     return "Generic %s @System" % family if family else None
 
 
@@ -66,9 +71,11 @@ def _hex(color):
     return "%02X%02X%02XFF" % (r, g, b)   # RRGGBBAA, as MRA normalize_color_value
 
 
-def ams_block(slots, filament_id=None):
+def ams_block(slots, filament_id=None, preferred=None):
     """The `ams` object DevFilaSystemParser::ParseV1_0 reads (MRA:608-701 build_ams_payload): one unit per
-    `box_pos` ("info" 0002 = AMS lite, as MRA), trays by slot `index`; bits as upper-case hex strings."""
+    `box_pos` ("info" 0002 = AMS lite, as MRA), trays by slot `index`; bits as upper-case hex strings.
+    tray_info_idx is what OrcaSlicer's AMS sync matches presets on (filament_id): preferred(slot) first (the
+    preset of the slot's Spoolman spool), else the Generic preset of the slot's material."""
     units, ams_bits, tray_bits, remain = {}, 0, 0, False
     for slot in sorted(slots, key=lambda s: (s["box_pos"], s["index"])):
         pos, index = slot["box_pos"], slot["index"]
@@ -81,7 +88,8 @@ def ams_block(slots, filament_id=None):
             material = slot["type"] or ""
             preset = generic_preset_name(material)
             tray.update(tray_type=material, tray_color=_hex(slot["color"]),
-                        tray_info_idx=(filament_id(preset) if filament_id and preset else None) or "")
+                        tray_info_idx=(preferred(slot) if preferred else "")
+                        or (filament_id(preset) if filament_id and preset else None) or "")
             tray["cols"], tray["ctype"] = [tray["tray_color"]], 1
             # DevFilaSystem.cpp:783-789: "remain" is the spool's percent left, -1 unknown (ACE consumables_percent)
             percent = slot.get("percent")
@@ -95,10 +103,11 @@ def ams_block(slots, filament_id=None):
             "calibrate_remain_flag": remain}   # DevFilaSystem.cpp:450: the Device tab shows "remain" only when set
 
 
-def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None):
+def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None, preferred=None):
     """{"print": {...}} for on_local_message_fn. view: State.view(); slots: ace.aggregate_slots(...)[0];
-    filament_id(preset name) -> the filament_id of that system preset, or None. `mode` is kept for callers
-    that want it in logs; trays are already numbered by box_pos (ace.tray_id)."""
+    filament_id(preset name) -> the filament_id of that system preset, or None; preferred(slot) -> a slot's
+    own filament_id or "" (ams_block). `mode` is kept for callers that want it in logs; trays are already
+    numbered by box_pos (ace.tray_id)."""
     state = view.get("state", "offline")
     stage = STAGES.get(view.get("kobra_state"), 0) if state in ("printing", "paused") else None
     storage = bool(view.get("connected"))   # the Kobra X always has its internal storage while it answers
@@ -141,7 +150,7 @@ def push_status(view, slots, mode, nozzle_max=320, bed_max=120, filament_id=None
         "spd_lvl": int(view.get("speed_mode")) if view.get("speed_mode") in (1, 2, 3) else 2,  # DevPrintOptions
         "lights_report": [{"node": CHAMBER_LIGHT, "mode": "on" if view.get("light_on") else "off"}],  # DM:3783
         "ipcam": {"ipcam_dev": "1" if view.get("camera_url") else "0"},                             # DM:3923
-        "ams": ams_block(slots, filament_id),
+        "ams": ams_block(slots, filament_id, preferred),
     }
     return {"print": p, "t_utc": int(time.time() * 1000)}
 

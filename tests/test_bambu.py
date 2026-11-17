@@ -122,6 +122,22 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(ams["ams_exist_bits"], "3")
         self.assertEqual(ams["tray_exist_bits"], "1B")       # trays 0, 1, 3 and 4 (ACE 1 slot 0)
 
+    def test_tray_ids_prefer_the_linked_spools_preset_then_generic_by_material(self):
+        ids = {"Generic PLA @System": "OFL_PLA", "Generic PETG @System": "OFL_PETG", "Generic ABS @System": "OFL_ABS"}
+        own = {0: "SPOOLER_PLA"}   # slot 0 is linked to a spool whose Spooler preset carries this id
+        p = self.push(boxes=[ACE0, ACE1], filament_id=ids.get, preferred=lambda s: own.get(s["global_index"], ""))
+        trays = [t for unit in p["ams"]["ams"] for t in unit["tray"]]
+        self.assertEqual([t["tray_info_idx"] for t in trays], ["SPOOLER_PLA", "OFL_PETG", "", "", "OFL_ABS"])
+
+    def test_generic_preset_by_the_real_material(self):
+        self.assertEqual(bambu.generic_preset_name("PETG"), "Generic PETG @System")
+        self.assertEqual(bambu.generic_preset_name("pla matte"), "Generic PLA Matte @System")
+        self.assertEqual(bambu.generic_preset_name("PLA+"), "Generic PLA @System")       # not in the table: by word
+        self.assertEqual(bambu.generic_preset_name("PETG HF"), "Generic PETG @System")
+        self.assertEqual(bambu.generic_preset_name("PLA-CF Matte"), "Generic PLA-CF @System")   # longest family
+        self.assertIsNone(bambu.generic_preset_name("PETGX"))
+        self.assertIsNone(bambu.generic_preset_name("WEIRD"))
+
     def test_remaining_percent(self):   # DevFilaSystem.cpp:783-789 tray "remain"; :450 calibrate_remain_flag
         box = {"id": 0, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 2, 3], "consumables_percent": 37},
                                   {"index": 1, "status": 5, "type": "PLA", "color": [1, 2, 3]}]}

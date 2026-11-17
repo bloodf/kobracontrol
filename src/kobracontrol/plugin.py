@@ -40,6 +40,7 @@ ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010,
 STAGE_CREATE, STAGE_UPLOAD, STAGE_SENDING, STAGE_FINISHED, STAGE_ERROR = 0, 1, 3, 6, 7
 CONNECT_OK = 0
 PUSH_EVERY = 0.5         # s between Device tab status pushes at most
+CATALOG_EVERY = 30.0     # s between re-reads of the filament presets and Spooler's profiles.json for tray ids
 
 _service = None
 _service_lock = threading.Lock()
@@ -246,6 +247,31 @@ def spooler_state():
     except Exception:
         has_file = False
     return {**spooler_bridge.detect(ids, meta, has_file), "url": spooler_bridge.URL}
+
+
+def filament_catalog():
+    """(Generic ids, presets, printer label) for the Device tab's tray ids; UI thread, no I/O.
+    Generic ids: {"Generic <family> @System": filament_id}. Presets: spooler_bridge.tray_filament_id meta for
+    the system and Spooler presets OrcaSlicer counts as compatible with the selected printer, the only ones its
+    AMS sync loads."""
+    bundle = orca.host.preset_bundle()
+    printer = bundle.current_printer_preset()
+    wanted = {bambu.generic_preset_name(m) for m in bambu.FILAMENT_FAMILIES}
+    collection = bundle.filaments
+    generic, presets = {}, []
+    for i in range(collection.size()):
+        preset = collection.preset(i)
+        bundle_id = getattr(preset, "bundle_id", "") or ""
+        first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
+        if preset.name in wanted and first("filament_id"):
+            generic[preset.name] = first("filament_id")
+        system = bool(getattr(preset, "is_system", False))
+        if not getattr(preset, "is_compatible", True) or not (system or bundle_id == spooler_bridge.BUNDLE_ID):
+            continue
+        presets.append({"name": preset.name, "bundle_id": bundle_id, "is_system": system,
+                        "filament_id": first("filament_id"), "vendor": first("filament_vendor"), "type": first("filament_type"),
+                        "colour": first("default_filament_colour") or first("filament_colour")})
+    return generic, presets, clean(printer.config_value("printer_model")) or printer.name
 
 
 def certificate_state():
@@ -478,6 +504,8 @@ class KobraAgent(pa.PrinterAgentBase):
         self.selected = ""
         self.dev_id, self.host, self.access_code = "", "", ""
         self._filament_ids = {}
+        self._catalog = ([], "", None)       # (presets, printer label, Spooler's profiles.json) for tray ids
+        self._catalog_at = 0.0
         self._was_connected = False
         self._dirty = threading.Event()
         self._stop = threading.Event()
@@ -564,7 +592,8 @@ class KobraAgent(pa.PrinterAgentBase):
         sync_language()
         previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
-        self._filament_ids = self._generic_ids()
+        self._catalog_at = 0.0   # the first push re-reads Spooler's profiles.json
+        self._refresh_catalog()
         self._was_connected = False
         self._stop = threading.Event()
         self._pusher = threading.Thread(target=self._push_loop, args=(self._stop,), name="kobracontrol-agent",
@@ -606,21 +635,43 @@ class KobraAgent(pa.PrinterAgentBase):
                 conn.remove_listener(self._on_change)
         return host
 
-    def _generic_ids(self):
-        """{"Generic <family> @System": filament_id} from the loaded system presets (UI thread, no I/O)."""
-        wanted = {bambu.generic_preset_name(m) for m in bambu.FILAMENT_FAMILIES}
-        out = {}
+    def _refresh_catalog(self, profiles=None):
+        """UI thread, no I/O: re-read the presets the trays' ids come from (Spooler adds its own at any time)."""
         try:
-            collection = orca.host.preset_bundle().filaments
-            for i in range(collection.size()):
-                preset = collection.preset(i)
-                if preset.name in wanted:
-                    fid = getattr(preset, "filament_id", "") or clean(preset.config_value("filament_id"))
-                    if fid:
-                        out[preset.name] = fid
+            generic, presets, label = filament_catalog()
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
-        return out
+            return
+        self._filament_ids = generic
+        self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+
+    def _bound_spools(self):
+        """{slot global_index: Spoolman spool} for this printer's slots linked to spools, as the tab last loaded them."""
+        svc = _service
+        if svc is None:
+            return {}
+        with svc.lock:
+            if not (svc.target and svc.target.host == self.host):
+                return {}
+            by_id = {s["id"]: s for s in svc.spools}
+            return {g: by_id[sid] for g, sid in svc.bindings.items() if sid in by_id}
+
+    def _preferred(self):
+        """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
+        if time.time() - self._catalog_at >= CATALOG_EVERY:   # this thread may read files, not presets
+            self._catalog_at = time.time()
+            folder = spooler_bridge.data_dir(_storage())
+            profiles = spooler_bridge.read_json(folder, spooler_bridge.PROFILES_FILE)
+            with self._lock:
+                queue = self._cb.get("queue_on_main")
+            if queue is not None:
+                queue(lambda: self._refresh_catalog(profiles or {}))
+        bound = self._bound_spools()
+        presets, label, profiles = self._catalog
+
+        def preferred(slot):
+            return spooler_bridge.tray_filament_id(bound.get(slot["global_index"]), presets, profiles, label)
+        return preferred
 
     def _on_change(self, conn):   # the connection's threads: no I/O, no host calls here
         self._dirty.set()
@@ -651,7 +702,7 @@ class KobraAgent(pa.PrinterAgentBase):
             return
         data, _ = status_data(view)
         self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX,
-                                        self._filament_ids.get))
+                                        self._filament_ids.get, self._preferred()))
 
     # commands -------------------------------------------------------------------------------------------
     def send_message(self, dev_id, json_str, qos, flag):

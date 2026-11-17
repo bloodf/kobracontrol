@@ -4,6 +4,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Fixed
+
+- OrcaSlicer's "sync from AMS" picks the right filament for each ACE slot. The Device tab reported the Generic preset's id for every loaded slot, and nothing at all for a material it didn't know ("PLA+", "PETG HF"), which OrcaSlicer turns into "Generic PLA". A slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (the spool's own preset when Spooler makes one per spool, else the filament's), else a system preset of the spool's vendor and material, else the Generic preset of the slot's real material. OrcaSlicer keeps a slot's Spooler preset when it already holds it; on a slot that holds something else it loads the system preset the Spooler preset is based on, since its sync only loads base presets.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked
