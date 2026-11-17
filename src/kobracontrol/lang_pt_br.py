@@ -153,6 +153,7 @@ TEXT = {
     'Starting print...': 'Iniciando impressão...',
     'Print started': 'Impressão iniciada',
     "Couldn't reach the Kobra X: %s": "Não foi possível falar com a Kobra X: %s",
+    "Open the Kobra Control tab to allow or choose the printer.": "Abra a aba Kobra Control para permitir ou escolher a impressora.",
     '%s at %s (firmware %s), %s. %s': '%s em %s (firmware %s), %s. %s',
     'No filament loaded.': 'Nenhum filamento carregado.',
     'No storage folder to keep the certificate in.': 'Não há pasta de armazenamento para guardar o certificado.',

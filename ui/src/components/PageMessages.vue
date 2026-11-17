@@ -2,17 +2,17 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import { OuiBanner, OuiIcon } from '../../shared/src/components';
-import { dashboard, play, refresh, settings, shieldCheck, upload, x } from '../../shared/src/icons';
+import { dashboard, refresh, settings, play, shieldCheck, upload } from '../../shared/src/icons';
 import { s, tracker, hello, link, printerName, run, statusAge, STALE_STATUS_S } from '../app/store';
 import { t, fmt } from '../core/i18n';
 
-// What the whole page has to say, once, under the app bar on every tab: why the printer's controls are off and what
-// each command answered. Controls that are off for one of these reasons point at it (#kc-why) instead of repeating it.
-// No certificate / no printer: the Dashboard shows the one task itself; the other tabs say what is missing here.
+// What the whole page has to say, once, under the app bar on every tab: why the printer's controls are off and which
+// commands are still waiting for the printer (what they answered is a toast). Controls that are off for one of these
+// reasons point at it (#kc-why) instead of repeating it. No certificate / no printer: the Dashboard shows the one task
+// itself; the other tabs say what is missing here. Every banner can be closed; its key names the condition, so it
+// stays closed while that lasts and comes back when it changes (another address, another error, another command).
 const retryIn = computed(() => (s.retryAt ? Math.max(0, Math.ceil(s.retryAt - s.now / 1000)) : 0));
-const TONE = { error: 'error', unknown: 'warn', success: 'success', info: 'info' } as const;
-const lasting = computed(() => tracker.notices.filter(n => n.kind === 'error' || n.kind === 'unknown'));
-const passing = computed(() => tracker.notices.filter(n => n.kind === 'success' || n.kind === 'info'));
+const where = computed(() => s.info?.address ?? '');
 const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools'));
 /** "Pause failed: timeout" reads as a title and its detail. */
 // An Upload and Print from OrcaSlicer (upload bridge) never starts by itself: it waits here for Start.
@@ -25,6 +25,11 @@ function cancelWaiting(): void {
   const id = waitingPrint.value?.id;
   if (id) void run({ key: 'bridge-cancel', label: t('act.bridgeCancel'), cmd: 'bridge_cancel', args: { id }, okText: t('ok.bridgeCancel') });
 }
+/** Which of the chained link banners applies (one at a time). Each banner is bound to its own case with `show`, so closing
+ * one holds while that case lasts and is forgotten when it clears: the same problem coming back later shows again. */
+const top = computed(() => (link.value === 'noCertificate' ? 'cert' : link.value === 'noTarget' ? 'target' : link.value === 'offline' ? 'offline'
+  : link.value === 'connecting' ? 'connecting' : link.value === 'connected' && !s.status?.connected ? 'noStatus'
+  : s.status && statusAge.value > STALE_STATUS_S ? 'stale' : ''));
 const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [text, ''] : [text.slice(0, i + 1), text.slice(i + 2)]; };
 </script>
 
@@ -32,19 +37,25 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
   <div class="kc-top">
     <div class="kc-live" role="status" aria-live="polite" data-test="target-banner">
 
-      <OuiBanner v-if="link === 'noCertificate' && s.tab !== 'dash'" id="kc-why" tone="warn" :title="t('fr.cert.title')">
+      <!-- The Dashboard shows these tasks itself; hidden there, not cleared, so a closed one stays closed. -->
+      <div v-show="s.tab !== 'dash'" style="display: contents">
+      <OuiBanner :show="top === 'cert'" id="kc-why" tone="warn" :title="t('fr.cert.title')"
+                 dismissible dismiss-key="no-certificate" :close-label="t('common.close')">
         {{ t('banner.cert') }}
         <template #actions><Button size="small" severity="secondary" :label="t('banner.toDashboard')" @click="s.tab = 'dash'"><template #icon><OuiIcon :icon="dashboard" :size="14" /></template></Button></template>
       </OuiBanner>
 
-      <OuiBanner v-else-if="link === 'noTarget' && s.tab !== 'dash'" id="kc-why" tone="warn" :title="t('fr.target.title')">
+      <OuiBanner :show="top === 'target'" id="kc-why" tone="warn" :title="t('fr.target.title')"
+                 dismissible dismiss-key="no-target" :close-label="t('common.close')">
         {{ t('banner.target') }}
         <template v-if="s.tab !== 'settings'" #actions>
           <Button size="small" severity="secondary" :label="t('common.openSettings')" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
         </template>
       </OuiBanner>
+      </div>
 
-      <OuiBanner v-else-if="link === 'offline'" id="kc-why" tone="error" :title="t('target.offline.title')">
+      <OuiBanner :show="top === 'offline'" id="kc-why" tone="error" :title="t('target.offline.title')"
+                 dismissible :dismiss-key="`offline:${where}:${s.offline || s.error}`" :close-label="t('common.close')">
         {{ t('target.offline.body', { printer: printerName, error: s.offline || s.error }) }}
         <span v-if="retryIn" class="oui-meta" data-test="retry-in">{{ t('target.retryIn', { n: retryIn }) }}</span>
         <template #actions>
@@ -53,11 +64,15 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
         </template>
       </OuiBanner>
 
-      <OuiBanner v-else-if="link === 'connecting'" id="kc-why" tone="neutral" :title="t('target.connecting')" />
+      <OuiBanner :show="top === 'connecting'" id="kc-why" tone="neutral" :title="t('target.connecting')"
+                 dismissible :dismiss-key="`connecting:${where}`" :close-label="t('common.close')" />
 
-      <OuiBanner v-else-if="link === 'connected' && !s.status?.connected" id="kc-why" tone="neutral" :title="t('reason.waiting') + '.'" />
+      <OuiBanner :show="top === 'noStatus'" id="kc-why" tone="neutral" :title="t('reason.waiting') + '.'"
+                 dismissible :dismiss-key="`no-status:${where}`" :close-label="t('common.close')" />
 
-      <OuiBanner v-else-if="s.status && statusAge > STALE_STATUS_S" tone="warn" :title="t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) })" />
+      <!-- Keyed on the printer, not the status time: closed, it stays closed while the status stays stale. -->
+      <OuiBanner :show="top === 'stale'" tone="warn" :title="top === 'stale' ? t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''"
+                 dismissible :dismiss-key="`stale:${where}`" :close-label="t('common.close')" />
 
       <OuiBanner v-if="waitingPrint" tone="info" :icon="upload" :title="t('bridge.pending.title')" data-test="bridge-pending">
         {{ t('bridge.pending.body', { name: waitingPrint.name }) }}
@@ -69,27 +84,18 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
         </template>
       </OuiBanner>
 
-      <!-- Not part of the chain above: a changed printer certificate is shown on every tab while it lasts. -->
-      <OuiBanner v-if="s.status?.tls?.changed_from" tone="warn" :icon="shieldCheck" :title="t('tls.changed.title')" data-test="tls-changed">
+      <!-- Not part of the chain above: a changed printer certificate is shown on every tab until closed. -->
+      <OuiBanner :show="!!s.status?.tls?.changed_from" tone="warn" :icon="shieldCheck" :title="t('tls.changed.title')" data-test="tls-changed"
+                 dismissible :dismiss-key="`tls-changed:${s.status?.tls?.fingerprint}`" :close-label="t('common.close')">
         {{ t('tls.changed.body', { printer: printerName }) }}
       </OuiBanner>
 
     </div>
 
     <section class="notices" :aria-label="t('msg.region')">
-      <!-- Errors and unknown outcomes stay until dismissed and are announced at once. -->
-      <div role="alert" class="kc-live">
-        <OuiBanner v-for="n in lasting" :key="n.id" :tone="TONE[n.kind]" :title="split(n.text)[0]">
-          {{ split(n.text)[1] }} <span class="oui-meta">{{ fmt.time(n.at / 1000) }}</span>
-          <template #actions><Button text severity="secondary" size="small" :label="t('common.dismiss')" @click="tracker.dismiss(n.id)"><template #icon><OuiIcon :icon="x" :size="14" /></template></Button></template>
-        </OuiBanner>
-      </div>
       <div role="status" aria-live="polite" class="kc-live">
-        <OuiBanner v-for="p in waiting" :key="'p-' + p.key" tone="neutral" :title="split(t('msg.waiting', { action: p.label }))[0]">{{ split(t('msg.waiting', { action: p.label }))[1] }}</OuiBanner>
-        <OuiBanner v-for="n in passing" :key="n.id" :tone="TONE[n.kind]" :title="split(n.text)[0]">
-          {{ split(n.text)[1] }}
-          <template #actions><Button text severity="secondary" size="small" :label="t('common.dismiss')" @click="tracker.dismiss(n.id)"><template #icon><OuiIcon :icon="x" :size="14" /></template></Button></template>
-        </OuiBanner>
+        <OuiBanner v-for="p in waiting" :key="'p-' + p.key" tone="neutral" :title="split(t('msg.waiting', { action: p.label }))[0]"
+                   dismissible :dismiss-key="`waiting:${p.key}:${p.startedAt}`" :close-label="t('common.close')">{{ split(t('msg.waiting', { action: p.label }))[1] }}</OuiBanner>
       </div>
     </section>
   </div>

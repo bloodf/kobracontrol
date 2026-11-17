@@ -5,7 +5,6 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 ## [Unreleased]
 
 ### Added
-
 - **Upload bridge** (opt-in, off by default): OrcaSlicer's OctoPrint host type (Upload, Upload and Print) reaches
   the Kobra X through Kobra Control on 127.0.0.1. Every request needs an API key the plugin makes (Settings, with
   Copy, New key and the OrcaSlicer steps). Upload and Print never starts by itself: the tab shows the waiting print
@@ -13,6 +12,52 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - **Purge and bed wait** add-on (opt-in, off by default): sent prints go out as a copy with a purge after each
   filament change and an `M190` bed wait before the first layer; Settings previews the lines, and docs/setup.md
   lists exactly what is inserted.
+- Polish (pl) translation. Thanks to @xtronets for asking (u1control#20).
+
+### Changed
+- Spools are drawn with the photo spool again.
+- The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.
+- Settings are tabs: one section at a time, and the save bar stays on screen at any window height.
+- Notifications appear bottom-left and each one can be closed; warnings and notices on the page can be dismissed.
+- Notifications wait while OrcaSlicer is in another tab or app; errors stay until closed. A closed warning comes back when
+  its problem clears and later returns, and a closed out-of-date warning stays closed while the status stays out of date.
+- Settings lists what the certificate, the camera (ffmpeg), Spoolman and Spooler need on this computer, whether each was found, and how to install it.
+
+- The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
+  of the Spoolman spool linked to each slot (bands for a multi-colour spool), else the colour the ACE reports, and an
+  empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
+  shows its number. Screen readers hear each slot's colour and material. Printer photo: Anycubic product image.
+
+### Fixed
+
+- OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
+- The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
+  (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
+  on by itself.
+- OrcaSlicer could fail to start, or crash, after Kobra Control was installed and a Kobra X printer preset was
+  edited: the plugin read the printer preset while OrcaSlicer was still loading its presets. It now reads only its
+  own files while loading and asks about the preset's printer address later, once OrcaSlicer is up.
+- OrcaSlicer could close by itself at start-up, or while the Device tab was open, if one of the status updates
+  Kobra Control hands to it failed. Such a failure is now written to the log and OrcaSlicer keeps running.
+
+### Added
+
+- **Settings > Requirements** lists what Kobra Control needs and can't install itself: ffmpeg (the tab's camera),
+  Anycubic Slicer Next (optional, only for Find certificate), OrcaSlicer's "Use printer agents instead of print
+  hosts" (Print, Send and the Device tab) and Spoolman (optional, spool links). Each row says whether it was found,
+  what needs it and how to install it on macOS, Windows and Linux, with a Check again button. The check runs once
+  on a thread of its own after the tab opens and again only on Check again or a Settings save.
+
+### Changed
+
+- Without ffmpeg the camera is not started at all (it used to look for ffmpeg every second while on), and if ffmpeg disappears mid-session the camera stops after one report: its button is
+  off with the reason. Without an Anycubic Slicer Next install, Find certificate searches only a path typed in.
+  Without Spoolman, refreshing and linking spools are off.
+
+### Fixed
+
+- The README and setup guide name the OrcaSlicer preference by its real label, "Use printer agents instead of
+  print hosts", and say to restart OrcaSlicer after ticking it.
 
 ## [0.7.0] - 2026-11-16
 

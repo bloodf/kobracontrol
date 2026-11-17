@@ -13,6 +13,8 @@ export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera:
   spoolman: '', spoolmanAuto: true, usage: true,
   bridge: false, bridgePort: 8765, purge: false, purgeLength: 30, purgeSpeed: 5, purgeCorner: 'front_left' as PurgeCorner });
 export const saving = ref(false);
+/** A Spoolman address is set here or comes from Spooler: linking spools to slots needs one. */
+export const spoolmanSet = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
 let cameraApplied = false;
 
 type Form = typeof form;

@@ -52,11 +52,15 @@ export interface FileDetails { name: string; thumbnail?: string | null; info?: F
  *  `empty` when nothing was recorded (the print ended before the first frame). */
 export interface VideoEntry { filename: string; name: string; created: number; duration: number; size: number; empty: boolean }
 export interface VideosResult { videos: VideoEntry[] }
+/** Something the plugin needs and cannot install itself (src/kobracontrol/requirements.py). */
+export type RequirementId = 'ffmpeg' | 'anycubic_slicer' | 'printer_agents' | 'spoolman' | 'certificate' | 'spooler';
+export interface Requirement { id: RequirementId; state: 'ok' | 'missing' | 'unknown'; details: string }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
   version: string; limits: Limits; located?: Located | null; agent_id?: string; bridge?: BridgeState;
+  /** Where the plugin found ffmpeg ('' = not found); absent from a plugin that does not look. */ ffmpeg?: string;
 }
 /** The upload bridge: on in Settings, listening, where, its API key and why it is not running. */
 export interface BridgeState { enabled: boolean; running: boolean; port: number; host: string; key: string; error: string }

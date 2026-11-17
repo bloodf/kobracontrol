@@ -4,12 +4,13 @@ import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import { OuiEmpty, OuiIcon, OuiJob, OuiPanel, OuiReadout, OuiStatus, type OuiState } from '../../shared/src/components';
 import { calendar, clock, hourglass, layers, pause as pauseIcon, play, stop as stopIcon, x } from '../../shared/src/icons';
-import PrinterKobra from './PrinterKobra.vue';
+import PrinterFigure from './PrinterFigure.vue';
 import * as bridge from '../core/bridge';
-import { s, run, tracker, controlsOff, link, printing, printerName, stale } from '../app/store';
+import { s, run, tracker, controlsOff, link, printing, printerName, stale, bindings } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
-import { finishAt, hexOf, skippable } from '../core/logic';
+import { finishAt, skippable } from '../core/logic';
+import { figureSpools } from '../core/figure';
 import { message } from '../core/tracker';
 
 // The page's hero: the print (file, percentage, times) in the plugin's colour, or the idle printer. Last known values
@@ -31,6 +32,9 @@ const detail = computed(() => {
 });
 const lastKnown = computed(() => (stale.value ? t('status.lastKnown', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''));
 const job = computed(() => printing.value || !!st.value?.filename);
+// The file name may wrap after "_", "-" or "." before it breaks inside a word (desk_organiser_plate_1.gcode).
+const jobName = computed(() => st.value?.filename || stateName.value);
+const nameParts = computed(() => jobName.value.match(/[^_.-]*[_.-]?/g)?.filter(Boolean) ?? []);
 const pct = computed(() => (typeof st.value?.progress === 'number' ? Math.max(0, Math.min(100, st.value.progress)) : null));
 const layer = computed(() => (st.value?.layer ? t('status.layer', { n: st.value.layer, total: st.value.total_layers || '?' }) : ''));
 const eta = computed(() => {
@@ -38,12 +42,8 @@ const eta = computed(() => {
   if (at == null || stale.value) return null;
   return new Date(at * 1000).toDateString() === new Date(s.now).toDateString() ? fmt.time(at) : fmt.dateTime(at);
 });
-// The drawing's four spools: the ACE's slots, or the print head's when there is no ACE.
-const colors = computed(() => {
-  const all = st.value?.slots ?? [];
-  const box = all.filter(sl => sl.box_id >= 0);
-  return (box.length ? box : all).slice(0, 4).map(sl => (sl.status === 5 ? hexOf(sl.color) || null : null));
-});
+// The drawing's four spools: the Spoolman spool bound to each slot (listed by Spoolman or by the stock view), else the ACE.
+const spools = computed(() => figureSpools(st.value?.slots ?? [], [...s.spools, ...(s.stock?.stock.rows ?? [])], bindings.value, st.value?.loaded_slot ?? -1));
 const model = computed(() => [st.value?.model, st.value?.firmware ? t('status.firmware', { version: st.value.firmware }) : ''].filter(Boolean).join(' · '));
 
 // ---------------------------------------------------------------- print controls
@@ -108,11 +108,12 @@ async function skip() {
   <OuiPanel flush :aria-label="t('status.title')" data-test="job-card">
     <OuiEmpty v-if="!st" compact :state="link === 'offline' ? 'offline' : 'loading'" :title="t('status.noStatus')" />
 
-    <OuiJob v-else-if="job" hero :stale="stale" :name="st.filename || stateName" :progress="pct" :progress-label="t('status.progress')" :detail="layer">
-      <template #thumb><PrinterKobra :colors="colors" :progress="pct" :size="80" :stale="stale" /></template>
+    <OuiJob v-else-if="job" class="kc-hero" hero :stale="stale" :name="jobName" :progress="pct" :progress-label="t('status.progress')" :detail="layer">
+      <template #thumb><PrinterFigure :spools="spools" :state="state" :stale="stale" /></template>
       <template #status>
         <span class="kc-state"><OuiStatus :state="chip" data-test="state">{{ stateName }}</OuiStatus>
           <span v-if="detail || lastKnown" class="kc-state-detail" data-test="state-detail">{{ detail || lastKnown }}</span></span>
+        <p class="kc-job-name" :title="jobName" data-test="job-name"><template v-for="(part, i) in nameParts" :key="i"><wbr v-if="i" />{{ part }}</template></p>
       </template>
       <template v-if="printing">
         <OuiReadout :icon="clock" :label="t('status.elapsed')" :value="fmt.duration(st.elapsed_s)" size="sm" :stale="stale" />
@@ -122,7 +123,7 @@ async function skip() {
     </OuiJob>
 
     <div v-else class="oui-hero kc-idle" :class="{ 'oui-on-band': !stale }" :data-tone="stale ? 'neutral' : undefined">
-      <PrinterKobra :colors="colors" :size="80" :stale="stale" />
+      <div class="kc-figure"><PrinterFigure :spools="spools" :state="state" :stale="stale" /></div>
       <div class="kc-idle-id">
         <span class="kc-state"><OuiStatus :state="chip" data-test="state">{{ stateName }}</OuiStatus>
           <span v-if="detail || lastKnown" class="kc-state-detail" data-test="state-detail">{{ detail || lastKnown }}</span></span>
@@ -172,11 +173,34 @@ async function skip() {
 <style>
 .kc-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s1) var(--oui-s2); min-width: 0; }
 .kc-state-detail { font-size: var(--oui-text-sm); font-weight: 600; }
+/* The hero's file name, drawn here so it can wrap at _ - . (OuiJob's own name line is hidden); two lines at most. */
+.kc-hero.oui-job[data-hero] .oui-job-id > .oui-job-name { display: none; }
+.kc-job-name { margin-top: 4px; font-size: var(--oui-text-lg); font-weight: 700; line-height: 1.3; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .kc-idle { display: flex; align-items: center; gap: var(--oui-s3); border-radius: var(--oui-radius-lg) var(--oui-radius-lg) 0 0; }
 .kc-idle-id { display: grid; gap: 2px; min-width: 0; }
 .kc-idle-id > .kc-state { margin-bottom: 4px; }
 .kc-idle-name { font-size: var(--oui-text-lg); font-weight: 700; line-height: 1.3; }
 .kc-idle-detail { font-size: var(--oui-text-sm); }
+/* Wide: the printer photo takes about 40 % of the card beside the whole job block, no taller than that block. */
+@container oui-page (min-width: 560px) {
+  .kc-hero .oui-job-block { grid-template-columns: 40% minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto; column-gap: var(--oui-s4); }
+  .kc-hero .oui-job-head { display: contents; }
+  .kc-hero .oui-job-thumb { grid-column: 1; grid-row: 1 / span 3; display: flex; justify-content: center; align-self: center; }
+  .kc-hero .oui-job-id { grid-column: 2; grid-row: 1; align-self: end; }
+  .kc-hero .oui-job-figure { grid-column: 3; grid-row: 1; align-self: end; }
+  .kc-hero .oui-job-bar { grid-column: 2 / 4; grid-row: 2; }
+  .kc-hero .oui-job-stats { grid-column: 2 / 4; grid-row: 3; }
+  .kc-hero .kx { height: 296px; max-width: 100%; }
+  .kc-figure { flex: 0 0 40%; display: flex; justify-content: center; }
+  .kc-figure .kx { height: 272px; max-width: 100%; }
+}
+/* Narrow (the dock): the printer takes its own row above the name. */
+@container oui-page (max-width: 559px) {
+  .kc-hero .oui-job-head, .kc-idle { flex-wrap: wrap; }
+  .kc-hero .oui-job-thumb, .kc-figure { flex-basis: 100%; display: flex; justify-content: center; }
+  .kc-hero .kx, .kc-figure .kx { height: 200px; }
+}
 .kc-job-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s2); padding: var(--oui-s3) var(--oui-s4); }
 .kc-job-why { flex-basis: 100%; }
 .kc-skip { display: grid; gap: var(--oui-s2); padding: var(--oui-s3) var(--oui-s4); border-top: 1px solid var(--oui-border); }
