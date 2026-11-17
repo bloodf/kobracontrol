@@ -1,7 +1,6 @@
 # Contributing
 
-Thanks for helping. Bug reports, logs and pull requests are all welcome. The plugin is in
-development.
+Thanks for helping. Bug reports, logs and pull requests are all welcome. The plugin is in development.
 
 ## Reporting a problem
 
@@ -16,8 +15,7 @@ Leave out the printer's MQTT credentials, the client certificate and anything el
 
 ## Set up
 
-You need Python 3.12 or newer. The plugin uses only the standard library, so there is nothing to
-install.
+You need Python 3.12 or newer. The plugin uses only the standard library, so there is nothing to install.
 
 ```sh
 git clone https://github.com/bloodf/kobracontrol
@@ -27,12 +25,9 @@ python3 scripts/build.py                        # writes dist/kobracontrol_any.w
 python3 -m unittest discover -s tests
 ```
 
-Page tests need Node and Chrome or Chromium (`CHROME=...`). Run headless Chrome with
-`--use-mock-keychain --password-store=basic`.
+Page tests need Node and Chrome or Chromium (`CHROME=...`). Run headless Chrome with `--use-mock-keychain --password-store=basic`.
 
-To try a build in OrcaSlicer: **File > Plugins > Install local plugin**, pick
-`dist/kobracontrol_any.whl`, then **Activate**. Python errors and `print()` output go to
-`<OrcaSlicer data folder>/log/python_*.log`.
+To try a build in OrcaSlicer: **File > Plugins > Install local plugin**, pick `dist/kobracontrol_any.whl`, then **Activate**. Python errors and `print()` output go to `<OrcaSlicer data folder>/log/python_*.log`.
 
 ## Layout
 
@@ -52,37 +47,23 @@ docs/                  reference documentation (setup, architecture, protocol, r
 - **Only `plugin.py` imports `orca`.** Keep everything else testable without OrcaSlicer.
 - **No printer traffic on OrcaSlicer's threads.** Use the service worker or `run_off_thread`.
 - **Anything that moves the printer, heats it or deletes files asks first** in the UI.
-- **The only certificate in the repo and the wheel is Anycubic's shared client certificate**
-  (`src/kobracontrol/anycubic_slicer*.pem`), bundled on purpose (SECURITY.md). Nothing reads the user's
-  Anycubic Slicer Next installation unless they press Find certificate.
-- **Protocol facts come from a source.** Check a topic or endpoint against
-  [Kobralink](https://github.com/NatHacks/Kobralink) or the printer before using it, and list it in
-  `docs/protocol.md`. Do not copy code from projects with an incompatible licence (the plugin is
-  GPL-3.0-only).
+- **The only certificate in the repo and the wheel is Anycubic's shared client certificate** (`src/kobracontrol/anycubic_slicer*.pem`), bundled on purpose (SECURITY.md). Nothing reads the user's Anycubic Slicer Next installation unless they press Find certificate.
+- **Protocol facts come from a source.** Check a topic or endpoint against [Kobralink](https://github.com/NatHacks/Kobralink) or the printer before using it, and list it in `docs/protocol.md`. Do not copy code from projects with an incompatible licence (the plugin is GPL-3.0-only).
 - Keep functions small and files focused. Comment only what isn't obvious from the code.
 
 ## Tests
 
-Write the test first. Every change needs a test that fails without it. `tests/fakes.py` has a fake
-`orca` module and a fake Kobra X. The page is a Vue 3 + PrimeVue project in `ui/`: change it there,
-then `cd ui && npm ci --ignore-scripts && npm run build && npm test`. Run the whole suite before you
-open a pull request.
+Write the test first. Every change needs a test that fails without it. `tests/fakes.py` has a fake `orca` module and a fake Kobra X. The page is a Vue 3 + PrimeVue project in `ui/`: change it there, then `cd ui && npm ci --ignore-scripts && npm run build && npm test`. Run the whole suite before you open a pull request.
 
 ## Commits and pull requests
 
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `feat(ace): ...`, `fix(mqtt): ...`, `docs: ...`, `test: ...`.
-- One topic per pull request. Describe what changed, how you tested it, and whether you tried it on a
-  real Kobra X.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(ace): ...`, `fix(mqtt): ...`, `docs: ...`, `test: ...`.
+- One topic per pull request. Describe what changed, how you tested it, and whether you tried it on a real Kobra X.
 - Add a line under `## [Unreleased]` in `CHANGELOG.md`.
 
 ## Assets
 
-Images live in `assets/` and the UI icons in `src/kobracontrol/ui/`. Screenshots inside images are
-real renders of the built page (`node ui/tests/page/shots.mjs`), not edited by hand. Fonts stay with
-their licence files. The listing and README images are rebuilt with `scripts/marketing_images.py`, which
-records each export in `assets/marketing/asset-manifest.json`; [docs/release.md](docs/release.md) lists
-which file goes where.
+Images live in `assets/` and the UI icons in `src/kobracontrol/ui/`. Screenshots inside images are real renders of the built page (`node ui/tests/page/shots.mjs`), not edited by hand. Fonts stay with their licence files. The listing and README images are rebuilt with `scripts/marketing_images.py`, which records each export in `assets/marketing/asset-manifest.json`; [docs/release.md](docs/release.md) lists which file goes where.
 
 ## License
 

@@ -30,10 +30,6 @@ Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for the Anycubic Kobr
   </picture>
 </p>
 
-> **Status: in development.** The plugin's service layer was run against a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing, jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the printer, and nothing has been tested inside OrcaSlicer itself.
-
-Kobra Control is an independent project. It is not made or supported by Anycubic.
-
 ## 📦 Install
 
 Kobra Control is listed on Orca Cloud: open [its page](https://cloud.orcaslicer.com/p/59c786285255) and install it from there.
@@ -44,7 +40,7 @@ From a file:
 2. In OrcaSlicer open **File > Plugins > Install local plugin** and pick the wheel.
 3. Tick **Activate** and allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
 
-| You need | Details |
+| Requirement | Detail |
 |---|---|
 | OrcaSlicer | 2.5.0 or newer, the stock build. No patched build is needed. |
 | Printer | An Anycubic Kobra X on the same network, with LAN mode enabled. Checked on firmware 2.0.2.8. |
@@ -52,43 +48,47 @@ From a file:
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
 
+> **Status: in development.** The plugin's service layer was run against a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing, jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the printer, and nothing has been tested inside OrcaSlicer itself.
+
+Kobra Control is an independent project. It is not made or supported by Anycubic.
+
 ## 🧰 Features
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img alt="Send prints over your local network: the Settings page with the connection answering and the certificate ready" src="assets/orca-cloud/kobracontrol-feature-01-lan-en.png" width="100%">
+      <img alt="The Settings page with the connection answering and the certificate ready" src="assets/orca-cloud/kobracontrol-feature-01-lan-en.png" width="100%">
       <p><b>Send prints over your local network</b><br>Print and Send work from OrcaSlicer's own dialogs. The tab finds the printer by itself and the client certificate is built in.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="Keep an eye on your print: the Dashboard with progress, temperatures and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
+      <img alt="The Dashboard with progress, temperatures and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
       <p><b>Keep an eye on your print</b><br>Progress, layer, time left and the clock time the print should finish, next to temperatures, fan, speed, light and the camera.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img alt="Manage the filament in each slot: four ACE slots with material, colour, weight left and drying at 50 °C" src="assets/orca-cloud/kobracontrol-feature-03-ace-en.png" width="100%">
+      <img alt="Four ACE slots with material, colour, weight left and drying at 50 °C" src="assets/orca-cloud/kobracontrol-feature-03-ace-en.png" width="100%">
       <p><b>Manage the filament in each slot</b><br>Every print head and ACE slot shows its colour and material, with feed, retract, auto-feed, drying and the Spoolman spool linked to it.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="Choose files before you print: the printer's file list and the print panel with time, layers, filament and slot mapping" src="assets/orca-cloud/kobracontrol-feature-04-files-en.png" width="100%">
+      <img alt="The printer's file list and the print panel with time, layers, filament and slot mapping" src="assets/orca-cloud/kobracontrol-feature-04-files-en.png" width="100%">
       <p><b>Choose files before you print</b><br>Browse the printer's files and see time, layers, filament and which ACE slot prints each colour before you press <b>Start printing</b>.</p>
     </td>
   </tr>
 </table>
 
-| | Feature | What you get |
-|---|---|---|
-| | Printer agent | The agent id is `kobracontrol`. Print and Send use the filament-to-slot mapping you pick in OrcaSlicer's print dialog, with auto-leveling, flow calibration and time-lapse from that dialog and vibration compensation from the plugin's settings. |
-| | Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
-| | Dashboard | Status and controls, moves and homing, the camera, the filament card, a Printer panel and the Spoolman and Spooler stock. |
-| | Printer panel | Name and **Rename**, firmware, network address, print counters and the **Print Assist** switches. |
-| | Files | Search and sorting (newest, oldest, name, size). The print panel warns when a slot holds a different material than the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another printer. The confirmation repeats the warning. |
-| | Time-lapses | The printer's time-lapse videos with print, date, length and size, and **Delete**. The printer offers no way to download a video over the local network yet. |
-| | Spoolman | Link a Spoolman spool to a slot. Finished prints book their filament use there when the option is on. |
-| | Works with Spooler | [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament profiles. With it installed, the Dashboard shows Spooler's stock. Kobra Control also works alongside [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
-| | Settings | Connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
-| | Plugins > Run | **Check Kobra X connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
+| Feature | What you get |
+|---|---|
+| Printer agent | The agent id is `kobracontrol`. Print and Send use the filament-to-slot mapping you pick in OrcaSlicer's print dialog, with auto-leveling, flow calibration and time-lapse from that dialog and vibration compensation from the plugin's settings. |
+| Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
+| Dashboard | Status and controls, moves and homing, the camera, the filament card, a Printer panel and the Spoolman and Spooler stock. |
+| Printer panel | Name and **Rename**, firmware, network address, print counters and the **Print Assist** switches. |
+| Files | Search and sorting (newest, oldest, name, size). The print panel warns when a slot holds a different material than the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another printer. The confirmation repeats the warning. |
+| Time-lapses | The printer's time-lapse videos with print, date, length and size, and **Delete**. The printer offers no way to download a video over the local network yet. |
+| Spoolman | Link a Spoolman spool to a slot. Finished prints book their filament use there when the option is on. |
+| Works with Spooler | [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament profiles. With it installed, the Dashboard shows Spooler's stock. Kobra Control also works alongside [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
+| Settings | Connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
+| Plugins > Run | **Check Kobra X connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
 
 Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and other Kobra models.
 
@@ -184,22 +184,22 @@ English and Brazilian Portuguese. The tab follows OrcaSlicer's language, and **S
 ## 🧩 More plugins by bloodf
 
 | | Plugin | What it does | |
-|---|---|---|---|
-| <img alt="Organizer icon" src="https://raw.githubusercontent.com/bloodf/orca_organizer/main/assets/orca-cloud/orca_organizer-tile.png" width="40"> | 🧩 [Organizer](https://github.com/bloodf/orca_organizer) | Arrange parts by their real outline and fill a plate with more copies. | [Install](https://cloud.orcaslicer.com/p/5bf381fd42d4) |
-| <img alt="Embedder icon" src="https://raw.githubusercontent.com/bloodf/embedder/main/assets/orca-cloud/embedder-tile.png" width="40"> | 🧲 [Embedder](https://github.com/bloodf/embedder) | Magnet and NFC pockets, with the pause at the right layer. | [Install](https://cloud.orcaslicer.com/p/58222d4f9e52) |
-| <img alt="Print Calculator icon" src="https://raw.githubusercontent.com/bloodf/orca_print_calculator/main/assets/orca-cloud/orca_print_calculator-tile.png" width="40"> | 💰 [Print Calculator](https://github.com/bloodf/orca_print_calculator) | Price every plate: filament, energy, labour, fees and margin. | [Install](https://cloud.orcaslicer.com/p/521c07cf6de2) |
-| <img alt="Spooler icon" src="https://raw.githubusercontent.com/bloodf/spooler/main/assets/orca-cloud/spooler-tile.png" width="40"> | 🧵 [Spooler](https://github.com/bloodf/spooler) | Your Spoolman stock inside OrcaSlicer, with what is left on each spool. | [Install](https://cloud.orcaslicer.com/p/50c35dcbd6f3) |
-| <img alt="Kobra Control icon" src="assets/orca-cloud/kobracontrol-tile.png" width="40"> | 🟣 Kobra Control · you are here | Run the Anycubic Kobra X from OrcaSlicer over your LAN. | [Install](https://cloud.orcaslicer.com/p/59c786285255) |
-| <img alt="U1 Control icon" src="https://raw.githubusercontent.com/bloodf/u1control/main/assets/orca-cloud/u1control-tile.png" width="40"> | 🔵 [U1 Control](https://github.com/bloodf/u1control) | Run the Snapmaker U1 from OrcaSlicer: toolheads, camera, files. | [Install](https://cloud.orcaslicer.com/p/55b8c347d443) |
+|:-:|---|---|---|
+| <img src="https://raw.githubusercontent.com/bloodf/orca_organizer/main/assets/orca-cloud/orca_organizer-tile.png" alt="Organizer icon" width="40"> | 🧩 [Organizer](https://github.com/bloodf/orca_organizer) | Arrange parts by their real outline and fill a plate with more copies. | [Install](https://cloud.orcaslicer.com/p/5bf381fd42d4) |
+| <img src="https://raw.githubusercontent.com/bloodf/embedder/main/assets/orca-cloud/embedder-tile.png" alt="Embedder icon" width="40"> | 🧲 [Embedder](https://github.com/bloodf/embedder) | Magnet and NFC pockets, with the pause at the right layer. | [Install](https://cloud.orcaslicer.com/p/58222d4f9e52) |
+| <img src="https://raw.githubusercontent.com/bloodf/orca_print_calculator/main/assets/orca-cloud/orca_print_calculator-tile.png" alt="Print Calculator icon" width="40"> | 💰 [Print Calculator](https://github.com/bloodf/orca_print_calculator) | Price every plate: filament, energy, labour, fees and margin. | [Install](https://cloud.orcaslicer.com/p/521c07cf6de2) |
+| <img src="https://raw.githubusercontent.com/bloodf/spooler/main/assets/orca-cloud/spooler-tile.png" alt="Spooler icon" width="40"> | 🧵 [Spooler](https://github.com/bloodf/spooler) | Your Spoolman stock inside OrcaSlicer, with what is left on each spool. | [Install](https://cloud.orcaslicer.com/p/50c35dcbd6f3) |
+| <img src="assets/orca-cloud/kobracontrol-tile.png" alt="Kobra Control icon" width="40"> | 🟣 **Kobra Control** · you are here | Run the Anycubic Kobra X from OrcaSlicer over your LAN. | |
+| <img src="https://raw.githubusercontent.com/bloodf/u1control/main/assets/orca-cloud/u1control-tile.png" alt="U1 Control icon" width="40"> | 🔵 [U1 Control](https://github.com/bloodf/u1control) | Run the Snapmaker U1 from OrcaSlicer: toolheads, camera, files. | [Install](https://cloud.orcaslicer.com/p/55b8c347d443) |
 
 Each plugin works on its own; installed together they share data where it helps.
 
 ## 🤝 Contributing
 
-Bug reports, logs and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which covers building the wheel and running the tests. The developer documentation is in [docs/](docs/): [setup](docs/setup.md), [architecture](docs/architecture.md), [protocol](docs/protocol.md), [releasing](docs/release.md) and the [Orca Cloud description](docs/orca-cloud-description.md). See also the [changelog](CHANGELOG.md) and the [security notes](SECURITY.md).
+Bug reports, logs and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). The developer documentation is in [docs/](docs/): [setup](docs/setup.md), [architecture](docs/architecture.md), [protocol](docs/protocol.md), [releasing](docs/release.md) and the [Orca Cloud description](docs/orca-cloud-description.md). See also the [changelog](CHANGELOG.md), the [security notes](SECURITY.md) and [NOTICE.md](NOTICE.md) for credits to the projects the protocol code is ported from.
 
 ## 📄 License
 
-[GPL-3.0-only](LICENSE). The protocol code is ported from two GPL-3.0 projects, [KX-Bridge](https://gitea.it-drui.de/viewit/KX-Bridge-Release) (viewit and contributors) and [Kobralink](https://github.com/NatHacks/Kobralink) (NatHacks); see [NOTICE.md](NOTICE.md).
+GPL-3.0-only. See [LICENSE](LICENSE).
 
 <p align="center"><sub>by bloodf</sub></p>

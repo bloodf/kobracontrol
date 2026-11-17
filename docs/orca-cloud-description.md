@@ -1,10 +1,6 @@
 # Orca Cloud description
 
-The listing text for <https://cloud.orcaslicer.com/p/59c786285255>. Paste the English block into the English
-description and the Portuguese block into the Portuguese one. Each block stays under 4000 characters. The four
-pictures are read from `main` on `raw.githubusercontent.com`, so they show once the commit that adds them is merged.
-Which image goes in which listing slot is in [release.md](release.md). Keep the plugin list in step with the
-README's "More plugins by bloodf".
+The listing text for <https://cloud.orcaslicer.com/p/59c786285255>: paste the English block into the English description and the Portuguese block into the Portuguese one. Each block stays under 4000 characters. The four pictures are read from `main` on `raw.githubusercontent.com`, so they show once the commit that adds them is merged. Which image goes in which listing slot is in [release.md](release.md). Keep the plugin list in step with the README's "More plugins by bloodf".
 
 ## English
 
@@ -70,12 +66,12 @@ Each plugin works on its own; installed together they share data where it helps.
 https://github.com/bloodf/kobracontrol (GPL-3.0-only)
 ```
 
-## Português
+## Português (Brasil)
 
 ```markdown
 Controle a Anycubic Kobra X pelo OrcaSlicer na sua rede.
 
-## Do que você precisa
+## O que você precisa
 
 - OrcaSlicer 2.5.0 ou mais novo.
 - Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado (conferido no firmware 2.0.2.8).
