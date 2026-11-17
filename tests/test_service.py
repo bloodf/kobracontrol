@@ -968,6 +968,55 @@ class CameraPlayer(Base):
         wait(lambda: "start" in self.svc.camera.calls)
         self.assertNotIn({"type": "camera_error", "reason": "unsupported", "error": "not an FLV stream"}, self.published)
 
+    def test_a_non_flv_answer_from_the_printer_goes_to_ffmpeg_with_the_real_relay(self):
+        import camera, http.server
+        class Html(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"<html>booting</html>")
+            def log_message(self, *a):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Html)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        real = camera.Relay(self.svc._camera_url, self.svc._on_video, self.svc._on_relay_error, log=lambda *a: None)
+        self.addCleanup(real.close)
+        self.svc.relay = real
+        self.use("http://127.0.0.1:%d/live/t" % server.server_port, True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertFalse([m for m in self.published if m.get("type") in ("camera_error", "video")])
+
+    def test_no_stream_yet_is_said_by_the_relay_not_as_missing_ffmpeg(self):
+        self.svc._camera_url = lambda: ""   # the printer has not announced one
+        self.svc.touch(camera=True, mse=True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.assertNotIn("start", self.svc.camera.calls)
+
+    def test_a_refusal_lasts_a_while_and_ends_when_the_camera_is_turned_off(self):
+        url = "http://127.0.0.1:18088/live/t"
+        self.use(url, True)
+        self.svc.video_error()
+        self.assertTrue(self.svc._refused(url))
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + service.RELAY_RETRY_S + 1):
+            self.assertFalse(self.svc._refused(url))   # tried again later (a printer that was still booting)
+        self.svc.video_error()
+        self.svc.stop_cameras()
+        self.assertFalse(self.svc._refused(url))
+
+    def test_a_page_that_cannot_play_it_hands_the_stream_to_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.svc.video_error()
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn("stop", self.svc.relay.calls)
+
+    def test_video_reset_asks_relay_for_the_init_again(self):
+        self.svc.relay.resend_init = lambda: self.svc.relay.calls.append("resend")
+        self.svc.video_reset()
+        self.assertIn("resend", self.svc.relay.calls)
+
     def test_fragments_reach_the_page_as_base64(self):
         self.svc._on_video({"codec": "avc1.64c028", "init": b"\x00\x01"})
         self.svc._on_video({"data": b"\xff"})

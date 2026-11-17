@@ -252,7 +252,6 @@ function onMessage(m: any): void {
     // s.now too: the countdown is retry_at minus now, and the 1 s clock can lag behind in a throttled tab.
     case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; s.now = Date.now(); break;
     case 'frame': s.frame = m.image; s.video = false; s.camError = ''; s.camReason = ''; break;
-    case 'video': if (s.camOn && m.data) { s.video = true; s.camError = ''; s.camReason = ''; } break;   // CameraCard's player plays it
     case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; s.video = false; } break;
     case 'requirements': s.requirements = Array.isArray(m.items) ? m.items : []; s.checking = m.checking === true; break;
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;

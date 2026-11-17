@@ -11,12 +11,22 @@ import { Player } from '../core/player';
 // The stream from the plugin's Relay, played here; ffmpeg's JPEG frames (the fallback) still come as `frame`.
 const vid = ref<HTMLVideoElement | null>(null);
 let player: Player | null = null;
-watch(vid, el => { player?.close(); player = el ? new Player(el) : null; });
+// s.video only once frames play; a failure hands the stream to the plugin's ffmpeg fallback.
+const events = {
+  playing: () => { if (s.camOn) { s.video = true; s.camError = ''; s.camReason = ''; } },
+  failed: () => { s.video = false; bridge.post({ type: 'video_error' }); },
+  reset: () => bridge.post({ type: 'video_reset' }),
+};
+watch(vid, el => {
+  player?.close();
+  player = el ? new Player(el, events) : null;
+  if (player) bridge.post({ type: 'video_reset' });   // a (re)attached player needs the current stream's init
+});
 let unlisten = () => {};
 onMounted(() => { unlisten = bridge.onMessage(m => {
   if (m?.type !== 'video' || !player) return;
   if (typeof m.init === 'string') player.init(String(m.codec), m.init);
-  else if (typeof m.data === 'string') player.append(m.data);
+  else if (typeof m.data === 'string') { player.append(m.data, m.key === true); bridge.post({ type: 'video_ack' }); }   // Relay's backpressure
 }); });
 onBeforeUnmount(() => { unlisten(); player?.close(); player = null; });
 
@@ -58,7 +68,7 @@ const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state 
                                  data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiEmpty>
     <div v-else class="cam-view">
-      <video v-show="s.video" ref="vid" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="t('cam.alt', { printer: printerName })"></video>
+      <video ref="vid" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="t('cam.alt', { printer: printerName })"></video>
       <img v-if="!s.video && s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
       <div v-else-if="!s.video" class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
         <OuiEmpty :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg">
@@ -76,5 +86,7 @@ const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state 
 .cam-view { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; aspect-ratio: 16 / 9; background: #000;
   border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); }
 .cam-view img, .cam-view video { width: 100%; height: 100%; object-fit: contain; }
+/* Not display:none: WebKit may not decode a hidden video, and it must play to say it plays. */
+.cam-view video.cam-hidden { position: absolute; opacity: 0; pointer-events: none; }
 .cam-view .cam-empty { background: none; max-width: 560px; text-align: center; }
 </style>

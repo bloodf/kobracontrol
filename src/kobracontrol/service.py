@@ -43,6 +43,7 @@ from usage import UsageMixin
 from i18n import lazy, tr
 
 LEASE_SECONDS = 6.0
+RELAY_RETRY_S = 60.0   # a stream the built-in player refused goes to ffmpeg this long, then is tried again
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
@@ -179,7 +180,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
         self.camera_mse = False      # the page plays H.264 itself (lease `mse`): Relay, no ffmpeg
-        self._relay_refused = None   # the stream URL Relay found not to be FLV/H.264: ffmpeg plays that one
+        self._relay_refused = (None, 0.0)   # (stream URL, when) Relay or the page could not play: ffmpeg's for a while
         self._told_no_ffmpeg = False   # the ffmpeg path is needed but ffmpeg is missing: told the page once
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
@@ -544,7 +545,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self._capture = key
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
         url = self._camera_url()
-        if self.camera_mse and url.lower().startswith("http://") and url != self._relay_refused:
+        if self.camera_mse and not url.lower().startswith("rtsp://") and not self._refused(url):   # "" -> no_stream
             self.camera.stop()
             self.relay.start()
             self._told_no_ffmpeg = False
@@ -560,9 +561,31 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.camera.set_ffmpeg(self.requirements.ffmpeg() or target.ffmpeg_path)
         self.camera.start()
 
+    def video_reset(self):
+        """The page's player (re)attached or lost its init segment: send the current stream's init again."""
+        self.relay.resend_init()
+
+    def video_error(self):
+        """The page's player could not play this stream: ffmpeg (or its no_ffmpeg reason) takes it from here."""
+        url = self._camera_url()
+        if url and not self._refused(url):
+            self._refuse(url, "the page could not play the stream")
+
+    def video_ack(self):
+        self.relay.ack()
+
+    def _refused(self, url):
+        refused_url, at = self._relay_refused
+        return url == refused_url and time.monotonic() - at < RELAY_RETRY_S
+
+    def _refuse(self, url, why):
+        self._relay_refused = (url, time.monotonic())
+        self.log("kobracontrol camera: %s; using ffmpeg" % why)
+
     def stop_cameras(self):
         self.camera.stop()
         self.relay.stop()
+        self._relay_refused = (None, 0.0)   # turned off (or the page left): the next start tries the player again
         self._told_no_ffmpeg = False
 
     def check_requirements(self, ffmpeg_setting, force=False):
@@ -590,8 +613,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def _on_relay_error(self, reason, text):
         if reason == "unsupported":   # not FLV/H.264: hand this stream to ffmpeg on the next tick
-            self._relay_refused = self._camera_url()
-            self.log("kobracontrol camera: %s; using ffmpeg" % text)
+            self._refuse(self._camera_url(), text)
             return
         self._on_camera_error(reason, text)
 

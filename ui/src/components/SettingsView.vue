@@ -13,6 +13,7 @@ import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from
 import type { Requirement, RequirementId } from '../app/types';
 import type { MessageKey } from '../core/messages';
 import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
+import { playable } from '../core/player';
 import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
@@ -32,7 +33,7 @@ type Need = 'found' | 'missing' | 'checking' | 'unknown';
 interface Row { name: string | MessageKey; why: MessageKey; ok: MessageKey; missing: MessageKey; how: MessageKey[]; url?: string; label?: string; fileCheck?: boolean }
 const ROWS: Record<RequirementId, Row> = {
   certificate: { name: 'req.cert.name', why: 'req.cert.why', ok: 'req.found', missing: 'req.missing', how: ['req.cert.install'] },
-  ffmpeg: { name: 'ffmpeg', why: 'req.ffmpeg.why', ok: 'req.found', missing: 'req.slicer.missing', fileCheck: true,   // 'Not installed (optional)'
+  ffmpeg: { name: 'ffmpeg', why: 'req.ffmpeg.why', ok: 'req.found', missing: 'req.missing', fileCheck: true,
     how: ['req.ffmpeg.mac', 'req.ffmpeg.win', 'req.ffmpeg.linux', 'req.ffmpeg.path'], url: 'https://ffmpeg.org/download.html', label: 'ffmpeg.org' },
   anycubic_slicer: { name: 'Anycubic Slicer Next', why: 'req.slicer.why', ok: 'req.slicer.ok', missing: 'req.slicer.missing', fileCheck: true,
     how: ['req.slicer.mac', 'req.slicer.win', 'req.slicer.linux'], url: 'https://www.anycubic.com/pages/anycubic-slicer', label: 'anycubic.com' },
@@ -48,7 +49,9 @@ const isKey = (k: string): k is MessageKey => k.includes('.');   // else a produ
 const need = (r: Requirement): Need => (s.checking && ROWS[r.id].fileCheck ? 'checking' : r.state === 'ok' ? 'found' : r.state);
 const needLabel = (r: Requirement) => {
   const n = need(r), row = ROWS[r.id];
-  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : row.missing);
+  // ffmpeg is optional only where the page plays the camera itself ('Not installed (optional)')
+  const missing = r.id === 'ffmpeg' && playable() ? 'req.slicer.missing' : row.missing;
+  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : missing);
 };
 const smDetail = computed(() => [requirement('spoolman')?.details, s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : '')].filter(Boolean).join(' · '));
 const detail = (r: Requirement) => (r.state !== 'ok' ? undefined : r.id === 'certificate' ? certText.value : r.id === 'spooler' ? t('spooler.installed')

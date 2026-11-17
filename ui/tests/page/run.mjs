@@ -683,20 +683,49 @@ sys.path.insert(0, "src/kobracontrol")
 import fmp4
 ev = fmp4.Remuxer().feed(open("tests/kobra_x_camera.flv", "rb").read())
 b = lambda x: base64.b64encode(x).decode()
-print(json.dumps({"codec": ev[0][1], "init": b(ev[0][2]), "media": [b(e[1]) for e in ev[1:]]}))`], { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 }));
+print(json.dumps({"codec": ev[0][1], "init": b(ev[0][2]), "media": [b(e[1]) for e in ev[1:]], "keys": [e[2] for e in ev[1:]]}))`], { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 }));
 
 test('camera: the page plays the printer stream itself (no ffmpeg) and says it can in the lease', `
   await ready(VIEW());
   await click(byTest('camera'));
   assert(last('lease').mse === true, 'lease: this page plays H.264');
   const cam = ${JSON.stringify(CAMERA)};
+  await until(() => last('video_reset'), 'the attached player asks for the stream init');
+  await post({type: 'video', data: cam.media[0], key: true});
+  assert(sent().filter(m => m.type === 'video_reset').length >= 1 && q('.cam-empty'), 'data without init: not shown, init asked for');
   await post({type: 'video', codec: cam.codec, init: cam.init});
-  for (const data of cam.media) await post({type: 'video', data});
+  assert(q('.cam-empty'), 'still "starting" until frames actually play');
+  for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  eq(sent().filter(m => m.type === 'video_ack').length, cam.media.length + 1, 'every fragment acknowledged (Relay backpressure)');
   const v = q('[data-test="cam-video"]');
   await until(() => v.videoWidth === 1280 && v.videoHeight === 720 && v.currentTime > 0, 'the stream plays: ' + v.videoWidth + 'x' + v.videoHeight + ' t=' + v.currentTime + ' err=' + (v.error && v.error.message));
-  assert(!q('.cam-empty') && !q('.cam-view img'), 'no placeholder, no JPEG');
+  await until(() => !q('.cam-empty') && !v.classList.contains('cam-hidden'), 'shown once playing');
+  assert(!q('.cam-view img'), 'no JPEG');
   await post({type: 'camera_error', error: 'gone', reason: 'failed'});
-  assert(q('.cam-empty') && getComputedStyle(v).display === 'none', 'an error replaces the picture');
+  assert(q('.cam-empty') && v.classList.contains('cam-hidden'), 'an error replaces the picture');
+`);
+
+test('camera: a stream the page cannot decode is handed back to the plugin (video_error)', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  await until(() => last('video_reset'), 'player attached');
+  const cam = ${JSON.stringify(CAMERA)};
+  await post({type: 'video', codec: 'avc1.ffffff', init: cam.init});
+  await until(() => last('video_error'), 'an unplayable codec reports video_error');
+  assert(q('.cam-empty'), 'nothing shown as playing');
+`);
+
+test('camera: delta frames before a keyframe are skipped, and a long burst still plays', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  await until(() => last('video_reset'), 'player attached');
+  const cam = ${JSON.stringify(CAMERA)};
+  await post({type: 'video', codec: cam.codec, init: cam.init});
+  for (let i = 1; i < 10; i++) await post({type: 'video', data: cam.media[i], key: false});   // mid-GOP: unusable
+  for (let r = 0; r < 3; r++) for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && !v.error, 'plays from the first keyframe: err=' + (v.error && v.error.message));
+  assert(!last('video_error'), 'no failure reported');
 `);
 
 test('the camera starts on only when the saved setting says so', `

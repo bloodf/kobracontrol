@@ -475,6 +475,12 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.touch(camera=data.get("camera"), stock=data.get("stock") is True, mse=data.get("mse") is True)
             elif kind == "frame_ack":
                 svc.ack_frame()
+            elif kind == "video_ack":   # the page took one fragment of the built-in player's stream
+                svc.video_ack()
+            elif kind == "video_reset":   # the page's player needs the stream's init segment again
+                svc.video_reset()
+            elif kind == "video_error":   # the page's player cannot play this stream: fall back to ffmpeg
+                svc.video_error()
             elif kind == "cmd":
                 svc.touch()
                 gen = data.get("gen")

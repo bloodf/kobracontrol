@@ -108,6 +108,9 @@ Page to plugin:
 | `lease` | `camera`, `stock`, `mse` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen; `mse`: the page plays H.264 itself (Media Source Extensions), so the camera uses `Relay`, else `ffmpeg` |
 | `cmd` | `id`, `cmd`, `args`, `gen` | run `Service.cmd_<cmd>(**args)` for printer generation `gen` |
 | `frame_ack` | | the page has shown the last camera frame |
+| `video_ack` | | the page took one fragment of the built-in player's stream (Relay drops to the next keyframe while 30 are unacknowledged) |
+| `video_reset` | | the page's player (re)attached or got a fragment without an init segment: Relay sends the current init again |
+| `video_error` | | the page's player can't play this stream: the plugin uses `ffmpeg` for it for 60 s, or until the camera is turned off |
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
 | `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
@@ -118,7 +121,7 @@ Plugin to page:
 |---|---|
 | `reply` | `id`, `result` or `error` |
 | `status` | `data` (below), `gen` |
-| `video` | `codec` and `init` (base64 init segment: a new stream, the player starts over), else `data` (base64 fragment, one frame) |
+| `video` | `codec` and `init` (base64 init segment: a new stream, the player starts over), else `data` (base64 fragment, one frame) and `key` (it starts with a keyframe) |
 | `frame` | `image` (JPEG data URL, the `ffmpeg` fallback) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
 | `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |

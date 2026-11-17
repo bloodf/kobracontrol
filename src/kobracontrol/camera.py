@@ -23,6 +23,7 @@ import http.client
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import threading
 import time
@@ -276,17 +277,38 @@ class Camera:
 
 STALL_S = 10.0   # no bytes for this long: the stream is dead, reconnect
 RECONNECT_S = 0.5
+STEADY_S = 5.0   # a connection that played this long resets the backoff; a shorter one counts as a failure
+MAX_UNACKED = 30   # fragments the page has not acknowledged (3 s at 10 fps): drop to the next keyframe
 
 
 class Relay(Camera):
     """The printer's HTTP-FLV stream remuxed to fragmented MP4 for the page's player: no ffmpeg involved.
     Reconnects when the stream drops, starts over when the printer rotates the stream token (a new URL), and
-    sends nothing before the first keyframe."""
+    sends nothing before the first keyframe. resend_init(): a page player that (re)attached gets the current
+    stream's init segment again (it then skips fragments up to the next keyframe). ack(): the page took a
+    fragment; while MAX_UNACKED are outstanding, fragments are dropped up to the next keyframe. stop() and close()
+    return at once (the threads wind down on their own), so the UI thread never waits on the network."""
 
     def __init__(self, get_url, on_video, on_error=None, connect=http.client.HTTPConnection, backoff=(2.0, 60.0),
                  idle_s=15.0, log=print, clock=time.monotonic):
         super().__init__(get_url, on_video, "", on_error, backoff=backoff, idle_s=idle_s, log=log, clock=clock)
         self.connect = connect
+        self._init = None   # the current stream's init message, for a player that attaches later
+        self._unacked, self._skipping = 0, False
+
+    def resend_init(self):
+        init = self._init
+        if init is not None and not self._stop.is_set():
+            self._deliver(init)
+
+    def ack(self):
+        with self._cond:
+            self._unacked = max(0, self._unacked - 1)
+        self._touched = self.clock()
+
+    def _join(self):   # never waits: the old threads see their stop event and end within a poll
+        self._stop.set()
+        self._threads = []
 
     def _send(self):   # Camera's frame pacing is not needed: every fragment goes out, the decoder needs them all
         self._stop.wait()
@@ -302,14 +324,16 @@ class Relay(Camera):
                     self._fail("no_stream", tr("the printer has not announced a camera stream"))
                     stop.wait(0.5)
                     continue
+                began = self.clock()
                 got, reason, text, changed = self._session(url, stop)
                 if stop.is_set():
                     return
-                if got or changed:   # it played: reconnect at once, the page keeps its last picture meanwhile
+                if changed or got and self.clock() - began >= STEADY_S:   # it played: reconnect at once
                     fails = 0
                     stop.wait(0 if changed else RECONNECT_S)
                     continue
-                self._fail(reason, text or tr("the camera stream ended"))
+                if not got:   # a stream that plays a moment and drops backs off quietly, without an error
+                    self._fail(reason, text or tr("the camera stream ended"))
                 fails += 1
                 stop.wait(min(self.backoff[0] * 2 ** (fails - 1), self.backoff[1]))
         finally:
@@ -334,6 +358,7 @@ class Relay(Camera):
                 if resp.status not in (200, 206):
                     raise fmp4.FlvError("HTTP %d" % resp.status)
                 remux = fmp4.Remuxer()
+                self._init = None
                 while not done.is_set():
                     chunk = resp.read1(65536)
                     if not chunk:
@@ -346,7 +371,7 @@ class Relay(Camera):
                         self._emit(event)
             except fmp4.Unsupported as e:
                 box.update(reason="unsupported", error=str(e))
-            except (OSError, http.client.HTTPException, fmp4.FlvError) as e:
+            except (OSError, ValueError, struct.error, http.client.HTTPException) as e:   # FlvError is a ValueError
                 box["error"] = str(e) or type(e).__name__
             finally:
                 if conn is not None:
@@ -372,7 +397,21 @@ class Relay(Camera):
         return box["got"], box["reason"], box["error"], changed
 
     def _emit(self, event):
-        message = {"codec": event[1], "init": event[2]} if event[0] == "init" else {"data": event[1]}
+        if event[0] == "init":
+            message = self._init = {"codec": event[1], "init": event[2]}
+            with self._cond:
+                self._unacked, self._skipping = 0, False
+        else:
+            with self._cond:   # a page that falls behind: skip to a keyframe rather than queue without end
+                if self._unacked >= MAX_UNACKED or self._skipping and not event[2]:
+                    self._skipping = True
+                    return
+                self._skipping = False
+                self._unacked += 1
+            message = {"data": event[1], "key": event[2]}
+        self._deliver(message)
+
+    def _deliver(self, message):
         try:
             self.on_frame(message)
         except Exception as e:

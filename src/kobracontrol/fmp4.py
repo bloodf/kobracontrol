@@ -3,9 +3,11 @@ the camera needs no ffmpeg. Pure Python, no I/O, free of the `orca` module.
 
     remux = Remuxer()
     for event in remux.feed(chunk):   # ("init", codec, bytes) once per stream (again if the SPS changes),
-        ...                           # then ("media", bytes): one moof+mdat per frame, from a keyframe on
+        ...                           # then ("media", bytes, keyframe): one moof+mdat per frame, from a keyframe on
 
-A frame goes out when the next one arrives (its duration is the gap between them), one frame of latency.
+A frame goes out when the next one arrives (its duration is the gap between them), one frame of latency. Decode
+times are the running sum of those durations, so a printer clock that jumps (back or far ahead) never makes two
+samples overlap.
 Raises Unsupported for anything but FLV with AVC video (the caller falls back to ffmpeg) and FlvError for a
 broken stream.
 """
@@ -42,7 +44,10 @@ class FlvReader:
                 return tags
             if self.buf[:3] != b"FLV":
                 raise Unsupported("not an FLV stream")
-            skip = struct.unpack(">I", self.buf[5:9])[0] + 4   # header, then PreviousTagSize0
+            offset = struct.unpack(">I", self.buf[5:9])[0]
+            if not 9 <= offset <= 1024:
+                raise FlvError("bad FLV header")
+            skip = offset + 4   # header, then PreviousTagSize0
             if len(self.buf) < skip:
                 return tags
             del self.buf[:skip]
@@ -173,8 +178,7 @@ class Remuxer:
         self.reader = FlvReader()
         self.avcc = None
         self.pending = None      # (ts, cts, key, data): the frame waiting for the next one's timestamp
-        self.base = None         # the timestamp of the first frame sent, dts 0
-        self.last_dts = -1
+        self.next_dts = None     # decode time of the next frame sent; None until the first keyframe
         self.seq = 0
 
     def feed(self, chunk):
@@ -187,9 +191,9 @@ class Remuxer:
             packet, cts = body[1], int.from_bytes(body[2:5], "big", signed=True)
             if packet == 0:
                 self._config(body[5:], events)
-            elif packet == 1 and self.avcc is not None:
+            elif packet == 1 and self.avcc is not None and body[0] >> 4 != 5:   # 5: video info, not a picture
                 key = body[0] >> 4 == 1
-                if self.pending is None and self.base is None and not key:
+                if self.pending is None and self.next_dts is None and not key:
                     continue     # wait for a keyframe: the decoder can start nowhere else
                 self._frame((ts, cts, key, body[5:]), events)
         return events
@@ -201,7 +205,9 @@ class Remuxer:
             raise FlvError("bad AVC configuration")
         sps_len = struct.unpack(">H", avcc[6:8])[0]
         width, height = sps_size(avcc[8:8 + sps_len])
-        self.avcc, self.pending, self.base, self.last_dts = bytes(avcc), None, None, -1   # a new decoder: a new stream
+        if not (16 <= width <= 8192 and 16 <= height <= 8192):
+            raise FlvError("bad SPS size %dx%d" % (width, height))
+        self.avcc, self.pending, self.next_dts = bytes(avcc), None, None   # a new decoder: a new stream
         events.append(("init", "avc1.%02x%02x%02x" % (avcc[1], avcc[2], avcc[3]), init_segment(avcc, width, height)))
 
     def _frame(self, frame, events):
@@ -209,10 +215,8 @@ class Remuxer:
             ts, cts, key, data = self.pending
             gap = frame[0] - ts
             duration = gap if 0 < gap <= 5000 else DEFAULT_DURATION
-            if self.base is None:
-                self.base = ts
-            dts = max(ts - self.base, self.last_dts + 1)   # never backwards, whatever the printer stamps
-            self.last_dts = dts
+            dts = self.next_dts or 0
+            self.next_dts = dts + duration
             self.seq += 1
-            events.append(("media", media_segment(self.seq, dts, duration, cts, key, data)))
+            events.append(("media", media_segment(self.seq, dts, duration, cts, key, data), key))
         self.pending = frame
