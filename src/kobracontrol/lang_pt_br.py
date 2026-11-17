@@ -258,4 +258,5 @@ TEXT = {
     'the material warnings were not confirmed for these slots; nothing was sent': 'os avisos de material não foram confirmados para estes slots; nada foi enviado',
     'Kobra Control — print setup': 'Kobra Control — preparar impressão',
     'filament %d is another material than its slot holds; the print was not started': 'o filamento %d é de outro material que o do slot escolhido; a impressão não foi iniciada',
+    'ACE auto feed was not changed (%s); the print starts anyway': 'a alimentação automática do ACE não foi alterada (%s); a impressão começa mesmo assim',
 }

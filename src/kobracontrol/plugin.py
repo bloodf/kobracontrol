@@ -596,7 +596,8 @@ def job_task(params, defaults):
 DIALOG_TIMEOUT = 15 * 60   # s the print dialog may stay open before the print is abandoned
 DIALOG_READY = 20          # s for the dialog's page to report it is showing
 DIALOG_REFRESH = 2.0       # s between slot updates sent to the open dialog
-_unloading = threading.Event()   # set by the agent's on_unload: an open print setup closes and nothing is sent
+_open_dialogs = set()   # one Event per open print setup window; the agent's on_unload sets them: it closes, nothing is sent
+_open_dialogs_lock = threading.Lock()
 
 
 def ask_print(params, host, path, trays, filaments, task, cancel_fn):
@@ -649,6 +650,7 @@ def _show_print_dialog(page, host, cancel_fn, data):
     ui = orca.host.ui
     done, ready, stop = threading.Event(), threading.Event(), threading.Event()
     box, shown = {}, [data]   # shown: one item, the printer data the window shows now
+    offline = [False]         # the window shows the printer offline (a read failed)
 
     wanted = threading.Event()
 
@@ -669,6 +671,9 @@ def _show_print_dialog(page, host, cancel_fn, data):
         box["answer"] = msg
         done.set()
 
+    closing = threading.Event()
+    with _open_dialogs_lock:
+        _open_dialogs.add(closing)
     html = page_html(get_store().effective()["ui_language"], "print", page)
     window = ui.create_window(html, title=tr("Kobra Control — print setup"), width=560, height=780, on_message=on_message,
                               on_close=done.set, on_submit=on_submit, style=ui.WINDOW_MODAL)
@@ -682,13 +687,15 @@ def _show_print_dialog(page, host, cancel_fn, data):
             try:
                 fresh, names = service().print_snapshot(host)
                 last = shown[0]
-                if asked or fresh["slots"] != last["slots"] or fresh["state"] != last["state"]:
+                if asked or offline[0] or fresh["slots"] != last["slots"] or fresh["state"] != last["state"]:
                     shown[0] = fresh
+                    offline[0] = False
                     window.post({"slots": printsetup.page_slots(fresh, names), "state": fresh["state"],
                                  "can_print": fresh["can"]["print"]})
             except Exception as e:   # unreachable meanwhile: the window locks Start print until it answers again
                 log("print dialog: slots not refreshed (%s)" % e)
                 try:
+                    offline[0] = True   # the next good read is posted even when nothing else changed
                     window.post({"slots": printsetup.page_slots(shown[0], {}), "state": "offline", "can_print": False})
                 except Exception as e2:
                     log("print dialog: not updated (%s)" % e2)
@@ -698,7 +705,7 @@ def _show_print_dialog(page, host, cancel_fn, data):
     try:
         while not done.wait(0.25):
             waited = time.monotonic() - started
-            if (cancel_fn and cancel_fn()) or _unloading.is_set():
+            if (cancel_fn and cancel_fn()) or closing.is_set():
                 window.close()
                 raise printsetup.Cancelled()
             if waited > DIALOG_TIMEOUT:
@@ -711,6 +718,8 @@ def _show_print_dialog(page, host, cancel_fn, data):
                 raise kobra.KobraError(tr("the print dialog didn't open (OrcaSlicer was busy); nothing was sent"))
     finally:
         stop.set()
+        with _open_dialogs_lock:
+            _open_dialogs.discard(closing)
     return box.get("answer"), shown[0]
 
 
@@ -859,11 +868,12 @@ class KobraAgent(pa.PrinterAgentBase):
             threading.Thread(target=svc.release, args=(host,), name="kobracontrol-release", daemon=True).start()
 
     def on_load(self):
-        _unloading.clear()   # loaded again in the same session
         _use("agent")
 
     def on_unload(self):
-        _unloading.set()
+        with _open_dialogs_lock:
+            for closing in _open_dialogs:
+                closing.set()
         self.disconnect_printer()
         _unuse("agent")
 
@@ -1095,7 +1105,8 @@ class KobraAgent(pa.PrinterAgentBase):
             service().print_job(host, path, getattr(params, "plate_index", 1),
                                 name, trays, filaments, task,
                                 self._progress(update_fn), cancel_fn, on_stage,
-                                auto_feed=choice["auto_feed"] if choice else None)
+                                auto_feed=choice["auto_feed"] if choice else None,
+                                notice=lambda text: update_fn and update_fn(STAGE_SENDING, 0, text))
         except kobra.Cancelled:
             return ERR_CANCELED
         except Exception as e:

@@ -731,9 +731,39 @@ class PrintDialog(ShowDialog, Base):
     def test_unload_closes_an_open_window(self):
         self.connect()
         create_window, closed = self.silent(open_for=10 ** 6)
-        plugin._unloading.set()
-        self.addCleanup(plugin._unloading.clear)
-        self.assertEqual((self.print_with(create_window)[0], closed), (plugin.ERR_CANCELED, [1]))
+
+        def unload_while_open(*a, **kw):
+            w = create_window(*a, **kw)
+            threading.Timer(0.3, self.agent.on_unload).start()
+            return w
+        self.assertEqual((self.print_with(unload_while_open)[0], closed), (plugin.ERR_CANCELED, [1]))
+        self.assertEqual(plugin._open_dialogs, set())
+
+    def test_refresh_after_a_failed_read_unlocks_start(self):
+        """A read fails (the window shows the printer offline), the next one succeeds with the same slots: the
+        window is told the printer can print again."""
+        self.connect()
+        posted, real, calls = [], plugin.service().print_snapshot, [0]
+
+        def flaky(host):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise kobra.KobraError("no answer")
+            return real(host)
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            on_message({"ready": True})
+            w = types.SimpleNamespace(is_open=lambda: True, close=lambda: None, post=posted.append)
+
+            def answer():
+                wait(lambda: any(p.get("can_print") for p in posted[1:]) if posted else False, 10)
+                on_submit({"cancelled": True})
+            threading.Thread(target=answer, daemon=True).start()
+            return w
+        with mock.patch.object(plugin, "DIALOG_REFRESH", 0.1), mock.patch.object(plugin.service(), "print_snapshot", flaky):
+            self.assertEqual(self.print_with(create_window)[0], plugin.ERR_CANCELED)
+        self.assertEqual((posted[0]["state"], posted[0]["can_print"]), ("offline", False))
+        self.assertTrue(posted[1]["can_print"])
 
     def test_job_cancelled_in_orcaslicer_closes_the_dialog(self):
         self.connect()

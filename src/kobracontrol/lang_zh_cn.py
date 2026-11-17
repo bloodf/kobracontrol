@@ -258,4 +258,5 @@ TEXT = {
     'the material warnings were not confirmed for these slots; nothing was sent': '这些槽位的材料警告未经确认；未发送任何内容',
     'Kobra Control — print setup': 'Kobra Control — 打印设置',
     'filament %d is another material than its slot holds; the print was not started': '耗材 %d 与其槽位中的材料不同；未开始打印',
+    'ACE auto feed was not changed (%s); the print starts anyway': 'ACE 自动进料未更改（%s）；仍开始打印',
 }

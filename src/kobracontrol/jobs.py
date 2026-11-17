@@ -136,16 +136,15 @@ class JobsMixin:
         return filename
 
     def print_job(self, host, path, plate_index=1, name="", tray_ids=(), filaments=(), task=None, progress=None,
-                  cancelled=None, stage=None, auto_feed=None):
+                  cancelled=None, stage=None, auto_feed=None, notice=None):
         """OrcaSlicer's Print: upload the plate's G-code, then print/start with the chosen trays.
         tray_ids[i]: Bambu tray id for project filament i (-1 unused); filaments[i]: {"colour", "type"};
         task: {"auto_leveling", "vibration_compensation", "flow_calibration", "timelapse"}; stage(name) is told "upload"
-        then "start". auto_feed: True/False sets every ACE's auto feed once the printer and slots were checked (the
-        print setup's choice; a failure is only logged), None leaves it."""
+        then "start". auto_feed: True/False sets every ACE's auto feed right before print/start, once the printer and
+        slots were checked again (the print setup's choice), None leaves it; when that fails the print still starts and
+        notice(text) says so."""
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
-        if auto_feed is not None:
-            self._set_auto_feed(host, auto_feed)
         filename = remote_name(name or os.path.basename(path))
         with plate_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
@@ -156,16 +155,20 @@ class JobsMixin:
         with conn.start_lock:   # the idle check and print/start of one job at a time (tab file prints too)
             mapping, used = self._job_mapping(conn, tray_ids, filaments)   # the slots may have changed meanwhile
             task = supported_task(conn.view(), task)
+            if auto_feed is not None:
+                self._set_auto_feed(host, auto_feed, notice)
             # raises when the printer ends the task right after starting it (kobra.start_print watches)
             conn.printer.start_print(kobra.print_file_payload(filename, size, mapping, task))
         self._remember(host, filename, used, weights)
         return filename
 
-    def _set_auto_feed(self, host, on):
+    def _set_auto_feed(self, host, on, notice=None):
         try:
             self.call(host, "assist", option="autoFeed", on=bool(on))
         except Exception as e:
             self.log("kobracontrol: ACE auto feed not changed (%s); the print goes on" % e)
+            if notice:
+                notice(tr("ACE auto feed was not changed (%s); the print starts anyway") % e)
 
     def _job_mapping(self, conn, tray_ids, filaments):
         """(ams_box_mapping, {filament index: global slot}); refuses unless the printer is idle and every chosen

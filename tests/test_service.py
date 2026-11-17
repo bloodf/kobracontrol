@@ -489,6 +489,14 @@ class JobsMaterial(Base):
                            auto_feed=False)
         self.assertEqual(wait(lambda: self.sent("multiColorBox", "setAutoFeed"))[0]["data"]["multi_color_box"][0]["auto_feed"], 0)
 
+    def test_auto_feed_failure_is_told_and_the_print_starts(self):
+        notices = []
+        with mock.patch.object(self.svc, "call", side_effect=kobra.KobraError("refused")):
+            self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000", "type": "PLA"}],
+                               auto_feed=False, notice=notices.append)
+        wait(lambda: self.sent("print", "start"))
+        self.assertIn("auto feed", notices[0])
+
     def test_auto_feed_not_sent_when_refused(self):
         with self.assertRaises(kobra.KobraError):
             self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [1], [{"colour": "#FF0000", "type": "PLA"}],
