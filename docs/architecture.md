@@ -65,7 +65,6 @@ state, so `usage_track` never runs for it). A Spooler that does must list `"anyc
 | `gcode_check.py` | Read-only checks of the plate G-code (settings block, PNG preview) and of the printer preset | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
 | `bridge.py` | Upload bridge (opt-in): OctoPrint-compatible `GET /api/version` and `POST /api/files/local` on 127.0.0.1, API key in `bridge_key.txt` (0600) | no |
-| `purge.py` | Purge-and-bed-wait add-on (opt-in): purge after each `T<n>`, `M190` before the first layer, on a copy of the G-code | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
 | `ui/app.html` | The Kobra Control tab: one compiled Vue 3 + PrimeVue page, built from `ui/` | - |
@@ -119,7 +118,6 @@ Page to plugin:
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
 | `bridge_new_key` | `id` | replace the upload bridge's API key; answers `{renewed}` and a new `config` |
-| `purge_preview` | `id`, `purge` (`{length, speed, corner}`) | the purge add-on's lines for these values on the preset's bed: `{bed_wait, purge, point}` |
 | `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
 
 Plugin to page:

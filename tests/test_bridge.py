@@ -322,6 +322,12 @@ class PrintFlow(Base):
         self.assertFalse(self.sent("print", "start"))
         self.assertIsNone(self.svc.bridge_pending_for(self.fake.host))
 
+    def test_start_accepts_a_size_the_printer_does_not_report(self):
+        self.upload(True)
+        pending = self.svc.bridge_pending_for(self.fake.host)
+        self.fake.reply("file", "listLocal", {"records": [{"filename": "cube.gcode", "size": 0, "timestamp": 2}]}, code=200)
+        self.assertEqual(self.run_cmd("bridge_start", id=pending["id"])["result"], {"started": "cube.gcode"})
+
     def test_no_printer_selected(self):
         self.svc.target = None
         with self.assertRaises(bridge.Refused) as e:

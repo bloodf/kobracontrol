@@ -3,7 +3,7 @@ import * as bridge from '../core/bridge';
 import { message } from '../core/tracker';
 import { t, onLangPref } from '../core/i18n';
 import { hello, lease, onConfig, s, tracker } from './store';
-import type { Config, PurgeCorner } from './types';
+import type { Config } from './types';
 
 // Settings form: a config message from the plugin never wipes values the user is still editing; "Saved" only
 // once the plugin answered; on an error the typed values stay.
@@ -11,7 +11,7 @@ export const config = ref<Config | null>(null);
 const DEFAULT_NAME = 'Anycubic Kobra X';
 export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera: true, leveling: true, vibration: true, flow: false, timelapse: false,
   spoolman: '', spoolmanAuto: true, usage: true,
-  bridge: false, bridgePort: 8765, purge: false, purgeLength: 15, purgeSpeed: 5, purgeCorner: 'front_left' as PurgeCorner });
+  bridge: false, bridgePort: 8765 });
 export const saving = ref(false);
 /** A Spoolman address is set here or comes from Spooler: linking spools to slots needs one. */
 export const spoolmanSet = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
@@ -23,14 +23,12 @@ const fromSettings = (st: Record<string, any>): Form => ({
   leveling: st.auto_leveling !== false, vibration: st.vibration_compensation !== false, flow: st.flow_calibration === true,
   timelapse: st.timelapse === true, spoolman: st.spoolman_url || '',
   spoolmanAuto: st.spoolman_auto !== false, usage: st.spoolman_report_usage !== false,
-  bridge: st.bridge_enabled === true, bridgePort: Number(st.bridge_port) || 8765, purge: st.purge_enabled === true,
-  purgeLength: Number(st.purge_length) || 15, purgeSpeed: Number(st.purge_speed) || 5, purgeCorner: st.purge_corner || 'front_left' });
+  bridge: st.bridge_enabled === true, bridgePort: Number(st.bridge_port) || 8765 });
 const toSettings = (f: Form): Record<string, unknown> => ({
   host: f.host.trim(), printer_name: f.name.trim() || DEFAULT_NAME, ffmpeg_path: f.ffmpeg.trim(), camera_enabled: f.camera,
   auto_leveling: f.leveling, vibration_compensation: f.vibration, flow_calibration: f.flow, timelapse: f.timelapse, spoolman_url: f.spoolman.trim(),
   spoolman_auto: f.spoolmanAuto, spoolman_report_usage: f.usage,
-  bridge_enabled: f.bridge, bridge_port: f.bridgePort, purge_enabled: f.purge, purge_length: f.purgeLength, purge_speed: f.purgeSpeed,
-  purge_corner: f.purgeCorner });
+  bridge_enabled: f.bridge, bridge_port: f.bridgePort });
 
 /** The settings typed here and not saved yet, by their plugin names. */
 export const changed = computed(() => {

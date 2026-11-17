@@ -9,10 +9,6 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   the Kobra X through Kobra Control on 127.0.0.1. Every request needs an API key the plugin makes (Settings, with
   Copy, New key and the OrcaSlicer steps). Upload and Print never starts by itself: the tab shows the waiting print
   with Start and Don't print, and refuses while the printer is busy. Loopback only, rate and size limited.
-- **Purge and bed wait** add-on (opt-in, off by default, not yet tried on a Kobra X): sent prints go out as a copy
-  with a purge after each filament change during the print (a short line extruded while moving, each in its own lane
-  along a bed edge) and an `M190` bed wait before the first layer; Settings previews the lines, and docs/setup.md
-  lists exactly what is inserted.
 
 - The camera in the Kobra Control tab no longer needs `ffmpeg`. The plugin reads the printer's video stream
   (H.264 in FLV) and the page plays it with the webview's own video player, at the printer's full 1280x720 and

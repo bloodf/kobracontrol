@@ -2,7 +2,6 @@
 that imports `orca`. Printer work runs in service.py on the plugin's own threads; everything here that runs
 on OrcaSlicer's UI thread only queues work and returns."""
 
-import glob
 import json
 import os
 import re
@@ -22,7 +21,6 @@ import i18n
 import locate
 import kobra
 import peers
-import purge
 import requirements
 import settings
 import spooler_bridge
@@ -232,27 +230,11 @@ def service(publish=None):
             _service = Service(publish or (lambda m: None), log, cert_dir=cert_dir(),
                                ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None,
                                addresses_path=os.path.join(folder, ADDRESSES_FILE) if folder else None, granted=_granted,
-                               work_dir=folder, **_service_options)
-            apply_addons(_service)
-            _sweep(folder, "purge-*.gcode")   # copies left by a crash
+                               **_service_options)
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
         return _service
-
-
-def _sweep(folder, pattern):
-    for stale in glob.glob(os.path.join(glob.escape(folder), pattern)) if folder else ():
-        try:
-            os.remove(stale)
-        except OSError as e:
-            log("can't remove %s (%s)" % (stale, e))
-
-
-def apply_addons(svc):
-    """The purge add-on's options for the jobs of `svc` (None while off in Settings)."""
-    cfg = get_store().effective()
-    svc.purge_options = purge.options(cfg) if cfg["purge_enabled"] else None
 
 
 # ---------------------------------------------------------------------- upload bridge (opt-in)
@@ -285,9 +267,10 @@ def _bridge_upload(path, filename, plate_index, start):
     return svc.bridge_upload(path, filename, plate_index, start, get_store().effective())
 
 
-def sync_bridge():
+def sync_bridge(on_change=None):
     """Start, restart or stop the bridge as Settings say. Binds on the caller's thread: OrcaSlicer asks for the
-    127.0.0.1 network permission there when it was not granted at load."""
+    127.0.0.1 network permission there when it was not granted at load. Never waits: when the previous bridge on
+    the port is still stopping, a worker waits for it and binds again, then calls on_change() (the page's config)."""
     global _bridge, _bridge_error
     cfg = get_store().effective()
     want, folder = cfg["bridge_enabled"], _storage()   # an upload is written to the storage folder first
@@ -299,27 +282,41 @@ def sync_bridge():
     elif want and _bridge is None:
         try:
             bridge_key()   # made once here; requests only read it
-            _bridge = _start_bridge(cfg["bridge_port"], folder)
+            _bridge = _make_bridge(cfg["bridge_port"], folder)
         except OSError as e:
-            _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
-            log("upload bridge not started: %s" % _bridge_error)
+            stopping = _stopping
+            if stopping is not None and stopping.is_alive() and stopping.port == cfg["bridge_port"]:   # off and on quickly
+                _bridge_error = tr("waiting for the previous bridge to close")
+                threading.Thread(target=_retry_bridge, args=(stopping, cfg["bridge_port"], folder, on_change),
+                                 name="kobracontrol-bridge-retry", daemon=True).start()
+            else:
+                _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
+                log("upload bridge not started: %s" % _bridge_error)
 
 
 _stopping = None   # the thread stopping the previous bridge, while it runs
 
 
-def _start_bridge(port, folder):
-    """A started Bridge; when the previous one on this port is still stopping (off and on again quickly, or a
-    reload during an upload), waits a moment for it and tries once more."""
-    make = lambda: bridge.Bridge(port, lambda: bridge_key(create=False), _bridge_upload, folder, log).start()
-    try:
-        return make()
-    except OSError:
-        stopping = _stopping
-        if stopping is None or not stopping.is_alive():
-            raise
-        stopping.join(STOP_WAIT)
-        return make()
+def _make_bridge(port, folder):
+    return bridge.Bridge(port, lambda: bridge_key(create=False), _bridge_upload, folder, log).start()
+
+
+def _retry_bridge(stopping, port, folder, on_change):
+    """Worker: wait for the old bridge to let go of the port, bind once more if Settings still want this one."""
+    global _bridge, _bridge_error
+    stopping.join(STOP_WAIT)
+    cfg = get_store().effective()
+    if _bridge is None and cfg["bridge_enabled"] and cfg["bridge_port"] == port:
+        try:
+            _bridge, _bridge_error = _make_bridge(port, folder), ""
+        except OSError as e:
+            _bridge_error = tr("port %d could not be opened (%s)") % (port, e.strerror or e)
+            log("upload bridge not started: %s" % _bridge_error)
+    if on_change is not None:
+        try:
+            on_change()
+        except Exception as e:
+            log("bridge state not shown: %r" % e)
 
 
 def stop_bridge():
@@ -327,6 +324,7 @@ def stop_bridge():
     running, _bridge = _bridge, None
     if running is not None:   # shutdown waits for a request in progress: never on the UI thread
         _stopping = threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True)
+        _stopping.port = running.port
         _stopping.start()
 
 
@@ -334,15 +332,6 @@ def bridge_state():
     cfg = get_store().effective()
     return {"enabled": cfg["bridge_enabled"], "running": _bridge is not None, "port": _bridge.port if _bridge else cfg["bridge_port"],
             "host": bridge.HOST, "key": bridge_key(create=cfg["bridge_enabled"]), "error": _bridge_error}
-
-
-def bed_of_preset():
-    """The selected printer preset's bed (purge.parse_area), the Kobra X's 260 x 260 when unreadable."""
-    try:
-        bed = purge.parse_area(clean(orca.host.preset_bundle().current_printer_preset().config_value("printable_area")))
-    except Exception:
-        bed = None
-    return bed or (0.0, 0.0, 260.0, 260.0)
 
 
 def start_link():
@@ -695,17 +684,12 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 bridge_key(renew=True)
                 self.post_message(self._config_message())
                 self.post_message({"type": "reply", "id": data.get("id"), "result": {"renewed": True}})
-            elif kind == "purge_preview":
-                opts = purge.options({"purge_" + k: v for k, v in dict(data.get("purge") or {}).items()})
-                self.post_message({"type": "reply", "id": data.get("id"), "result": purge.preview(
-                    opts, bed_of_preset(), "<%s>" % tr("first-layer bed temperature"))})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
-                apply_addons(svc)
-                sync_bridge()
+                sync_bridge(lambda: self.post_message(self._config_message()))
                 target = _target()
                 grant_on_ui_thread(svc, target.preset_host, user=True)
                 svc.set_target(target, retry=True)   # a new address connects at once; the same one now
@@ -757,7 +741,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         except Exception as e:
             log("Spooler discovery not started: %r" % e)
         try:
-            sync_bridge()
+            sync_bridge(lambda: self.post_message(self._config_message()))
         except Exception as e:
             log("upload bridge not started: %r" % e)
 

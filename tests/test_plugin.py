@@ -1130,8 +1130,6 @@ class GcodeChecks(Base):
         self.assertEqual(self.fake.uploads, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class PushingNoop(Base):
@@ -1314,7 +1312,7 @@ def free_port():
 
 
 class AddOns(Base):
-    """Settings switch the upload bridge and the purge add-on on and off; both are off by default."""
+    """Settings switch the upload bridge on and off; it is off by default."""
 
     def setUp(self):
         super().setUp()
@@ -1333,7 +1331,6 @@ class AddOns(Base):
         self.page.on_load()
         self.addCleanup(self.page.on_unload)
         self.assertIsNone(plugin._bridge)
-        self.assertIsNone(plugin._service.purge_options)
         self.page.on_message({"type": "hello", "id": 1})
         state = self.config()["bridge"]
         self.assertEqual((state["enabled"], state["running"], state["host"], state["key"]), (False, False, "127.0.0.1", ""))
@@ -1367,6 +1364,27 @@ class AddOns(Base):
             state = self.save(bridge_enabled=True, bridge_port=busy.getsockname()[1])["bridge"]
         self.assertFalse(state["running"])
         self.assertIn("could not be opened", state["error"])
+
+    def test_quick_restart_binds_again_from_a_worker(self):
+        """Off and on while the old bridge still holds the port: the UI thread never waits; a worker binds once the
+        old one has let go and the page gets a new config."""
+        port = free_port()
+        self.save(bridge_enabled=True, bridge_port=port)
+        old = plugin._bridge
+        release = threading.Event()
+        real_stop = old.stop
+        old.stop = lambda: (release.wait(5), real_stop())   # an upload in progress keeps the port a little longer
+        self.save(bridge_enabled=False)
+        started = time.monotonic()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertLess(time.monotonic() - started, 0.5)   # the UI thread did not join the stopping thread
+        self.assertFalse(state["running"])
+        self.assertIn("waiting for the previous bridge", state["error"])
+        posted = len(self.page.posted)
+        release.set()
+        wait(lambda: plugin._bridge is not None)
+        wait(lambda: len(self.page.posted) > posted)
+        self.assertTrue(self.config()["bridge"]["running"])
 
     def test_unload_stops_the_bridge(self):
         self.save(bridge_enabled=True, bridge_port=free_port())
@@ -1410,12 +1428,6 @@ class AddOns(Base):
         self.assertEqual(set(readers), {"ui"})
         self.assertEqual(self.fake.uploads[-1]["filename"], "cube.gcode")
 
-    def test_purge_switch_and_preview(self):
-        self.save(purge_enabled=True, purge_length=20, purge_corner="back_right")
-        self.assertEqual(plugin._service.purge_options, {"length": 20.0, "speed": 5.0, "corner": "back_right"})
-        self.page.on_message({"type": "purge_preview", "id": 7, "purge": {"length": 15, "speed": 3, "corner": "front_right"}})
-        preview = self.page.posted[-1]["result"]
-        self.assertEqual(preview["point"], ["255", "5"])   # the fake preset has no printable_area: 260 x 260
-        self.assertIn("G1 X225 Y5 E15 F360", preview["purge"])
-        self.save(purge_enabled=False)
-        self.assertIsNone(plugin._service.purge_options)
+
+if __name__ == "__main__":
+    unittest.main()

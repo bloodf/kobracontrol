@@ -660,7 +660,7 @@ export const en = {
   'cam.noFfmpeg': 'ffmpeg isn’t installed: see Settings > Requirements.',
   'cam.checkingFfmpeg': 'Looking for ffmpeg…',
   'cert.noSlicer': 'Anycubic Slicer Next isn’t in its usual folder: type where it is to search there.',
-  // upload bridge and purge add-on
+  // upload bridge
   'bridge.title': 'Upload bridge',
   'bridge.help': 'Lets OrcaSlicer’s Upload and Upload and Print reach the Kobra X through Kobra Control, as if Kobra Control were an OctoPrint server. Off by default.',
   'bridge.enable': 'Accept uploads from OrcaSlicer',
@@ -693,23 +693,6 @@ export const en = {
   'bridge.dontPrint': 'Don’t print',
   'act.bridgeCancel': 'Cancel the waiting print',
   'ok.bridgeCancel': 'Not printed; the file stays on the printer.',
-  'purge.title': 'Purge and bed wait',
-  'purge.help': 'An add-on for prints sent from OrcaSlicer: a copy of the sliced file gets a purge after every filament change (ACE load) and waits for the first-layer bed temperature. The sliced file itself is not changed. Off by default.',
-  'purge.warnTitle': 'Not yet tried on a Kobra X: it changes the G-code sent to the printer',
-  'purge.warnBody': 'After every filament change during the print the nozzle travels to a strip along the edge of the bed and extrudes a short line there, each purge in its own lane. A purged line can curl up, stick to the nozzle or be hit if the strip is not clear. Keep the strip clear and watch the first prints. The sliced file itself is not changed.',
-  'purge.enable': 'Add purge and bed wait to sent prints',
-  'purge.length': 'Purge length (mm)',
-  'purge.speed': 'Purge speed (mm/s)',
-  'purge.corner': 'Purge corner',
-  'purge.cornerHint': '5 mm inside the bed of the sliced file.',
-  'purge.corner.front_left': 'Front left',
-  'purge.corner.front_right': 'Front right',
-  'purge.corner.back_left': 'Back left',
-  'purge.corner.back_right': 'Back right',
-  'purge.preview': 'Lines added',
-  'purge.previewBed': 'Before the first layer, when the file has no M190:',
-  'purge.previewTool': 'After each filament change (<X> <Y>: where the nozzle was):',
-  'purge.previewFailed': 'No preview: {error}',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1372,7 +1355,7 @@ export const ptBR: Record<MessageKey, string> = {
   'cam.noFfmpeg': 'O ffmpeg não está instalado: veja Ajustes > Requisitos.',
   'cam.checkingFfmpeg': 'Procurando o ffmpeg…',
   'cert.noSlicer': 'O Anycubic Slicer Next não está na pasta usual: digite onde ele está para procurar lá.',
-  // upload bridge and purge add-on
+  // upload bridge
   'bridge.title': 'Ponte de envio',
   'bridge.help': 'Deixa o Enviar e o Enviar e imprimir do OrcaSlicer chegarem à Kobra X pelo Kobra Control, como se o Kobra Control fosse um servidor OctoPrint. Desligado por padrão.',
   'bridge.enable': 'Aceitar envios do OrcaSlicer',
@@ -1405,21 +1388,4 @@ export const ptBR: Record<MessageKey, string> = {
   'bridge.dontPrint': 'Não imprimir',
   'act.bridgeCancel': 'Cancelar a impressão em espera',
   'ok.bridgeCancel': 'Não impresso; o arquivo fica na impressora.',
-  'purge.title': 'Purga e espera da mesa',
-  'purge.help': 'Um complemento para impressões enviadas pelo OrcaSlicer: uma cópia do arquivo fatiado ganha uma purga após cada troca de filamento (carga do ACE) e espera a temperatura da mesa da primeira camada. O arquivo fatiado em si não muda. Desligado por padrão.',
-  'purge.warnTitle': 'Ainda não testado numa Kobra X: isso muda o G-code enviado à impressora',
-  'purge.warnBody': 'Após cada troca de filamento durante a impressão, o bico vai a uma faixa na borda da mesa e extruda uma linha curta ali, cada purga em sua própria faixa. Uma linha purgada pode enrolar, grudar no bico ou ser atingida se a faixa não estiver livre. Mantenha a faixa livre e acompanhe as primeiras impressões. O arquivo fatiado em si não muda.',
-  'purge.enable': 'Adicionar purga e espera da mesa às impressões enviadas',
-  'purge.length': 'Comprimento da purga (mm)',
-  'purge.speed': 'Velocidade da purga (mm/s)',
-  'purge.corner': 'Canto da purga',
-  'purge.cornerHint': '5 mm para dentro da mesa do arquivo fatiado.',
-  'purge.corner.front_left': 'Frente à esquerda',
-  'purge.corner.front_right': 'Frente à direita',
-  'purge.corner.back_left': 'Fundo à esquerda',
-  'purge.corner.back_right': 'Fundo à direita',
-  'purge.preview': 'Linhas adicionadas',
-  'purge.previewBed': 'Antes da primeira camada, quando o arquivo não tem M190:',
-  'purge.previewTool': 'Após cada troca de filamento (<X> <Y>: onde o bico estava):',
-  'purge.previewFailed': 'Sem prévia: {error}',
 };

@@ -1574,7 +1574,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true,
-    bridge_enabled: false, bridge_port: 8765, purge_enabled: false, purge_length: 15, purge_speed: 5, purge_corner: 'front_left'}, 'every setting, by its name');
+    bridge_enabled: false, bridge_port: 8765}, 'every setting, by its name');
   assert(!text(q('.notices')).includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
@@ -1649,26 +1649,6 @@ test('settings: upload bridge is off by default; key, copy, new key and OrcaSlic
   await until(() => toasts().includes('old one no longer works'), 'new key said');
   await post(CONFIG({settings: {...SETTINGS, bridge_enabled: true}, bridge: {enabled: true, running: false, port: 8765, host: '127.0.0.1', key: 'k', error: 'port 8765 could not be opened (Address already in use)'}}));
   assert(text(byTest('bridge-state')).includes('Address already in use'), 'error shown: ' + text(byTest('bridge-state')));
-`);
-
-test('settings: purge add-on is off, warns it is untried and changes the G-code, previews the plugin lines', `
-  await ready(VIEW());
-  await tab('settings');
-  eq(q('input#c-purge').checked, false, 'off by default');
-  assert(text(byTest('purge-warning')).includes('Not yet tried on a Kobra X'), 'warning');
-  await until(() => last('purge_preview'), 'preview asked');
-  eq(last('purge_preview').purge, {length: 15, speed: 5, corner: 'front_left'}, 'form values');
-  await reply(last('purge_preview'), {bed_wait: ['; >>>', 'M190 S<first-layer bed temperature>', '; <<<'],
-    purge: ['; >>>', 'G1 X5 Y5 F12000', 'G1 E30 F300', '; <<<'], point: ['5', '5']});
-  await until(() => byTest('purge-preview'), 'preview shown');
-  assert(text(byTest('purge-preview')).includes('G1 E30 F300'), 'purge lines');
-  assert(text(byTest('purge-preview-bed')).includes('M190'), 'bed wait line');
-  await pick(byTest('purge-corner'), 'Back right');
-  await until(() => last('purge_preview').purge.corner === 'back_right', 'preview follows the form');
-  await click(q('input#c-purge'));
-  await click(byTest('save-top'));
-  const st = last('save_settings').settings;
-  eq([st.purge_enabled, st.purge_corner, st.purge_length], [true, 'back_right', 15], 'saved');
 `);
 
 test('upload bridge: a print from OrcaSlicer waits for Start; refused while the printer is busy', `

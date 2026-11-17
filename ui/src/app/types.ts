@@ -65,8 +65,6 @@ export interface Config {
 }
 /** The upload bridge: on in Settings, listening, where, its API key and why it is not running. */
 export interface BridgeState { enabled: boolean; running: boolean; port: number; host: string; key: string; error: string }
-export type PurgeCorner = 'front_left' | 'front_right' | 'back_left' | 'back_right';
-export interface PurgePreview { bed_wait: string[]; purge: string[]; point: string[] }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;
   job?: string; printer: string; printer_name?: string; spoolman?: string; acknowledged_at?: number }

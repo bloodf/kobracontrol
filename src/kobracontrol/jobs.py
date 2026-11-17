@@ -6,7 +6,6 @@ import contextlib
 import os
 import re
 import secrets
-import tempfile
 import time
 import xml.etree.ElementTree as ET
 import zipfile
@@ -16,7 +15,6 @@ import bridge
 import connection
 import gcode_check
 import kobra
-import purge
 from i18n import lazy, tr
 
 CONNECT_WAIT = 10.0             # s a print job waits for the session
@@ -114,42 +112,6 @@ def supported_task(view, task):
 
 
 class JobsMixin:
-    purge_options = None   # purge.options(...) while the purge add-on is on (Settings); None = files go as sliced
-    work_dir = ""          # the plugin's storage folder: the add-on's copy of the G-code is written there
-
-    @contextlib.contextmanager
-    def job_source(self, path, plate_index=1):
-        """plate_source, or with the purge add-on on, its processed copy (written to work_dir, removed afterwards);
-        the sliced file itself is never changed."""
-        with plate_source(path, plate_index) as (source, size, weights):
-            opts = self.purge_options
-            if not opts:
-                yield source, size, weights
-                return
-            copy = self._purged_copy(source, opts)
-            try:
-                with open(copy, "rb") as f:
-                    yield f, os.path.getsize(copy), weights
-            finally:
-                os.remove(copy)
-
-    def _purged_copy(self, source, opts):
-        if not self.work_dir:
-            raise kobra.KobraError(tr("no storage folder for the purge add-on's copy of the G-code; nothing was sent"))
-        info = purge.scan(source)
-        source.seek(0)
-        fd, copy = tempfile.mkstemp(prefix="purge-", suffix=".gcode", dir=self.work_dir)
-        try:
-            with os.fdopen(fd, "wb") as out:
-                done = purge.transform(source, out.write, opts, info)
-        except BaseException as e:
-            os.remove(copy)
-            if isinstance(e, purge.PurgeError):
-                raise kobra.KobraError(str(e)) from None
-            raise
-        self.log("kobracontrol: purge add-on: %d purge(s), bed wait %s" % (done["purges"], "added" if done["bed_wait"] else "already there"))
-        return copy
-
     def ready(self, host, timeout=CONNECT_WAIT):
         """The connected Connection for `host`, waiting up to timeout; KobraError when it does not connect."""
         conn = self.connection(host)
@@ -193,7 +155,7 @@ class JobsMixin:
         conn = self.ready(host)
         filename = remote_name(name or os.path.basename(path))
         self._forget_pending(filename)   # a waiting bridge print of that name would start this file instead
-        with self.job_source(path, plate_index) as (source, size, _):
+        with plate_source(path, plate_index) as (source, size, _):
             self._upload(conn, filename, source, size, progress, cancelled)
         return filename, size
 
@@ -207,7 +169,7 @@ class JobsMixin:
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
         filename = remote_name(name or os.path.basename(path))
         self._forget_pending(filename)
-        with self.job_source(path, plate_index) as (source, size, weights):
+        with plate_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
             self._upload(conn, filename, source, size, progress, cancelled)
         if cancelled and cancelled():
@@ -299,7 +261,9 @@ class JobsMixin:
         if not pending or pending["id"] != id or self.bridge_pending_for(conn.host) is None:
             raise kobra.KobraError(tr(GONE))
         listed = next((f for f in self._printer().list_files() if f.get("filename") == pending["name"]), None)
-        if listed is None or listed.get("size") != pending["size"]:   # deleted or replaced on the printer meanwhile
+        # listLocal "size" is the file's bytes (tests/kobra_captures.py FILE_LISTLOCAL); 0 means not reported
+        reported = int(round(listed.get("size") or 0)) if listed else -1
+        if listed is None or (reported and reported != pending["size"]):   # deleted or replaced meanwhile
             self._forget_pending(pending["name"])
             raise kobra.KobraError(tr("%s on the printer is not the file OrcaSlicer sent; nothing was started") % pending["name"])
         result = self.cmd_file_print(pending["name"], **pending["task"])

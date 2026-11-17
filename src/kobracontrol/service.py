@@ -164,14 +164,13 @@ def _background(fn, name):
 class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
                  fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera, relay_factory=camera.Relay,
-                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None, work_dir=""):
+                 spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
         self.tls = tls or connection.tls_from(cert_dir)
         self.pins = certs.Pins(os.path.join(cert_dir, certs.PINS_FILE)) if cert_dir else None
         self.http_port, self.mqtt_port, self.fetch = http_port, mqtt_port, fetch
         self.spoolman_factory = spoolman_factory
-        self.work_dir = work_dir
         self.lock = threading.RLock()
         self._op = threading.local()
         self.connections = {}
