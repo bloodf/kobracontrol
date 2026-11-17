@@ -2,13 +2,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeFmt } from '../../src/core/format.ts';
-import { interpolate } from '../../src/core/i18n-core.ts';
+import { interpolate, pluralKey } from '../../src/core/i18n-core.ts';
 import { en, ptBR, type MessageKey } from '../../src/core/messages.ts';
 import { es } from '../../src/core/locales/es.ts';
 import { de } from '../../src/core/locales/de.ts';
 import { zhCN } from '../../src/core/locales/zh-CN.ts';
+import { pl } from '../../src/core/locales/pl.ts';
 
-const dicts = { en, 'pt-BR': ptBR, es, de, 'zh-CN': zhCN } as Record<string, Record<MessageKey, string>>;
+const dicts = { en, 'pt-BR': ptBR, es, de, 'zh-CN': zhCN, pl } as Record<string, Record<MessageKey, string>>;
 const fmtFor = (l: string) => makeFmt(() => l, (k, p) => interpolate(dicts[l][k], p));
 const nbsp = (s: string) => s.replace(/[  ]/g, ' ');
 
@@ -18,6 +19,8 @@ test('decimal and grouping separators follow the language', () => {
   assert.equal(nbsp(fmtFor('de').number(1234.5, 1)), '1.234,5');
   assert.equal(nbsp(fmtFor('es').number(21.5, 1)), '21,5');
   assert.equal(fmtFor('zh-CN').number(1234.5, 1), '1,234.5');
+  assert.equal(nbsp(fmtFor('pl').number(21.5, 1)), '21,5');
+  assert.equal(nbsp(fmtFor('pl').number(12345.5, 1)), '12 345,5');
   assert.equal(nbsp(fmtFor('de').grams(1234.4)), '1.234 g');
   assert.equal(nbsp(fmtFor('es').bytes(2_500_000)), '2,5 MB');
 });
@@ -28,6 +31,8 @@ test('durations, percent, lists and label pairs use each language’s words and 
   assert.equal(fmtFor('zh-CN').duration(3900), '1 小时 5 分钟');
   assert.equal(fmtFor('zh-CN').percent(40), '40%');
   assert.equal(fmtFor('de').percent(40), '40 %');
+  assert.equal(fmtFor('pl').percent(40), '40%');
+  assert.equal(fmtFor('pl').duration(3900), '1 h 5 min');
   assert.equal(fmtFor('en').list(['A', 'B']), 'A, B');
   assert.equal(fmtFor('zh-CN').list(['A', 'B']), 'A、B');
   assert.equal(fmtFor('zh-CN').pair('喷嘴', '200'), '喷嘴：200');
@@ -55,4 +60,19 @@ test('plural keys have both forms and pick by the language’s rule', () => {
   }
   assert.equal(new Intl.PluralRules('zh-CN').select(1), 'other');
   assert.equal(new Intl.PluralRules('de').select(1), 'one');
+});
+
+test('Polish plurals: one, few and many forms by Intl.PluralRules(\'pl\')', () => {
+  const dict = pl as Record<string, string>;
+  const say = (base: string, n: number) => interpolate(dict[pluralKey(dict, 'pl', base, n)], { n });
+  assert.equal(say('videos.count', 1), '1 nagranie');
+  assert.equal(say('videos.count', 2), '2 nagrania');
+  assert.equal(say('videos.count', 5), '5 nagrań');
+  assert.equal(say('videos.count', 12), '12 nagrań');
+  assert.equal(say('videos.count', 22), '22 nagrania');
+  assert.equal(say('usage.tracking', 22), '22 wydruki czekają na zaksięgowanie w Spoolmanie po zakończeniu.');
+  assert.equal(say('usage.count', 0), '0 niepotwierdzonych zużyć');
+  // other languages keep their one/other pair
+  assert.equal(pluralKey(en as Record<string, string>, 'en', 'videos.count', 5), 'videos.count_other');
+  assert.equal(pluralKey(de as Record<string, string>, 'de', 'videos.count', 1), 'videos.count_one');
 });

@@ -457,6 +457,7 @@ export const zhCN: Record<MessageKey, string> = {
   'lang.es': "Español",
   'lang.de': "Deutsch",
   'lang.zh-CN': "简体中文",
+  'lang.pl': "Polski",
   'lang.help': "“自动”会跟随 OrcaSlicer 的语言，其次是系统语言。您的选择仅保存在 OrcaSlicer 中。",
   'about.text': "Kobra Control {version} · 独立项目，非 Anycubic 出品。",
   'reason.connecting': "正在连接打印机",

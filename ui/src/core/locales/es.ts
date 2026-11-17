@@ -480,6 +480,7 @@ export const es: Record<MessageKey, string> = {
   'lang.es': "Español",
   'lang.de': "Deutsch",
   'lang.zh-CN': "简体中文",
+  'lang.pl': "Polski",
   'lang.help': "Automático sigue el idioma de OrcaSlicer y, si no, el del sistema. Su elección se guarda solo en OrcaSlicer.",
   'about.text': "Kobra Control {version} · Proyecto independiente, no creado por Anycubic.",
   'reason.connecting': "Conectando con la impresora",

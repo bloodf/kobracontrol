@@ -1,5 +1,5 @@
-// Every visible string of the Kobra Control page, in English and Brazilian Portuguese; Spanish, German and Simplified
-// Chinese are in locales/. English is the source: its keys are the type every other language must fill. Texts from the
+// Every visible string of the Kobra Control page, in English and Brazilian Portuguese; Spanish, German, Simplified
+// Chinese and Polish are in locales/. English is the source: its keys are the type every other language must fill. Texts from the
 // printer are shown as they come; the plugin's own error details arrive from Python already in the page's language
 // (src/kobracontrol/i18n.py).
 export const en = {
@@ -481,6 +481,7 @@ export const en = {
   'lang.es': 'Español',
   'lang.de': 'Deutsch',
   'lang.zh-CN': '简体中文',
+  'lang.pl': 'Polski',
   'lang.help': 'Automatic follows OrcaSlicer’s language, then the system’s. Your choice is kept in OrcaSlicer only.',
   'about.text': 'Kobra Control {version} · Independent project, not made by Anycubic.',
   'reason.connecting': 'Connecting to the printer',
@@ -1181,6 +1182,7 @@ export const ptBR: Record<MessageKey, string> = {
   'lang.es': 'Español',
   'lang.de': 'Deutsch',
   'lang.zh-CN': '简体中文',
+  'lang.pl': 'Polski',
   'lang.help': 'Automático segue o idioma do OrcaSlicer e depois o do sistema. A escolha fica guardada só neste OrcaSlicer.',
   'about.text': 'Kobra Control {version} · Projeto independente, não feito pela Anycubic.',
   'reason.connecting': 'conectando à impressora',
