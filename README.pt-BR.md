@@ -100,7 +100,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 | Time-lapses | Os vídeos de time-lapse da impressora, com impressão, data, duração e tamanho, e **Excluir**. A impressora ainda não oferece um jeito de baixar um vídeo pela rede local. |
 | Spoolman | Vincule uma bobina do Spoolman a um slot. As impressões concluídas registram ali o filamento usado quando a opção está ligada. |
 | Funciona com o Spooler | O [Spooler](https://github.com/bloodf/spooler) transforma seus filamentos do Spoolman em perfis de filamento do OrcaSlicer. Com ele instalado, o Painel mostra o estoque do Spooler. O Kobra Control também funciona ao lado do [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
-| Ajustes | Conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
+| Ajustes | Requisitos (ffmpeg, Anycubic Slicer Next, printer agents do OrcaSlicer e Spoolman: o que foi encontrado, quem precisa e como instalar), conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
 | Plugins > Run | **Check Kobra X connection** informa certificado, credenciais, MQTT e versão do firmware. **Find Anycubic certificate** procura o certificado de cliente e informa o resultado. |
 
 Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e outros modelos Kobra.
@@ -112,7 +112,7 @@ Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de
 2. Abra a aba **Kobra Control**. Ela procura a impressora sozinha. Na primeira vez, o OrcaSlicer pergunta uma vez se o kobracontrol pode se conectar àquele endereço. Permita.
 3. Use o **Painel** para acompanhar a impressão, definir temperaturas, ligar a câmera com **Ligar** e alimentar, recolher ou secar filamento.
 4. Para imprimir um arquivo guardado na impressora, abra **Arquivos**, pressione **Imprimir** no arquivo, confira o painel e pressione **Iniciar impressão**.
-5. Para enviar impressões pelo próprio OrcaSlicer, marque **Preferences > Developer > Experimental Features > Use printer agents**. Depois, em uma cópia do seu perfil de impressora da Kobra X, defina **Printer Agent** como `kobracontrol` e o endereço como o IP da impressora.
+5. Para enviar impressões pelo próprio OrcaSlicer, abra **Preferences > Developer > Experimental Features**, marque **Use printer agents instead of print hosts** e reinicie o OrcaSlicer. Depois, em uma cópia do seu perfil de impressora da Kobra X, defina **Printer Agent** como `kobracontrol` e o endereço como o IP da impressora.
 6. Execute **Plugins > Check Kobra X connection**. Depois, no diálogo de impressão do OrcaSlicer, sincronize os slots do ACE, associe cada filamento a um slot e envie a impressão.
 
 <p align="center">
@@ -196,7 +196,7 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 <details>
 <summary>O perfil de impressora não tem o Printer Agent kobracontrol.</summary>
 
-**Use printer agents** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
+**Use printer agents instead of print hosts** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
 </details>
 
 <details>

@@ -41,7 +41,7 @@ On a Kobra X with firmware 2.0.2.8, outside OrcaSlicer: connecting, status, ACE 
 
 1. Install the plugin and tick Activate. The Kobra Control tab appears next to Prepare, Preview and Device.
 2. Turn on LAN mode on the printer. The tab finds it on your network; allow the address when OrcaSlicer asks.
-3. To print from OrcaSlicer's own Print dialog, tick Preferences > Developer > Experimental Features > Use printer agents and set the printer preset's Printer Agent to `kobracontrol`.
+3. To print from OrcaSlicer's own Print dialog, tick Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, restart OrcaSlicer and set the printer preset's Printer Agent to `kobracontrol`.
 
 ## Privacy
 
@@ -105,19 +105,19 @@ Os arquivos da impressora, com tempo, camadas, filamento e os slots de cada cor 
 
 ## Conferido na impressora
 
-Em uma Kobra X com firmware 2.0.2.8, fora do OrcaSlicer: conexão, status, slots do ACE, arquivos, câmera e uma impressão a partir de um `.3mf` com mapeamento de slots (2026-11-14); a busca na rede (2026-11-15); listar e excluir vídeos de time-lapse (2026-11-16). Ainda não experimentados na impressora: pausar, retomar, parar, alimentar, recolher e secagem. Nada foi testado dentro do próprio OrcaSlicer.
+Em uma Kobra X com firmware 2.0.2.8, fora do OrcaSlicer: conexão, status, slots do ACE, arquivos, câmera e uma impressão a partir de um `.3mf` com mapeamento de slots (2026-11-14); a busca na rede (2026-11-15); listar e excluir vídeos de time-lapse (2026-11-16). Ainda não experimentados na impressora: pausar, retomar, parar, alimentar, recolher e secagem. Nada foi testado dentro do OrcaSlicer.
 
 ## Como começar
 
 1. Instale o plugin e marque Activate. A aba Kobra Control aparece ao lado de Prepare, Preview e Device.
 2. Ligue o modo LAN na impressora. A aba a encontra na sua rede; permita o endereço quando o OrcaSlicer perguntar.
-3. Para imprimir pelo diálogo Print do próprio OrcaSlicer, marque Preferences > Developer > Experimental Features > Use printer agents e defina o Printer Agent do perfil de impressora como `kobracontrol`.
+3. Para imprimir pelo diálogo Print do próprio OrcaSlicer, marque Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, reinicie o OrcaSlicer e defina o Printer Agent do perfil de impressora como `kobracontrol`.
 
 ## Privacidade
 
 O Kobra Control se conecta só à sua Kobra X e, se você configurar, ao seu servidor Spoolman. Não existe serviço na nuvem nem telemetria.
 
-O que o OrcaSlicer precisa permitir: acesso de rede ao endereço da impressora e ao grupo multicast local 239.255.255.250, e ao endereço do seu Spoolman se você definir um; leitura da pasta temporária do OrcaSlicer, onde o arquivo fatiado é lido e verificado, nunca alterado; leitura do Anycubic Slicer Next só quando você toca em Procurar certificado; execução do `ffmpeg` para a câmera da aba.
+O que o OrcaSlicer vai pedir: acesso de rede ao endereço da impressora e ao grupo multicast local 239.255.255.250, e ao seu Spoolman, se houver; leitura da pasta temporária do OrcaSlicer (o arquivo fatiado é lido, nunca alterado); leitura do Anycubic Slicer Next só quando você toca em Procurar certificado; execução do `ffmpeg` para a câmera da aba.
 
 Use em uma rede em que você confia: o protocolo LAN da impressora entrega as credenciais a qualquer um na rede.
 
