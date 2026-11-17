@@ -448,6 +448,25 @@ test('Spoolman: bind per slot asks first; unbind too', `
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
 
+test('status: the printer photo takes each slot colour from Spoolman, else the ACE; empty reel; feeding slot outlined', `
+  const MULTI = {id: 12, name: 'Rainbow', vendor: 'Acme', material: 'PLA', colour: '#ff0000', colours: ['#ff0000', '#00ff00', '#0000ff'], remaining: 250, initial: 1000};
+  await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 3 ? {...s, spool_id: 7} : s.global_index === 6 ? {...s, spool_id: 12} : s))}));
+  const fig = () => q('[data-test="printer-figure"]');
+  assert(fig() && fig().getAttribute('role') === 'img', 'figure in the status card');
+  eq(qa('[data-test="printer-figure"] [data-figure-slot]').map(g => g.getAttribute('data-colors') || ''), ['#e5484d', '#141414', '', '#e5484d'], 'before Spoolman: ACE colours');
+  await reply(last('cmd', 'spools'), {spools: [...ROWS, MULTI], bindings: {}, via: 'direct'});
+  eq(qa('[data-test="printer-figure"] [data-figure-slot]').map(g => g.getAttribute('data-colors') || ''), ['#111111', '#141414', '', '#ff0000 #00ff00 #0000ff'], 'Spoolman colours, multi-colour bands');
+  assert(q('[data-test="printer-figure"] [data-figure-slot="3"]').hasAttribute('data-empty'), 'empty slot is an empty reel');
+  assert(q('[data-test="printer-figure"] [data-figure-slot="1"]').hasAttribute('data-active'), 'loaded slot outlined');
+  eq(text(byTest('figure-digit')), '1', 'toolhead shows the feeding slot');
+  eq(fig().getAttribute('aria-label'), 'The printer and its spools: Slot 1 black ABS (feeding), Slot 2 black ABS, Slot 3 empty, Slot 4 multicolour PLA', 'label');
+  await post({type: 'status', data: PRINTING({slots: SLOTS().map(s => (s.global_index === 6 ? {...s, spool_id: 12} : s)), loaded_slot: 6})});
+  assert(byTest('figure-tube-active'), 'the feeding tube glows');
+  eq(fig().getAttribute('data-tone'), 'busy', 'printing tone');
+  eq(text(byTest('figure-digit')), '4', 'feeding slot 4');
+  assert(fig().getAttribute('aria-label').includes('Slot 4 multicolour PLA (feeding)'), 'label follows the feeding slot');
+`);
+
 test('Spoolman without an address says where to set it', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
