@@ -4,6 +4,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changed
+
+- The README (now also in Portuguese, `README.pt-BR.md`), the Orca Cloud description
+  (`docs/orca-cloud-description.md`) and the listing, social and README images were redone. The images carry real
+  screenshots of the page and are rebuilt with `scripts/marketing_images.py`. `docs/release.md` describes a release
+  and the listing. Nothing inside the plugin changed.
+
 ## [0.6.0] - 2026-11-16
 
 The Files tab shows the printer's time-lapse videos and can delete them. Checked against the repository's test
