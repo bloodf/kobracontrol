@@ -22,9 +22,10 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   filename: 'desk_organiser_plate_1.gcode', progress: 37, layer: 142, total_layers: 380, elapsed_s: 4100, remaining_s: 7000, task_id: '1',
   nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, fan_pct: 70, light_on: true, speed_mode: 2, files: [], 
   storage: {total: 8000, used: 2100}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
-  slots: [slot(0, -1, 0, {type: 'PETG', color: [62, 99, 221]}), slot(1, -1, 1, {status: 0, type: ''}), slot(2, -1, 2, {color: [244, 207, 120], type: 'PLA+'}),
-    slot(3, 0, 0, {activity: 'loaded', spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
-  loaded_slot: 3, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
+  // The print head's three slots are the photo's spools 1-3 (white, red, a multi-colour Spoolman spool); the fourth is empty with an ACE.
+  slots: [slot(0, -1, 0, {color: [245, 245, 245]}), slot(1, -1, 1, {activity: 'loaded'}), slot(2, -1, 2, {color: [255, 140, 40], spool_id: 12}),
+    slot(3, 0, 0, {spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
+  loaded_slot: 1, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
   can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
   features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',
   stats: {print_minutes: 37230, print_count: 214, filament_g: 18420}, assist: {'0': true, '1': false, '3': true, '4': true, '5': false}};
@@ -46,13 +47,14 @@ else {
 if (SCN === 'needs') CONFIG.ffmpeg = '';   // one requirement missing, with how to install it
 __t.handler(CONFIG);
 await settle();
+const SUNSET = {id: 12, name: 'Sunset', vendor: 'Acme', material: 'PLA', colour: '#ff8c28', colours: ['#ff8c28', '#e5484d', '#7c3aed'], remaining: 520, initial: 1000, low: false, use_first: false, location: 'Shelf B'};
 const ans = (cmd, r) => { const m = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === cmd); if (m) __t.handler({type: 'reply', id: m.id, result: r}); };
 await sleep(50);
-ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
+ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, SUNSET, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
 ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'ok', code: 'ok', text: '', key: 's:1', ts: Date.now() / 1000 - 30,
-  rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
+  rows: [SUNSET, {id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
-  same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}, available: true, reason: null});
+  same_spoolman: true, usage: 'kobracontrol', bindings: {'2': 12, '3': 7}, available: true, reason: null});
 ans('device', {sent: true, assist: true});
 ans('usage', STORE ? {pending: [], unconfirmed: [], acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''} : {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
   acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});

@@ -491,7 +491,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             with self.lock:
                 target, gen = self.target, self.generation
                 active = now < self.lease_until and target is not None
-                cam = active and self.camera_on and target.camera_enabled
+                cam = active and self.camera_on   # camera_enabled only turns it on when the page opens (the page's job)
             if not active:
                 self._guard("camera", self.camera.stop)
                 self._closing.wait(0.25)

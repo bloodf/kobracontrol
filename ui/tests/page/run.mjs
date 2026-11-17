@@ -451,6 +451,48 @@ test('Spoolman: bind per slot asks first; unbind too', `
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
 
+test('status: a long file name wraps after _ - . first, two lines at most, full name in the tooltip', `
+  await ready(PRINTING({filename: 'desk_organiser_plate-1.gcode'}));
+  const n = byTest('job-name');
+  eq(text(n), 'desk_organiser_plate-1.gcode', 'whole name shown');
+  eq(n.getAttribute('title'), 'desk_organiser_plate-1.gcode', 'tooltip');
+  eq(n.querySelectorAll('wbr').length, 4, 'a break opportunity after each _ - .');
+  eq(getComputedStyle(n).webkitLineClamp, '2', 'two lines at most');
+  eq(qa('[data-test="job-card"] .oui-job-name, [data-test="job-card"] .kc-job-name').filter(e => e.offsetParent).length, 1, 'the name is shown once');
+`);
+
+test('status: the photo spools are the print head slots, coloured like their slot cards; Spoolman first, then the ACE', `
+  const MULTI = {id: 12, name: 'Rainbow', vendor: 'Acme', material: 'PLA', colour: '#ff0000', colours: ['#ff0000', '#00ff00', '#0000ff'], remaining: 250, initial: 1000};
+  const HEAD = () => SLOTS().map(s => (s.global_index === 0 ? {...s, color: [250, 250, 250], spool_id: 11} : s.global_index === 2 ? {...s, spool_id: 12} : s));
+  await ready(VIEW({slots: HEAD(), loaded_slot: 0}));
+  const fig = () => q('[data-test="printer-figure"]');
+  const spool = n => q('[data-test="printer-figure"] [data-figure-slot="' + n + '"]');
+  const colours = () => [1, 2, 3, 4].map(n => spool(n).getAttribute('data-colors') || '');
+  assert(fig() && fig().getAttribute('role') === 'img', 'photo in the status card');
+  eq(colours(), ['#fafafa', '', '#e5484d', ''], 'before Spoolman answers: the ACE colours of the print head slots');
+  await reply(last('cmd', 'spools'), {spools: [...ROWS, MULTI], bindings: {}, via: 'direct'});
+  eq(colours(), ['#fafafa', '', '#ff0000 #00ff00 #0000ff', ''], 'Spoolman colours, one band per colour');
+  // each spool is painted like its slot card on the same page
+  for (const n of [1, 2, 3]) {
+    const head = q('[data-slot="' + (n - 1) + '"] .oui-slot-sample'), card = getComputedStyle(head);
+    const bands = qa('[data-test="printer-figure"] [data-figure-slot="' + n + '"] .kx-band').map(r => getComputedStyle(r).fill);
+    if (head.hasAttribute('data-unknown')) { assert(spool(n).hasAttribute('data-empty') && !bands.length, 'slot ' + n + ': empty card, empty reel'); continue; }
+    if (bands.length === 1) eq(bands[0], card.backgroundColor, 'slot ' + n + ' colour matches its card');
+    else assert(bands.every(c => card.backgroundImage.includes(c)), 'slot ' + n + ' bands ' + bands.join() + ' in the card ' + card.backgroundImage);
+  }
+  assert(spool(4).hasAttribute('data-empty'), 'the fourth spool is empty: the head reports three slots next to an ACE');
+  assert(spool(1).hasAttribute('data-active') && !spool(3).hasAttribute('data-active'), 'loaded slot marked');
+  eq(text(byTest('figure-digit')), '1', 'toolhead shows the feeding slot');
+  eq(fig().getAttribute('aria-label'), 'The printer and its spools: Slot 1 white PETG (feeding), Slot 2 empty, Slot 3 multicolour PLA, Slot 4 empty', 'label');
+  await post({type: 'status', data: PRINTING({slots: HEAD(), loaded_slot: 2})});
+  assert(byTest('figure-tube-active'), 'the feeding tube glows');
+  eq(fig().getAttribute('data-tone'), 'busy', 'printing tone');
+  eq(text(byTest('figure-digit')), '3', 'feeding slot 3');
+  assert(fig().getAttribute('aria-label').includes('Slot 3 multicolour PLA (feeding)'), 'label follows the feeding slot');
+  await post({type: 'status', data: PRINTING({slots: HEAD(), loaded_slot: 3})});
+  assert(!byTest('figure-digit') && !byTest('figure-tube-active'), 'an ACE slot feeding: none of the four is marked');
+`);
+
 test('Spoolman without an address says where to set it', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
