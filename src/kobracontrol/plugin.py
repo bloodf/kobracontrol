@@ -40,7 +40,7 @@ ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010,
 STAGE_CREATE, STAGE_UPLOAD, STAGE_SENDING, STAGE_FINISHED, STAGE_ERROR = 0, 1, 3, 6, 7
 CONNECT_OK = 0
 PUSH_EVERY = 0.5         # s between Device tab status pushes at most
-CATALOG_EVERY = 30.0     # s between re-reads of the filament presets and Spooler's profiles.json for tray ids
+CATALOG_EVERY = 30.0     # s between re-reads of Spooler's presets, profiles.json and the Spoolman links for tray ids
 
 _service = None
 _service_lock = threading.Lock()
@@ -250,28 +250,21 @@ def spooler_state():
 
 
 def filament_catalog():
-    """(Generic ids, presets, printer label) for the Device tab's tray ids; UI thread, no I/O.
-    Generic ids: {"Generic <family> @System": filament_id}. Presets: spooler_bridge.tray_filament_id meta for
-    the system and Spooler presets OrcaSlicer counts as compatible with the selected printer, the only ones its
-    AMS sync loads."""
+    """(Spooler presets, printer label) for the Device tab's tray ids; UI thread, no I/O. Presets: the Spooler
+    presets OrcaSlicer counts as compatible with the selected printer, the only ones its sync from AMS loads, as
+    spooler_bridge.tray_filament_id meta."""
     bundle = orca.host.preset_bundle()
     printer = bundle.current_printer_preset()
-    wanted = {bambu.generic_preset_name(m) for m in bambu.FILAMENT_FAMILIES}
     collection = bundle.filaments
-    generic, presets = {}, []
+    presets = []
     for i in range(collection.size()):
         preset = collection.preset(i)
-        bundle_id = getattr(preset, "bundle_id", "") or ""
-        first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
-        if preset.name in wanted and first("filament_id"):
-            generic[preset.name] = first("filament_id")
-        system = bool(getattr(preset, "is_system", False))
-        if not getattr(preset, "is_compatible", True) or not (system or bundle_id == spooler_bridge.BUNDLE_ID):
+        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID or not getattr(preset, "is_compatible", True):
             continue
-        presets.append({"name": preset.name, "bundle_id": bundle_id, "is_system": system,
-                        "filament_id": first("filament_id"), "vendor": first("filament_vendor"), "type": first("filament_type"),
+        first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
+        presets.append({"name": preset.name, "bundle_id": spooler_bridge.BUNDLE_ID, "vendor": first("filament_vendor"),
                         "colour": first("default_filament_colour") or first("filament_colour")})
-    return generic, presets, clean(printer.config_value("printer_model")) or printer.name
+    return presets, clean(printer.config_value("printer_model")) or printer.name
 
 
 def certificate_state():
@@ -503,9 +496,10 @@ class KobraAgent(pa.PrinterAgentBase):
         self._lock = threading.Lock()
         self.selected = ""
         self.dev_id, self.host, self.access_code = "", "", ""
-        self._filament_ids = {}
-        self._catalog = ([], "", None)       # (presets, printer label, Spooler's profiles.json) for tray ids
+        self._catalog = ([], "", None)       # (Spooler presets, printer label, Spooler's profiles.json) for tray ids
         self._catalog_at = 0.0
+        self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
+        self._links_busy = threading.Lock()
         self._was_connected = False
         self._dirty = threading.Event()
         self._stop = threading.Event()
@@ -593,6 +587,7 @@ class KobraAgent(pa.PrinterAgentBase):
         previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._catalog_at = 0.0   # the first push re-reads Spooler's profiles.json
+        self._links = ([], {})   # another printer's links never reach this one's trays
         self._refresh_catalog()
         self._was_connected = False
         self._stop = threading.Event()
@@ -636,25 +631,38 @@ class KobraAgent(pa.PrinterAgentBase):
         return host
 
     def _refresh_catalog(self, profiles=None):
-        """UI thread, no I/O: re-read the presets the trays' ids come from (Spooler adds its own at any time)."""
+        """UI thread, no I/O: re-read Spooler's presets (it adds its own at any time), then the slots' links from
+        Spoolman on a thread of their own, so sync from AMS knows them without the tab ever opening."""
         try:
-            generic, presets, label = filament_catalog()
+            presets, label = filament_catalog()
+            target = _target()
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
             return
-        self._filament_ids = generic
         self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+        threading.Thread(target=self._load_links, args=(target,), name="kobracontrol-links", daemon=True).start()
+
+    def _load_links(self, target):
+        if not self._links_busy.acquire(blocking=False):
+            return   # the last read is still running
+        try:
+            self._links = service().links_for(target)
+        except Exception as e:   # Spoolman down: keep the last links
+            log("Spoolman links for the Device tab not read (%s)" % e)
+        finally:
+            self._links_busy.release()
 
     def _bound_spools(self):
-        """{slot global_index: Spoolman spool} for this printer's slots linked to spools, as the tab last loaded them."""
+        """{slot global_index: Spoolman spool} for this printer's slots linked to spools: the tab's (up to date
+        with every link made there) when it shows this printer, else the agent's own read."""
         svc = _service
-        if svc is None:
-            return {}
-        with svc.lock:
-            if not (svc.target and svc.target.host == self.host):
-                return {}
-            by_id = {s["id"]: s for s in svc.spools}
-            return {g: by_id[sid] for g, sid in svc.bindings.items() if sid in by_id}
+        spools, bindings = self._links
+        if svc is not None:
+            with svc.lock:
+                if svc.target and svc.target.host == self.host and svc.spools:
+                    spools, bindings = list(svc.spools), dict(svc.bindings)
+        by_id = {s["id"]: s for s in spools}
+        return {g: by_id[sid] for g, sid in bindings.items() if sid in by_id}
 
     def _preferred(self):
         """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
@@ -701,8 +709,7 @@ class KobraAgent(pa.PrinterAgentBase):
         if not view["connected"]:
             return
         data, _ = status_data(view)
-        self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX,
-                                        self._filament_ids.get, self._preferred()))
+        self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX, self._preferred()))
 
     # commands -------------------------------------------------------------------------------------------
     def send_message(self, dev_id, json_str, qos, flag):

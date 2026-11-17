@@ -125,39 +125,60 @@ class Agent(Base):
         self.assertEqual(msg["gcode_state"], "IDLE")
         self.assertTrue(msg["sdcard"])
         tray = msg["ams"]["ams"][0]["tray"][0]
-        self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OGFL99"))
-        self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "")   # no Generic PETG preset loaded
+        self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OFDSrzZ8"))   # Generic PLA @System
+        self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "OFYPdQJh")   # Generic PETG @System
 
     def test_linked_slot_reports_its_spooler_preset_id(self):
-        """OrcaSlicer's AMS sync matches presets on tray_info_idx: a slot linked to a Spoolman spool carries the id of
-        the spool's Spooler preset; the others keep the Generic preset of their material."""
-        mine = {"name": "_local/spooler/Acme PLA Red @Anycubic Kobra X", "bundle_id": "spooler", "is_system": False,
-                "filament_id": "ACME_PLA", "vendor": "Acme", "type": "PLA", "colour": "#FF0000"}
-        catalog = ({"Generic PLA @System": "OGFL99"}, [mine], "Anycubic Kobra X")
-        with mock.patch.object(plugin, "filament_catalog", return_value=catalog):
+        """OrcaSlicer's sync from AMS matches presets on tray_info_idx: a slot linked to a Spoolman spool carries the
+        SPL id of the spool's standalone Spooler preset (from profiles.json); the others the Generic id of their
+        material. The links come from Spoolman at connect, without the tab."""
+        name = "_local/spooler/Acme PLA Red @Anycubic Kobra X"
+        mine = {"name": name, "bundle_id": "spooler", "vendor": "Acme", "colour": "#FF0000"}
+        profiles = {"version": 1, "filaments": {"9": {"Anycubic Kobra X": name}}, "ids": {name: "SPL0123456789"}}
+        spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101"}
+        targets = []
+
+        def links_for(target):
+            targets.append(target.name)
+            return [spool], {0: 5}
+        with mock.patch.object(plugin, "filament_catalog", return_value=([mine], "Anycubic Kobra X")), \
+                mock.patch.object(plugin.spooler_bridge, "read_json", return_value=profiles), \
+                mock.patch.object(plugin._service, "links_for", side_effect=links_for):
             self.connect()
-            svc = plugin._service
-            with svc.lock:
-                svc.target = service.Target(self.fake.host)
-                svc.spools = [{"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101"}]
-                svc.bindings = {0: 5}
+            wait(lambda: self.agent._links[1])
             self.events["message"].clear()
             self.agent._dirty.set()
             msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        self.assertTrue(targets)
         trays = msg["print"]["ams"]["ams"][0]["tray"]
-        self.assertEqual((trays[0]["tray_type"], trays[0]["tray_info_idx"]), ("PLA", "ACME_PLA"))
-        self.assertEqual(trays[1]["tray_info_idx"], "")   # PETG, not linked, no Generic PETG preset loaded
-        with svc.lock:
-            svc.target = service.Target("10.9.9.9")   # another printer's links never reach this one's trays
-        self.assertEqual(self.agent._bound_spools(), {})
+        self.assertEqual((trays[0]["tray_type"], trays[0]["tray_info_idx"]), ("PLA", "SPL0123456789"))
+        self.assertEqual(trays[1]["tray_info_idx"], "OFYPdQJh")   # PETG, not linked: Generic PETG
+        svc = plugin._service
+        with svc.lock:   # the tab showing this printer wins: its links are up to date
+            svc.target = service.Target(self.fake.host)
+            svc.spools, svc.bindings = [spool], {1: 5}
+        self.assertEqual(list(self.agent._bound_spools()), [1])
+        with svc.lock:   # another printer in the tab: the agent's own links
+            svc.target = service.Target("10.9.9.9")
+        self.assertEqual(list(self.agent._bound_spools()), [0])
 
-    def test_filament_catalog_reads_compatible_system_and_spooler_presets(self):
-        presets = {"Generic PLA @System": dict(is_system=True, is_compatible=False, filament_id='"OGFL99"'),
-                   "SUNLU PLA @System": dict(is_system=True, filament_id="SNL01", filament_vendor='"SUNLU"',
-                                             filament_type="PLA"),
-                   "_local/spooler/X @Anycubic Kobra X": dict(bundle_id="spooler", filament_id="SNL01",
+    def test_links_for_reads_spoolman_without_touching_the_tab(self):
+        svc = plugin._service
+        target = service.Target("", name="Anycubic Kobra X", spoolman_url="http://sm")
+        raw = [{"id": 5, "location": "Anycubic Kobra X S2", "filament": {"id": 9, "material": "PLA"}}]
+        fake = mock.Mock(spools=lambda: raw)
+        with mock.patch.object(svc, "_spoolman", return_value=fake):
+            spools, bindings = svc.links_for(target)
+        self.assertEqual(([s["id"] for s in spools], bindings), ([5], {1: 5}))
+        self.assertEqual((svc.spools, svc.bindings), ([], {}))
+        self.assertEqual(svc.links_for(service.Target("", spoolman_url="")), ([], {}))
+
+    def test_filament_catalog_reads_compatible_spooler_presets(self):
+        presets = {"Generic PLA @System": dict(is_system=True),
+                   "_local/spooler/Y @Other": dict(bundle_id="spooler", is_compatible=False),
+                   "_local/spooler/X @Anycubic Kobra X": dict(bundle_id="spooler", filament_vendor='"SUNLU"',
                                                               default_filament_colour='"#112233"'),
-                   "My own PLA": dict(filament_id="OGFL99")}
+                   "My own PLA": dict()}
 
         class P:
             def __init__(self, name):
@@ -174,10 +195,9 @@ class Agent(Base):
         bundle = mock.Mock(current_printer_preset=lambda: printer,
                            filaments=mock.Mock(size=lambda: len(names), preset=lambda i: P(names[i])))
         with mock.patch.object(orca.host, "preset_bundle", return_value=bundle):
-            generic, found, label = plugin.filament_catalog()
-        self.assertEqual(generic, {"Generic PLA @System": "OGFL99"})   # its id even when not compatible
-        self.assertEqual([m["name"] for m in found], ["SUNLU PLA @System", "_local/spooler/X @Anycubic Kobra X"])
-        self.assertEqual((found[0]["vendor"], found[0]["type"], found[1]["colour"]), ("SUNLU", "PLA", "#112233"))
+            found, label = plugin.filament_catalog()
+        self.assertEqual(found, [{"name": "_local/spooler/X @Anycubic Kobra X", "bundle_id": "spooler",
+                                  "vendor": "SUNLU", "colour": "#112233"}])
         self.assertEqual(label, "Anycubic Kobra X")
 
     def test_status_push_survives_a_failing_sample(self):

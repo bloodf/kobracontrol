@@ -32,8 +32,10 @@ described in [protocol.md](protocol.md).
 [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament
 profiles. With Spooler installed, kobracontrol shows Spooler's stock on the Dashboard, and the Device
 tab reports, for an ACE slot linked to a Spoolman spool, the `filament_id` of that spool's Spooler
-preset (from Spooler's `profiles.json`) as the tray's `tray_info_idx`, which OrcaSlicer's "sync from AMS"
-matches presets on. Each plugin works on its own.
+preset (from Spooler's `profiles.json` `"ids"`) as the tray's `tray_info_idx`, which OrcaSlicer's "sync
+from AMS" matches presets on. Spooler's presets are standalone copies of their parent with ids of their
+own, so the sync loads them. The links are read from Spoolman when the printer connects, without the
+tab. Each plugin works on its own.
 
 ## Modules
 

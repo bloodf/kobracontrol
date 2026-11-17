@@ -96,42 +96,40 @@ class PresetTests(unittest.TestCase):
 
 
 class TrayIdTests(unittest.TestCase):
-    """tray_filament_id: the id OrcaSlicer's AMS sync matches presets on, for a slot linked to a spool."""
+    """tray_filament_id: the SPL id of a linked spool's standalone Spooler preset, from profiles.json "ids"."""
     LABEL = "Anycubic Kobra X"
-    SYSTEM = [{"name": "Generic PLA @System", "is_system": True, "filament_id": "OGFL99", "vendor": "Generic", "type": "PLA"},
-              {"name": "SUNLU PLA Matte @System", "is_system": True, "filament_id": "SNLM", "vendor": "SUNLU", "type": "PLA"},
-              {"name": "SUNLU PLA @System", "is_system": True, "filament_id": "SNL01", "vendor": "SUNLU", "type": "PLA"},
-              {"name": "SUNLU PETG @System", "is_system": True, "filament_id": "SNLG", "vendor": "SUNLU", "type": "PETG"}]
     SPOOL = {"id": 12, "filament_id": 7, "vendor": "SUNLU", "material": "PLA", "colour": "#101010"}
+    MATTE = "SUNLU PLA Matte Black @Anycubic Kobra X"
 
-    def spooler(self, name, fid, colour="#101010"):
-        return {**preset(name, vendor="SUNLU", colour=colour), "filament_id": fid, "type": "PLA", "is_system": False}
+    def presets(self, *names):
+        return [preset(n, vendor="SUNLU", colour="#101010") for n in names]
 
-    def test_linked_spool_reports_its_spooler_preset(self):
-        presets = self.SYSTEM + [self.spooler("SUNLU PLA Matte Black @Anycubic Kobra X", "SNLM")]
-        profiles = {"version": 1, "filaments": {"7": {self.LABEL: "_local/spooler/SUNLU PLA Matte Black @Anycubic Kobra X"}}}
-        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, profiles, self.LABEL), "SNLM")
-        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, None, self.LABEL), "SNLM")   # by vendor, material, colour
+    def test_linked_spool_reports_its_spooler_preset_id(self):
+        profiles = {"version": 1, "filaments": {"7": {self.LABEL: "_local/spooler/" + self.MATTE}},
+                    "ids": {"_local/spooler/" + self.MATTE: "SPLAAAA000001"}}
+        self.assertEqual(sb.tray_filament_id(self.SPOOL, self.presets(self.MATTE), profiles, self.LABEL), "SPLAAAA000001")
+        by_colour = {"version": 1, "filaments": {}, "ids": profiles["ids"]}   # not listed: same vendor, material, colour
+        self.assertEqual(sb.tray_filament_id(self.SPOOL, self.presets(self.MATTE), by_colour, self.LABEL), "SPLAAAA000001")
 
     def test_per_spool_preset_wins_over_the_filament_one(self):
-        presets = self.SYSTEM + [self.spooler("SUNLU PLA #3 @Anycubic Kobra X", "SNL01"),
-                                 self.spooler("SUNLU PLA #12 @Anycubic Kobra X", "SNLM")]
-        profiles = {"version": 1, "filaments": {"7": {self.LABEL: "_local/spooler/SUNLU PLA #3 @Anycubic Kobra X"}},
-                    "spools": {"12": {self.LABEL: "_local/spooler/SUNLU PLA #12 @Anycubic Kobra X"},
-                               "3": {self.LABEL: "_local/spooler/SUNLU PLA #3 @Anycubic Kobra X"}}}
-        self.assertEqual(sb.profile_lookup(profiles, 7, self.LABEL, 12), "_local/spooler/SUNLU PLA #12 @Anycubic Kobra X")
-        self.assertEqual(sb.profile_lookup(profiles, 7, self.LABEL, 99), "_local/spooler/SUNLU PLA #3 @Anycubic Kobra X")
-        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, profiles, self.LABEL), "SNLM")
-        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "id": 3}, presets, profiles, self.LABEL), "SNL01")
+        three, twelve = "SUNLU PLA #3 @Anycubic Kobra X", "SUNLU PLA #12 @Anycubic Kobra X"
+        profiles = {"version": 1, "filaments": {"7": {self.LABEL: "_local/spooler/" + three}},
+                    "spools": {"12": {self.LABEL: "_local/spooler/" + twelve}, "3": {self.LABEL: "_local/spooler/" + three}},
+                    "ids": {"_local/spooler/" + three: "SPL0000000003", "_local/spooler/" + twelve: "SPL0000000012"}}
+        self.assertEqual(sb.profile_lookup(profiles, 7, self.LABEL, 12), "_local/spooler/" + twelve)
+        self.assertEqual(sb.profile_lookup(profiles, 7, self.LABEL, 99), "_local/spooler/" + three)
+        presets = self.presets(three, twelve)
+        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, profiles, self.LABEL), "SPL0000000012")
+        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "id": 3}, presets, profiles, self.LABEL), "SPL0000000003")
 
-    def test_no_spooler_preset_falls_back_to_the_vendors_system_preset(self):
-        self.assertEqual(sb.tray_filament_id(self.SPOOL, self.SYSTEM, None, self.LABEL), "SNL01")   # the plain line
-        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "material": "PETG"}, self.SYSTEM), "SNLG")
-
-    def test_unknown_or_unlinked_leaves_it_to_the_generic_preset(self):
-        self.assertEqual(sb.tray_filament_id(None, self.SYSTEM), "")
-        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "vendor": "Nobody"}, self.SYSTEM), "")
-        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "material": "ASA"}, self.SYSTEM), "")
+    def test_no_id_leaves_it_to_the_generic_preset(self):
+        listed = {"version": 1, "filaments": {"7": {self.LABEL: "_local/spooler/" + self.MATTE}}}
+        presets = self.presets(self.MATTE)
+        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, listed, self.LABEL), "")   # an inheriting preset
+        self.assertEqual(sb.tray_filament_id(self.SPOOL, presets, None, self.LABEL), "")     # no profiles.json
+        self.assertEqual(sb.tray_filament_id(None, presets, listed), "")                     # nothing linked
+        ids = {**listed, "ids": {"_local/spooler/" + self.MATTE: "SPLAAAA000001"}}
+        self.assertEqual(sb.tray_filament_id({**self.SPOOL, "id": 1, "filament_id": 1, "material": "ASA"}, presets, ids), "")
 
 
 if __name__ == "__main__":

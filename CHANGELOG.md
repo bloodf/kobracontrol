@@ -6,7 +6,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ### Fixed
 
-- OrcaSlicer's "sync from AMS" picks the right filament for each ACE slot. The Device tab reported the Generic preset's id for every loaded slot, and nothing at all for a material it didn't know ("PLA+", "PETG HF"), which OrcaSlicer turns into "Generic PLA". A slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (the spool's own preset when Spooler makes one per spool, else the filament's), else a system preset of the spool's vendor and material, else the Generic preset of the slot's real material. OrcaSlicer keeps a slot's Spooler preset when it already holds it; on a slot that holds something else it loads the system preset the Spooler preset is based on, since its sync only loads base presets.
+- OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
 
 ## [0.7.0] - 2026-11-16
 
