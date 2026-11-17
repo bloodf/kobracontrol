@@ -35,7 +35,9 @@ tab reports, for an ACE slot linked to a Spoolman spool, the `filament_id` of th
 preset (from Spooler's `profiles.json` `"ids"`) as the tray's `tray_info_idx`, which OrcaSlicer's "sync
 from AMS" matches presets on. Spooler's presets are standalone copies of their parent with ids of their
 own, so the sync loads them. The links are read from Spoolman when the printer connects, without the
-tab. Each plugin works on its own.
+tab. A spool (else its filament) whose Spoolman extra field `orca_filament_preset` names a compatible user
+preset that inherits nothing reports that preset's own `filament_id` instead, read from its JSON file
+(`Preset.file`; presets are listed on the UI thread only). Each plugin works on its own.
 
 ## Modules
 

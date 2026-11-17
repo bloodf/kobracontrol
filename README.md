@@ -200,6 +200,12 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 </details>
 
 <details>
+<summary>Can a spool use my own tuned filament preset?</summary>
+
+Yes, through OrcaSlicer's sync from AMS. In Spoolman add a Text extra field with the key `orca_filament_preset` to spools or filaments (**Settings > Extra fields**) and type your preset's name in it; the spool's value wins over the filament's. It must be one of your own presets and compatible with the printer. Sync can only load a standalone preset (one that inherits nothing, such as a detached copy); a preset made with **Save as** inherits its parent and sync would load the parent, so the slot keeps the usual preset. A name that isn't found shows a notice once. Details in [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
+</details>
+
+<details>
 <summary>Can I download the time-lapse videos?</summary>
 
 Not yet. The printer has no known way to hand a video over the local network, so the tab lists and deletes them only.

@@ -200,6 +200,12 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 </details>
 
 <details>
+<summary>Um carretel pode usar o meu próprio perfil de filamento ajustado?</summary>
+
+Sim, pela sincronização do AMS do OrcaSlicer. No Spoolman, adicione um campo extra de texto com a chave `orca_filament_preset` em carretéis ou filamentos (**Settings > Extra fields**) e escreva nele o nome do seu perfil; o valor do carretel vale mais que o do filamento. Precisa ser um perfil seu e compatível com a impressora. A sincronização só carrega um perfil independente (que não herda de nenhum, como uma cópia desvinculada); um perfil criado com **Salvar como** herda do pai e a sincronização carregaria o pai, então o slot fica com o perfil de sempre. Um nome não encontrado mostra um aviso uma vez. Detalhes em [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
+</details>
+
+<details>
 <summary>Dá para baixar os vídeos de time-lapse?</summary>
 
 Ainda não. Não se conhece um jeito de a impressora entregar um vídeo pela rede local, então a aba só lista e exclui.

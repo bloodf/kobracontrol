@@ -251,6 +251,8 @@ TEXT = {
     "Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before adding it by hand; kobracontrol won't repeat it.": "Spoolman 可能未记录 %s g（料盘 #%d，S%d）：%s。手动添加前请先检查料盘 #%d；kobracontrol 不会重复记录。",
     "Spoolman updated with this print's filament use": "已将本次打印的耗材丝用量更新到 Spoolman",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': '%s 未关联 Spoolman 料盘；该耗材丝用量未记录。',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”不是您在 OrcaSlicer 中适用于此打印机的自定义预设。该槽位继续使用原来的预设。',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”在忽略大小写时与您在 OrcaSlicer 中的多个预设匹配。该槽位继续使用原来的预设。',
     # G-code checks before sending (gcode_check.py)
     'G-code warning: see the notification.': 'G-code 警告：请查看通知。',
     'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'G-code 末尾没有设置块。Kobra X 的屏幕很可能从中读取耗材和打印信息。可能的原因：已开启“跳过 G-code 配置块”。请在“打印机设置 > 基础信息 > 高级”中关闭它，然后重新切片。',

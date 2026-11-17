@@ -17,6 +17,7 @@ from i18n import tr
 MAX_SLOTS = 32                  # slot numbers above this in a location are not ours
 LOCATION_MAX = 64
 MAX_BODY = 8 * 1024 * 1024      # a Spoolman answer larger than this is refused
+PRESET_FIELD = "orca_filament_preset"   # extra field (spool, else filament): an OrcaSlicer filament preset's name
 
 
 class SpoolmanError(RuntimeError):
@@ -152,6 +153,25 @@ def _weight(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
 
 
+def _extra_text(item):
+    """The PRESET_FIELD extra of a Spoolman spool or filament, or "". Spoolman keeps extra values JSON-encoded
+    ("\"My PLA\""); a value that isn't JSON is taken as written."""
+    extra = (item or {}).get("extra")
+    raw = extra.get(PRESET_FIELD) if isinstance(extra, dict) else None
+    if not isinstance(raw, str):
+        return ""
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = raw
+    return value.strip() if isinstance(value, str) else ""
+
+
+def linked_preset(spool):
+    """The OrcaSlicer filament preset a Spoolman spool names: the spool's own field, else its filament's; "" for none."""
+    return _extra_text(spool) or _extra_text(spool.get("filament"))
+
+
 def spool_view(spool):
     """Flatten a Spoolman spool for the UI and for matching."""
     f = spool.get("filament") or {}
@@ -172,6 +192,7 @@ def spool_view(spool):
         "archived": bool(spool.get("archived")),
         "extruder_temp": f.get("settings_extruder_temp"),
         "bed_temp": f.get("settings_bed_temp"),
+        "orca_preset": linked_preset(spool),
     }
 
 
