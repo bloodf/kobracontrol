@@ -11,6 +11,12 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
   shows its number. Screen readers hear each slot's colour and material. Printer photo: Anycubic product image.
 
+### Fixed
+
+- The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
+  (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
+  on by itself.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked
