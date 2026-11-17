@@ -31,6 +31,7 @@ const reels = computed(() => props.spools.slice(0, 4).map((sp, i) => {
   return { sp, x0, x1, reel: REEL_X[i], strand: STRAND_X[i], tube: TUBES[i],
     bands: sp.empty ? [] : sp.colors.map((c, k) => ({ c, x: x0 + k * w, w })) };
 }));
+const empties = computed(() => reels.value.filter(r => r.sp.empty));
 const active = computed(() => reels.value.find(r => r.sp.active && !r.sp.empty) ?? null);
 const tone = computed(() => (props.state === 'error' ? 'error' : props.state === 'paused' ? 'paused' : props.state === 'printing' || props.state === 'busy' ? 'busy' : 'idle'));
 
@@ -52,18 +53,26 @@ const label = computed(() => t('figure.label', { slots: fmt.list(props.spools.ma
       <mask :id="`${uid}-fil`" maskUnits="userSpaceOnUse" x="0" y="0" :width="W" :height="H">
         <image :href="filamentMask" x="0" y="0" :width="W" :height="H" />
       </mask>
-      <!-- an empty reel: the dark inside of the far flange, and the bare hub across it -->
+      <!-- an empty reel: the far flange seen through the empty winding space, and the bare hub across it -->
       <linearGradient :id="`${uid}-recess`" x1="0" x2="0" y1="0" y2="1">
-        <stop offset="0" stop-color="#16181c" /><stop offset=".5" stop-color="#2c3036" /><stop offset="1" stop-color="#121417" />
+        <stop offset="0" stop-color="#c3c8cf" /><stop offset=".35" stop-color="#e9ecef" /><stop offset="1" stop-color="#aeb4bc" />
       </linearGradient>
       <linearGradient :id="`${uid}-hub`" x1="0" x2="0" y1="0" y2="1">
         <stop offset="0" stop-color="#8d939b" /><stop offset=".25" stop-color="#e4e7eb" /><stop offset=".6" stop-color="#b3b9c1" /><stop offset="1" stop-color="#6b7178" />
       </linearGradient>
+      <!-- an empty slot's winding space is cut out of the photo: the card shows through between the flanges -->
+      <mask :id="`${uid}-hole`" maskUnits="userSpaceOnUse" x="0" y="0" :width="W" :height="H">
+        <rect x="0" y="0" :width="W" :height="H" fill="#fff" />
+        <template v-for="r in empties" :key="r.sp.n">
+          <clipPath :id="`${uid}-c${r.sp.n}`"><rect :x="r.x0 - 2" :y="FIL_Y - 2" :width="r.x1 - r.x0 + 4" :height="FIL_H + 4" /></clipPath>
+          <image class="kx-invert" :href="filamentMask" x="0" y="0" :width="W" :height="H" :clip-path="`url(#${uid}-c${r.sp.n})`" />
+        </template>
+      </mask>
       <filter :id="`${uid}-glow`" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" /></filter>
     </defs>
 
     <rect v-if="active" class="kx-glow" :x="active.reel[0] - 2" y="36" :width="active.reel[1] - active.reel[0] + 4" height="304" rx="12" :filter="`url(#${uid}-glow)`" />
-    <image :href="photo" x="0" y="0" :width="W" :height="H" />
+    <image :href="photo" x="0" y="0" :width="W" :height="H" :mask="empties.length ? `url(#${uid}-hole)` : undefined" />
 
     <g :mask="`url(#${uid}-fil)`">
       <g v-for="r in reels" :key="r.sp.n" class="kx-reel" :data-figure-slot="r.sp.n" :data-empty="r.sp.empty || undefined"
@@ -77,11 +86,12 @@ const label = computed(() => t('figure.label', { slots: fmt.list(props.spools.ma
     </g>
     <image class="kx-shade" :href="shading" x="0" y="0" :width="W" :height="H" />
     <g :mask="`url(#${uid}-fil)`">
-      <template v-for="r in reels.filter(x => x.sp.empty)" :key="r.sp.n">
+      <template v-for="r in empties" :key="r.sp.n">
         <rect class="kx-recess" :x="r.x0 - 1" :y="FIL_Y - 1" :width="r.x1 - r.x0 + 2" :height="FIL_H + 2" :fill="`url(#${uid}-recess)`" />
-        <rect class="kx-hub" :x="r.x0" :y="FIL_Y + FIL_H / 2 - 38" :width="r.x1 - r.x0" height="76" :fill="`url(#${uid}-hub)`" />
+        <rect class="kx-hub" :x="r.x0" :y="FIL_Y + FIL_H / 2 - 26" :width="r.x1 - r.x0" height="52" :fill="`url(#${uid}-hub)`" />
       </template>
     </g>
+    <rect v-for="r in empties" :key="'o' + r.sp.n" class="kx-empty-edge" :x="r.x0 + 3" :y="FIL_Y + 3" :width="r.x1 - r.x0 - 6" :height="FIL_H - 6" rx="4" />
 
     <path v-if="active" class="kx-tube-glow" :d="active.tube" :filter="`url(#${uid}-glow)`" data-test="figure-tube-active" />
     <path v-if="active" class="kx-tube-on" :d="active.tube" />
@@ -96,8 +106,11 @@ const label = computed(() => t('figure.label', { slots: fmt.list(props.spools.ma
 <style>
 .kx { display: block; flex: none; height: clamp(170px, 32cqi, 260px); width: auto; aspect-ratio: 731 / 1097; overflow: visible; }
 .kx[data-stale] { filter: grayscale(.9); opacity: .7; }
-/* An empty slot: a bare reel, its hub across the dark inside of the far flange. */
-.kx-hub { stroke: rgb(0 0 0 / .45); stroke-width: 1.5; }
+/* An empty slot: a bare reel, light, the far flange seen through, a dashed edge like the empty slot card. */
+.kx-recess { opacity: .3; }
+.kx-invert { filter: invert(1); }
+.kx-hub { stroke: rgb(0 0 0 / .35); stroke-width: 1.5; }
+.kx-empty-edge { fill: none; stroke: rgb(255 255 255 / .9); stroke-width: 2.5; stroke-dasharray: 9 7; }
 .kx-unknown { fill: #9aa1ab; }
 .kx-glow { fill: var(--oui-primary); opacity: .45; }
 .oui-on-band .kx-glow { fill: #fff; opacity: .4; }

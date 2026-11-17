@@ -174,6 +174,19 @@ async function skip() {
 .kc-idle-id > .kc-state { margin-bottom: 4px; }
 .kc-idle-name { font-size: var(--oui-text-lg); font-weight: 700; line-height: 1.3; }
 .kc-idle-detail { font-size: var(--oui-text-sm); }
+/* Wide: the printer photo takes about 40 % of the card beside the whole job block, no taller than that block. */
+@container oui-page (min-width: 560px) {
+  .kc-hero .oui-job-block { grid-template-columns: 40% minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto; column-gap: var(--oui-s4); }
+  .kc-hero .oui-job-head { display: contents; }
+  .kc-hero .oui-job-thumb { grid-column: 1; grid-row: 1 / span 3; display: flex; justify-content: center; align-self: center; }
+  .kc-hero .oui-job-id { grid-column: 2; grid-row: 1; align-self: end; }
+  .kc-hero .oui-job-figure { grid-column: 3; grid-row: 1; align-self: end; }
+  .kc-hero .oui-job-bar { grid-column: 2 / 4; grid-row: 2; }
+  .kc-hero .oui-job-stats { grid-column: 2 / 4; grid-row: 3; }
+  .kc-hero .kx { height: 296px; max-width: 100%; }
+  .kc-figure { flex: 0 0 40%; display: flex; justify-content: center; }
+  .kc-figure .kx { height: 272px; max-width: 100%; }
+}
 /* Narrow (the dock): the printer takes its own row above the name. */
 @container oui-page (max-width: 559px) {
   .kc-hero .oui-job-head, .kc-idle { flex-wrap: wrap; }
