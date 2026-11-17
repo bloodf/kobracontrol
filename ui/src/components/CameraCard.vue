@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
-import { s, lease, controlsOff, link, printerName } from '../app/store';
+import { s, lease, controlsOff, link, printerName, noFfmpeg } from '../app/store';
 import { t } from '../core/i18n';
 
 async function toggle() {
@@ -21,20 +21,24 @@ const msg = computed(() => {
   if (s.camReason === 'no_stream') return t('cam.reason.no_stream');
   return t('cam.reason.failed', { error: s.camError });
 });
-const off = computed(() => link.value !== 'connected' && !s.camOn);
+// No ffmpeg: the camera can't run at all, so it shows as off with that one reason (the plugin does not start it).
+const off = computed(() => noFfmpeg.value || (link.value !== 'connected' && !s.camOn));
+const why = computed(() => (noFfmpeg.value ? t('cam.noFfmpeg') : controlsOff.value || t('reason.waiting')));
+const shown = computed(() => s.camOn && !noFfmpeg.value);
 </script>
 
 <template>
   <!-- Off: one row, not a 16:9 hole, so the printer's state stays above the fold. -->
-  <OuiPanel class="cam-card" :class="{ compact: !s.camOn }" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
+  <OuiPanel class="cam-card" :class="{ compact: !shown }" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
     <template #title><span id="cam-h">{{ t('cam.title') }}</span></template>
-    <template v-if="s.camOn" #actions>
+    <template v-if="shown" #actions>
       <Button severity="secondary" size="small" :label="t('cam.stop')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="cameraOff" :size="14" /></template></Button>
     </template>
     <!-- The same reason as every other control: the page shows one connection state. -->
-    <OuiEmpty v-if="!s.camOn" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
-      <span v-if="off" data-test="cam-why">{{ controlsOff || t('reason.waiting') }}</span><template v-else>{{ t('cam.offHint') }}</template>
-      <template #actions><Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && controlsOff ? 'kc-why' : undefined"
+    <OuiEmpty v-if="!shown" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
+      <span v-if="off" data-test="cam-why">{{ why }}</span><template v-else>{{ t('cam.offHint') }}</template>
+      <template #actions><Button v-if="noFfmpeg" size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="s.tab = 'settings'" />
+        <Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && !noFfmpeg && controlsOff ? 'kc-why' : undefined"
                                  data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiEmpty>
     <div v-else class="cam-view">

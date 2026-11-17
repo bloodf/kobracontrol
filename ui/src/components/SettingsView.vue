@@ -5,12 +5,13 @@ import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
 import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiSettings, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
-import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman } from '../../shared/src/icons';
+import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, wrench } from '../../shared/src/icons';
 import { UI_VERSION } from '../../shared/src';
 import CertFinder from './CertFinder.vue';
 import SpoolerHint from './SpoolerHint.vue';
-import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent } from '../app/store';
-import { config, form, changed, dirty, saving, save, discard } from '../app/settings';
+import RequirementRow from './RequirementRow.vue';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, noFfmpeg, requirement, checkRequirements } from '../app/store';
+import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
 import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
 import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
@@ -23,15 +24,19 @@ const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.f
 // The address in use and how it was found; a blank "Printer address" means "find it by itself".
 const inUse = computed(() => (s.info?.address ? t('conn.inUse', { address: s.info.address, how: t(`conn.source.${s.info.source || 'override'}`) }) : ''));
 const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form.spoolman ? t('conn.smFromSpooler', { url: s.located.spoolman_url }) : ''));
-const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded')));
+const smInfo = computed(() => (!spoolmanSet.value ? t('sm.notConfigured') : s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded'))));
+const smWhy = computed(() => controlsOff.value || (spoolmanSet.value ? '' : t('sm.notConfigured')));
+// Something the camera or OrcaSlicer's own Print/Device tab needs is missing (optional ones never warn).
+const reqWarn = computed(() => !s.checking && (noFfmpeg.value || requirement('printer_agents')?.state === 'unknown'));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
   ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);
 const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'conn-h', label: t('conn.title'), icon: linkIcon },
+  { id: 'req-h', label: t('req.title'), icon: wrench, ...(reqWarn.value ? { state: 'warn' as const } : {}) },
   { id: 'cert-h', label: t('cert.section'), icon: shieldCheck, ...(cert.value && !cert.value.found ? { state: 'warn' as const } : {}) },
   { id: 'print-h', label: t('printdef.title'), icon: printer },
-  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' ? { state: 'warn' as const } : {}) },
+  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' || noFfmpeg.value ? { state: 'warn' as const } : {}) },
   { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
   { id: 'lang-h', label: t('lang.title'), icon: languages },
   { id: 'about-h', label: t('about.title'), icon: info },
@@ -73,6 +78,15 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
           </div>
         </OuiFormSection>
 
+        <OuiFormSection id="req-h" :icon="wrench" tone="neutral" :title="t('req.title')" :description="t('req.help')">
+          <template #status><Button size="small" severity="secondary" :label="t('req.checkAgain')" :loading="s.checking" data-test="req-check"
+                                    @click="checkRequirements()"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button></template>
+          <div data-test="requirements" aria-live="polite">
+            <RequirementRow v-for="r in s.requirements" :key="r.id" :item="r" :checking="s.checking" />
+            <p v-if="!s.requirements.length" class="oui-meta kc-pad">{{ t('req.checking') }}</p>
+          </div>
+        </OuiFormSection>
+
         <OuiFormSection id="cert-h" :icon="shieldCheck" tone="teal" :title="t('cert.section')" :description="t('cert.why')">
           <template #status><OuiStatus :state="!cert ? 'pending' : cert.found ? 'ok' : 'warn'">{{ !cert ? t('cert.chip.unknown') : cert.found ? t('cert.chip.ok') : t('cert.chip.missing') }}</OuiStatus></template>
           <OuiFormRow :label="t('cert.source')"><span data-test="cert-status" role="status">{{ certText }}</span></OuiFormRow>
@@ -94,7 +108,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
 
       <div class="oui-stack">
         <OuiFormSection id="cam-s-h" :icon="camera" tone="sky" :title="t('camset.title')">
-          <template v-if="s.camReason === 'no_ffmpeg'" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
+          <template v-if="s.camReason === 'no_ffmpeg' || noFfmpeg" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
           <OuiFormRow :label="t('camset.default')" for="c-cam"><ToggleSwitch v-model="form.camera" input-id="c-cam" data-test="cam-default" /></OuiFormRow>
           <OuiFormRow :label="t('camset.ffmpeg')" for="c-ffmpeg" :hint="t('camset.ffmpegHelp')">
             <InputText id="c-ffmpeg" v-model="form.ffmpeg" class="oui-mono" :placeholder="t('camset.ffmpegPh')" @keydown.enter="onEnter" />
@@ -110,7 +124,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
           <OuiFormRow :label="t('sm.usage')" for="c-sm-usage"><ToggleSwitch v-model="form.usage" input-id="c-sm-usage" /></OuiFormRow>
           <OuiFormRow :label="t('sm.spools')">
             <span class="oui-muted" role="status">{{ smInfo }}</span>
-            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!controlsOff" :aria-describedby="controlsOff ? 'kc-why' : undefined"
+            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!smWhy" :title="smWhy || undefined" :aria-describedby="controlsOff ? 'kc-why' : undefined"
                     :loading="tracker.isBusy('spools')" @click="loadSpools(false)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
           </OuiFormRow>
           <div class="kc-pad"><SpoolerHint where="settings" /></div>

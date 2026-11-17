@@ -811,6 +811,39 @@ class PrinterCertificate(unittest.TestCase):
         self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
 
 
+class CameraNeedsFfmpeg(Base):
+    """No ffmpeg: the camera is never started (no reader thread failing every second); with it, it is."""
+
+    def check(self, found):
+        with mock.patch.object(service.requirements, "check_ffmpeg",
+                               return_value=service.requirements.item("ffmpeg", "ok" if found else "missing", found)), \
+                mock.patch.object(service.requirements, "check_anycubic_slicer",
+                                  return_value=service.requirements.item("anycubic_slicer", "missing")):
+            self.svc.check_requirements("")
+            wait(lambda: not self.svc.requirements.checking)
+        return wait(lambda: [m for m in self.published if m.get("type") == "requirements" and not m["checking"]])[-1]
+
+    def test_missing_ffmpeg_never_starts_the_camera(self):
+        msg = self.check("")
+        self.assertEqual(msg["items"][0], {"id": "ffmpeg", "state": "missing", "details": ""})
+        self.svc.touch(camera=True)
+        time.sleep(0.6)   # the monitor ticks every 0.1 s
+        self.assertNotIn("start", self.svc.camera.calls)
+        self.assertFalse([m for m in self.published if m.get("type") == "camera_error"])
+
+    def test_found_ffmpeg_starts_the_camera_with_that_path(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn(("ffmpeg", "/opt/ff/ffmpeg"), self.svc.camera.calls)
+
+    def test_spoolman_and_agent_in_the_message(self):
+        msg = self.check("")
+        items = {i["id"]: i for i in msg["items"]}
+        self.assertEqual(items["spoolman"], {"id": "spoolman", "state": "ok", "details": "http://spoolman.invalid"})
+        self.assertEqual(items["printer_agents"]["state"], "unknown")
+
+
 class CameraPrinterGone(Base):
     """The session can be replaced (printer None) between the connected check and the capture thread."""
 

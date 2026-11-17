@@ -31,6 +31,7 @@ from connection import camera_url_for, find_and_save_certificate  # noqa: F401  
 import kobra
 import locate
 import peers
+import requirements
 import settings
 import spoolman as sm
 import usage
@@ -184,6 +185,10 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._camera_refused = set()
         self._reset_printer_state()
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
+        # ffmpeg and Anycubic Slicer Next: checked once on a thread of their own when the page first asks
+        # (check_requirements), never here. agent_seen: plugin.py's answer to "is our printer agent in use".
+        self.requirements, self.agent_seen = requirements.Checker(self._publish_requirements, log), False
+        self._requirements_lock = threading.Lock()
         self.jobs = queue.Queue()
         self.worker = self._thread(self._work, "worker")
         self.monitor = self._thread(self._watch, "monitor")
@@ -491,7 +496,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             with self.lock:
                 target, gen = self.target, self.generation
                 active = now < self.lease_until and target is not None
-                cam = active and self.camera_on and target.camera_enabled
+                # no ffmpeg (or not checked yet): the camera is not started at all, so nothing fails every second
+                cam = active and self.camera_on and target.camera_enabled and bool(self.requirements.ffmpeg())
             if not active:
                 self._guard("camera", self.camera.stop)
                 self._closing.wait(0.25)
@@ -530,8 +536,23 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if key != self._capture:
             self._capture = key
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
-        self.camera.set_ffmpeg(target.ffmpeg_path)
+        self.camera.set_ffmpeg(self.requirements.ffmpeg())
         self.camera.start()
+
+    def check_requirements(self, ffmpeg_setting, force=False):
+        """Start the file checks unless they are cached for this ffmpeg setting (force: Check again); their answer
+        is published when they finish. Publishes the requirements as they stand now (UI thread: no I/O)."""
+        self.requirements.ensure(ffmpeg_setting, force)
+        self._publish_requirements()
+
+    def requirements_message(self):
+        with self.lock:
+            target = self.target
+        return requirements.message(self.requirements, self.agent_seen, target.spoolman_url if target else "")
+
+    def _publish_requirements(self):
+        with self._requirements_lock:   # built and sent together: a finished check is never followed by an older state
+            self.publish(self.requirements_message())
 
     def _on_frame(self, jpeg):
         self.publish({"type": "frame", "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()})

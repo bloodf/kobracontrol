@@ -47,6 +47,7 @@ _link = None
 _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
+_agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 
 
 def log(msg):
@@ -167,6 +168,21 @@ def page_html(language="auto"):
 
 
 # ---------------------------------------------------------------------- service and Spooler link
+
+def note_agent():
+    """Whether "Use printer agents instead of print hosts" is on, as far as a plugin can tell (OrcaSlicer.conf is
+    not readable): OrcaSlicer created a KobraAgent this session, or orca.host.selected_printer() reports our agent.
+    UI thread only (a host call); a host without that call, or one that fails, leaves the answer "not detected"."""
+    global _agent_seen
+    if not _agent_seen:
+        try:
+            selected = orca.host.selected_printer()
+            agent = selected.get("agent") if hasattr(selected, "get") else getattr(selected, "agent", "")
+            _agent_seen = clean(agent) == AGENT_ID
+        except Exception:
+            pass
+    return _agent_seen
+
 
 _service_options = {}   # extra Service keyword arguments (tests only: ports and fakes of a loopback printer)
 _users = set()          # loaded capabilities that use the service: closed once none is left
@@ -368,6 +384,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
                 self.post_message(self._config_message())
+                self._requirements(svc)
+            elif kind == "check_requirements":   # Settings > Requirements > Check again
+                self._requirements(svc, force=True)
             elif kind == "lease":
                 svc.touch(camera=data.get("camera"), stock=data.get("stock") is True)
             elif kind == "frame_ack":
@@ -388,9 +407,14 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
                 self.post_message(self._config_message())
+                self._requirements(svc)   # checked again only when the ffmpeg path changed
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
+
+    def _requirements(self, svc, force=False):
+        svc.agent_seen = note_agent()
+        svc.check_requirements(clean(get_store(self).effective().get("ffmpeg_path")), force)
 
     def _config_message(self):
         cfg = get_store(self).effective()
@@ -472,7 +496,9 @@ class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
     def __init__(self):
+        global _agent_seen
         super().__init__()
+        _agent_seen = True   # OrcaSlicer makes printer agents only with "Use printer agents instead of print hosts" on
         self._cb = {}
         self._lock = threading.Lock()
         self.selected = ""

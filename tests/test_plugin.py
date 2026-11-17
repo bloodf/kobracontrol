@@ -485,6 +485,71 @@ class Page(Base):
         self.assertEqual(len(self.sent("file", "deleteVideo")), 1)
 
 
+class Requirements(Base):
+    """Settings > Requirements: checked lazily after the page opens, cached, Check again, printer agent detection."""
+
+    def setUp(self):
+        super().setUp()
+        self.runs = []
+        for name, fn in (("check_ffmpeg", lambda s: self.runs.append(s) or service.requirements.item("ffmpeg", "missing")),
+                         ("check_anycubic_slicer", lambda: service.requirements.item("anycubic_slicer", "missing"))):
+            p = mock.patch.object(service.requirements, name, side_effect=fn)
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(setattr, plugin, "_agent_seen", False)
+        plugin._agent_seen = False   # Base made a KobraAgent; these tests start from "not detected"
+
+    def page(self):
+        page = plugin.KobraControlPage()
+        page.posted = []
+        return page
+
+    def done(self, page, n=1):
+        return wait(lambda: [m for m in page.posted if m.get("type") == "requirements" and not m["checking"]][n - 1:])[-1]
+
+    def test_hello_checks_once_then_check_again_checks_again(self):
+        page = self.page()
+        page.on_message({"type": "hello", "id": 1})
+        msg = self.done(page)
+        self.assertEqual({i["id"]: i["state"] for i in msg["items"]},
+                         {"ffmpeg": "missing", "anycubic_slicer": "missing", "printer_agents": "unknown", "spoolman": "missing"})
+        page.on_message({"type": "hello", "id": 2})                 # cached
+        page.on_message({"type": "save_settings", "id": 3, "settings": {"printer_name": "Bench"}})   # ffmpeg path unchanged
+        self.assertEqual(self.runs, [""])
+        page.on_message({"type": "check_requirements"})
+        self.done(page, 4)
+        page.on_message({"type": "save_settings", "id": 4, "settings": {"ffmpeg_path": "/opt/ffmpeg"}})
+        wait(lambda: len(self.runs) == 3)
+        self.assertEqual(self.runs, ["", "", "/opt/ffmpeg"])
+
+    def test_agent_detected_when_orca_made_one(self):
+        plugin.KobraAgent()
+        page = self.page()
+        page.on_message({"type": "check_requirements"})
+        items = {i["id"]: i["state"] for i in self.done(page)["items"]}
+        self.assertEqual(items["printer_agents"], "ok")
+
+    def test_agent_detected_from_the_selected_printer(self):
+        for selected, want in (({"agent": "kobracontrol", "connection": "lan"}, True),
+                               (type("Sel", (), {"agent": "kobracontrol"})(), True),
+                               ({"agent": "moonraker"}, False), (None, False)):
+            plugin._agent_seen = False
+            with mock.patch.object(orca.host, "selected_printer", create=True, return_value=selected):
+                self.assertEqual(plugin.note_agent(), want, selected)
+        plugin._agent_seen = False
+        with mock.patch.object(orca.host, "selected_printer", create=True, side_effect=RuntimeError("not on this host")):
+            self.assertFalse(plugin.note_agent())
+        self.assertFalse(hasattr(orca.host, "selected_printer"))   # a host without the call: "not detected"
+        self.assertFalse(plugin.note_agent())
+
+    def test_nothing_checked_at_registration(self):
+        plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
+        plugin.KobraControl().register_capabilities()
+        plugin.service()   # nor when the service starts: only a page asking checks
+        time.sleep(0.2)
+        self.assertEqual(self.runs, [])
+
+
 class Language(Base):
     """The plugin's own texts (Print dialog progress, errors, script results) follow Settings, then OrcaSlicer."""
 

@@ -41,6 +41,9 @@ const SETTINGS = {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ff
   spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, spooler_hint_dismissed: false};
 const CONFIG = extra => ({type: 'config', settings: SETTINGS, certificate: CERT, spooler: {installed: true, url: 'https://example.org/spooler', dismissed: false}, version: '0.1.0',
   limits: {nozzle_max: 300, bed_max: 100}, ...extra});
+const REQS = (o) => ({type: 'requirements', checking: false, items: [{id: 'ffmpeg', state: 'missing', details: ''},
+  {id: 'anycubic_slicer', state: 'missing', details: ''}, {id: 'printer_agents', state: 'unknown', details: ''},
+  {id: 'spoolman', state: 'ok', details: 'http://box:7912'}].map(i => ({...i, ...((o || {})[i.id] || {})}))});
 async function connect(gen) {
   await until(() => last('hello'), 'hello sent');
   await reply(last('hello'), {address: '192.168.1.50', printer: 'Bench Kobra', generation: gen || 1});
@@ -632,6 +635,67 @@ test('the camera starts on only when the saved setting says so', `
   await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
   await post({type: 'status', data: VIEW()});
   assert(q('.cam-view') && last('lease').camera === true, 'camera on from the setting');
+`);
+
+// ------------------------------------------------------------------ requirements
+test('requirements: no ffmpeg turns the camera off with one reason and leads to Settings', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
+  await post({type: 'status', data: VIEW()});
+  await post(REQS());
+  assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
+  assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
+  assert(byTest('camera').disabled, 'Turn on is off');
+  await click(byTest('cam-req'));
+  assert(q('[data-req="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
+  await tab('dash');
+  await until(() => q('.cam-view'), 'found again: the camera is back on');
+`);
+
+test('requirements: Settings lists each one with its state, why and how; Check again asks the plugin', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  const row = id => q('[data-req="' + id + '"]');
+  eq(qa('[data-req]').map(r => r.dataset.req), ['ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman'], 'one row each');
+  eq(text(row('ffmpeg').querySelector('[data-test="req-state"]')), 'Not found', 'ffmpeg missing');
+  assert(text(row('ffmpeg')).includes('brew install ffmpeg') && text(row('ffmpeg')).includes('winget install Gyan.FFmpeg')
+    && text(row('ffmpeg')).includes('sudo apt install ffmpeg') && text(row('ffmpeg')).includes('ffmpeg path'), 'install help per OS: ' + text(row('ffmpeg')));
+  eq(row('ffmpeg').querySelector('[data-test="req-link"]').getAttribute('href'), 'https://ffmpeg.org/download.html', 'official link');
+  assert(text(row('anycubic_slicer')).includes('optional') && text(row('anycubic_slicer')).includes('bundled certificate stops working'), 'slicer optional');
+  eq(text(row('printer_agents').querySelector('[data-test="req-state"]')), 'Not detected', 'agents: warn, not error');
+  assert(text(row('printer_agents')).includes('Use printer agents instead of print hosts') && text(row('printer_agents')).includes('restart OrcaSlicer'), 'agent steps');
+  eq(text(row('spoolman').querySelector('[data-test="req-state"]')), 'Configured', 'spoolman');
+  assert(!row('spoolman').querySelector('[data-test="req-link"]'), 'no install help once there');
+  await click(byTest('req-check'));
+  assert(last('check_requirements'), 'Check again sent');
+  await post({...REQS(), checking: true});
+  eq(text(row('ffmpeg').querySelector('[data-test="req-state"]')), 'Checking…', 'checking');
+`);
+
+test('requirements: no Anycubic Slicer Next turns off the default search only; a typed path still searches', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('[data-test="cert-advanced"] summary'));
+  assert(byTest('find-cert').disabled, 'Find certificate off without an install');
+  assert(text(q('#set-cert-why')).includes('isn’t in its usual folder'), 'says why: ' + text(q('#set-cert-why')));
+  await type(q('#set-cert-path'), '/opt/anycubic');
+  assert(!byTest('find-cert').disabled, 'a typed path can be searched');
+  await click(byTest('find-cert'));
+  eq(cmds('find_certificate').map(m => m.args), [{path: '/opt/anycubic'}], 'path sent');
+`);
+
+test('requirements: without Spoolman, refreshing and linking spools are off', `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
+  await post({type: 'status', data: VIEW()});
+  assert(q('[data-focus-key="sm-refresh"]').disabled, 'Spools refresh off on the Dashboard');
+  await tab('settings');
+  const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
+  assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
+  assert(text(q('#sm-s-h').closest('section')).includes('No Spoolman address'), 'says why');
 `);
 
 // ------------------------------------------------------------------ first-run, offline, stale
