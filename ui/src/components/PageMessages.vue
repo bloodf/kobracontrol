@@ -2,8 +2,8 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import { OuiBanner, OuiIcon } from '../../shared/src/components';
-import { dashboard, refresh, settings, shieldCheck } from '../../shared/src/icons';
-import { s, tracker, hello, link, printerName, statusAge, STALE_STATUS_S } from '../app/store';
+import { dashboard, refresh, settings, play, shieldCheck, upload } from '../../shared/src/icons';
+import { s, tracker, hello, link, printerName, run, statusAge, STALE_STATUS_S } from '../app/store';
 import { t, fmt } from '../core/i18n';
 
 // What the whole page has to say, once, under the app bar on every tab: why the printer's controls are off and which
@@ -15,6 +15,16 @@ const retryIn = computed(() => (s.retryAt ? Math.max(0, Math.ceil(s.retryAt - s.
 const where = computed(() => s.info?.address ?? '');
 const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools'));
 /** "Pause failed: timeout" reads as a title and its detail. */
+// An Upload and Print from OrcaSlicer (upload bridge) never starts by itself: it waits here for Start.
+const waitingPrint = computed(() => s.status?.bridge_pending ?? null);
+function startWaiting(): void {
+  const id = waitingPrint.value?.id;
+  if (id) void run({ key: 'bridge-start', label: t('bridge.start'), cmd: 'bridge_start', args: { id }, okText: t('ok.print'), timeoutMs: 60000 });
+}
+function cancelWaiting(): void {
+  const id = waitingPrint.value?.id;
+  if (id) void run({ key: 'bridge-cancel', label: t('act.bridgeCancel'), cmd: 'bridge_cancel', args: { id }, okText: t('ok.bridgeCancel') });
+}
 /** Which of the chained link banners applies (one at a time). Each banner is bound to its own case with `show`, so closing
  * one holds while that case lasts and is forgotten when it clears: the same problem coming back later shows again. */
 const top = computed(() => (link.value === 'noCertificate' ? 'cert' : link.value === 'noTarget' ? 'target' : link.value === 'offline' ? 'offline'
@@ -63,6 +73,16 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
       <!-- Keyed on the printer, not the status time: closed, it stays closed while the status stays stale. -->
       <OuiBanner :show="top === 'stale'" tone="warn" :title="top === 'stale' ? t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''"
                  dismissible :dismiss-key="`stale:${where}`" :close-label="t('common.close')" />
+
+      <OuiBanner v-if="waitingPrint" tone="info" :icon="upload" :title="t('bridge.pending.title')" data-test="bridge-pending">
+        {{ t('bridge.pending.body', { name: waitingPrint.name }) }}
+        <span v-if="!s.status?.can.print" id="kc-bridge-why" class="oui-meta">{{ t('bridge.pending.notIdle') }}</span>
+        <template #actions>
+          <Button size="small" severity="secondary" text :label="t('bridge.dontPrint')" :loading="tracker.isBusy('bridge-cancel')" data-test="bridge-cancel" @click="cancelWaiting" />
+          <Button size="small" :label="t('bridge.start')" :disabled="!s.status?.can.print" :aria-describedby="s.status?.can.print ? undefined : 'kc-bridge-why'"
+                  :loading="tracker.isBusy('bridge-start')" data-test="bridge-start" @click="startWaiting"><template #icon><OuiIcon :icon="play" :size="14" /></template></Button>
+        </template>
+      </OuiBanner>
 
       <!-- Not part of the chain above: a changed printer certificate is shown on every tab until closed. -->
       <OuiBanner :show="!!s.status?.tls?.changed_from" tone="warn" :icon="shieldCheck" :title="t('tls.changed.title')" data-test="tls-changed"

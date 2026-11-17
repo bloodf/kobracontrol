@@ -1388,8 +1388,6 @@ class GcodeChecks(Base):
         self.assertEqual(self.fake.uploads, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class PushingNoop(Base):
@@ -1562,3 +1560,132 @@ class Guarded(Base):
         reply = wait(lambda: next((m for m in page.posted if m.get("id") == 1), None))
         self.assertIn("result", reply)
         self.assertEqual(audit_guard.denials(), [])
+
+
+def free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class AddOns(Base):
+    """Settings switch the upload bridge on and off; it is off by default."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(plugin.stop_bridge)
+        self.page = plugin.KobraControlPage()
+        self.page.posted = []
+
+    def config(self):
+        return [m for m in self.page.posted if m.get("type") == "config"][-1]
+
+    def save(self, **values):
+        self.page.on_message({"type": "save_settings", "id": 5, "settings": values})
+        return self.config()
+
+    def test_off_by_default(self):
+        self.page.on_load()
+        self.addCleanup(self.page.on_unload)
+        self.assertIsNone(plugin._bridge)
+        self.page.on_message({"type": "hello", "id": 1})
+        state = self.config()["bridge"]
+        self.assertEqual((state["enabled"], state["running"], state["host"], state["key"]), (False, False, "127.0.0.1", ""))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, plugin.bridge.KEY_FILE)))   # no key made while off
+
+    def test_bridge_switch_starts_and_stops_the_server(self):
+        port = free_port()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertEqual((state["running"], state["port"], state["error"]), (True, port, ""))
+        self.assertEqual(plugin._bridge.server.server_address, ("127.0.0.1", port))
+        key_file = os.path.join(self.tmp, plugin.bridge.KEY_FILE)
+        if os.name == "posix":
+            self.assertEqual(os.stat(key_file).st_mode & 0o777, 0o600)
+        self.assertNotIn(state["key"], json.dumps(plugin.get_store().raw()))   # not in settings.json
+        running = plugin._bridge
+        self.assertFalse(self.save(bridge_enabled=False)["bridge"]["running"])
+        wait(lambda: running.server is None)
+
+    def test_new_key_replaces_the_old_one(self):
+        self.page.on_message({"type": "hello", "id": 1})
+        old = self.config()["bridge"]["key"]
+        self.page.on_message({"type": "bridge_new_key", "id": 6})
+        self.assertNotEqual(self.config()["bridge"]["key"], old)
+        self.assertEqual(plugin.bridge_key(), self.config()["bridge"]["key"])
+
+    def test_port_in_use_is_reported(self):
+        import socket
+        with socket.socket() as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen()
+            state = self.save(bridge_enabled=True, bridge_port=busy.getsockname()[1])["bridge"]
+        self.assertFalse(state["running"])
+        self.assertIn("could not be opened", state["error"])
+
+    def test_quick_restart_binds_again_from_a_worker(self):
+        """Off and on while the old bridge still holds the port: the UI thread never waits; a worker binds once the
+        old one has let go and the page gets a new config."""
+        port = free_port()
+        self.save(bridge_enabled=True, bridge_port=port)
+        old = plugin._bridge
+        release = threading.Event()
+        real_stop = old.stop
+        old.stop = lambda: (release.wait(5), real_stop())   # an upload in progress keeps the port a little longer
+        self.save(bridge_enabled=False)
+        started = time.monotonic()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertLess(time.monotonic() - started, 0.5)   # the UI thread did not join the stopping thread
+        self.assertFalse(state["running"])
+        self.assertIn("waiting for the previous bridge", state["error"])
+        posted = len(self.page.posted)
+        release.set()
+        wait(lambda: plugin._bridge is not None)
+        wait(lambda: len(self.page.posted) > posted)
+        self.assertTrue(self.config()["bridge"]["running"])
+
+    def test_unload_stops_the_bridge(self):
+        self.save(bridge_enabled=True, bridge_port=free_port())
+        running = plugin._bridge
+        self.page.on_load()
+        self.page.on_unload()
+        self.assertIsNone(plugin._bridge)
+        wait(lambda: running.server is None)
+
+    def test_load_asks_for_loopback_only_when_on(self):
+        with mock.patch.object(plugin, "known_hosts", return_value=["192.168.1.5"]):
+            orca.permissions.clear()
+            plugin.KobraControl().register_capabilities()
+            self.assertNotIn("http://127.0.0.1", orca.permissions[-1]["network"])
+            plugin.get_store().update({"bridge_enabled": True})
+            plugin.KobraControl().register_capabilities()
+            self.assertIn("http://127.0.0.1", orca.permissions[-1]["network"])
+
+    def test_upload_with_no_target_reads_presets_on_the_ui_thread(self):
+        """The bridge's thread never reads presets itself: with no printer selected yet it has the UI thread do it
+        (queue_on_main), as the Check script does."""
+        readers, real = [], plugin.preset_hints
+
+        def hints():
+            readers.append(threading.current_thread().name)
+            return real()
+
+        def queue(task):
+            threading.Thread(target=task, name="ui").start()
+        self.enterContext(mock.patch.object(plugin, "preset_hints", hints))
+        self.addCleanup(setattr, plugin, "_queue_on_main", plugin._queue_on_main)
+        plugin._queue_on_main = queue
+        self.fake.reply("file", "listLocal", {"records": []}, code=200)
+        path = os.path.join(self.tmp, "up.part")
+        with open(path, "wb") as f:
+            f.write(b"G90\nM83\nG1 X1\n")
+        plugin._service.target = None
+        result = run_off_main(lambda: plugin._bridge_upload(path, "cube.gcode", 1, False))
+        self.assertEqual(result, {"name": "cube.gcode"})
+        self.assertTrue(readers)
+        self.assertEqual(set(readers), {"ui"})
+        self.assertEqual(self.fake.uploads[-1]["filename"], "cube.gcode")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,5 +1,6 @@
 """One flat, validated settings store (page, printer agent, scripts). Free of the `orca` module.
-No secrets are kept here: the printer's MQTT credentials live in memory only."""
+No secrets are kept here: the printer's MQTT credentials live in memory only, the upload bridge's key in its own
+file (bridge.py)."""
 
 import json
 import os
@@ -28,7 +29,10 @@ DEFAULTS = {
     "print_dialog": True,                # "Show print setup before sending": Kobra Control's window after OrcaSlicer's Print
     "remember_print_options": True,      # its options start from the last ones chosen for that printer
     "print_memory": {},                  # printer -> {option: bool}, the last options chosen (printsetup.remember)
+    "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
+    "bridge_port": 8765,
 }
+PORT_RANGE = (1024, 65535)
 
 
 def printer_label(name):
@@ -41,6 +45,8 @@ def _clean(key, value):
     default = DEFAULTS[key]
     if key == "ui_language":
         return value if value in UI_LANGUAGES else None
+    if key == "bridge_port":
+        return value if type(value) is int and PORT_RANGE[0] <= value <= PORT_RANGE[1] else None
     if type(value) is not type(default):
         return None
     if key == "spoolman_url":

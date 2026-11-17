@@ -1574,7 +1574,8 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   await click(byTest('save-top'));
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
-    flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true}, 'every setting, by its name');
+    flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true,
+    bridge_enabled: false, bridge_port: 8765}, 'every setting, by its name');
   assert(!toasts().includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
@@ -1625,6 +1626,47 @@ test('settings: print defaults, camera default and Spoolman options are saved un
   await click(byTest('save-top'));
   const s = last('save_settings').settings;
   eq([s.camera_enabled, s.auto_leveling, s.spoolman_report_usage], [true, false, false], 'flags');
+`);
+
+test('settings: upload bridge is off by default; key, copy, new key and OrcaSlicer steps', `
+  await ready(VIEW());
+  await post(CONFIG({bridge: {enabled: false, running: false, port: 8765, host: '127.0.0.1', key: 'KEY-aaaaaaaaaaaaaaaaaaaaaa', error: ''}}));
+  await tab('settings');
+  eq(q('input#c-bridge').checked, false, 'off by default');
+  eq(text(byTest('bridge-chip')), 'Off', 'chip');
+  eq(byTest('bridge-key').value, 'KEY-aaaaaaaaaaaaaaaaaaaaaa', 'key shown');
+  assert(text(byTest('bridge-steps')).includes('OctoPrint') && text(byTest('bridge-steps')).includes('127.0.0.1:8765'), 'steps: ' + text(byTest('bridge-steps')));
+  await click(q('input#c-bridge'));
+  await click(byTest('save-top'));
+  const m = last('save_settings');
+  eq([m.settings.bridge_enabled, m.settings.bridge_port], [true, 8765], 'switch saved');
+  assert(!('key' in m.settings), 'the key is never part of the settings');
+  await reply(m, {});
+  await post(CONFIG({settings: {...SETTINGS, bridge_enabled: true}, bridge: {enabled: true, running: true, port: 8765, host: '127.0.0.1', key: 'KEY-aaaaaaaaaaaaaaaaaaaaaa', error: ''}}));
+  eq(text(byTest('bridge-state')), 'Listening on 127.0.0.1:8765', 'running');
+  await click(byTest('bridge-new-key'));
+  await until(() => last('bridge_new_key'), 'new key asked');
+  await reply(last('bridge_new_key'), {renewed: true});
+  await until(() => toasts().includes('old one no longer works'), 'new key said');
+  await post(CONFIG({settings: {...SETTINGS, bridge_enabled: true}, bridge: {enabled: true, running: false, port: 8765, host: '127.0.0.1', key: 'k', error: 'port 8765 could not be opened (Address already in use)'}}));
+  assert(text(byTest('bridge-state')).includes('Address already in use'), 'error shown: ' + text(byTest('bridge-state')));
+`);
+
+test('upload bridge: a print from OrcaSlicer waits for Start; refused while the printer is busy', `
+  await ready(VIEW({bridge_pending: {id: 'p1', name: 'cube.gcode', at: 1700000000}}));
+  assert(text(byTest('bridge-pending')).includes('cube.gcode'), 'shown: ' + text(byTest('bridge-pending')));
+  await click(byTest('bridge-start'));
+  const m = last('cmd', 'bridge_start');
+  eq(m.args, {id: 'p1'}, 'start carries the request id');
+  await reply(m, {started: 'cube.gcode'});
+  await post({type: 'status', data: PRINTING({bridge_pending: {id: 'p2', name: 'next.gcode', at: 1700000000}})});
+  eq(byTest('bridge-start').disabled, true, 'no Start while printing');
+  assert(text(byTest('bridge-pending')).includes('idle'), 'says why');
+  await click(byTest('bridge-cancel'));
+  eq(last('cmd', 'bridge_cancel').args, {id: 'p2'}, 'cancel');
+  await reply(last('cmd', 'bridge_cancel'), {cancelled: true});
+  await post({type: 'status', data: PRINTING()});
+  eq(byTest('bridge-pending'), null, 'gone when none waits');
 `);
 
 test('settings: the language choice is posted; the version shows; the Spooler hint is there', `

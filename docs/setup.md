@@ -139,6 +139,51 @@ lower case are ignored, the slot keeps the usual preset and the
 Kobra Control tab shows a notice once per name in each OrcaSlicer session. The colour, the spool link and the
 Spoolman usage booking are not affected.
 
+## Optional: Upload bridge (OrcaSlicer's OctoPrint host)
+
+Off by default. With it on, OrcaSlicer's own **Upload** and **Upload and Print** buttons (the OctoPrint
+host type, which the stock Kobra X preset already uses) reach the printer through Kobra Control. No printer agent
+is needed for it.
+
+1. In the Kobra Control tab, open **Settings > Upload bridge**, turn on **Accept uploads from OrcaSlicer**,
+   keep or change the port (8765 by default) and press **Save settings**. OrcaSlicer may ask once to let
+   Kobra Control use the network address 127.0.0.1: answer Yes. The status then reads
+   "Listening on 127.0.0.1:8765".
+2. Press **Copy** next to the API key.
+3. In OrcaSlicer, edit the Kobra X printer preset and open its connection settings (the icon next to the printer):
+   - **Host type**: OctoPrint
+   - **Hostname, IP or URL**: `127.0.0.1:8765` (the port from step 1)
+   - **API Key / Password**: paste the key
+4. Press **Test**. OrcaSlicer should report a successful connection.
+
+**Upload** stores the plate's G-code on the printer. **Upload and Print** stores it too, then waits: the Kobra
+Control tab shows "A print from OrcaSlicer is waiting" with **Start print** and **Don't print**. Nothing prints
+until you press Start, and Start is refused unless the printer is idle; an Upload and Print sent while the
+printer is busy is refused before anything is uploaded. A waiting print is forgotten after 10 minutes (the file
+stays on the printer). Start uses the print options from **Settings > Print defaults** and the loaded ACE slots in
+order, as a print from the Files tab does.
+
+What the bridge does and does not do:
+
+- It listens on 127.0.0.1 only. Other computers on the network cannot reach it.
+- Every request needs the API key. The key is kept in the plugin's storage folder in its own file
+  (`bridge_key.txt`, readable by your user only), never in the settings file. **New key** replaces it at once;
+  paste the new key into OrcaSlicer afterwards.
+- It accepts one request at a time, 30 requests a minute, and locks out for a minute after 5 wrong keys.
+  Uploads larger than 1 GB are refused. Requests whose Host is not 127.0.0.1 or localhost, and requests from web
+  pages (an `Origin` or `Sec-Fetch-Site` header), are refused.
+- It never overwrites the file the printer is printing, and a new upload with the name of a waiting print
+  drops that waiting print.
+- It speaks only the two requests OrcaSlicer's OctoPrint client makes (`GET /api/version` and
+  `POST /api/files/local`). It is not a full OctoPrint server.
+- A program already running on this computer can keep it busy (for example by sending wrong keys, which locks
+  uploads for a minute) but cannot upload or print without the key. The request line and headers must arrive
+  within 10 seconds.
+- An **Upload** (without print) is accepted while the printer prints, as OrcaSlicer's Send is; Upload and Print is
+  not.
+- The API key file is made the first time the bridge is turned on (or New key is pressed), not before.
+- Turning it off in Settings, or unloading the plugin, stops it.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

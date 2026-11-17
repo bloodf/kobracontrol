@@ -523,7 +523,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         conn = self.connections.get(target.host)
         if conn is None:
             return
-        data = self._data(conn)
+        data = {**self._data(conn), "bridge_pending": self.bridge_pending_for(conn.host)}
         if self._current(gen):
             self.publish({"type": "status", "data": data, "gen": gen})
             if not data["connected"]:

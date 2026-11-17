@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "kobracontrol"
-MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "printsetup", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "jobs", "locating", "service")  # dependency order
+MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "printsetup", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "bridge", "jobs", "locating", "service")  # dependency order
 ASSETS = {"APP_HTML": "app.html", "ICON_SVG": "icon.svg"}   # app.html: the compiled Vue page (ui/, npm run build)
 
 def page_html(name):
