@@ -250,4 +250,11 @@ TEXT = {
     "Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before adding it by hand; kobracontrol won't repeat it.": "Puede que Spoolman no haya registrado %s g en el carrete #%d (S%d): %s. Revise el carrete #%d antes de añadirlo a mano; kobracontrol no lo repetirá.",
     "Spoolman updated with this print's filament use": "Spoolman actualizado con el consumo de filamento de esta impresión",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': 'Ningún carrete de Spoolman estaba vinculado a %s; ese consumo de filamento no se registró.',
+    'Choose the slots and options in the Kobra Control window...': 'Elija las ranuras y las opciones en la ventana de Kobra Control...',
+    'the print dialog timed out; nothing was sent': 'el diálogo de impresión caducó; no se envió nada',
+    "the print dialog didn't open (OrcaSlicer was busy); nothing was sent": 'el diálogo de impresión no se abrió (OrcaSlicer estaba ocupado); no se envió nada',
+    'filament %d has no usable slot; nothing was sent': 'el filamento %d no tiene una ranura utilizable; no se envió nada',
+    'the material warnings were not confirmed for these slots; nothing was sent': 'las advertencias de material no se confirmaron para estas ranuras; no se envió nada',
+    'Kobra Control — print setup': 'Kobra Control — preparar impresión',
+    'filament %d is another material than its slot holds; nothing was sent': 'el filamento %d es de otro material que el de su ranura; no se envió nada',
 }

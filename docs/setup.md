@@ -80,6 +80,8 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
    connection and firmware version.
 2. Open the Device tab: status, temperatures and ACE slots should appear.
 3. In Orca's Print dialog, sync the ACE slots, map each filament to a slot and send the print.
+   Kobra Control's print setup window then opens (OrcaSlicer's own dialog can't be replaced, so there are two):
+   check each filament's slot and the options, then Start print. Settings > Print defaults can turn it off.
 4. Expect a long preparation phase after the print starts: the printer heats, levels and cycles
    through the ACE slots before the first layer (about 11 minutes in one test, for a 5 minute
    print). It is not hung.

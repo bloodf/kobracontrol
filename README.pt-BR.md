@@ -79,7 +79,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 
 | Recurso | O que você tem |
 |---|---|
-| Agente de impressora | O id do agente é `kobracontrol`. Print e Send usam o mapeamento de filamento para slot que você escolhe no diálogo de impressão do OrcaSlicer, com nivelamento automático, calibração de fluxo e time-lapse desse diálogo e a compensação de vibração dos ajustes do plugin. |
+| Agente de impressora | O id do agente é `kobracontrol`. Depois do diálogo Print do OrcaSlicer, abre a janela de preparação do próprio Kobra Control, então são dois diálogos: o OrcaSlicer não tem como substituir o dele. A janela parte da escolha do OrcaSlicer e mostra o slot de cada filamento (só o mesmo material, com a bobina do Spoolman) e as opções de impressão, e envia exatamente isso. O Send usa só o diálogo do OrcaSlicer. |
 | Aba Device | Status, temperaturas, pausar, retomar, parar, luz, ventoinha, velocidade e câmera na aba Device do próprio OrcaSlicer. Os slots do ACE aparecem ali como slots de filamento, com sincronização e mapeamento no diálogo de impressão. |
 | Painel | Status e controles, movimentos e homing, a câmera, o cartão de filamento, o painel Impressora e o estoque do Spoolman e do Spooler. |
 | Painel Impressora | Nome e **Renomear**, firmware, endereço de rede, contadores de impressão e as chaves do **Assistente de impressão**. |

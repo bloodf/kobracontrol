@@ -19,6 +19,7 @@ import i18n
 import locate
 import kobra
 import peers
+import printsetup
 import settings
 import spooler_bridge
 from i18n import tr
@@ -160,9 +161,10 @@ def sync_language():
         log("language not read (%s)" % e)
 
 
-def page_html(language="auto"):
+def page_html(language="auto", mode="app", data=None):
+    """The Kobra Control tab ("app"), or the print dialog ("print", with its data)."""
     boot = {"version": VERSION, "lang": _host_language(),
-            "pref": language if language in settings.UI_LANGUAGES else "auto"}
+            "pref": language if language in settings.UI_LANGUAGES else "auto", "mode": mode, "data": data}
     return _asset("app.html").replace("__BOOT__", json_for_html(boot), 1)
 
 
@@ -468,6 +470,123 @@ def job_task(params, defaults):
             "timelapse": opt("task_record_timelapse") and defaults.get("timelapse") is True}
 
 
+DIALOG_TIMEOUT = 15 * 60   # s the print dialog may stay open before the print is abandoned
+DIALOG_READY = 20          # s for the dialog's page to report it is showing
+DIALOG_REFRESH = 2.0       # s between slot updates sent to the open dialog
+
+
+def ask_print(params, host, path, trays, filaments, task, cancel_fn):
+    """Kobra Control's print dialog, on the print job's thread (never OrcaSlicer's UI thread: create_window queues
+    the window there and returns). Starts from OrcaSlicer's dialog's choice, the printer's slots and the Spoolman
+    links; returns (tray ids, filaments, task) as print_job takes them, exactly as the user left them.
+    Raises printsetup.Cancelled, or KobraError when the printer is busy or the answer can't be used."""
+    svc, cfg = service(), get_store().effective()
+    data, names = svc.print_snapshot(host)   # a busy printer: the dialog says so and keeps Print off
+    plate = printsetup.plate_summary(path, getattr(params, "plate_index", 1))
+    described = [{"colour": f["colour"], "type": f["type"]} for f in filaments]
+    fils = printsetup.job_filaments(trays, described, plate)
+    mode = data["mode"]
+    start = printsetup.initial_trays(trays, fils, data["slots"], mode)
+    printer = settings.printer_label(cfg.get("printer_name"))
+    remembered = printsetup.remembered_for(cfg["print_memory"], host) if cfg["remember_print_options"] else {}
+    options = printsetup.offered_options(cfg, data.get("features"), task, remembered)
+    units = data.get("ace_units") or []
+    auto_feed = all(u.get("auto_feed") for u in units) if units else None
+    job = {"name": clean(params.project_name) or clean(params.task_name), "plate": getattr(params, "plate_index", 1),
+           "seconds": plate["seconds"], "grams": plate["grams"], "metres": round(plate["metres"], 2),
+           "thumbnail": plate["thumbnail"]}
+    page = printsetup.page_data({"name": printer, "host": host, "state": data["state"], "can_print": data["can"]["print"],
+                                 "model": data.get("model") or MODEL}, job, fils, data, names,
+                                start, options, auto_feed, cfg["remember_print_options"])
+    answer, data = _show_print_dialog(page, host, cancel_fn, data)
+    choice = printsetup.read_answer(answer, fils, data["slots"], data["mode"], start, options, auto_feed)
+    store = get_store()
+    if choice["remember"] is not None:
+        store.update({"remember_print_options": choice["remember"]})
+    if store.effective()["remember_print_options"]:
+        store.update({"print_memory": printsetup.remember(store.effective()["print_memory"], host, choice["task"])})
+    if auto_feed is not None and choice["auto_feed"] != auto_feed:
+        svc.call(host, "assist", option="autoFeed", on=choice["auto_feed"])
+    ids, described = printsetup.tray_list(choice["trays"], fils, len(trays))
+    return ids, described, choice["task"], printsetup.task_name(choice["name"], job["name"])
+
+
+def check_orca_mapping(host, trays, filaments):
+    """With the print setup turned off: OrcaSlicer's own choice, refused when a filament goes to another material
+    (printsetup.check). A busy printer and unusable trays are refused later by print_job itself."""
+    if not any(t >= 0 for t in trays):
+        return
+    data, _ = service().print_snapshot(host)
+    fils = [{"index": i, "colour": f["colour"], "type": f["type"]} for i, f in enumerate(filaments) if trays[i] >= 0]
+    blocking, _, _ = printsetup.check(fils, data["slots"], data["mode"], dict(enumerate(trays)))
+    printsetup.refuse([b for b in blocking if b["kind"] == "material"])
+
+
+def _show_print_dialog(page, host, cancel_fn, data):
+    """Open the dialog and wait for its answer on this (job) thread. Returns (answer, the printer's status data the
+    window showed last): the answer is checked against the slots the user saw."""
+    ui = orca.host.ui
+    done, ready, stop = threading.Event(), threading.Event(), threading.Event()
+    box, shown = {}, [data]
+
+    wanted = threading.Event()
+
+    def on_message(msg):
+        if not isinstance(msg, dict):
+            return
+        if msg.get("ready"):
+            ready.set()
+        if msg.get("refresh"):
+            wanted.set()
+        if msg.get("open_settings"):   # the Kobra Control tab, when open, switches to Settings
+            service().publish({"type": "show_tab", "tab": "settings"})
+
+    def on_submit(msg):
+        box["answer"] = msg
+        done.set()
+
+    html = page_html(get_store().effective()["ui_language"], "print", page)
+    window = ui.create_window(html, title=tr("Kobra Control — print setup"), width=560, height=780, on_message=on_message,
+                              on_close=done.set, on_submit=on_submit, style=ui.WINDOW_MODAL)
+
+    def refresher():   # slots or state changed on the printer (touchscreen, ACE) show up in the open dialog
+        while not stop.is_set():
+            asked = wanted.wait(DIALOG_REFRESH)
+            wanted.clear()
+            if stop.is_set():
+                return
+            try:
+                fresh, names = service().print_snapshot(host)
+            except Exception as e:
+                log("print dialog: slots not refreshed (%s)" % e)
+                continue
+            last = shown[-1]
+            if asked or fresh["slots"] != last["slots"] or fresh["state"] != last["state"]:
+                shown.append(fresh)
+                window.post({"slots": printsetup.page_slots(fresh, names), "state": fresh["state"],
+                             "can_print": fresh["can"]["print"]})
+
+    threading.Thread(target=refresher, name="kobracontrol-print-dialog", daemon=True).start()
+    started = time.monotonic()
+    try:
+        while not done.wait(0.25):
+            waited = time.monotonic() - started
+            if cancel_fn and cancel_fn():
+                window.close()
+                raise printsetup.Cancelled()
+            if waited > DIALOG_TIMEOUT:
+                window.close()
+                raise kobra.KobraError(tr("the print dialog timed out; nothing was sent"))
+            if not window.is_open():
+                break
+            if not ready.is_set() and waited > DIALOG_READY:
+                window.close()
+                raise kobra.KobraError(tr("the print dialog didn't open (OrcaSlicer was busy); nothing was sent"))
+    finally:
+        stop.set()
+    return box.get("answer"), shown[-1]
+
+
 class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
@@ -765,7 +884,22 @@ class KobraAgent(pa.PrinterAgentBase):
         host = self._job_host(params)
         path = params.dst_file if getattr(params, "dst_file", "") and os.path.exists(params.dst_file) else params.filename
         trays, filaments = job_filaments(params)
+        name = clean(params.project_name) or clean(params.task_name)
         task = job_task(params, get_store().effective())
+        if get_store().effective()["print_dialog"]:
+            try:
+                if update_fn:
+                    update_fn(STAGE_CREATE, 0, tr("Choose the slots and options in the Kobra Control window..."))
+                trays, filaments, task, name = ask_print(params, host, path, trays, filaments, task, cancel_fn)
+            except printsetup.Cancelled:
+                return ERR_CANCELED
+            except Exception as e:
+                return self._fail(update_fn, ERR_LP_PUBLISH, e)
+        else:
+            try:
+                check_orca_mapping(host, trays, filaments)
+            except Exception as e:
+                return self._fail(update_fn, ERR_LP_PUBLISH, e)
         stage = ["prepare"]
 
         def on_stage(name):
@@ -775,7 +909,7 @@ class KobraAgent(pa.PrinterAgentBase):
                           tr("Uploading G-code...") if name == "upload" else tr("Starting print..."))
         try:
             service().print_job(host, path, getattr(params, "plate_index", 1),
-                                clean(params.project_name) or clean(params.task_name), trays, filaments, task,
+                                name, trays, filaments, task,
                                 self._progress(update_fn), cancel_fn, on_stage)
         except kobra.Cancelled:
             return ERR_CANCELED

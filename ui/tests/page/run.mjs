@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launch, MOCK_HOST, HELPERS, preparePage } from './cdp.mjs';
+import { PRINT_DATA } from './print-data.mjs';
 import { es } from '../../src/core/locales/es.ts';
 import { de } from '../../src/core/locales/de.ts';
 import { zhCN } from '../../src/core/locales/zh-CN.ts';
@@ -1301,7 +1302,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   await click(byTest('save-top'));
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
-    flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true}, 'every setting, by its name');
+    flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true}, 'every setting, by its name');
   assert(!text(q('.notices')).includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(text(q('.notices')).includes('Settings saved'), 'saved after the answer');
@@ -1544,6 +1545,86 @@ test('en: no Chinese punctuation font outside Chinese', `
 await ready(VIEW());
 assert(!getComputedStyle(document.body).fontFamily.includes('OuiCJKPunct'), 'font: ' + getComputedStyle(document.body).fontFamily);
 `);
+
+// ------------------------------------------------------------------ print dialog (boot mode "print", plugin.ask_print)
+const PD = {mode: 'print', data: PRINT_DATA};
+const PD_HELP = `
+const chip = f => q('[data-test="slot-' + f + '"]');
+const submits = () => __t.submits;
+async function openPicker(f) { chip(f).click(); await until(() => q('.p-popover [role=radio]') && !q('.p-popover[class*="enter-active"]'), 'picker open'); await settle(); }
+async function choose(f, tray) { await openPicker(f); q('.p-popover [data-tray="' + tray + '"]').click(); await until(() => !q('.p-popover'), 'picker closed'); await settle(); }
+`;
+test('print setup: task, plate, chips, printer slots and options; Start print sends exactly them', PD_HELP + `
+  await until(() => sent().some(m => m.ready), 'ready posted');
+  eq(byTest('name').value, 'Benchy dual colour', 'task name');
+  assert(text(q('.pd-plate')).includes('for Anycubic Kobra X') && text(q('.pd-facts')).includes('2 h 3 min') && text(q('.pd-facts')).includes('43 g / 14.18 m'), 'plate: ' + text(q('.pd-plate')));
+  assert(text(q('.pd-printer')).includes('Bench Kobra · 192.168.1.50') && text(byTest('state')) === 'Ready', 'printer: ' + text(q('.pd-printer')));
+  eq(qa('.pd-sq').length, 4, 'four slot squares');
+  assert(chip(0).getAttribute('aria-label').includes('ACE 1 · Slot 1: PLA · Elegoo Red PLA'), 'chip label: ' + chip(0).getAttribute('aria-label'));
+  eq(text(chip(2)), '2', 'second filament on slot 2');
+  eq(qa('.pd-grid [data-option]').map(e => e.dataset.option), ['auto_leveling', 'vibration_compensation', 'timelapse', 'flow_calibration', 'auto_feed'], 'grid order');
+  assert(q('#pd-o-flow_calibration').disabled && text(q('[data-option="flow_calibration"]')).includes('Settings'), 'flow locked by the setting');
+  assert(q('#pd-o-timelapse').disabled && text(q('[data-option="timelapse"]')).includes('support'), 'time-lapse unsupported');
+  await click(q('#pd-o-auto_leveling'));
+  const field = byTest('name'); await type(field, 'Desk tidy');
+  await choose(0, 7);
+  assert(qa('[data-kind="variant"]').length === 1 && byTest('print').disabled, 'PLA in a PLA Silk slot needs use anyway');
+  await click(q('#pd-ack'));
+  await click(byTest('print'));
+  const s = submits()[0];
+  eq([s.name, s.trays, s.acknowledged], ['Desk tidy', {'0': 7, '2': 5}, ['variant:0:7']], 'name, trays, ack');
+  eq(s.options, {auto_leveling: false, vibration_compensation: true, flow_calibration: false, timelapse: false}, 'options');
+  eq([s.remember, s.auto_feed], [true, true], 'remember, auto feed');
+  assert(byTest('print').disabled && byTest('cancel').disabled, 'sent once');
+`, { boot: PD });
+
+test('print setup: the slot picker allows only the same material, by keyboard too', PD_HELP + `
+  await until(() => sent().some(m => m.ready), 'ready posted');
+  await openPicker(2);
+  const discs = qa('.p-popover [role=radio]');
+  eq(discs.map(d => d.getAttribute('aria-disabled')), ['true', null, 'true', 'true'], 'PETG: only the PETG slot');
+  eq(discs[1].getAttribute('aria-checked'), 'true', 'current one checked');
+  assert(text(q('.p-popover')).includes('Only the same material can be selected'), 'rule said');
+  eq(document.activeElement, discs[1], 'focus on the chosen disc');
+  await press('Escape'); await until(() => !q('.p-popover'), 'closed'); await settle();
+  eq(document.activeElement, chip(2), 'focus back on the chip');
+  eq(submits().length, 0, 'Escape on the picker only closes it');
+  await openPicker(0);
+  const pla = qa('.p-popover [role=radio]');
+  eq(pla.map(d => d.getAttribute('aria-disabled')), [null, 'true', 'true', null], 'PLA: PLA and PLA Silk');
+  await press('ArrowRight'); await settle();
+  eq(document.activeElement, pla[3], 'arrow skips the slots that cannot be chosen');
+  await press('Enter'); await until(() => !q('.p-popover'), 'chosen'); await settle();
+  eq(text(chip(0)), '4', 'slot 4 chosen');
+`, { boot: PD });
+
+test('print setup: busy printer locks the settings; refresh and live change; Escape cancels', PD_HELP + `
+  await until(() => sent().some(m => m.ready), 'ready posted');
+  const slots = JSON.parse(JSON.stringify(${JSON.stringify(PRINT_DATA.slots)}));
+  await post({slots, state: 'printing', can_print: false});
+  assert(text(byTest('busy')).includes('can’t change during a print'), 'busy said: ' + text(byTest('busy')));
+  assert(byTest('print').disabled && chip(0).disabled && q('#pd-o-auto_leveling').disabled, 'locked');
+  await click(byTest('refresh'));
+  assert(sent().some(m => m.refresh), 'refresh asked');
+  slots[0] = {...slots[0], usable: false, type: '', family: '', material: ''};
+  await post({slots, state: 'idle', can_print: true});
+  assert(!byTest('busy'), 'ready again');
+  assert(text(q('.pd-issues')).includes('empty or can’t be used'), 'live: slot became unusable');
+  assert(byTest('print').disabled && text(q('#pd-why')).includes('usable slot'), 'blocked');
+  await click(byTest('settings'));
+  assert(sent().some(m => m.open_settings) && text(q('.pd-bar')).includes('Settings are open'), 'settings link');
+  await press('Escape'); await settle();
+  eq(submits(), [{cancelled: true}], 'cancelled');
+`, { boot: PD });
+
+test('print setup: Portuguese, narrow window, no auto feed without an ACE', PD_HELP + `
+  await until(() => sent().some(m => m.ready), 'ready posted');
+  eq(text(byTest('print')), 'Iniciar impressão', 'pt-BR');
+  assert(!q('[data-option="auto_feed"]'), 'no auto feed');
+  assert(document.documentElement.scrollWidth <= innerWidth, 'no horizontal scroll at ' + innerWidth + ': ' + document.documentElement.scrollWidth);
+  const a = q('[data-option="auto_leveling"]').getBoundingClientRect(), b = q('[data-option="vibration_compensation"]').getBoundingClientRect();
+  assert(b.top >= a.bottom - 1, 'one column of options');
+`, { boot: {...PD, data: {...PRINT_DATA, auto_feed: null}}, lang: 'pt-BR', pref: 'pt-BR', size: [380, 800] });
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');
@@ -1558,13 +1639,13 @@ try {
   await Promise.all(Array.from({ length: Math.min(workers, chosen.length) }, async (_, worker) => {
     for (let k = worker; k < chosen.length; k += workers) {
       const sc = chosen[k];
-      const boot = { version: 'test', lang: sc.lang ?? 'en', pref: sc.pref ?? 'auto' };
+      const boot = { version: 'test', lang: sc.lang ?? 'en', pref: sc.pref ?? 'auto', ...(sc.boot ?? {}) };
       const file = join(dir, `p${k}.html`);
       await writeFile(file, preparePage(page, boot));
       const p = await browser.newPage();
       const started = Date.now();
       try {
-        await p.size(1280, 900);
+        await p.size(...(sc.size ?? [1280, 900]));
         await p.init(MOCK_HOST + 'try { localStorage.clear(); } catch {}');
         await p.goto(pathToFileURL(file).href);
         const body = `(async () => { ${HELPERS} ${PRELUDE}

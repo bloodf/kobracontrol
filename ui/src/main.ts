@@ -7,11 +7,12 @@ import { primeVueOptions } from '../shared/src';
 import { PRIME_LOCALE } from './core/prime-locale';
 import './styles.css';
 import App from './App.vue';
+import PrintApp from './print/PrintApp.vue';
 
 document.body.classList.add('orca-ui');
 setHostLanguage(boot.lang);
 followHostTheme();
-const app = createApp(App);
+const app = createApp(boot.mode === 'print' ? PrintApp : App);
 installOrcaUI(app, 'en', 'violet');
 // PrimeVue's own labels (dialog close, select filter…) follow the page language too.
 const prime = app.config.globalProperties.$primevue;

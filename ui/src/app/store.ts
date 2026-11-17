@@ -230,6 +230,7 @@ function onMessage(m: any): void {
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
     case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
     case 'selection_changed': void hello(); break;
+    case 'show_tab': if (['dash', 'files', 'settings'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
     case 'reply': if (m.error) tracker.notify('error', t('msg.plugin', { error: String(m.error) })); break;
   }
 }

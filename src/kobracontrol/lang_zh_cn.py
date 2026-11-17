@@ -250,4 +250,11 @@ TEXT = {
     "Spoolman may not have recorded %s g on spool #%d (S%d): %s. Check spool #%d before adding it by hand; kobracontrol won't repeat it.": "Spoolman 可能未记录 %s g（料盘 #%d，S%d）：%s。手动添加前请先检查料盘 #%d；kobracontrol 不会重复记录。",
     "Spoolman updated with this print's filament use": "已将本次打印的耗材丝用量更新到 Spoolman",
     'No Spoolman spool was linked to %s; that filament use was not recorded.': '%s 未关联 Spoolman 料盘；该耗材丝用量未记录。',
+    'Choose the slots and options in the Kobra Control window...': '请在 Kobra Control 窗口中选择槽位和选项……',
+    'the print dialog timed out; nothing was sent': '打印窗口已超时；未发送任何内容',
+    "the print dialog didn't open (OrcaSlicer was busy); nothing was sent": '打印窗口未能打开（OrcaSlicer 正忙）；未发送任何内容',
+    'filament %d has no usable slot; nothing was sent': '耗材 %d 没有可用的槽位；未发送任何内容',
+    'the material warnings were not confirmed for these slots; nothing was sent': '这些槽位的材料警告未经确认；未发送任何内容',
+    'Kobra Control — print setup': 'Kobra Control — 打印设置',
+    'filament %d is another material than its slot holds; nothing was sent': '耗材 %d 与其槽位中的材料不同；未发送任何内容',
 }

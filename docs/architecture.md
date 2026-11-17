@@ -56,6 +56,7 @@ here. Spooler 0.26 never books a Kobra X print: its Kobra link reads only slots 
 state, so `usage_track` never runs for it). A Spooler that does must list `"anycubic"` in its presence
 `provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
+| `printsetup.py` | The print dialog after OrcaSlicer's Print: slot matching, warnings, options, checking the answer | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
 | `ui/app.html` | The Kobra Control tab: one compiled Vue 3 + PrimeVue page, built from `ui/` | - |
