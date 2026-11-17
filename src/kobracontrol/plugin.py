@@ -57,6 +57,9 @@ _storage_dir = None
 _agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 _preset_notices = set()   # orca_filament_preset names already reported as not usable this session
 _user_presets_failed = False
+# Preset.is_compatible is bound in OrcaSlicer 2.5 (PluginHostPresets.cpp); a host without it reads as compatible
+# (True), as OrcaSlicer itself treats a preset with no compatibility condition.
+COMPATIBLE_DEFAULT = True
 
 
 def log(msg):
@@ -283,7 +286,7 @@ def filament_catalog():
     presets = []
     for i in range(collection.size()):
         preset = collection.preset(i)
-        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID or not getattr(preset, "is_compatible", True):
+        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID or not getattr(preset, "is_compatible", COMPATIBLE_DEFAULT):
             continue
         first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
         presets.append({"name": preset.name, "bundle_id": spooler_bridge.BUNDLE_ID, "vendor": first("filament_vendor"),
@@ -299,7 +302,7 @@ def user_presets():
     for i in range(collection.size()):
         preset = collection.preset(i)
         if preset.is_user() and not preset.name.startswith("_local/"):
-            out.append({"name": preset.name, "compatible": bool(preset.is_compatible), "file": preset.file or "",
+            out.append({"name": preset.name, "compatible": bool(getattr(preset, "is_compatible", COMPATIBLE_DEFAULT)), "file": preset.file or "",
                         "inherits": clean(preset.config_value("inherits"))})
     return out
 
@@ -902,6 +905,7 @@ class KobraAgent(pa.PrinterAgentBase):
         if preset is None:
             self._preset_notice(name, problem)
             return ""
+        _preset_notices.discard(name)   # usable again: a later break warns again
         try:
             key = (preset["file"], os.path.getmtime(preset["file"]))
         except (OSError, ValueError):

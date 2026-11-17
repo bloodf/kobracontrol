@@ -322,7 +322,7 @@ class Agent(Base):
             svc.target = service.Target("10.9.9.9")
         self.assertEqual(list(self.agent._bound_spools()), [0])
 
-    def linked_trays(self, users, spool):
+    def linked_trays(self, users, spool, users_error=None):
         """Connect with slot 0 linked to `spool`, the user presets `users` and Spooler's preset for the spool; the
         trays of the next status push."""
         name = "_local/spooler/Acme PLA Red @Anycubic Kobra X"
@@ -330,7 +330,7 @@ class Agent(Base):
         profiles = {"version": 1, "filaments": {"9": {"Anycubic Kobra X": name}}, "ids": {name: "SPL0123456789"}}
         spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101", **spool}
         with mock.patch.object(plugin, "filament_catalog", return_value=([mine], "Anycubic Kobra X")), \
-                mock.patch.object(plugin, "user_presets", return_value=users), \
+                mock.patch.object(plugin, "user_presets", return_value=users, side_effect=users_error), \
                 mock.patch.object(plugin.spooler_bridge, "read_json", wraps=lambda folder, file: (
                     profiles if file == plugin.spooler_bridge.PROFILES_FILE else real_read_json(folder, file))), \
                 mock.patch.object(plugin._service, "links_for", return_value=([spool], {0: 5})):
@@ -379,6 +379,39 @@ class Agent(Base):
         notices = [m["text"] for m in self.published if m.get("type") == "notice"]
         self.assertEqual(len(notices), 1)
         self.assertIn("several", notices[0])
+
+    def test_unreadable_user_presets_keep_the_usual_ids(self):
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        trays = self.linked_trays([], {"orca_preset": "My PLA"}, users_error=RuntimeError("boom"))
+        self.assertEqual((trays[0]["tray_info_idx"], trays[1]["tray_info_idx"]), ("SPL0123456789", "OFYPdQJh"))
+
+    def test_a_fixed_link_that_breaks_again_warns_again(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        spool = {"orca_preset": "My PLA"}
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.agent._user_presets = [self.user_preset("My PLA")]
+        self.assertEqual(self.agent._linked_id(spool), "P1234567")
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.assertEqual(len([m for m in self.published if m.get("type") == "notice"]), 2)
+
+    def test_missing_or_bad_preset_file_keeps_the_usual_id_and_logs_once(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        logged = []
+        with mock.patch.object(plugin, "log", side_effect=logged.append):
+            self.assertEqual(self.agent._linked_id(spool), "P1234567")
+            os.remove(preset["file"])   # gone between refreshes
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                f.write("{not json")
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 2)
 
     def test_preset_file_read_once_per_version(self):
         preset = self.user_preset("My PLA")
