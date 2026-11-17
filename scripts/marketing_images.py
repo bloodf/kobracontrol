@@ -30,7 +30,7 @@ LANDSCAPE, SQUARE, SOCIAL = (0.74, 0.47), (0.74, 0.56), (0.77, 0.47)   # a point
 
 # The picture inside each panel: (scene of shots.mjs, page width in CSS px). The page is rendered at the panel's own
 # aspect ratio, so nothing is cropped away.
-DASH, LAN, STATUS, ACE, FILES = ("store-dash", 800), ("store-lan", 800), ("store-status", 940), ("store-ace", 800), ("store-files", 800)
+DASH, LAN, STATUS, ACE, FILES = ("store-dash", 845), ("store-lan", 800), ("store-status", 940), ("store-ace", 800), ("store-files", 800)
 
 # (source in assets/marketing/source, point in panel, (scene, width), theme, language, export, size)
 JOBS = [
@@ -46,8 +46,8 @@ JOBS = [
     ("feature-03-ace-pt-BR", LANDSCAPE, ACE, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-03-ace-pt-BR.png", (1600, 900)),
     ("feature-04-files-en", LANDSCAPE, FILES, "dark", "en", "orca-cloud/kobracontrol-feature-04-files-en.png", (1600, 900)),
     ("feature-04-files-pt-BR", LANDSCAPE, FILES, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-04-files-pt-BR.png", (1600, 900)),
-    ("social-preview-en", SOCIAL, ("store-dash", 620), "dark", "en", "social/kobracontrol-social-preview-en.png", (1280, 640)),
-    ("social-preview-pt-BR", SOCIAL, ("store-dash", 620), "dark", "pt_BR", "social/kobracontrol-social-preview-pt-BR.png", (1280, 640)),
+    ("social-preview-en", SOCIAL, ("store-dash", 616), "dark", "en", "social/kobracontrol-social-preview-en.png", (1280, 640)),
+    ("social-preview-pt-BR", SOCIAL, ("store-dash", 648), "dark", "pt_BR", "social/kobracontrol-social-preview-pt-BR.png", (1280, 640)),
     ("hero-dark-en", LANDSCAPE, DASH, "dark", "en", "readme/kobracontrol-hero-dark-en.png", (1600, 900)),
     ("hero-dark-pt-BR", LANDSCAPE, DASH, "dark", "pt_BR", "readme/kobracontrol-hero-dark-pt-BR.png", (1600, 900)),
     ("hero-light-en", LANDSCAPE, DASH, "light", "en", "readme/kobracontrol-hero-light-en.png", (1600, 900)),
