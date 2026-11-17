@@ -396,6 +396,49 @@ class RelayTests(unittest.TestCase):
         self.url = self.url.replace("/live/a", "/live/c")   # more frames: resumes, at a keyframe
         wait(lambda: len(self.inits()) == 2 and self.parts[-1] is not self.inits()[1])
 
+    def emitter(self):
+        """A Relay fed fragments directly (no network), with a clock the test moves."""
+        now, sent = [0.0], []
+        relay = camera.Relay(lambda: "", sent.append, log=lambda *a: None, clock=lambda: now[0])
+        relay._emit(("init", "avc1.64c028", b"i"))
+        feed = lambda n, key=False: [relay._emit(("media", b"m", key)) for _ in range(n)]
+        return relay, now, sent, feed
+
+    def test_acks_resume_the_same_stream_at_the_next_keyframe(self):
+        relay, now, sent, feed = self.emitter()
+        feed(1, True); feed(40)
+        self.assertEqual(len(sent), 1 + camera.MAX_UNACKED)   # held at the cap
+        for _ in range(camera.MAX_UNACKED):
+            relay.ack()
+        feed(3)
+        self.assertEqual(len(sent), 1 + camera.MAX_UNACKED)   # mid-GOP: still skipped
+        feed(1, True); feed(2)
+        self.assertEqual(len(sent), 1 + camera.MAX_UNACKED + 3)   # resumed at the keyframe, no URL change
+        self.assertTrue(sent[1 + camera.MAX_UNACKED]["key"])
+
+    def test_lost_acks_never_freeze_the_picture(self):
+        relay, now, sent, feed = self.emitter()
+        feed(1, True); feed(40)
+        now[0] += camera.ACK_TIMEOUT + 0.1   # a reloaded page: its acks never come
+        feed(1, True)
+        self.assertEqual(len(sent), 2 + camera.MAX_UNACKED)
+        relay2, _, sent2, feed2 = self.emitter()
+        feed2(1, True); feed2(40)
+        relay2._stop.clear()
+        relay2.resend_init()   # a new player attached: the old player's debt is forgiven at once
+        feed2(1, True)
+        self.assertEqual([("init" in m, m.get("key")) for m in sent2[-2:]], [(True, None), (False, True)])
+
+    def test_fragments_of_an_older_connection_are_dropped(self):
+        self.relay.start()
+        wait(lambda: self.parts)
+        self.relay._sgen += 1   # as if a newer connection had started
+        count = len(self.parts)
+        wait(lambda: len(self.inits()) == 2)   # the reader reconnects, as a new connection
+        first_new = next(n for n, p in enumerate(self.parts[count:]) if "init" in p)
+        self.assertLessEqual(first_new, 1)   # nothing of the old connection after it lost its turn (one may have
+                                              # been in delivery at that instant)
+
     def test_a_stream_that_drops_at_once_backs_off_without_an_error(self):
         self.url = self.url.replace("/live/a", "/drop")
         self.relay.backoff = (0.5, 0.5)

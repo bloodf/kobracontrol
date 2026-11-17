@@ -4,7 +4,7 @@
 type MS = typeof MediaSource;
 const W = window as unknown as { ManagedMediaSource?: MS; MediaSource?: MS };
 const Source = (): MS | undefined => W.ManagedMediaSource ?? W.MediaSource;
-const LIVE_LAG_S = 1.5, KEEP_S = 10, MAX_QUEUE = 50;   // 50 fragments: 5 s at the Kobra X's 10 fps
+const LIVE_LAG_S = 1.5, KEEP_S = 10, MAX_QUEUE = 50, OPEN_MS = 5000;   // 50 fragments: 5 s at the Kobra X's 10 fps
 
 /** The page can play the Kobra X stream (H.264 High) itself; sent in every lease. */
 export function playable(): boolean {
@@ -12,7 +12,7 @@ export function playable(): boolean {
 }
 
 const bytes = (b64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-interface Part { buf: Uint8Array<ArrayBuffer>; key: boolean }
+interface Part { buf: Uint8Array<ArrayBuffer>; key: boolean; init?: boolean }
 export interface PlayerEvents {
   playing: () => void;   // frames are on screen
   failed: () => void;    // this stream can't be played here: the plugin falls back to ffmpeg
@@ -26,6 +26,7 @@ export class Player {
   private url = '';
   private waitKey = true;     // after an init or dropped fragments the decoder can only start at a keyframe
   private askedReset = false;
+  private openTimer = 0;
   private readonly onError = () => this.fail();
   constructor(private video: HTMLVideoElement, private on: PlayerEvents) {
     video.addEventListener('playing', () => { if (this.ms) on.playing(); });
@@ -39,11 +40,13 @@ export class Player {
     if (!S) { this.on.failed(); return; }
     const ms = new S();
     this.ms = ms;
-    this.queue = [{ buf: bytes(init), key: true }];
+    this.queue = [{ buf: bytes(init), key: true, init: true }];
     this.waitKey = true; this.askedReset = false;
     const ended = () => { if (this.ms === ms) this.fail(); };   // closed by anyone but close()
+    this.openTimer = window.setTimeout(() => { if (this.ms === ms && !this.sb) this.fail(); }, OPEN_MS);   // never opened
     ms.addEventListener('sourceopen', () => {
       if (this.ms !== ms) return;
+      window.clearTimeout(this.openTimer);
       try { this.sb = ms.addSourceBuffer(`video/mp4; codecs="${codec}"`); } catch { this.fail(); return; }
       this.sb.mode = 'segments';
       this.sb.addEventListener('updateend', () => this.pump());
@@ -65,7 +68,9 @@ export class Player {
     }
     if (this.waitKey && !key) return;
     this.waitKey = false;
-    if (this.queue.length >= MAX_QUEUE) { this.queue = []; this.waitKey = !key; if (!key) return; }   // too far behind
+    if (this.queue.length >= MAX_QUEUE) {   // too far behind: keep only a not yet appended init segment
+      this.queue = this.queue.filter(p => p.init); this.waitKey = !key; if (!key) return;
+    }
     this.queue.push({ buf: bytes(data), key });
     this.pump();
   }
@@ -88,8 +93,9 @@ export class Player {
 
   /** Skip queued fragments up to the next keyframe (the decoder can't use the ones in between). */
   private dropToKey(): void {
-    const k = this.queue.findIndex(p => p.key);
-    this.queue = k < 0 ? [] : this.queue.slice(k);
+    const inits = this.queue.filter(p => p.init), media = this.queue.filter(p => !p.init);
+    const k = media.findIndex(p => p.key);
+    this.queue = [...inits, ...(k < 0 ? [] : media.slice(k))];   // an init not yet appended always stays
     this.waitKey = k < 0;
   }
 
@@ -100,6 +106,7 @@ export class Player {
   }
 
   close(): void {
+    window.clearTimeout(this.openTimer);
     this.ms = null; this.sb = null; this.queue = [];
     const v = this.video;
     v.removeAttribute('src'); v.srcObject = null; v.load();

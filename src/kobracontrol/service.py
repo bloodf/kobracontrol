@@ -43,7 +43,8 @@ from usage import UsageMixin
 from i18n import lazy, tr
 
 LEASE_SECONDS = 6.0
-RELAY_RETRY_S = 60.0   # a stream the built-in player refused goes to ffmpeg this long, then is tried again
+RELAY_RETRY_S = (60.0, 3600.0)   # a stream the built-in player refused goes to ffmpeg 60 s, then 5x longer each
+                                # time it is refused again (5 min, 25 min, 1 h at most), then is tried again
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
@@ -180,7 +181,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._changed = threading.Event()
         self.lease_until, self.camera_on = 0.0, False
         self.camera_mse = False      # the page plays H.264 itself (lease `mse`): Relay, no ffmpeg
-        self._relay_refused = (None, 0.0)   # (stream URL, when) Relay or the page could not play: ffmpeg's for a while
+        self._relay_refused = {}   # stream URL -> (times refused, until): Relay or the page could not play it
         self._told_no_ffmpeg = False   # the ffmpeg path is needed but ffmpeg is missing: told the page once
         self.ledger = usage.Ledger(usage.LedgerStore(ledger_path, log) if ledger_path else None)
         if self.ledger.restore_notice:
@@ -335,6 +336,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if mse is not None:
                 self.camera_mse = bool(mse)
         if camera is False:
+            self._relay_refused = {}   # turned off by the user: the next Turn on tries the built-in player again
             _background(self.stop_cameras, "camera-stop")
 
     def ack_frame(self):
@@ -575,17 +577,17 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.relay.ack()
 
     def _refused(self, url):
-        refused_url, at = self._relay_refused
-        return url == refused_url and time.monotonic() - at < RELAY_RETRY_S
+        return time.monotonic() < self._relay_refused.get(url, (0, 0.0))[1]
 
     def _refuse(self, url, why):
-        self._relay_refused = (url, time.monotonic())
-        self.log("kobracontrol camera: %s; using ffmpeg" % why)
+        times = self._relay_refused.get(url, (0, 0.0))[0] + 1
+        wait = min(RELAY_RETRY_S[0] * 5 ** (times - 1), RELAY_RETRY_S[1])
+        self._relay_refused = {**self._relay_refused, url: (times, time.monotonic() + wait)}
+        self.log("kobracontrol camera: %s; using ffmpeg for %d s" % (why, wait))
 
     def stop_cameras(self):
         self.camera.stop()
         self.relay.stop()
-        self._relay_refused = (None, 0.0)   # turned off (or the page left): the next start tries the player again
         self._told_no_ffmpeg = False
 
     def check_requirements(self, ffmpeg_setting, force=False):

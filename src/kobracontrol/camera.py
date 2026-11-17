@@ -294,16 +294,20 @@ class Relay(Camera):
         super().__init__(get_url, on_video, "", on_error, backoff=backoff, idle_s=idle_s, log=log, clock=clock)
         self.connect = connect
         self._init = None   # the current stream's init message, for a player that attaches later
-        self._unacked, self._skipping = 0, False
+        self._unacked, self._skipping, self._acked_at = 0, False, 0.0
+        self._sgen = 0   # the current connection; fragments of an older one are dropped
 
     def resend_init(self):
         init = self._init
         if init is not None and not self._stop.is_set():
+            with self._cond:   # a new player: acks owed by the old one will never come
+                self._unacked, self._skipping = 0, False
             self._deliver(init)
 
     def ack(self):
         with self._cond:
             self._unacked = max(0, self._unacked - 1)
+            self._acked_at = self.clock()
         self._touched = self.clock()
 
     def _join(self):   # never waits: the old threads see their stop event and end within a poll
@@ -344,6 +348,8 @@ class Relay(Camera):
         parts = urllib.parse.urlsplit(url)
         done = threading.Event()
         box = {"sock": None, "got": False, "reason": "failed", "error": ""}
+        self._sgen += 1
+        gen = self._sgen
 
         def pump():
             conn = None
@@ -368,6 +374,8 @@ class Relay(Camera):
                             return
                         if not box["got"]:
                             box["got"], self._last_error = True, None
+                        if gen != self._sgen:   # a newer connection took over
+                            return
                         self._emit(event)
             except fmp4.Unsupported as e:
                 box.update(reason="unsupported", error=str(e))
@@ -403,10 +411,14 @@ class Relay(Camera):
                 self._unacked, self._skipping = 0, False
         else:
             with self._cond:   # a page that falls behind: skip to a keyframe rather than queue without end
+                if self._unacked and self.clock() - self._acked_at > ACK_TIMEOUT:
+                    self._unacked = 0   # acks lost (a reloaded page): never freeze the picture on them
                 if self._unacked >= MAX_UNACKED or self._skipping and not event[2]:
                     self._skipping = True
                     return
                 self._skipping = False
+                if not self._unacked:
+                    self._acked_at = self.clock()   # the clock for ACK_TIMEOUT starts at the first unacked one
                 self._unacked += 1
             message = {"data": event[1], "key": event[2]}
         self._deliver(message)

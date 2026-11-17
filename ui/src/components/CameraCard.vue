@@ -24,9 +24,11 @@ watch(vid, el => {
 });
 let unlisten = () => {};
 onMounted(() => { unlisten = bridge.onMessage(m => {
-  if (m?.type !== 'video' || !player) return;
+  if (m?.type !== 'video') return;
+  if (typeof m.data === 'string') bridge.post({ type: 'video_ack' });   // Relay's backpressure: taken, played or not
+  if (!player) return;
   if (typeof m.init === 'string') player.init(String(m.codec), m.init);
-  else if (typeof m.data === 'string') { player.append(m.data, m.key === true); bridge.post({ type: 'video_ack' }); }   // Relay's backpressure
+  else if (typeof m.data === 'string') player.append(m.data, m.key === true);
 }); });
 onBeforeUnmount(() => { unlisten(); player?.close(); player = null; });
 

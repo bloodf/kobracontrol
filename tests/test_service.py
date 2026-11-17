@@ -999,10 +999,15 @@ class CameraPlayer(Base):
         self.use(url, True)
         self.svc.video_error()
         self.assertTrue(self.svc._refused(url))
-        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + service.RELAY_RETRY_S + 1):
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61):
             self.assertFalse(self.svc._refused(url))   # tried again later (a printer that was still booting)
-        self.svc.video_error()
-        self.svc.stop_cameras()
+            self.svc.video_error()                      # refused again: 5 min this time, not another minute
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61 + 200):
+            self.assertTrue(self.svc._refused(url))
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61 + 301):
+            self.assertFalse(self.svc._refused(url))
+        self.assertFalse(self.svc._refused("http://127.0.0.1:18088/live/other"))   # per URL
+        self.svc.touch(camera=False)   # the user turned it off: Turn on tries the built-in player again
         self.assertFalse(self.svc._refused(url))
 
     def test_a_page_that_cannot_play_it_hands_the_stream_to_ffmpeg(self):
