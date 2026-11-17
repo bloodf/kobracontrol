@@ -151,6 +151,16 @@ class Answer(unittest.TestCase):
             self.read({"trays": {"1": T[1]}, "acknowledged": ["material:1:%d" % T[1]]})
         self.assertIn("another material", str(e.exception))
 
+    def test_task_name_becomes_a_safe_file_name(self):
+        import jobs
+        name = lambda text: jobs.remote_name(ps.task_name(text, "fallback"))
+        self.assertEqual(name("../x"), "_x.gcode")
+        self.assertNotIn("/", name("a/b\\c"))
+        self.assertNotIn("\\", name("a/b\\c"))
+        self.assertEqual(name("..."), "kobracontrol.gcode")
+        self.assertEqual(name("a.gcode.3mf"), "a.gcode")
+        self.assertEqual(name(""), "fallback.gcode")
+
     def test_task_name(self):
         self.assertEqual(ps.task_name("  My\x00 cube \n v2 ", "x"), "My cube v2")
         self.assertEqual(ps.task_name("", "fallback"), "fallback")

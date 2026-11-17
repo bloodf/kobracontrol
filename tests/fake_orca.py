@@ -78,7 +78,8 @@ class FakeWindow:
 
 
 def install_orca(answer=None, preset=None, filament_names=(), filament_meta=None, bundle_ids=(), storage=None):
-    """Register a fake `orca` module. answer: what the print setup pop-up submits."""
+    """Register a fake `orca` module. answer: what the print setup window submits; by default Cancel
+    ({"cancelled": True}), so a test prints through the window only when it says what to answer ({}: Start print)."""
     orca = types.ModuleType("orca")
     orca.windows = []
 
@@ -121,7 +122,7 @@ def install_orca(answer=None, preset=None, filament_names=(), filament_meta=None
     orca.request_permissions = lambda **kw: orca.permissions.append(kw)
 
     def create_window(html, title="", width=0, height=0, on_message=None, on_close=None, on_submit=None, style=None):
-        w = FakeWindow(on_message, on_submit, answer if answer is not None else {"map": {}, "prefs": {}, "purifier": "auto"})
+        w = FakeWindow(on_message, on_submit, answer if answer is not None else {"cancelled": True})
         w.html = html
         orca.windows.append(w)
         return w

@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 import ace
+import printsetup
 import connection
 import kobra
 from i18n import lazy, tr
@@ -135,13 +136,16 @@ class JobsMixin:
         return filename
 
     def print_job(self, host, path, plate_index=1, name="", tray_ids=(), filaments=(), task=None, progress=None,
-                  cancelled=None, stage=None):
+                  cancelled=None, stage=None, auto_feed=None):
         """OrcaSlicer's Print: upload the plate's G-code, then print/start with the chosen trays.
         tray_ids[i]: Bambu tray id for project filament i (-1 unused); filaments[i]: {"colour", "type"};
         task: {"auto_leveling", "vibration_compensation", "flow_calibration", "timelapse"}; stage(name) is told "upload"
-        then "start"."""
+        then "start". auto_feed: True/False sets every ACE's auto feed once the printer and slots were checked (the
+        print setup's choice; a failure is only logged), None leaves it."""
         conn = self.ready(host)
         mapping, used = self._job_mapping(conn, tray_ids, filaments)
+        if auto_feed is not None:
+            self._set_auto_feed(host, auto_feed)
         filename = remote_name(name or os.path.basename(path))
         with plate_source(path, plate_index) as (source, size, weights):
             stage and stage("upload")
@@ -157,9 +161,15 @@ class JobsMixin:
         self._remember(host, filename, used, weights)
         return filename
 
+    def _set_auto_feed(self, host, on):
+        try:
+            self.call(host, "assist", option="autoFeed", on=bool(on))
+        except Exception as e:
+            self.log("kobracontrol: ACE auto feed not changed (%s); the print goes on" % e)
+
     def _job_mapping(self, conn, tray_ids, filaments):
         """(ams_box_mapping, {filament index: global slot}); refuses unless the printer is idle and every chosen
-        tray is usable. With no tray chosen at all, the loaded slots are used in order (Kobralink's auto mapping)."""
+        tray is usable and holds the filament's material family (printsetup.refuse_other_material). With no tray chosen at all, the loaded slots are used in order (Kobralink's auto mapping)."""
         data = self._data(conn)
         if not data["connected"]:
             raise kobra.KobraError(conn.error or tr("the printer is not connected"))
@@ -169,6 +179,7 @@ class JobsMixin:
         if not any(t >= 0 for t in trays):
             loaded, _ = ace.select_loaded_slots_for_print(data["slots"], data["mode"])
             return ace.build_auto_ams_box_mapping(loaded, data["mode"]), {s["global_index"]: s["global_index"] for s in loaded}
+        printsetup.refuse_other_material(trays, list(filaments or []), data["slots"], data["mode"])
         mapping, problems = ace.mapping_from_trays(trays, list(filaments or []), data["slots"], data["mode"])
         if problems:
             raise kobra.KobraError("; ".join(problems) + tr("; nothing was sent"))

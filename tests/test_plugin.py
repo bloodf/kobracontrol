@@ -84,6 +84,8 @@ class Base(unittest.TestCase):
         f.print_start = "ok"
         self.tmp = tempfile.mkdtemp()
         plugin._storage_dir, plugin._store = self.tmp, None
+        # Tests of the print path outside ShowDialog print without the print setup window (its default answer is Cancel).
+        plugin.get_store().update({"print_dialog": False})
         self.published = []
         plugin._service = service.Service(self.published.append, lambda m: None, cert_dir=self.tmp, tls=lambda: None,
                                           http_port=f.http_port, mqtt_port=f.mqtt_port, camera_factory=FakeCamera)
@@ -535,6 +537,17 @@ class AgentWhilePrinting(Base):
 class ShowDialog:
     """Kobra Control's own print dialog after OrcaSlicer's Print (plugin.ask_print)."""
 
+    def setUp(self):
+        super().setUp()
+        plugin.get_store().update({"print_dialog": True})
+
+    def test_unpatched_window_cancels(self):
+        """The fake window's default answer is Cancel: a test that forgets to answer can't print by accident."""
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
+
     def show(self, answer, params=None, cancel=lambda: False):
         """Print with the dialog answering `answer` (a callable gets the page data); returns (code, page data, stages)."""
         seen, stages = {}, []
@@ -580,11 +593,75 @@ class PrintDialog(ShowDialog, Base):
         memory = plugin.get_store().effective()["print_memory"][self.fake.host]
         self.assertEqual(memory["auto_leveling"], False)   # the next dialog starts from it (test_printsetup)
 
+    def test_refused_send_remembers_nothing(self):
+        self.connect()
+        code, _, _ = self.show(lambda d: {"trays": {"0": d["slots"][2]["tray"]}, "options": {"auto_leveling": False},
+                                          "remember": False, "auto_feed": False})
+        self.assertEqual(code, plugin.ERR_LP_PUBLISH)
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
+        self.assertTrue(plugin.get_store().effective()["remember_print_options"])
+        self.assertEqual(self.sent("multiColorBox", "setAutoFeed"), [])   # nothing reached the printer
+
     def test_cancel_sends_nothing(self):
         self.connect()
-        code, _, _ = self.show({"cancelled": True})
+        before = len(self.fake.requests)
+        code, _, _ = self.show({"cancelled": True, "auto_feed": False})
         self.assertEqual(code, plugin.ERR_CANCELED)
-        self.assertEqual((self.fake.uploads, self.sent("print", "start")), ([], []))
+        self.assertEqual((self.fake.uploads, self.sent("print", "start"), self.sent("multiColorBox", "setAutoFeed")), ([], [], []))
+        writes = [r["msg"] for r in self.fake.requests[before:] if isinstance(r["msg"], dict)
+                  and (r["msg"].get("type"), r["msg"].get("action")) not in test_service.READ_ONLY]
+        self.assertEqual(writes, [])
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
+
+    def silent(self, open_for, ready=True):
+        """A window that never answers: ready (or not), open for `open_for` checks of is_open()."""
+        calls, closed = [0], []
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            if ready:
+                on_message({"ready": True})
+
+            def is_open():
+                calls[0] += 1
+                return calls[0] <= open_for
+            return types.SimpleNamespace(is_open=is_open, post=lambda d: None, close=lambda: closed.append(1))
+        return create_window, closed
+
+    def print_with(self, create_window):
+        stages = []
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        with mock.patch.object(orca.host.ui, "create_window", create_window):
+            code = self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False)
+        return code, stages
+
+    def test_window_closed_by_the_system_sends_nothing(self):
+        self.connect()
+        create_window, _ = self.silent(open_for=1)
+        self.assertEqual(self.print_with(create_window)[0], plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_window_that_never_shows_times_out(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6, ready=False)
+        with mock.patch.object(plugin, "DIALOG_READY", 0.3):
+            code, stages = self.print_with(create_window)
+        self.assertEqual((code, closed, self.fake.uploads), (plugin.ERR_LP_PUBLISH, [1], []))
+        self.assertIn("didn't open", stages[-1][2])
+
+    def test_window_left_open_times_out(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6)
+        with mock.patch.object(plugin, "DIALOG_TIMEOUT", 0.3):
+            code, stages = self.print_with(create_window)
+        self.assertEqual((code, closed, self.fake.uploads), (plugin.ERR_LP_PUBLISH, [1], []))
+        self.assertIn("timed out", stages[-1][2])
+
+    def test_unload_closes_an_open_window(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6)
+        plugin._unloading.set()
+        self.addCleanup(plugin._unloading.clear)
+        self.assertEqual((self.print_with(create_window)[0], closed), (plugin.ERR_CANCELED, [1]))
 
     def test_job_cancelled_in_orcaslicer_closes_the_dialog(self):
         self.connect()
@@ -607,6 +684,7 @@ class PrintDialog(ShowDialog, Base):
         code, _, stages = self.show(petg)
         self.assertEqual(code, plugin.ERR_LP_PUBLISH)
         self.assertIn("another material", stages[-1][2])
+        self.assertEqual(self.sent("print", "start"), [])
         self.assertEqual(self.fake.uploads, [])
 
     def test_same_family_variant_needs_use_anyway(self):
@@ -647,6 +725,7 @@ class PrintDialog(ShowDialog, Base):
         code, data, stages = self.show({}, params)
         self.assertEqual((code, data, self.fake.uploads), (plugin.ERR_LP_PUBLISH, None, []))
         self.assertIn("another material", stages[-1][2])
+        self.assertEqual(self.sent("print", "start"), [])
 
     def test_empty_slot_refused(self):
         self.connect()
@@ -676,6 +755,7 @@ class PrintDialogWhilePrinting(ShowDialog, Base):
         self.assertEqual((data["printer"]["state"], data["printer"]["can_print"]), ("printing", False))
         self.assertEqual((code, self.fake.uploads), (plugin.ERR_LP_PUBLISH, []))
         self.assertIn("printing", stages[-1][2])
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
 
 
 class Page(Base):

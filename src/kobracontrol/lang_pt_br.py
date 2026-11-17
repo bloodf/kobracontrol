@@ -257,5 +257,5 @@ TEXT = {
     'filament %d has no usable slot; nothing was sent': 'o filamento %d não tem um slot utilizável; nada foi enviado',
     'the material warnings were not confirmed for these slots; nothing was sent': 'os avisos de material não foram confirmados para estes slots; nada foi enviado',
     'Kobra Control — print setup': 'Kobra Control — preparar impressão',
-    'filament %d is another material than its slot holds; nothing was sent': 'o filamento %d é de outro material que o do slot escolhido; nada foi enviado',
+    'filament %d is another material than its slot holds; the print was not started': 'o filamento %d é de outro material que o do slot escolhido; a impressão não foi iniciada',
 }

@@ -456,6 +456,46 @@ def make_3mf(folder, plate=1, weights=((1, "3.5"), (2, "1.25"))):
     return path
 
 
+class JobsMaterial(Base):
+    """print_job refuses a filament sent to a slot of another material family, also when the slot changed during
+    the upload (the check runs again under start_lock)."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake.print_start = "ok"
+
+    def test_other_material_refused_before_upload(self):
+        tray_petg = 1   # ACE0 slot 2 (PETG)
+        with self.assertRaises(kobra.KobraError):
+            self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [tray_petg], [{"colour": "#FF0000", "type": "PLA"}])
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_slot_swapped_during_upload_refused_before_start(self):
+        real = self.svc._data
+
+        def stage(name):   # from now on the printer reports PETG in slot 1, as after a swap on the touchscreen
+            if name == "start":
+                self.svc._data = lambda conn=None: {**real(conn), "slots": [
+                    {**s, "type": "PETG"} if s["global_index"] == 0 else s for s in real(conn)["slots"]]}
+        with self.assertRaises(kobra.KobraError) as e:
+            self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000", "type": "PLA"}],
+                               stage=stage)
+        self.assertIn("another material", str(e.exception))
+        self.assertEqual(len(self.fake.uploads), 1)
+        self.assertEqual(self.sent("print", "start"), [])
+
+    def test_auto_feed_after_checks(self):
+        self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [0], [{"colour": "#FF0000", "type": "PLA"}],
+                           auto_feed=False)
+        self.assertEqual(wait(lambda: self.sent("multiColorBox", "setAutoFeed"))[0]["data"]["multi_color_box"][0]["auto_feed"], 0)
+
+    def test_auto_feed_not_sent_when_refused(self):
+        with self.assertRaises(kobra.KobraError):
+            self.svc.print_job(self.fake.host, make_3mf(self.tmp), 1, "cube", [1], [{"colour": "#FF0000", "type": "PLA"}],
+                               auto_feed=False)
+        self.assertEqual(self.sent("multiColorBox", "setAutoFeed"), [])
+
+
 class Jobs(Base):
     def setUp(self):
         super().setUp()

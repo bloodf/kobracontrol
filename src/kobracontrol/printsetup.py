@@ -254,8 +254,18 @@ def refuse(blocking):
         return
     b = blocking[0]
     if b["kind"] == "material":
-        raise kobra.KobraError(tr("filament %d is another material than its slot holds; nothing was sent") % (b["f"] + 1))
+        raise kobra.KobraError(tr("filament %d is another material than its slot holds; the print was not started") % (b["f"] + 1))
     raise kobra.KobraError(tr("filament %d has no usable slot; nothing was sent") % (b["f"] + 1))
+
+
+def refuse_other_material(trays, filaments, slots, mode):
+    """Raise when a project filament goes to a slot of another material family (trays[i]: its tray, -1 unused;
+    filaments[i]: {"colour", "type"}). Checked before the upload and again right before print/start, with the print
+    setup and without it."""
+    fils = [{"index": i, "colour": (filaments[i] if i < len(filaments) else {}).get("colour") or "#FFFFFF",
+             "type": (filaments[i] if i < len(filaments) else {}).get("type") or ""} for i, t in enumerate(trays) if t >= 0]
+    blocking, _, _ = check(fils, slots, mode, dict(enumerate(trays)))
+    refuse([b for b in blocking if b["kind"] == "material"])
 
 
 def task_name(text, fallback):
