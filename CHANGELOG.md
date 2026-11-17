@@ -4,6 +4,9 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Added
+- Polish (pl) translation. Thanks to @xtronets for asking (u1control#20).
+
 ### Changed
 - Spools are drawn with the photo spool again.
 - The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.

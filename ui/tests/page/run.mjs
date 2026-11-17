@@ -12,6 +12,7 @@ import { launch, MOCK_HOST, HELPERS, preparePage } from './cdp.mjs';
 import { es } from '../../src/core/locales/es.ts';
 import { de } from '../../src/core/locales/de.ts';
 import { zhCN } from '../../src/core/locales/zh-CN.ts';
+import { pl } from '../../src/core/locales/pl.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../../..');
@@ -1672,9 +1673,9 @@ test('filament use: recently checked entries show without opening Review, and wi
   assert(text(byTest('usage-recent')).includes('benchy.gcode') && text(byTest('usage-recent')).includes('ACE 1 · Slot 2'), 'entry listed: ' + text(byTest('usage-recent')));
 `);
 
-// Spanish, German and Simplified Chinese: the page follows OrcaSlicer's code (es_ES, de_DE, zh_CN, zh_TW), the main
+// Spanish, German, Simplified Chinese and Polish: the page follows OrcaSlicer's code (es_ES, de_DE, zh_CN, zh_TW, pl_PL), the main
 // surfaces and a confirmation read in that language, and Settings can switch to another one by its native name.
-for (const [lang, host, D] of [['es', 'es_ES', es], ['de', 'de_DE', de], ['zh-CN', 'zh_CN', zhCN], ['zh-CN', 'zh_TW', zhCN]]) {
+for (const [lang, host, D] of [['es', 'es_ES', es], ['de', 'de_DE', de], ['zh-CN', 'zh_CN', zhCN], ['zh-CN', 'zh_TW', zhCN], ['pl', 'pl_PL', pl]]) {
   const T = JSON.stringify(D);
   test(`${lang} (host ${host}): the page follows the host language; tabs, state, slots, buttons and the stop dialog are translated`, `
 const D = ${T};
@@ -1691,7 +1692,7 @@ await click(q('[data-test="stop"]'));
 assert(dialogText().includes(D['confirm.stop.title']) && dialogText().includes('Bench Kobra'), 'stop dialog: ' + dialogText()); await no();
 `, { lang: host });
 }
-for (const [lang, D, name] of [['es', es, 'Español'], ['de', de, 'Deutsch'], ['zh-CN', zhCN, '简体中文']]) {
+for (const [lang, D, name] of [['es', es, 'Español'], ['de', de, 'Deutsch'], ['zh-CN', zhCN, '简体中文'], ['pl', pl, 'Polski']]) {
   test(`${lang}: chosen in Settings over an English OrcaSlicer, posted and applied`, `
 const D = ${JSON.stringify({ dash: D['nav.dash'], fr: D['fr.cert.title'] })};
 await ready(VIEW());
@@ -1708,7 +1709,7 @@ await fail(last('hello'), 'x', {no_certificate: true});
 assert(text(byTest('first-run-cert')).includes(D.fr) && text(byTest('find-cert')).includes(D.find), 'cert: ' + text(byTest('first-run-cert')));
 `, { lang: 'en', pref: lang });
 }
-for (const lang of ['en', 'pt-BR', 'es', 'de', 'zh_CN']) {
+for (const lang of ['en', 'pt-BR', 'es', 'de', 'zh_CN', 'pl_PL']) {
   test(`files (${lang}): Print and Delete fit inside the actions column`, `
 await ready(VIEW());
 await tab('files');
@@ -1723,7 +1724,7 @@ for (const b of [q('[data-print]'), q('[data-delete]')]) {
 }
 // PrimeVue 5.0.5's InputNumber reads only the locale's decimal sign: in de/es/pt-BR a typed or pasted "100.4" became
 // 1004 (over the limit, or a different temperature). Typed and pasted, it must read as 100.4 and heat to 100 °C.
-for (const lang of ['en', 'pt_BR', 'es_ES', 'de_DE', 'zh_CN']) {
+for (const lang of ['en', 'pt_BR', 'es_ES', 'de_DE', 'zh_CN', 'pl_PL']) {
   test(`decimal input (${lang}): "100.4" typed or pasted into a target heats to 100 °C, never 1004`, `
 await ready(VIEW());
 const field = q('#temp-nozzle');

@@ -179,7 +179,7 @@ Ainda não. Não se conhece um jeito de a impressora entregar um vídeo pela red
 
 ## 🌍 Idiomas
 
-Inglês, português do Brasil, espanhol, alemão e chinês simplificado. A aba segue o idioma do OrcaSlicer, e **Ajustes > Idioma** muda isso.
+Inglês, português do Brasil, espanhol, alemão, chinês simplificado e polonês. A aba segue o idioma do OrcaSlicer, e **Ajustes > Idioma** muda isso.
 
 ## 🧩 Mais plugins do bloodf
 

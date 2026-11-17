@@ -3,12 +3,13 @@ import { en, ptBR, type MessageKey } from './messages';
 import { es } from './locales/es';
 import { de } from './locales/de';
 import { zhCN } from './locales/zh-CN';
-import { interpolate, isLocale, resolveLocale, type LangPref, type Locale } from './i18n-core';
+import { pl } from './locales/pl';
+import { interpolate, isLocale, pluralKey, resolveLocale, type LangPref, type Locale } from './i18n-core';
 import { makeFmt } from './format';
 import { boot } from './boot';
 
 const PREF_KEY = 'kobracontrol.lang';
-const dicts: Record<Locale, Record<MessageKey, string>> = { en, 'pt-BR': ptBR, es, de, 'zh-CN': zhCN };
+const dicts: Record<Locale, Record<MessageKey, string>> = { en, 'pt-BR': ptBR, es, de, 'zh-CN': zhCN, pl };
 
 // The explicit choice lives in the plugin's settings (boot "pref"); localStorage is only a fallback cache.
 let persist: (value: LangPref) => void = () => {};
@@ -37,10 +38,9 @@ export function setLangPref(value: LangPref): void {
 export function t(key: MessageKey, params?: Record<string, unknown>): string {
   return interpolate(dicts[locale.value][key] ?? en[key] ?? key, params);
 }
-/** Plural keys come in pairs "<base>_one" / "<base>_other". */
+/** Plural keys come in pairs "<base>_one" / "<base>_other"; a language with more forms (Polish: "_few", "_many") adds them. */
 export function tn(base: string, n: number, params?: Record<string, unknown>): string {
-  const key = (new Intl.PluralRules(locale.value).select(n) === 'one' ? `${base}_one` : `${base}_other`) as MessageKey;
-  return t(key, { n, ...params });
+  return t(pluralKey(dicts[locale.value], locale.value, base, n) as MessageKey, { n, ...params });
 }
 /** A message key when it exists (state names, codes from Python); otherwise the raw value. */
 export function tMaybe(key: string, fallback: string, params?: Record<string, unknown>): string {
