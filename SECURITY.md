@@ -73,7 +73,9 @@ and kobracontrol cannot add any:
 - **Spoolman:** the `http://` or `https://` address you enter, wherever it points. Binding a spool
   writes that spool's location in Spoolman; finished prints book filament use there when the option
   is on.
-- **ffmpeg:** the tab's camera starts `ffmpeg` as a subprocess to turn the printer's stream into
+- **Camera:** the tab's camera reads the printer's own HTTP stream (only on the printer's address) and
+  hands it to the page's player. Only when that player can't play it does it start `ffmpeg` as a
+  subprocess to turn the stream into
   frames. It stops when the page is idle. OrcaSlicer asks for permission to run that exact command
   when it starts, and again whenever the printer's stream address changes.
 - **Files:** the plugin keeps its settings and its print ledger in its own storage folder. It

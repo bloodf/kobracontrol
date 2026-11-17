@@ -106,7 +106,7 @@ class Base(unittest.TestCase):
         self.published, self.logs = [], []
         self.svc = service.Service(self.published.append, self.logs.append, cert_dir=self.tmp, tls=lambda: None,
                                    http_port=f.http_port, mqtt_port=f.mqtt_port, camera_factory=FakeCamera,
-                                   spoolman_factory=FakeSpoolman)
+                                   relay_factory=FakeCamera, spoolman_factory=FakeSpoolman)
         self.addCleanup(self.svc.close)
         self.svc.set_target(service.Target(f.host, spoolman_url="http://spoolman.invalid"))
         self.conn = self.svc.connections[f.host]
@@ -811,6 +811,100 @@ class PrinterCertificate(unittest.TestCase):
         self.assertEqual(service.status_data(kobra.State().view())[0].get("tls"), None)
 
 
+class CameraNeedsFfmpeg(Base):
+    """No ffmpeg: the camera is never started (no reader thread failing every second); with it, it is."""
+
+    def check(self, found):
+        with mock.patch.object(service.requirements, "check_ffmpeg",
+                               return_value=service.requirements.item("ffmpeg", "ok" if found else "missing", found)), \
+                mock.patch.object(service.requirements, "check_anycubic_slicer",
+                                  return_value=service.requirements.item("anycubic_slicer", "missing")):
+            self.svc.check_requirements("")
+            wait(lambda: not self.svc.requirements.checking)
+        return wait(lambda: [m for m in self.published if m.get("type") == "requirements" and not m["checking"]])[-1]
+
+    def test_missing_ffmpeg_never_starts_the_camera(self):
+        msg = self.check("")
+        self.assertEqual(msg["items"][0], {"id": "ffmpeg", "state": "missing", "details": ""})
+        self.svc.touch(camera=True)
+        time.sleep(0.6)   # the monitor ticks every 0.1 s
+        self.assertNotIn("start", self.svc.camera.calls)
+        self.assertEqual([m["reason"] for m in self.published if m.get("type") == "camera_error"], ["no_ffmpeg"])   # once
+
+    def test_missing_ffmpeg_does_not_stop_the_page_player(self):
+        self.check("")
+        self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                         "data": {"urls": {"rtspUrl": "http://127.0.0.1:18088/live/t"}}})
+        wait(lambda: self.conn.view()["camera_url"].startswith("http://"))
+        self.svc.touch(camera=True, mse=True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.assertNotIn("start", self.svc.camera.calls)
+
+    def test_before_the_check_the_camera_looks_for_ffmpeg_itself(self):
+        self.svc.target.ffmpeg_path = "/my/ffmpeg"
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn(("ffmpeg", "/my/ffmpeg"), self.svc.camera.calls)
+        self.svc.camera.on_error("no_ffmpeg", "ffmpeg was not found")   # its one lookup failed
+        time.sleep(0.3)
+        starts = self.svc.camera.calls.count("start")
+        time.sleep(0.6)
+        self.assertEqual(self.svc.camera.calls.count("start"), starts)   # not started again and again
+
+    def test_requirements_reach_the_page_through_the_service_publish(self):
+        """The checker thread's answer goes out through Service.publish, the path every worker-thread message takes."""
+        threads, publish = [], self.svc.publish
+        self.svc.publish = lambda m: (threads.append((m.get("type"), threading.current_thread().name)), publish(m))
+        self.check("")
+        self.assertIn(("requirements", "kobracontrol-requirements"), threads)
+
+    def test_found_ffmpeg_starts_the_camera_with_that_path(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn(("ffmpeg", "/opt/ff/ffmpeg"), self.svc.camera.calls)
+
+    def test_ffmpeg_gone_mid_session_is_marked_missing_and_not_restarted(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.svc.camera.on_error("no_ffmpeg", "ffmpeg was not found")   # the reader found it gone and ended
+        self.assertEqual(self.svc.requirements.items()[0]["state"], "missing")
+        self.assertEqual(self.svc.requirements.ffmpeg(), "")
+        time.sleep(0.3)
+        starts = self.svc.camera.calls.count("start")
+        time.sleep(0.6)
+        self.assertEqual(self.svc.camera.calls.count("start"), starts)   # the monitor stopped starting it
+        last = [m for m in self.published if m.get("type") == "requirements"][-1]
+        self.assertEqual(last["items"][0]["state"], "missing")   # the page is told at once
+
+    def test_a_recheck_keeps_a_running_camera_running(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        gate, seen = threading.Event(), len(self.svc.camera.calls)
+        self.addCleanup(gate.set)
+        slow = lambda s: gate.wait(10) and service.requirements.item("ffmpeg", "ok", "/opt/ff/ffmpeg")
+        with mock.patch.object(service.requirements, "check_ffmpeg", side_effect=slow), \
+                mock.patch.object(service.requirements, "check_anycubic_slicer",
+                                  return_value=service.requirements.item("anycubic_slicer", "missing")):
+            self.svc.check_requirements("", force=True)   # a Settings save
+            self.assertTrue(self.svc.requirements.checking)
+            self.assertEqual(self.svc.requirements.ffmpeg(), "/opt/ff/ffmpeg")   # the last result stays meanwhile
+            time.sleep(0.5)
+            gate.set()
+            wait(lambda: not self.svc.requirements.checking)
+        time.sleep(0.3)
+        self.svc.touch(camera=True)
+        self.assertNotIn("stop", self.svc.camera.calls[seen:])   # never switched off while checking
+
+    def test_spoolman_and_agent_in_the_message(self):
+        msg = self.check("")
+        items = {i["id"]: i for i in msg["items"]}
+        self.assertEqual(items["spoolman"], {"id": "spoolman", "state": "ok", "details": "http://spoolman.invalid"})
+        self.assertEqual(items["printer_agents"]["state"], "missing")   # not detected
+
+
 class CameraPrinterGone(Base):
     """The session can be replaced (printer None) between the connected check and the capture thread."""
 
@@ -831,6 +925,108 @@ class CameraPrinterGone(Base):
         self.svc._camera_tick(target)
         time.sleep(0.2)
         self.assertEqual(errors, [])
+
+
+class CameraTurnedOn(Base):
+    """camera_enabled is only whether the page turns the camera on by itself (settings default False). Pressing
+    Turn on must start the reader anyway, else the page waits on "Starting the camera…" forever."""
+
+    def test_turn_on_starts_the_camera_with_the_default_off(self):
+        self.svc.target.camera_enabled = False
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+
+
+class CameraPlayer(Base):
+    """The page plays H.264 itself (lease mse): Relay streams the printer's HTTP-FLV and ffmpeg is not run. RTSP,
+    a page without the player, or a stream Relay cannot read go to ffmpeg."""
+
+    def use(self, url, mse):
+        self.fake.report("info/report", {"type": "info", "action": "update", "state": "success",
+                                         "data": {"urls": {"rtspUrl": url}}})
+        wait(lambda: self.conn.view()["camera_url"] == url)
+        self.svc.touch(camera=True, mse=mse)
+
+    def test_the_page_player_runs_without_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.assertNotIn("start", self.svc.camera.calls)
+
+    def test_ffmpeg_without_the_page_player_or_for_rtsp(self):
+        self.use("http://127.0.0.1:18088/live/t", False)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn("start", self.svc.relay.calls)
+        self.svc.camera.calls.clear()
+        self.use("rtsp://127.0.0.1/live", True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn("start", self.svc.relay.calls)
+
+    def test_a_stream_the_relay_cannot_read_falls_back_to_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.svc._on_relay_error("unsupported", "not an FLV stream")
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertNotIn({"type": "camera_error", "reason": "unsupported", "error": "not an FLV stream"}, self.published)
+
+    def test_a_non_flv_answer_from_the_printer_goes_to_ffmpeg_with_the_real_relay(self):
+        import camera, http.server
+        class Html(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"<html>booting</html>")
+            def log_message(self, *a):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Html)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        real = camera.Relay(self.svc._camera_url, self.svc._on_video, self.svc._on_relay_error, log=lambda *a: None)
+        self.addCleanup(real.close)
+        self.svc.relay = real
+        self.use("http://127.0.0.1:%d/live/t" % server.server_port, True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertFalse([m for m in self.published if m.get("type") in ("camera_error", "video")])
+
+    def test_no_stream_yet_is_said_by_the_relay_not_as_missing_ffmpeg(self):
+        self.svc._camera_url = lambda: ""   # the printer has not announced one
+        self.svc.touch(camera=True, mse=True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.assertNotIn("start", self.svc.camera.calls)
+
+    def test_a_refusal_lasts_a_while_and_ends_when_the_camera_is_turned_off(self):
+        url = "http://127.0.0.1:18088/live/t"
+        self.use(url, True)
+        self.svc.video_error()
+        self.assertTrue(self.svc._refused(url))
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61):
+            self.assertFalse(self.svc._refused(url))   # tried again later (a printer that was still booting)
+            self.svc.video_error()                      # refused again: 5 min this time, not another minute
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61 + 200):
+            self.assertTrue(self.svc._refused(url))
+        with mock.patch.object(service.time, "monotonic", return_value=time.monotonic() + 61 + 301):
+            self.assertFalse(self.svc._refused(url))
+        self.assertFalse(self.svc._refused("http://127.0.0.1:18088/live/other"))   # per URL
+        self.svc.touch(camera=False)   # the user turned it off: Turn on tries the built-in player again
+        self.assertFalse(self.svc._refused(url))
+
+    def test_a_page_that_cannot_play_it_hands_the_stream_to_ffmpeg(self):
+        self.use("http://127.0.0.1:18088/live/t", True)
+        wait(lambda: "start" in self.svc.relay.calls)
+        self.svc.video_error()
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn("stop", self.svc.relay.calls)
+
+    def test_video_reset_asks_relay_for_the_init_again(self):
+        self.svc.relay.resend_init = lambda: self.svc.relay.calls.append("resend")
+        self.svc.video_reset()
+        self.assertIn("resend", self.svc.relay.calls)
+
+    def test_fragments_reach_the_page_as_base64(self):
+        self.svc._on_video({"codec": "avc1.64c028", "init": b"\x00\x01"})
+        self.svc._on_video({"data": b"\xff"})
+        self.assertEqual([m for m in self.published if m["type"] == "video"],
+                         [{"type": "video", "codec": "avc1.64c028", "init": "AAE="}, {"type": "video", "data": "/w=="}])
 
 
 class CameraHost(Base):

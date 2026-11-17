@@ -44,11 +44,24 @@ A partir de um arquivo (os menus do OrcaSlicer aparecem aqui com os nomes em ing
 |---|---|
 | OrcaSlicer | 2.5.0 ou mais novo, na versão oficial. Não precisa de versão modificada. |
 | Impressora | Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado. Conferido no firmware 2.0.2.8. |
-| `ffmpeg` | Só para a câmera da aba Kobra Control. A câmera da aba Device funciona sem ele. |
+| `ffmpeg` | Opcional. A aba Kobra Control mostra a câmera com o player embutido; o `ffmpeg` só é necessário quando esse player não consegue (uma transmissão RTSP, ou um sistema sem suporte a vídeo H.264, possível no Linux). A câmera da aba Device funciona sem ele. |
 | Anycubic Slicer Next | Não é necessário. O certificado de cliente que a impressora exige vem no plugin. |
 | Spoolman | Opcional, para acompanhar as bobinas. |
 
-> **Situação: em desenvolvimento.** A camada de serviço do plugin foi executada com uma Kobra X real (firmware 2.0.2.8), fora do OrcaSlicer: conexão, status, ACE, arquivos, luz, transmissão da câmera, homing, movimentos, aquecimento e uma impressão a partir de um `.3mf`. Pausar, retomar, parar, alimentar e recolher filamento, secagem, edição de slot, pular objetos, modo de velocidade e o registro de consumo no Spoolman ainda não foram experimentados na impressora, e nada foi testado dentro do próprio OrcaSlicer.
+### Conferido na impressora
+
+Executado em uma Kobra X real pela camada de serviço do plugin, fora do OrcaSlicer. As datas vêm do [changelog](CHANGELOG.md) e de [docs/protocol.md](docs/protocol.md) (em inglês).
+
+| O que foi conferido | Firmware | Data |
+|---|---|---|
+| Conexão, credenciais, status, slots do ACE, lista de arquivos, detalhes, envio e exclusão, luz, transmissão da câmera | 2.0.2.8 | 2026-11-14 |
+| Homing, movimentos e aquecimento com a impressora parada | 2.0.2.8 | 2026-11-14 |
+| Uma impressão a partir de um `.3mf` com mapeamento de slots, detecção do fim e o consumo de filamento do trabalho | 2.0.2.8 | 2026-11-14 |
+| Como a impressora responde à busca na rede (SSDP) | 2.0.2.8 | 2026-11-15 |
+| Listar os vídeos de time-lapse | 2.0.2.8 | 2026-11-16 |
+| Excluir um vídeo de time-lapse | 2.0.2.8 | 2026-11-16 |
+
+Ainda não experimentados na impressora: pausar, retomar, parar, alimentar e recolher filamento, secagem, edição de slot, pular objetos, modo de velocidade, registro de consumo no Spoolman, calibração de fluxo e time-lapse no início da impressão, o painel Impressora e o Print Assist, e as verificações do G-code. Nada foi testado dentro do próprio OrcaSlicer (aba Device, diálogo Print, diálogos de permissão).
 
 O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycubic.
 
@@ -79,7 +92,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 
 | Recurso | O que você tem |
 |---|---|
-| Agente de impressora | O id do agente é `kobracontrol`. Print e Send usam o mapeamento de filamento para slot que você escolhe no diálogo de impressão do OrcaSlicer, com nivelamento automático, calibração de fluxo e time-lapse desse diálogo e a compensação de vibração dos ajustes do plugin. |
+| Agente de impressora | O id do agente é `kobracontrol`. Print e Send usam o mapeamento de filamento para slot que você escolhe no diálogo de impressão do OrcaSlicer, com nivelamento automático, calibração de fluxo e time-lapse desse diálogo e a compensação de vibração dos ajustes do plugin. Antes de enviar, ele lê o G-code fatiado e avisa quando falta o bloco de configurações ou uma imagem de prévia em PNG. |
 | Aba Device | Status, temperaturas, pausar, retomar, parar, luz, ventoinha, velocidade e câmera na aba Device do próprio OrcaSlicer. Os slots do ACE aparecem ali como slots de filamento, com sincronização e mapeamento no diálogo de impressão. |
 | Painel | Status e controles, movimentos e homing, a câmera, o cartão de filamento, o painel Impressora e o estoque do Spoolman e do Spooler. |
 | Painel Impressora | Nome e **Renomear**, firmware, endereço de rede, contadores de impressão e as chaves do **Assistente de impressão**. |
@@ -87,7 +100,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 | Time-lapses | Os vídeos de time-lapse da impressora, com impressão, data, duração e tamanho, e **Excluir**. A impressora ainda não oferece um jeito de baixar um vídeo pela rede local. |
 | Spoolman | Vincule uma bobina do Spoolman a um slot. As impressões concluídas registram ali o filamento usado quando a opção está ligada. |
 | Funciona com o Spooler | O [Spooler](https://github.com/bloodf/spooler) transforma seus filamentos do Spoolman em perfis de filamento do OrcaSlicer. Com ele instalado, o Painel mostra o estoque do Spooler. O Kobra Control também funciona ao lado do [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
-| Ajustes | Conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
+| Ajustes | Requisitos (ffmpeg, Anycubic Slicer Next, printer agents do OrcaSlicer e Spoolman: o que foi encontrado, quem precisa e como instalar), conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
 | Plugins > Run | **Check Kobra X connection** informa certificado, credenciais, MQTT e versão do firmware. **Find Anycubic certificate** procura o certificado de cliente e informa o resultado. |
 
 Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e outros modelos Kobra.
@@ -99,7 +112,7 @@ Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de
 2. Abra a aba **Kobra Control**. Ela procura a impressora sozinha. Na primeira vez, o OrcaSlicer pergunta uma vez se o kobracontrol pode se conectar àquele endereço. Permita.
 3. Use o **Painel** para acompanhar a impressão, definir temperaturas, ligar a câmera com **Ligar** e alimentar, recolher ou secar filamento.
 4. Para imprimir um arquivo guardado na impressora, abra **Arquivos**, pressione **Imprimir** no arquivo, confira o painel e pressione **Iniciar impressão**.
-5. Para enviar impressões pelo próprio OrcaSlicer, marque **Preferences > Developer > Experimental Features > Use printer agents**. Depois, em uma cópia do seu perfil de impressora da Kobra X, defina **Printer Agent** como `kobracontrol` e o endereço como o IP da impressora.
+5. Para enviar impressões pelo próprio OrcaSlicer, abra **Preferences > Developer > Experimental Features**, marque **Use printer agents instead of print hosts** e reinicie o OrcaSlicer. Depois, em uma cópia do seu perfil de impressora da Kobra X, defina **Printer Agent** como `kobracontrol` e o endereço como o IP da impressora.
 6. Execute **Plugins > Check Kobra X connection**. Depois, no diálogo de impressão do OrcaSlicer, sincronize os slots do ACE, associe cada filamento a um slot e envie a impressão.
 
 <p align="center">
@@ -118,6 +131,21 @@ Depois que a impressão começa, a impressora pode passar muitos minutos em prep
 O passo a passo completo e uma tabela de solução de problemas estão em [docs/setup.md](docs/setup.md) (em inglês).
 
 ## 🔒 Privacidade e segurança
+
+### O que o plugin pode acessar
+
+| Permissão do OrcaSlicer | Para que serve |
+|---|---|
+| Rede: o endereço da impressora e o grupo multicast 239.255.255.250 | HTTP na porta 18910 (credenciais, envio do G-code), MQTT com TLS na porta 9883 (status e comandos) e a busca na rede. O OrcaSlicer pergunta uma vez por impressora encontrada depois. |
+| Rede: o endereço do seu Spoolman, só se você definir um | Vínculos de bobina e consumo de filamento. |
+| Leitura: a pasta temporária do OrcaSlicer | O arquivo fatiado que Print e Send entregam. Ele é lido, verificado e enviado como está, nunca alterado. |
+| Leitura: os arquivos do Anycubic Slicer Next, só quando você toca em **Procurar certificado** | O certificado de cliente dele. O OrcaSlicer pergunta antes. |
+| Execução: `ffmpeg`, só para a câmera da aba | Transformar a transmissão da impressora em imagens. O OrcaSlicer mostra o comando e pergunta. |
+| Threads | O trabalho de rede fora da thread principal do OrcaSlicer. |
+
+Arquivos de impressão e comandos vão para a impressora, vínculos de bobina e consumo vão para o Spoolman, e nada vai para outro lugar. Não há telemetria nem coleta de uso. O plugin grava arquivos só na própria pasta de armazenamento (ajustes, o registro de impressões, as impressoras encontradas) e lê a lista de estoque do Spooler quando o Spooler está instalado.
+
+### Rede e certificado
 
 O Kobra Control se conecta só à Kobra X e ao seu servidor Spoolman, se você configurar um. A impressora é acessada por HTTP na porta 18910 e por MQTT com TLS mútuo na porta 9883, no endereço que você definiu ou em um que o plugin encontrou na rede local e confirmou ser uma Kobra X em modo LAN. A busca na rede envia consultas SSDP apenas para o grupo multicast local 239.255.255.250. Não existe serviço na nuvem.
 
@@ -150,7 +178,7 @@ Pode. Deixe o seu perfil de impressora como está. A aba Kobra Control encontra 
 <details>
 <summary>Por que o OrcaSlicer pede permissão para executar o ffmpeg?</summary>
 
-A câmera da aba Kobra Control usa o `ffmpeg` para transformar a transmissão da impressora em imagens. Quando a câmera liga, o OrcaSlicer mostra o comando completo, com o endereço da transmissão, e pergunta. Ele pergunta de novo quando esse endereço muda, o que acontece quando a impressora reinicia. A câmera da aba Device não precisa do `ffmpeg`.
+Só quando o player embutido não consegue mostrar a câmera a aba Kobra Control usa o `ffmpeg` para transformar a transmissão da impressora em imagens. Quando ele inicia, o OrcaSlicer mostra o comando completo, com o endereço da transmissão, e pergunta. Ele pergunta de novo quando esse endereço muda, o que acontece quando a impressora reinicia. A câmera da aba Device não precisa do `ffmpeg`.
 </details>
 
 <details>
@@ -168,7 +196,13 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 <details>
 <summary>O perfil de impressora não tem o Printer Agent kobracontrol.</summary>
 
-**Use printer agents** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
+**Use printer agents instead of print hosts** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
+</details>
+
+<details>
+<summary>Um carretel pode usar o meu próprio perfil de filamento ajustado?</summary>
+
+Sim, pela sincronização do AMS do OrcaSlicer. No Spoolman, adicione um campo extra de texto com a chave `orca_filament_preset` em carretéis ou filamentos (**Settings > Extra fields**) e escreva nele o nome do seu perfil; o valor do carretel vale mais que o do filamento. Precisa ser um perfil seu e compatível com a impressora. A sincronização só carrega um perfil independente (que não herda de nenhum, como uma cópia desvinculada); um perfil criado com **Salvar como** herda do pai e a sincronização carregaria o pai, então o slot fica com o perfil de sempre. Um nome não encontrado mostra um aviso uma vez. Detalhes em [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
 </details>
 
 <details>
@@ -179,7 +213,7 @@ Ainda não. Não se conhece um jeito de a impressora entregar um vídeo pela red
 
 ## 🌍 Idiomas
 
-Inglês, português do Brasil, espanhol, alemão e chinês simplificado. A aba segue o idioma do OrcaSlicer, e **Ajustes > Idioma** muda isso.
+Inglês, português do Brasil, espanhol, alemão, chinês simplificado e polonês. A aba segue o idioma do OrcaSlicer, e **Ajustes > Idioma** muda isso.
 
 ## 🧩 Mais plugins do bloodf
 

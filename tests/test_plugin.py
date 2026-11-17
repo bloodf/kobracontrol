@@ -7,7 +7,9 @@ import shutil
 import tempfile
 import threading
 import time
+import types
 import unittest
+import zipfile
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,12 +32,48 @@ import plugin  # noqa: E402
 import service  # noqa: E402
 
 pa = orca.printer_agent
+real_read_json = plugin.spooler_bridge.read_json
+
+
+def isolate(test):
+    """Module state a test may change: the grants, the refused addresses, queue_on_main and the last preset hints."""
+    saved = (set(plugin._granted), set(plugin._refused), plugin._queue_on_main, plugin._last_hints)
+
+    def restore():
+        plugin._granted.clear()
+        plugin._granted.update(saved[0])
+        plugin._refused.clear()
+        plugin._refused.update(saved[1])
+        plugin._queue_on_main, plugin._last_hints = saved[2], saved[3]
+    test.addCleanup(restore)
+
+
+class FakeSvc:
+    """Just enough of Service for the page's hello / save_settings: records the order of the calls."""
+
+    def __init__(self, refuse=False):
+        self.calls, self.refuse, self.target = [], refuse, None
+
+    def _ask_orcaslicer(self, host):
+        self.calls.append(("ask", host))
+        if self.refuse:
+            raise PermissionError("denied")
+
+    def set_target(self, target, retry=False):
+        self.calls.append(("set_target", target.preset_host))
+
+    def touch(self, **kw):
+        pass
+
+    def submit(self, *a):
+        pass
 
 
 class Base(unittest.TestCase):
     state = "free"
 
     def setUp(self):
+        isolate(self)
         self.fake = FakeKobra().start()
         self.addCleanup(self.fake.stop)
         self.addCleanup(i18n.set_language, "en")   # a test that picks a language must not leave it to the next
@@ -92,6 +130,11 @@ class Base(unittest.TestCase):
 
 
 class Registration(unittest.TestCase):
+    def setUp(self):
+        isolate(self)
+        plugin._granted.clear()
+        plugin._refused.clear()
+
     def test_capabilities_and_permissions(self):
         orca.registered.clear()
         orca.permissions.clear()
@@ -101,9 +144,126 @@ class Registration(unittest.TestCase):
                                            plugin.FindCertificate])
         perms = orca.permissions[-1]
         self.assertTrue(perms["threading"])
-        self.assertEqual(perms["network"], ["http://127.0.0.1", "http://239.255.255.250"])   # + the SSDP group
+        # Not the preset's 127.0.0.1: plugins load while OrcaSlicer's UI thread still loads the presets
+        self.assertEqual(perms["network"], ["http://239.255.255.250"])   # the SSDP group only
         self.assertEqual(perms["fs_read"], plugin.job_read_grants())   # no Anycubic Slicer Next folder by default
         self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
+
+    def test_register_capabilities_reads_no_preset(self):
+        """Plugins load on a thread of their own while OrcaSlicer's UI thread loads the presets: reading them then
+        races it. Only the plugin's own storage folder and files are read."""
+        touched = []
+
+        class Host:
+            plugin = orca.host.plugin
+
+            def __getattr__(self, name):
+                touched.append(name)
+                raise AssertionError("orca.host.%s read at load" % name)
+        folder = tempfile.mkdtemp()
+        with open(os.path.join(folder, plugin.ADDRESSES_FILE), "w", encoding="utf-8") as f:
+            json.dump({"printers": {"Anycubic Kobra X 0.4 nozzle": {"ip": "192.168.1.30"}}}, f)
+        plugin._storage_dir, plugin._store = folder, None
+        orca.permissions.clear()
+        with mock.patch.object(orca, "host", Host()):
+            plugin.KobraControl().register_capabilities()
+        self.assertEqual(touched, [])
+        self.assertEqual(orca.permissions[-1]["network"], ["http://192.168.1.30", "http://239.255.255.250"])
+
+    def test_preset_address_is_granted_on_the_ui_thread(self):
+        """connect_printer and the page's hello ask OrcaSlicer about the preset's address (the audited event) once;
+        a refusal is logged, nothing raised."""
+        svc = FakeSvc()
+        plugin.grant_on_ui_thread(svc, "192.168.1.77")
+        plugin.grant_on_ui_thread(svc, "192.168.1.77")
+        plugin.grant_on_ui_thread(svc, "printer.example.com")   # not a numeric LAN address: no lookup on the UI thread
+        self.assertEqual(svc.calls, [("ask", "192.168.1.77")])
+        self.assertIn("192.168.1.77", plugin._granted)
+        plugin.grant_on_ui_thread(FakeSvc(refuse=True), "192.168.1.78")
+        self.assertNotIn("192.168.1.78", plugin._granted)
+
+    def page_with(self, svc):
+        page = plugin.KobraControlPage()
+        page.posted = []
+        page.post_message = page.posted.append
+        self.enterContext(mock.patch.object(plugin, "service", lambda publish=None: svc))
+        return page
+
+    def test_hello_and_save_ask_before_the_target_is_set(self):
+        """The preset's address must be granted before set_target starts locating and connecting on worker threads."""
+        svc = FakeSvc()
+        page = self.page_with(svc)
+        page.on_message({"type": "hello", "id": 1})
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1"), ("set_target", "127.0.0.1")])
+        plugin._granted.discard("127.0.0.1")
+        svc.calls.clear()
+        page.on_message({"type": "save_settings", "id": 2, "settings": {}})
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1"), ("set_target", "127.0.0.1")])
+
+    def test_refused_address_is_asked_again_only_on_a_user_action(self):
+        """A No in OrcaSlicer's dialog is not followed by another dialog on every hello or selection change; Save
+        and connecting the Device tab ask again."""
+        svc = FakeSvc(refuse=True)
+        page = self.page_with(svc)
+        page.on_message({"type": "hello", "id": 1})
+        page.on_message({"type": "hello", "id": 2})
+        self.assertEqual([c for c in svc.calls if c[0] == "ask"], [("ask", "127.0.0.1")])
+        page.on_message({"type": "save_settings", "id": 3, "settings": {}})
+        self.assertEqual([c for c in svc.calls if c[0] == "ask"], [("ask", "127.0.0.1")] * 2)
+        svc.refuse = False
+        plugin.grant_on_ui_thread(svc, "127.0.0.1", user=True)   # connect_printer
+        self.assertIn("127.0.0.1", plugin._granted)
+        self.assertNotIn("127.0.0.1", plugin._refused)
+
+    def test_check_script_reads_presets_on_the_ui_thread(self):
+        """Check Kobra X connection runs on a script worker: it has the UI thread read the preset (queue_on_main)
+        and ask about its address there, and never reads presets itself."""
+        ui = []
+
+        def queue(task):   # OrcaSlicer runs it later on the UI thread
+            t = threading.Thread(target=task, name="ui")
+            ui.append(t)
+            t.start()
+        readers = []
+        real = plugin.preset_hints
+
+        def hints():
+            readers.append(threading.current_thread().name)
+            return real()
+        svc = FakeSvc()
+        self.enterContext(mock.patch.object(plugin, "preset_hints", hints))
+        plugin._queue_on_main = queue
+        self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc))[0], "127.0.0.1")
+        self.assertEqual(readers, ["ui"])
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1")])
+        plugin._queue_on_main = None   # no queue: the hints the tab last read, presets untouched
+        plugin._last_hints = ("192.168.1.9", "KX", "")
+        self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
+        self.assertEqual(readers, ["ui"])
+
+        late = []
+        plugin._queue_on_main = late.append   # a UI thread that does not answer in time
+        with mock.patch.object(plugin, "UI_WAIT", 0.05):
+            self.assertEqual(run_off_main(lambda: plugin.preset_hints_from_worker(svc)), ("192.168.1.9", "KX", ""))
+        late[0]()   # the UI thread gets to it after the script gave up: no preset read, no dialog
+        self.assertEqual(readers, ["ui"])
+        self.assertEqual(svc.calls, [("ask", "127.0.0.1")])
+
+    def test_raising_queued_callback_is_caught(self):
+        """A callback queued to OrcaSlicer's UI thread that raises must not escape: OnExceptionInMainLoop would end
+        OrcaSlicer."""
+        agent, queued, logged = plugin.KobraAgent(), [], []
+        agent.set_queue_on_main_fn(queued.append)
+
+        def boom(*args):
+            raise RuntimeError("host gone")
+        agent.set_on_printer_connected_fn(boom)
+        agent._emit("printer_connected", "dev")
+        with mock.patch.object(plugin, "log", logged.append):
+            queued[0]()   # what OrcaSlicer's CallAfter runs later: must return normally
+        self.assertEqual(len(logged), 1)
+        self.assertIn("printer_connected", logged[0])
+        self.assertIn("host gone", logged[0])
 
     def test_agent_info(self):
         info = plugin.KobraAgent().get_agent_info()
@@ -125,8 +285,231 @@ class Agent(Base):
         self.assertEqual(msg["gcode_state"], "IDLE")
         self.assertTrue(msg["sdcard"])
         tray = msg["ams"]["ams"][0]["tray"][0]
-        self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OGFL99"))
-        self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "")   # no Generic PETG preset loaded
+        self.assertEqual((tray["tray_type"], tray["tray_info_idx"]), ("PLA", "OFDSrzZ8"))   # Generic PLA @System
+        self.assertEqual(msg["ams"]["ams"][0]["tray"][1]["tray_info_idx"], "OFYPdQJh")   # Generic PETG @System
+
+    def test_linked_slot_reports_its_spooler_preset_id(self):
+        """OrcaSlicer's sync from AMS matches presets on tray_info_idx: a slot linked to a Spoolman spool carries the
+        SPL id of the spool's standalone Spooler preset (from profiles.json); the others the Generic id of their
+        material. The links come from Spoolman at connect, without the tab."""
+        name = "_local/spooler/Acme PLA Red @Anycubic Kobra X"
+        mine = {"name": name, "bundle_id": "spooler", "vendor": "Acme", "colour": "#FF0000"}
+        profiles = {"version": 1, "filaments": {"9": {"Anycubic Kobra X": name}}, "ids": {name: "SPL0123456789"}}
+        spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101"}
+        targets = []
+
+        def links_for(target):
+            targets.append(target.name)
+            return [spool], {0: 5}
+        with mock.patch.object(plugin, "filament_catalog", return_value=([mine], "Anycubic Kobra X")), \
+                mock.patch.object(plugin.spooler_bridge, "read_json", return_value=profiles), \
+                mock.patch.object(plugin._service, "links_for", side_effect=links_for):
+            self.connect()
+            wait(lambda: self.agent._links[1])
+            self.events["message"].clear()
+            self.agent._dirty.set()
+            msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        self.assertTrue(targets)
+        trays = msg["print"]["ams"]["ams"][0]["tray"]
+        self.assertEqual((trays[0]["tray_type"], trays[0]["tray_info_idx"]), ("PLA", "SPL0123456789"))
+        self.assertEqual(trays[1]["tray_info_idx"], "OFYPdQJh")   # PETG, not linked: Generic PETG
+        svc = plugin._service
+        with svc.lock:   # the tab showing this printer wins: its links are up to date
+            svc.target = service.Target(self.fake.host)
+            svc.spools, svc.bindings = [spool], {1: 5}
+        self.assertEqual(list(self.agent._bound_spools()), [1])
+        with svc.lock:   # another printer in the tab: the agent's own links
+            svc.target = service.Target("10.9.9.9")
+        self.assertEqual(list(self.agent._bound_spools()), [0])
+
+    def linked_trays(self, users, spool, users_error=None):
+        """Connect with slot 0 linked to `spool`, the user presets `users` and Spooler's preset for the spool; the
+        trays of the next status push."""
+        name = "_local/spooler/Acme PLA Red @Anycubic Kobra X"
+        mine = {"name": name, "bundle_id": "spooler", "vendor": "Acme", "colour": "#FF0000"}
+        profiles = {"version": 1, "filaments": {"9": {"Anycubic Kobra X": name}}, "ids": {name: "SPL0123456789"}}
+        spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101", **spool}
+        with mock.patch.object(plugin, "filament_catalog", return_value=([mine], "Anycubic Kobra X")), \
+                mock.patch.object(plugin, "user_presets", return_value=users, side_effect=users_error), \
+                mock.patch.object(plugin.spooler_bridge, "read_json", wraps=lambda folder, file: (
+                    profiles if file == plugin.spooler_bridge.PROFILES_FILE else real_read_json(folder, file))), \
+                mock.patch.object(plugin._service, "links_for", return_value=([spool], {0: 5})):
+            self.connect()
+            wait(lambda: self.agent._links[1])
+            self.events["message"].clear()
+            self.agent._dirty.set()
+            msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+        return msg["print"]["ams"]["ams"][0]["tray"]
+
+    def user_preset(self, name, inherits="", filament_id="P1234567"):
+        path = os.path.join(self.tmp, name + ".json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"name": name, "inherits": inherits, "filament_id": filament_id}, f)
+        return {"name": name, "compatible": True, "file": path, "inherits": inherits}
+
+    def test_slot_linked_to_a_standalone_user_preset_reports_its_id(self):
+        """orca_filament_preset names a standalone user preset: its own filament_id, so sync from AMS loads it."""
+        trays = self.linked_trays([self.user_preset("My PLA")], {"orca_preset": "my pla"})
+        self.assertEqual(trays[0]["tray_info_idx"], "P1234567")
+        self.assertEqual(trays[1]["tray_info_idx"], "OFYPdQJh")   # not linked: Generic PETG
+        self.assertEqual([m for m in self.published if m.get("type") == "notice"], [])
+
+    def test_slot_linked_to_an_inheriting_user_preset_keeps_the_usual_id(self):
+        """A preset that inherits carries its parent's id and sync would load the parent: the Spooler id stays."""
+        trays = self.linked_trays([self.user_preset("My PLA", inherits="Generic PLA @System", filament_id="OFDSrzZ8")],
+                                  {"orca_preset": "My PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+
+    def test_unknown_linked_preset_keeps_the_usual_id_and_says_so_once(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        trays = self.linked_trays([self.user_preset("My PLA") | {"compatible": False}], {"orca_preset": "My PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+        self.agent._dirty.set()
+        time.sleep(1.2)   # more pushes, the same name: no second notice
+        notices = [m["text"] for m in self.published if m.get("type") == "notice"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn('"My PLA"', notices[0])
+
+    def test_ambiguous_linked_preset_says_so(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        trays = self.linked_trays([self.user_preset("My PLA"), self.user_preset("my pla")], {"orca_preset": "MY PLA"})
+        self.assertEqual(trays[0]["tray_info_idx"], "SPL0123456789")
+        notices = [m["text"] for m in self.published if m.get("type") == "notice"]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("several", notices[0])
+
+    def test_unreadable_user_presets_keep_the_usual_ids(self):
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        trays = self.linked_trays([], {"orca_preset": "My PLA"}, users_error=RuntimeError("boom"))
+        self.assertEqual((trays[0]["tray_info_idx"], trays[1]["tray_info_idx"]), ("SPL0123456789", "OFYPdQJh"))
+
+    def test_a_fixed_link_that_breaks_again_warns_again(self):
+        plugin._preset_notices.clear()
+        self.addCleanup(plugin._preset_notices.clear)
+        spool = {"orca_preset": "My PLA"}
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.agent._user_presets = [self.user_preset("My PLA")]
+        self.assertEqual(self.agent._linked_id(spool), "P1234567")
+        self.agent._user_presets = []
+        self.agent._linked_id(spool)
+        self.assertEqual(len([m for m in self.published if m.get("type") == "notice"]), 2)
+
+    def test_missing_or_bad_preset_file_keeps_the_usual_id_and_logs_once(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        logged = []
+        with mock.patch.object(plugin, "log", side_effect=logged.append):
+            self.assertEqual(self.agent._linked_id(spool), "P1234567")
+            os.remove(preset["file"])   # gone between refreshes
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                f.write("{not json")
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
+            self.assertEqual(len(logged), 2)
+
+    def test_preset_file_read_once_per_version(self):
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        with mock.patch.object(plugin.spooler_bridge, "standalone_id", wraps=plugin.spooler_bridge.standalone_id) as read:
+            self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["P1234567"] * 3)
+            self.assertEqual(read.call_count, 1)
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                json.dump({"name": "My PLA", "filament_id": "P7654321"}, f)
+            os.utime(preset["file"], (time.time() + 5, time.time() + 5))
+            self.assertEqual(self.agent._linked_id(spool), "P7654321")
+            self.assertEqual(read.call_count, 2)
+
+    def test_unreadable_user_presets_leave_the_catalog_working(self):
+        """user_presets() raising must not stop the Spooler catalog: no linked presets, logged once."""
+        plugin._user_presets_failed = False
+        self.addCleanup(setattr, plugin, "_user_presets_failed", False)
+        logged = []
+        with mock.patch.object(plugin, "user_presets", side_effect=RuntimeError("boom")), \
+                mock.patch.object(plugin, "filament_catalog", return_value=([{"name": "x"}], "Anycubic Kobra X")), \
+                mock.patch.object(plugin, "log", side_effect=logged.append), \
+                mock.patch.object(plugin._service, "links_for", return_value=([], {})):
+            self.agent._refresh_catalog({})
+            self.agent._refresh_catalog({})
+        self.assertEqual(self.agent._catalog[0], [{"name": "x"}])
+        self.assertEqual(self.agent._user_presets, [])
+        self.assertEqual(len([m for m in logged if "own filament presets" in m]), 1)
+
+    def test_user_presets_are_read_only_through_queue_on_main(self):
+        """Presets are read on the UI thread only: the push thread queues the catalog read, never does it itself."""
+        threads = []
+
+        def users():
+            threads.append(threading.current_thread())
+            return []
+        with mock.patch.object(plugin, "user_presets", side_effect=users), \
+                mock.patch.object(plugin, "filament_catalog", return_value=([], "Anycubic Kobra X")):
+            queued = []
+            self.agent.set_queue_on_main_fn(queued.append)
+            self.agent._catalog_at = 0.0
+            self.agent._preferred()
+            self.assertEqual(threads, [])
+            self.assertEqual(len(queued), 1)
+            with mock.patch.object(plugin, "filament_catalog", side_effect=RuntimeError("boom")):
+                queued[0]()   # nothing escapes a queued call
+        self.assertIsNone(self.agent._user_presets)
+
+    def test_user_presets_lists_own_compatible_and_incompatible_presets(self):
+        meta = {"Generic PLA @System": {}, "_local/spooler/X": {"is_user": True},
+                "My PLA": {"is_user": True, "file": "/u/My PLA.json", "inherits": '"Generic PLA @System"'},
+                "My PETG": {"is_user": True, "is_compatible": False}}
+        names = list(meta)
+        fake = fake_orca.install_orca(filament_names=names, filament_meta=meta)
+        sys.modules["orca"] = orca
+        with mock.patch.object(plugin.orca.host, "preset_bundle", fake.host.preset_bundle):
+            found = plugin.user_presets()
+        self.assertEqual(found, [{"name": "My PLA", "compatible": True, "file": "/u/My PLA.json",
+                                  "inherits": "Generic PLA @System"},
+                                 {"name": "My PETG", "compatible": False, "file": "", "inherits": ""}])
+
+    def test_links_for_reads_spoolman_without_touching_the_tab(self):
+        svc = plugin._service
+        target = service.Target("", name="Anycubic Kobra X", spoolman_url="http://sm")
+        raw = [{"id": 5, "location": "Anycubic Kobra X S2", "filament": {"id": 9, "material": "PLA"}}]
+        fake = mock.Mock(spools=lambda: raw)
+        with mock.patch.object(svc, "_spoolman", return_value=fake):
+            spools, bindings = svc.links_for(target)
+        self.assertEqual(([s["id"] for s in spools], bindings), ([5], {1: 5}))
+        self.assertEqual((svc.spools, svc.bindings), ([], {}))
+        self.assertEqual(svc.links_for(service.Target("", spoolman_url="")), ([], {}))
+
+    def test_filament_catalog_reads_compatible_spooler_presets(self):
+        presets = {"Generic PLA @System": dict(is_system=True),
+                   "_local/spooler/Y @Other": dict(bundle_id="spooler", is_compatible=False),
+                   "_local/spooler/X @Anycubic Kobra X": dict(bundle_id="spooler", filament_vendor='"SUNLU"',
+                                                              default_filament_colour='"#112233"'),
+                   "My own PLA": dict()}
+
+        class P:
+            def __init__(self, name):
+                meta = presets[name]
+                self.name, self.bundle_id = name, meta.get("bundle_id", "")
+                self.is_system, self.is_compatible = meta.get("is_system", False), meta.get("is_compatible", True)
+
+            def config_value(self, key):
+                return presets[self.name].get(key)
+
+        names = list(presets)
+        printer = mock.Mock(config_value=lambda k: {"printer_model": "Anycubic Kobra X"}.get(k))
+        printer.name = "Anycubic Kobra X 0.4 nozzle"
+        bundle = mock.Mock(current_printer_preset=lambda: printer,
+                           filaments=mock.Mock(size=lambda: len(names), preset=lambda i: P(names[i])))
+        with mock.patch.object(orca.host, "preset_bundle", return_value=bundle):
+            found, label = plugin.filament_catalog()
+        self.assertEqual(found, [{"name": "_local/spooler/X @Anycubic Kobra X", "bundle_id": "spooler",
+                                  "vendor": "SUNLU", "colour": "#112233"}])
+        self.assertEqual(label, "Anycubic Kobra X")
 
     def test_status_push_survives_a_failing_sample(self):
         """One status sample that raises must not end the Device tab's pusher thread for the rest of the session."""
@@ -391,6 +774,20 @@ class Page(Base):
         self.assertEqual(set(config["located"]), {"address", "source", "preset_host", "preset_agent", "spoolman_url",
                                                   "spoolman_source"})
 
+    def test_check_again_sends_the_config_and_every_requirement(self):
+        """Settings' "Check again" re-reads the certificate and Spooler (config) and checks ffmpeg on its own thread."""
+        page = self.page()
+        with mock.patch.object(service.requirements, "check_ffmpeg", return_value=service.requirements.item("ffmpeg", "ok", "/opt/bin/ffmpeg")), \
+                mock.patch.object(service.requirements, "check_anycubic_slicer", return_value=service.requirements.item("anycubic_slicer", "missing")):
+            page.on_message({"type": "check_requirements"})
+            msg = wait(lambda: [m for m in page.posted if m.get("type") == "requirements" and not m["checking"]])[-1]
+        config = next(m for m in page.posted if m["type"] == "config")
+        self.assertNotIn("ffmpeg", config)   # never looked up on the UI thread
+        items = {i["id"]: i for i in msg["items"]}
+        self.assertEqual(items["ffmpeg"]["details"], "/opt/bin/ffmpeg")
+        self.assertEqual(items["certificate"], {"id": "certificate", "state": "ok", "details": "bundled"})
+        self.assertEqual(items["spooler"]["id"], "spooler")
+
     def test_allow_hosts_is_answered_on_the_calling_thread(self):
         page = self.page()
         page.on_message({"type": "allow_hosts", "id": 9, "hosts": ["8.8.8.8"]})   # not a pending LAN printer
@@ -485,6 +882,74 @@ class Page(Base):
         self.assertEqual(len(self.sent("file", "deleteVideo")), 1)
 
 
+class Requirements(Base):
+    """Settings > Requirements: checked lazily after the page opens, cached, Check again, printer agent detection."""
+
+    def setUp(self):
+        super().setUp()
+        self.runs = []
+        for name, fn in (("check_ffmpeg", lambda s: self.runs.append(s) or service.requirements.item("ffmpeg", "missing")),
+                         ("check_anycubic_slicer", lambda: service.requirements.item("anycubic_slicer", "missing"))):
+            p = mock.patch.object(service.requirements, name, side_effect=fn)
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(setattr, plugin, "_agent_seen", False)
+        plugin._agent_seen = False   # Base made a KobraAgent; these tests start from "not detected"
+
+    def page(self):
+        page = plugin.KobraControlPage()
+        page.posted = []
+        return page
+
+    def done(self, page, n=1):
+        return wait(lambda: [m for m in page.posted if m.get("type") == "requirements" and not m["checking"]][n - 1:])[-1]
+
+    def test_hello_checks_once_then_check_again_checks_again(self):
+        page = self.page()
+        page.on_message({"type": "hello", "id": 1})
+        msg = self.done(page)
+        self.assertEqual({i["id"]: i["state"] for i in msg["items"]},
+                         {"ffmpeg": "missing", "anycubic_slicer": "missing", "printer_agents": "missing", "spoolman": "missing",
+                          "certificate": "ok", "spooler": "missing"})
+        page.on_message({"type": "hello", "id": 2})                 # cached
+        self.assertEqual(self.runs, [""])
+        page.on_message({"type": "check_requirements"})
+        wait(lambda: len(self.runs) == 2)
+        page.on_message({"type": "save_settings", "id": 3, "settings": {"printer_name": "Bench"}})   # any save checks again
+        wait(lambda: len(self.runs) == 3)
+        page.on_message({"type": "save_settings", "id": 4, "settings": {"ffmpeg_path": "/opt/ffmpeg"}})
+        wait(lambda: len(self.runs) == 4)
+        self.assertEqual(self.runs, ["", "", "", "/opt/ffmpeg"])
+
+    def test_agent_detected_when_orca_made_one(self):
+        plugin.KobraAgent()
+        page = self.page()
+        page.on_message({"type": "check_requirements"})
+        items = {i["id"]: i["state"] for i in self.done(page)["items"]}
+        self.assertEqual(items["printer_agents"], "ok")
+
+    def test_agent_detected_from_the_selected_printer(self):
+        for selected, want in (({"agent": "kobracontrol", "connection": "lan"}, True),
+                               (type("Sel", (), {"agent": "kobracontrol"})(), True),
+                               ({"agent": "moonraker"}, False), (None, False)):
+            plugin._agent_seen = False
+            with mock.patch.object(orca.host, "selected_printer", create=True, return_value=selected):
+                self.assertEqual(plugin.note_agent(), want, selected)
+        plugin._agent_seen = False
+        with mock.patch.object(orca.host, "selected_printer", create=True, side_effect=RuntimeError("not on this host")):
+            self.assertFalse(plugin.note_agent())
+        self.assertFalse(hasattr(orca.host, "selected_printer"))   # a host without the call: "not detected"
+        self.assertFalse(plugin.note_agent())
+
+    def test_nothing_checked_at_registration(self):
+        plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
+        plugin.KobraControl().register_capabilities()
+        plugin.KobraControlPage(), plugin.KobraAgent(), plugin.CheckConnection()   # nor on capability construction
+        plugin.service()   # nor when the service starts: only a page asking checks
+        time.sleep(0.2)
+        self.assertEqual(self.runs, [])
+
+
 class Language(Base):
     """The plugin's own texts (Print dialog progress, errors, script results) follow Settings, then OrcaSlicer."""
 
@@ -501,6 +966,10 @@ class Language(Base):
         self.host_language("zh_TW")
         plugin.sync_language()
         self.assertEqual(i18n.language(), "zh-CN")
+        self.host_language("pl_PL")
+        plugin.sync_language()
+        self.assertEqual(i18n.language(), "pl")
+        self.assertEqual(plugin.tr("Print started"), i18n.CATALOGUES["pl"]["Print started"])
         plugin.get_store().update({"ui_language": "es"})
         self.addCleanup(plugin.get_store().update, {"ui_language": "auto"})
         plugin.sync_language()
@@ -552,8 +1021,115 @@ class Scripts(Base):
         self.assertEqual(result.status, "skipped")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class GcodeChecks(Base):
+    """Read-only G-code checks: an OrcaSlicer notification and a pointer to it in the Print dialog's last line,
+    never a refusal, and the file goes to the printer as it is."""
+
+    def gcode_3mf(self, name):
+        with open(os.path.join(ROOT, "tests", "fixtures", "gcode", name), "rb") as f:
+            gcode = f.read()
+        path = os.path.join(self.tmp, "job.gcode.3mf")
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("Metadata/plate_1.gcode", gcode)
+        return path, gcode
+
+    def setUp(self):
+        super().setUp()
+        orca.notifications.clear()
+
+    def test_print_warns_without_config_block_and_sends_the_file_unchanged(self):
+        self.connect()
+        stages = []
+        path, gcode = self.gcode_3mf("no_config_block.gcode")
+        params = pa.PrintParams(project_name="cube", filename=path, plate_index=1, ams_mapping="[0]",
+                                ams_mapping_info=json.dumps([{"ams": 0, "sourceColor": "#FF0000", "filamentType": "PLA"}]))
+        self.assertEqual(self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False), 0)
+        self.assertEqual(self.fake.uploads[0]["data"], gcode)
+        self.assertEqual(stages[-1][:2], (plugin.STAGE_FINISHED, 100))
+        self.assertEqual(stages[-1][2], "Print started G-code warning: see the notification.")
+        wait(lambda: orca.notifications)
+        self.assertEqual(len(orca.notifications), 1)
+        self.assertIn("Skip G-code config block", orca.notifications[0])
+
+    def test_good_file_prints_without_warning(self):
+        self.connect()
+        stages = []
+        path, _ = self.gcode_3mf("good.gcode")
+        params = pa.PrintParams(project_name="cube", filename=path, plate_index=1, ams_mapping="[0]",
+                                ams_mapping_info=json.dumps([{"ams": 0, "sourceColor": "#FF0000", "filamentType": "PLA"}]))
+        self.assertEqual(self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False), 0)
+        self.assertEqual(stages[-1][2], "Print started")
+        time.sleep(0.1)
+        self.assertEqual(orca.notifications, [])
+
+    def test_send_warns_without_thumbnail(self):
+        self.connect()
+        stages = []
+        path, gcode = self.gcode_3mf("no_thumbnail.gcode")
+        params = pa.PrintParams(project_name="cube", filename=path, plate_index=1)
+        self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, lambda *a: stages.append(a), lambda: False, None), 0)
+        self.assertEqual(self.fake.uploads[0]["data"], gcode)
+        self.assertEqual(stages[-1][2], "File uploaded G-code warning: see the notification.")
+        self.assertIn("G-code thumbnails", wait(lambda: orca.notifications)[0])
+
+    def bundle(self, name="Anycubic Kobra X 0.4 nozzle", **values):
+        preset = types.SimpleNamespace(name=name, config_value=lambda k: {
+            "printer_model": "Anycubic Kobra X", "print_host": "http://127.0.0.1:18910", **values}.get(k))
+        return types.SimpleNamespace(current_printer_preset=lambda: preset, full_config_value=lambda k: None)
+
+    def test_connection_check_names_the_preset_setting(self):
+        bundle = self.bundle(gcode_skip_config_block="1", thumbnails="300x300/JPG")
+        with mock.patch.object(orca.host, "preset_bundle", lambda: bundle):
+            result = plugin.CheckConnection().execute()
+        self.assertEqual(result.status, "success")
+        self.assertIn("KX at 127.0.0.1", result.message)
+        self.assertIn("Skip G-code config block is on in this printer preset", result.message)
+        self.assertIn("(G-code thumbnails: 300x300/JPG)", result.message)
+
+    def test_connection_check_quiet_for_a_good_preset_or_another_printer(self):
+        for bundle in (self.bundle(gcode_skip_config_block="0", thumbnails="32x32/PNG, 300x300/PNG"),
+                       self.bundle("Other printer", printer_model="Other", gcode_skip_config_block="1")):
+            with mock.patch.object(orca.host, "preset_bundle", lambda: bundle):
+                self.assertEqual(plugin.preset_gcode_warnings(), [])
+
+    def test_preset_read_goes_through_the_ui_thread(self):
+        """The script's worker never reads the preset: queue_on_main runs the read on the UI thread; without a queue
+        or an answer in time the check is skipped and the preset left alone."""
+        readers = []
+        bundle = self.bundle(gcode_skip_config_block="1", thumbnails="300x300/PNG")
+
+        def read():
+            readers.append(threading.current_thread().name)
+            return bundle
+
+        def queue(task):   # OrcaSlicer runs it later on the UI thread
+            threading.Thread(target=task, name="ui").start()
+        self.enterContext(mock.patch.object(orca.host, "preset_bundle", read))
+        plugin._queue_on_main = queue
+        found = run_off_main(plugin.preset_gcode_warnings)
+        self.assertEqual(len(found), 1)
+        self.assertIn("Skip G-code config block", found[0])
+        self.assertEqual(readers, ["ui"])
+
+        plugin._queue_on_main = None
+        self.assertEqual(run_off_main(plugin.preset_gcode_warnings), [])
+        late = []
+        plugin._queue_on_main = late.append   # a UI thread that does not answer in time
+        with mock.patch.object(plugin, "UI_WAIT", 0.05):
+            self.assertEqual(run_off_main(plugin.preset_gcode_warnings), [])
+        late[0]()   # it gets to it after the worker gave up: no read
+        self.assertEqual(readers, ["ui"])
+
+    def test_cancel_after_the_check_sends_nothing(self):
+        self.connect()
+        path, _ = self.gcode_3mf("good.gcode")
+        params = pa.PrintParams(project_name="cube", filename=path, plate_index=1)
+        calls = []
+        self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, None, lambda: calls.append(1) or True, None),
+                         plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
+
+
 
 
 class PushingNoop(Base):
@@ -612,7 +1188,8 @@ class Guarded(Base):
         self.addCleanup(setattr, plugin.certs, "default_locations", self.old_locations)
         plugin.KobraControl().register_capabilities()
         self.perms = orca.permissions[-1]
-        audit_guard.enable(self.perms, self.tmp)
+        # the preset's printer is no longer declared at load: model the Yes OrcaSlicer saved for it on the UI thread
+        audit_guard.enable({**self.perms, "network_socket": ["127.0.0.1"]}, self.tmp)
         self.addCleanup(audit_guard.disable)
 
     def ungranted_dir(self, prefix):
@@ -625,8 +1202,9 @@ class Guarded(Base):
         return folder
 
     def job_dir(self):
-        folder = os.path.join(plugin.slicer_temp_root(), "kobracontrol-test")
-        os.makedirs(folder, exist_ok=True)
+        root = plugin.slicer_temp_root()
+        os.makedirs(root, exist_ok=True)
+        folder = tempfile.mkdtemp(prefix="kobracontrol-test-", dir=root)   # unique: overlapping runs never share it
         self.addCleanup(shutil.rmtree, folder, True)
         return folder
 
@@ -724,3 +1302,132 @@ class Guarded(Base):
         reply = wait(lambda: next((m for m in page.posted if m.get("id") == 1), None))
         self.assertIn("result", reply)
         self.assertEqual(audit_guard.denials(), [])
+
+
+def free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class AddOns(Base):
+    """Settings switch the upload bridge on and off; it is off by default."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(plugin.stop_bridge)
+        self.page = plugin.KobraControlPage()
+        self.page.posted = []
+
+    def config(self):
+        return [m for m in self.page.posted if m.get("type") == "config"][-1]
+
+    def save(self, **values):
+        self.page.on_message({"type": "save_settings", "id": 5, "settings": values})
+        return self.config()
+
+    def test_off_by_default(self):
+        self.page.on_load()
+        self.addCleanup(self.page.on_unload)
+        self.assertIsNone(plugin._bridge)
+        self.page.on_message({"type": "hello", "id": 1})
+        state = self.config()["bridge"]
+        self.assertEqual((state["enabled"], state["running"], state["host"], state["key"]), (False, False, "127.0.0.1", ""))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, plugin.bridge.KEY_FILE)))   # no key made while off
+
+    def test_bridge_switch_starts_and_stops_the_server(self):
+        port = free_port()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertEqual((state["running"], state["port"], state["error"]), (True, port, ""))
+        self.assertEqual(plugin._bridge.server.server_address, ("127.0.0.1", port))
+        key_file = os.path.join(self.tmp, plugin.bridge.KEY_FILE)
+        if os.name == "posix":
+            self.assertEqual(os.stat(key_file).st_mode & 0o777, 0o600)
+        self.assertNotIn(state["key"], json.dumps(plugin.get_store().raw()))   # not in settings.json
+        running = plugin._bridge
+        self.assertFalse(self.save(bridge_enabled=False)["bridge"]["running"])
+        wait(lambda: running.server is None)
+
+    def test_new_key_replaces_the_old_one(self):
+        self.page.on_message({"type": "hello", "id": 1})
+        old = self.config()["bridge"]["key"]
+        self.page.on_message({"type": "bridge_new_key", "id": 6})
+        self.assertNotEqual(self.config()["bridge"]["key"], old)
+        self.assertEqual(plugin.bridge_key(), self.config()["bridge"]["key"])
+
+    def test_port_in_use_is_reported(self):
+        import socket
+        with socket.socket() as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen()
+            state = self.save(bridge_enabled=True, bridge_port=busy.getsockname()[1])["bridge"]
+        self.assertFalse(state["running"])
+        self.assertIn("could not be opened", state["error"])
+
+    def test_quick_restart_binds_again_from_a_worker(self):
+        """Off and on while the old bridge still holds the port: the UI thread never waits; a worker binds once the
+        old one has let go and the page gets a new config."""
+        port = free_port()
+        self.save(bridge_enabled=True, bridge_port=port)
+        old = plugin._bridge
+        release = threading.Event()
+        real_stop = old.stop
+        old.stop = lambda: (release.wait(5), real_stop())   # an upload in progress keeps the port a little longer
+        self.save(bridge_enabled=False)
+        started = time.monotonic()
+        state = self.save(bridge_enabled=True, bridge_port=port)["bridge"]
+        self.assertLess(time.monotonic() - started, 0.5)   # the UI thread did not join the stopping thread
+        self.assertFalse(state["running"])
+        self.assertIn("waiting for the previous bridge", state["error"])
+        posted = len(self.page.posted)
+        release.set()
+        wait(lambda: plugin._bridge is not None)
+        wait(lambda: len(self.page.posted) > posted)
+        self.assertTrue(self.config()["bridge"]["running"])
+
+    def test_unload_stops_the_bridge(self):
+        self.save(bridge_enabled=True, bridge_port=free_port())
+        running = plugin._bridge
+        self.page.on_load()
+        self.page.on_unload()
+        self.assertIsNone(plugin._bridge)
+        wait(lambda: running.server is None)
+
+    def test_load_asks_for_loopback_only_when_on(self):
+        with mock.patch.object(plugin, "known_hosts", return_value=["192.168.1.5"]):
+            orca.permissions.clear()
+            plugin.KobraControl().register_capabilities()
+            self.assertNotIn("http://127.0.0.1", orca.permissions[-1]["network"])
+            plugin.get_store().update({"bridge_enabled": True})
+            plugin.KobraControl().register_capabilities()
+            self.assertIn("http://127.0.0.1", orca.permissions[-1]["network"])
+
+    def test_upload_with_no_target_reads_presets_on_the_ui_thread(self):
+        """The bridge's thread never reads presets itself: with no printer selected yet it has the UI thread do it
+        (queue_on_main), as the Check script does."""
+        readers, real = [], plugin.preset_hints
+
+        def hints():
+            readers.append(threading.current_thread().name)
+            return real()
+
+        def queue(task):
+            threading.Thread(target=task, name="ui").start()
+        self.enterContext(mock.patch.object(plugin, "preset_hints", hints))
+        self.addCleanup(setattr, plugin, "_queue_on_main", plugin._queue_on_main)
+        plugin._queue_on_main = queue
+        self.fake.reply("file", "listLocal", {"records": []}, code=200)
+        path = os.path.join(self.tmp, "up.part")
+        with open(path, "wb") as f:
+            f.write(b"G90\nM83\nG1 X1\n")
+        plugin._service.target = None
+        result = run_off_main(lambda: plugin._bridge_upload(path, "cube.gcode", 1, False))
+        self.assertEqual(result, {"name": "cube.gcode"})
+        self.assertTrue(readers)
+        self.assertEqual(set(readers), {"ui"})
+        self.assertEqual(self.fake.uploads[-1]["filename"], "cube.gcode")
+
+
+if __name__ == "__main__":
+    unittest.main()

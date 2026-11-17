@@ -6,6 +6,7 @@ export interface Drying { status: number; target_temp: number; duration: number;
 export interface AceUnit { id: number; auto_feed: boolean; humidity?: number | null; temp?: number | null; status?: number; model_id?: number; drying: Drying }
 export interface Can { pause: boolean; resume: boolean; stop: boolean; move: boolean; heat: boolean; feed: boolean; print: boolean }
 export interface Status {
+  camera_url?: string;   // the printer's stream: rtsp:// needs ffmpeg, http:// plays in the page
   connected: boolean; state: string; preparing: boolean; kobra_state: string; printer_name: string; model: string; firmware: string;
   filename: string; progress: number; layer: number; total_layers: number; elapsed_s: number; remaining_s: number; task_id: string;
   nozzle_temp: number; nozzle_target: number; bed_temp: number; bed_target: number; fan_pct: number; light_on: boolean; speed_mode: number;
@@ -23,6 +24,8 @@ export interface Status {
   stats?: { print_minutes?: number; print_count?: number; filament_g?: number };
   /** Print Assist switches by option number (JSON keys are strings); null until the printer answered. */
   assist?: Record<string, boolean> | null;
+  /** An Upload and Print from OrcaSlicer (upload bridge) waiting for Start here; null when there is none. */
+  bridge_pending?: { id: string; name: string; at: number } | null;
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string;
   source?: AddressSource; note?: string }
@@ -50,12 +53,18 @@ export interface FileDetails { name: string; thumbnail?: string | null; info?: F
  *  `empty` when nothing was recorded (the print ended before the first frame). */
 export interface VideoEntry { filename: string; name: string; created: number; duration: number; size: number; empty: boolean }
 export interface VideosResult { videos: VideoEntry[] }
+/** Something the plugin needs and cannot install itself (src/kobracontrol/requirements.py). */
+export type RequirementId = 'ffmpeg' | 'anycubic_slicer' | 'printer_agents' | 'spoolman' | 'certificate' | 'spooler';
+export interface Requirement { id: RequirementId; state: 'ok' | 'missing' | 'unknown'; details: string }
 export interface Certificate { found: boolean; source?: string }
 export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
-  version: string; limits: Limits; located?: Located | null; agent_id?: string;
+  version: string; limits: Limits; located?: Located | null; agent_id?: string; bridge?: BridgeState;
+  /** Where the plugin found ffmpeg ('' = not found); absent from a plugin that does not look. */ ffmpeg?: string;
 }
+/** The upload bridge: on in Settings, listening, where, its API key and why it is not running. */
+export interface BridgeState { enabled: boolean; running: boolean; port: number; host: string; key: string; error: string }
 export interface UsagePending { file: string; printer: string; grams: Record<string, number> }
 export interface UsageEntry { id: string; at: number | null; spool: number | null; grams: number; slot: number; file: string; error: string;
   job?: string; printer: string; printer_name?: string; spoolman?: string; acknowledged_at?: number }

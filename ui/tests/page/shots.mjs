@@ -22,9 +22,10 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   filename: 'desk_organiser_plate_1.gcode', progress: 37, layer: 142, total_layers: 380, elapsed_s: 4100, remaining_s: 7000, task_id: '1',
   nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, fan_pct: 70, light_on: true, speed_mode: 2, files: [], 
   storage: {total: 8000, used: 2100}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
-  slots: [slot(0, -1, 0, {type: 'PETG', color: [62, 99, 221]}), slot(1, -1, 1, {status: 0, type: ''}), slot(2, -1, 2, {color: [244, 207, 120], type: 'PLA+'}),
-    slot(3, 0, 0, {activity: 'loaded', spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
-  loaded_slot: 3, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
+  // The print head's three slots are the photo's spools 1-3 (white, red, a multi-colour Spoolman spool); the fourth is empty with an ACE.
+  slots: [slot(0, -1, 0, {color: [245, 245, 245]}), slot(1, -1, 1, {activity: 'loaded'}), slot(2, -1, 2, {color: [255, 140, 40], spool_id: 12}),
+    slot(3, 0, 0, {spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
+  loaded_slot: 1, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
   can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
   features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',
   stats: {print_minutes: 37230, print_count: 214, filament_g: 18420}, assist: {'0': true, '1': false, '3': true, '4': true, '5': false}};
@@ -43,15 +44,17 @@ else {
   __t.handler({type: 'reply', id: hello.id, result: {address: '192.168.1.50', printer: 'Bench Kobra', generation: 1}});
   __t.handler({type: 'status', data: VIEW});
 }
+if (SCN === 'needs') CONFIG.ffmpeg = '';   // one requirement missing, with how to install it
 __t.handler(CONFIG);
 await settle();
+const SUNSET = {id: 12, name: 'Sunset', vendor: 'Acme', material: 'PLA', colour: '#ff8c28', colours: ['#ff8c28', '#e5484d', '#7c3aed'], remaining: 520, initial: 1000, low: false, use_first: false, location: 'Shelf B'};
 const ans = (cmd, r) => { const m = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === cmd); if (m) __t.handler({type: 'reply', id: m.id, result: r}); };
 await sleep(50);
-ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
+ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, SUNSET, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
 ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'ok', code: 'ok', text: '', key: 's:1', ts: Date.now() / 1000 - 30,
-  rows: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
+  rows: [SUNSET, {id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
-  same_spoolman: true, usage: 'kobracontrol', bindings: {'3': 7}, available: true, reason: null});
+  same_spoolman: true, usage: 'kobracontrol', bindings: {'2': 12, '3': 7}, available: true, reason: null});
 ans('device', {sent: true, assist: true});
 ans('usage', STORE ? {pending: [], unconfirmed: [], acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''} : {pending: [{file: 'gcodes/benchy.gcode', printer: '192.168.1.50', grams: {'3': 12.5}}], unconfirmed: [{id: 'a', at: Date.now() / 1000 - 7200, spool: 7, grams: 8.4, slot: 4, file: 'gcodes/desk_organiser.gcode', error: 'Spoolman timed out', job: 'j', printer: '192.168.1.50', printer_name: 'Bench Kobra'}],
   acknowledged: [], acknowledged_total: 0, save_error: '', restore_notice: ''});
@@ -61,7 +64,7 @@ if (SCN === 'usage') { await sleep(50); document.querySelector('[data-test="usag
 if (SCENE === 'store-status') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'frame', image: FRAME}); }
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
 // videos, videos-empty, videos-error, videos-delete: the Files tab's Time-lapses section in each of its states.
-const TAB = SCN.startsWith('videos') ? 'files' : SCN;
+const TAB = SCN.startsWith('videos') ? 'files' : SCN === 'needs' ? 'settings' : SCN;
 if (TAB === 'settings' || TAB === 'files') { document.querySelector('[data-tab="' + TAB + '"]').click(); await sleep(300); }
 if (TAB === 'files') {
   ans('files', {files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {name: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400},
@@ -82,6 +85,10 @@ if (SCN === 'files') {
       {paint_index: 1, material: 'PETG', colour: '#2850a8', grams: 18.8, slot: 4, slot_type: 'ABS', slot_colour: '#141414', check: 'differs'}]});
 }
 if (SCN === 'assist') { const sw = document.querySelector('#assist-remain'); sw.scrollIntoView({block: 'center'}); sw.click(); await until(() => document.querySelector('.p-dialog')); }
+// toasts: what commands answered, bottom-left (an info, a success and an error that stays); needs: Settings' requirements.
+if (SCN === 'toasts') { __t.handler({type: 'notice', text: 'Kobra Control found the printer at 192.168.1.50.'}); __t.handler({type: 'reply', id: 987654, error: 'Spoolman timed out'});
+  document.querySelector('[data-test="pause"]')?.click(); await sleep(50); }
+if (SCN === 'needs') { document.querySelector('.oui-settings-link[data-section="needs-h"]').click(); await sleep(200); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 await sleep(400);
 // once the page has settled: the Filament panel just under the app bar
@@ -108,6 +115,7 @@ const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   ['videos-error', 'dark', 'en', 1280, 900], ['videos-delete', 'dark', 'pt_BR', 1280, 900],
   ['idle', 'light', 'en', 1280, 2200], ['idle', 'dark', 'en', 1900, 1400], ['idle', 'dark', 'pt_BR', 1280, 2200], ['idle', 'light', 'en', 720, 3600],
   ['idle', 'dark', 'en', 400, 4400], ['dash', 'dark', 'en', 1280, 2200], ['assist', 'dark', 'en', 1280, 900], ['assist', 'light', 'pt_BR', 1280, 900],
+  ['toasts', 'light', 'en', 1280, 720], ['toasts', 'dark', 'en', 1280, 720], ['toasts', 'dark', 'en', 380, 900], ['needs', 'light', 'en', 1280, 720], ['needs', 'dark', 'pt_BR', 720, 1000],
   ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'pt_BR', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ]);
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));

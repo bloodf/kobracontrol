@@ -30,8 +30,14 @@ described in [protocol.md](protocol.md).
 </picture>
 
 [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament
-profiles. With Spooler installed, kobracontrol shows Spooler's stock on the Dashboard. Each plugin
-works on its own.
+profiles. With Spooler installed, kobracontrol shows Spooler's stock on the Dashboard, and the Device
+tab reports, for an ACE slot linked to a Spoolman spool, the `filament_id` of that spool's Spooler
+preset (from Spooler's `profiles.json` `"ids"`) as the tray's `tray_info_idx`, which OrcaSlicer's "sync
+from AMS" matches presets on. Spooler's presets are standalone copies of their parent with ids of their
+own, so the sync loads them. The links are read from Spoolman when the printer connects, without the
+tab. A spool (else its filament) whose Spoolman extra field `orca_filament_preset` names a compatible user
+preset that inherits nothing reports that preset's own `filament_id` instead, read from its JSON file
+(`Preset.file`; presets are listed on the UI thread only). Each plugin works on its own.
 
 ## Modules
 
@@ -43,7 +49,8 @@ works on its own.
 | `kobra.py` | Credential recovery, printer commands, upload, print start, `State` (reports folded into one view) | no |
 | `ace.py` | ACE and print-head slot model, slot mapping for a print, drying | no |
 | `bambu.py` | Translates the view to the Device tab's status JSON and Device tab commands to printer commands | no |
-| `camera.py` | Camera start and, for the tab, `ffmpeg` to JPEG frames | no |
+| `fmp4.py` | The printer's HTTP-FLV (H.264) as fragmented MP4 for the page's player | no |
+| `camera.py` | For the tab: `Relay` (the stream, through `fmp4.py`, to the page's player) and the `ffmpeg` to JPEG fallback | no |
 | `files.py` | Printer file list, details, delete, print; time-lapse video list and delete | no |
 | `spoolman.py`, `peers.py`, `spooler_bridge.py`, `stockview.py`, `usage.py` | Spoolman, Spooler presence and stock, filament use | no |
 | `settings.py` | Settings store | no |
@@ -55,7 +62,9 @@ Filament use (`usage.py`) is booked by Kobra Control in its Spoolman, which is S
 here. Spooler 0.26 never books a Kobra X print: its Kobra link reads only slots (`kx_report` gives no print
 state, so `usage_track` never runs for it). A Spooler that does must list `"anycubic"` in its presence
 `provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
+| `gcode_check.py` | Read-only checks of the plate G-code (settings block, PNG preview) and of the printer preset | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
+| `bridge.py` | Upload bridge (opt-in): OctoPrint-compatible `GET /api/version` and `POST /api/files/local` on 127.0.0.1, API key in `bridge_key.txt` (0600) | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
 | `ui/app.html` | The Kobra Control tab: one compiled Vue 3 + PrimeVue page, built from `ui/` | - |
@@ -100,11 +109,16 @@ Page to plugin:
 | type | fields | effect |
 |---|---|---|
 | `hello` | `id`, `retry` | resolve the printer, connect, send `config`; a connection that already failed answers its last error at once and keeps its retry delay, unless `retry` is `true` (the page's Retry button), which tries again now and answers at that attempt's result; the result carries `source` (`override`, `remembered`, `preset`, `discovered`) and `note` (one line when the preset's address was not the printer); when no Kobra X is found the error reply has `no_target: true` and `candidates` (`[{ip, name, model}]`, when several answered: the page offers them and sends `cmd choose_printer {host}`) and `pending` (addresses found that OrcaSlicer does not let the plugin reach yet: the page sends `allow_hosts {id, hosts}` once, which the plugin handles on the UI thread so OrcaSlicer's dialog shows at once and a Yes is saved, then says hello again); `cmd search_printer` searches again; with no certificate it has `no_certificate: true`. The `offline` message carries `retry_at` (unix s of the next automatic attempt, 0 when none is planned) |
-| `lease` | `camera`, `stock` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen |
+| `lease` | `camera`, `stock`, `mse` | keep status updates coming (renewed every 2 s, lapses after 6 s); camera on or off; `stock`: the Stock card is on screen; `mse`: the page plays H.264 itself (Media Source Extensions), so the camera uses `Relay`, else `ffmpeg` |
 | `cmd` | `id`, `cmd`, `args`, `gen` | run `Service.cmd_<cmd>(**args)` for printer generation `gen` |
 | `frame_ack` | | the page has shown the last camera frame |
+| `video_ack` | | the page took one fragment of the built-in player's stream (Relay drops to the next keyframe while 30 are unacknowledged) |
+| `video_reset` | | the page's player (re)attached or got a fragment without an init segment: Relay sends the current init again |
+| `video_error` | | the page's player can't play this stream: the plugin uses `ffmpeg` for it for 60 s, or until the camera is turned off |
 | `save_settings` | `id`, `settings` | validate and store settings |
 | `ui_language` | `value` | store the page's language choice |
+| `bridge_new_key` | `id` | replace the upload bridge's API key; answers `{renewed}` and a new `config` |
+| `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
 
 Plugin to page:
 
@@ -112,9 +126,11 @@ Plugin to page:
 |---|---|
 | `reply` | `id`, `result` or `error` |
 | `status` | `data` (below), `gen` |
-| `frame` | `image` (JPEG data URL) |
+| `video` | `codec` and `init` (base64 init segment: a new stream, the player starts over), else `data` (base64 fragment, one frame) and `key` (it starts with a keyframe) |
+| `frame` | `image` (JPEG data URL, the `ffmpeg` fallback) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
-| `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
+| `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`), `bridge` (`{enabled, running, port, host, key, error}`) |
+| `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`, `certificate`, `spooler` (the last two as the config just read them); `state` `ok`, `missing`, `unknown` = not checked yet; for `printer_agents` `missing` means not detected). Sent after `hello`, `save_settings` and `check_requirements` (each also sends `config` first), and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a Settings save; without ffmpeg the monitor never starts the camera |
 | `notice` | `text` |
 | `offline` | `error` |
 | `selection_changed` | |
@@ -134,6 +150,7 @@ is always empty, because it carries the upload token. Plus:
 | `features`, `aux_fan_pct`, `phase_unit`, `phase_channel` | from `kobra.State.view()`: the `*_support` flags, the auxiliary fan percentage, and the ACE unit and slot (1-based) of the current slot check during a job, or `null` |
 | `can` | `{pause, resume, stop, move, heat, feed, print}` booleans: what the printer state allows now |
 | `tls` | `{fingerprint, changed_from}`: SHA-256 (hex) of the certificate the printer presented on this session, and the one remembered from before when it differs (else `""`); `null` without TLS. See SECURITY.md |
+| `bridge_pending` | `{id, name, at}`: an Upload and Print from the upload bridge waiting for Start in the tab, else `null` |
 
 ### Commands
 
@@ -163,6 +180,7 @@ is always empty, because it carries the upload token. Plus:
 | `file_details` | `name` | |
 | `file_print` | `name`, `auto_leveling`, `vibration_compensation`, `flow_calibration`, `timelapse` | yes |
 | `file_delete` | `names` | yes |
+| `bridge_start`, `bridge_cancel` | `id` (of `status.data.bridge_pending`); Start runs `file_print` with the Print defaults, idle printer only | the banner's Start is the confirmation |
 | `videos` | (the time-lapse videos; also while printing) | |
 | `video_delete` | `name` (one video's file name: a plain name ending `.mp4`, at most 255 characters); also while printing | yes |
 | `find_certificate` | `path` (optional file or folder) | |
@@ -208,10 +226,17 @@ granted and every temp-file creation, and it matches a `urllib` request by its f
 is written around that:
 
 - It asks at load for: threads; read access to OrcaSlicer's own temp tree, where the sliced `.3mf`
-  lives (`plugin.slicer_temp_root()`); network access to the printer addresses it already knows (the
-  Settings address, the Kobra X preset's address and the addresses found before, `addresses.json`) and to
-  the SSDP multicast group `239.255.255.250` for the network search (a canonical `http://host` grant also
-  covers raw sockets, docs/HLSD/plugin-permissions.md). Nothing for Anycubic Slicer Next: the bundled
+  lives (`plugin.slicer_temp_root()`); network access to the printer addresses its own files name (the
+  Settings address and the addresses found before, `addresses.json`) and to the SSDP multicast group
+  `239.255.255.250` for the network search (a canonical `http://host` grant also covers raw sockets,
+  docs/HLSD/plugin-permissions.md). It never reads the printer preset at load: OrcaSlicer loads plugins on a
+  thread of its own while its UI thread is still loading the presets (GUI_App.cpp), so that read races it.
+  The preset's address and the Device tab's printer are asked about later on the UI thread (the tab's hello,
+  Save, `connect_printer`), the same way as `allow_hosts` below; a Yes saved earlier passes silently. An
+  address refused there is asked about again only on a user action (Save, `connect_printer`, the Check
+  script), never on the tab's own hello. The Check Kobra X connection script runs on a worker thread, so it
+  has the UI thread read the preset through `queue_on_main` (waiting at most 5 s); without it, it uses what
+  the tab last read. Nothing for Anycubic Slicer Next: the bundled
   certificate is read from the plugin's own package (inside `data_dir()`, no grant needed). Find
   certificate reads Anycubic Slicer Next only when the user asks; OrcaSlicer then asks about that one file.
 - No `chmod` and no `open()` of a file descriptor: OrcaSlicer's audit sees no path in those events and
@@ -243,7 +268,7 @@ is written around that:
   compares one host per entry, and the Plugins dialog refuses wildcards (docs/HLSD/plugin-permissions.md,
   "Persistence and editing"). There is no CIDR or "local network" grant, so the found printer's address
   cannot be declared at load before it is known.
-- The tab's camera starts `ffmpeg`, which OrcaSlicer matches by its full command line.
+- When the page's player can't play the camera, the tab starts `ffmpeg`, which OrcaSlicer matches by its full command line.
 
 `tests/audit_guard.py` models these checks so the tests run Print, Send, Find certificate and
 connect under them. It is a model: only a real OrcaSlicer shows the real behaviour.

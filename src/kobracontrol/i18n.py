@@ -1,4 +1,4 @@
-"""The plugin's own texts in the page's five languages: what OrcaSlicer's Print dialog shows while a job runs, and
+"""The plugin's own texts in the page's six languages: what OrcaSlicer's Print dialog shows while a job runs, and
 the errors and notices the tab shows inside its own sentences. Free of the `orca` module.
 
 English is the source: `tr("the printer is not connected")` returns the text in the current language, or the
@@ -10,20 +10,21 @@ The log stays as written: an error's text is logged in the language it was shown
 
 import lang_de
 import lang_es
+import lang_pl
 import lang_pt_br
 import lang_zh_cn
 
-LANGUAGES = ("en", "pt-BR", "es", "de", "zh-CN")
-CATALOGUES = {"pt-BR": lang_pt_br.TEXT, "es": lang_es.TEXT, "de": lang_de.TEXT, "zh-CN": lang_zh_cn.TEXT}
+LANGUAGES = ("en", "pt-BR", "es", "de", "zh-CN", "pl")
+CATALOGUES = {"pt-BR": lang_pt_br.TEXT, "es": lang_es.TEXT, "de": lang_de.TEXT, "zh-CN": lang_zh_cn.TEXT, "pl": lang_pl.TEXT}
 # kobra.State.view()["state"], named inside sentences such as "the printer is %s; nothing was sent"
 STATES = ("idle", "printing", "paused", "finished", "cancelled", "error", "offline", "busy")
-_BY_BASE = {"en": "en", "pt": "pt-BR", "es": "es", "de": "de", "zh": "zh-CN"}   # zh_TW reads zh-CN rather than English
+_BY_BASE = {"en": "en", "pt": "pt-BR", "es": "es", "de": "de", "zh": "zh-CN", "pl": "pl"}   # zh_TW reads zh-CN rather than English
 _language = "en"
 
 
 def normalize(code):
     """OrcaSlicer's or a system's language code as one of LANGUAGES: "pt_BR" -> "pt-BR", "zh_TW" -> "zh-CN",
-    "de_DE" -> "de"; None for a language the plugin has no texts for."""
+    "de_DE" -> "de", "pl_PL" -> "pl"; None for a language the plugin has no texts for."""
     if not isinstance(code, str):
         return None
     return _BY_BASE.get(code.strip().replace("_", "-").lower().split("-", 1)[0])

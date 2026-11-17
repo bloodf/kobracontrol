@@ -2,6 +2,7 @@
 that imports `orca`. Printer work runs in service.py on the plugin's own threads; everything here that runs
 on OrcaSlicer's UI thread only queues work and returns."""
 
+import base64
 import json
 import os
 import re
@@ -9,16 +10,20 @@ import sys
 import tempfile
 import threading
 import time
+import zlib
 
 import orca
 
 import ace
 import bambu
+import bridge
 import certs
+import gcode_check
 import i18n
 import locate
 import kobra
 import peers
+import requirements
 import settings
 import spooler_bridge
 from i18n import tr
@@ -34,12 +39,18 @@ LEDGER_FILE = "usage_ledger.json"
 ADDRESSES_FILE = "addresses.json"   # printer preset -> the Kobra X found for it (locate.Addresses)
 CHECK_SECONDS = 20.0                # Check Kobra X connection: locating and connecting together
 _granted = set()   # printer addresses declared at load or allowed since: the search probes only these by itself
+_refused = set()   # addresses refused in OrcaSlicer's dialog this session: asked again only on a user action
+_queue_on_main = None   # OrcaSlicer's queue_on_main, once it hands it to the printer agent
+_last_hints = ("", "", "")   # preset_hints() as last read on the UI thread, for the script's worker thread
+STOP_WAIT = 1.0    # s a restarted bridge waits for the previous one to let go of its port
+UI_WAIT = 5.0      # s a worker thread waits for the UI thread to read the presets
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
 ERR_LP_UPLOAD, ERR_LP_PUBLISH, ERR_SG_UPLOAD, ERR_CONNECT = -4020, -4030, -5010, -6010
 STAGE_CREATE, STAGE_UPLOAD, STAGE_SENDING, STAGE_FINISHED, STAGE_ERROR = 0, 1, 3, 6, 7
 CONNECT_OK = 0
 PUSH_EVERY = 0.5         # s between Device tab status pushes at most
+CATALOG_EVERY = 30.0     # s between re-reads of Spooler's presets, profiles.json and the Spoolman links for tray ids
 
 _service = None
 _service_lock = threading.Lock()
@@ -47,6 +58,15 @@ _link = None
 _store = None
 _store_lock = threading.Lock()
 _storage_dir = None
+_bridge = None            # the running upload bridge (bridge.Bridge), None while off
+_bridge_error = ""       # why it is not running although on (shown in Settings)
+_bridge_key = ""         # the key when there is no storage folder to keep it in (this session only)
+_agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
+_preset_notices = set()   # orca_filament_preset names already reported as not usable this session
+_user_presets_failed = False
+# Preset.is_compatible is bound in OrcaSlicer 2.5 (PluginHostPresets.cpp); a host without it reads as compatible
+# (True), as OrcaSlicer itself treats a preset with no compatibility condition.
+COMPATIBLE_DEFAULT = True
 
 
 def log(msg):
@@ -135,7 +155,9 @@ def _asset(name):
     """From the generated _assets module in the wheel; from src/kobracontrol/ui during development."""
     if __package__:
         from . import _assets
-        return {"app.html": _assets.APP_HTML, "icon.png": _assets.ICON_PNG}[name]
+        if name == "icon.png":
+            return _assets.ICON_PNG
+        return zlib.decompress(base64.b64decode(_assets.APP_HTML_Z64)).decode("utf-8")
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", name)
     if name.endswith(".png"):
         with open(path, "rb") as f:
@@ -172,6 +194,21 @@ def page_html(language="auto"):
 
 # ---------------------------------------------------------------------- service and Spooler link
 
+def note_agent():
+    """Whether "Use printer agents instead of print hosts" is on, as far as a plugin can tell (OrcaSlicer.conf is
+    not readable): OrcaSlicer created a KobraAgent this session, or orca.host.selected_printer() reports our agent.
+    UI thread only (a host call); a host without that call, or one that fails, leaves the answer "not detected"."""
+    global _agent_seen
+    if not _agent_seen:
+        try:
+            selected = orca.host.selected_printer()
+            agent = selected.get("agent") if hasattr(selected, "get") else getattr(selected, "agent", "")
+            _agent_seen = clean(agent) == AGENT_ID
+        except Exception:
+            pass
+    return _agent_seen
+
+
 _service_options = {}   # extra Service keyword arguments (tests only: ports and fakes of a loopback printer)
 _users = set()          # loaded capabilities that use the service: closed once none is left
 
@@ -206,6 +243,103 @@ def service(publish=None):
             _service.publish = publish
         _service.peers = _link
         return _service
+
+
+# ---------------------------------------------------------------------- upload bridge (opt-in)
+
+def bridge_key(renew=False, create=True):
+    """The bridge's API key: kept in the storage folder (mode 0600), else for this session only. create=False only
+    reads it ("" when there is none yet): the bridge's requests and Settings while the bridge is off."""
+    global _bridge_key
+    folder = _storage()
+    if folder:
+        if renew:
+            return bridge.write_key(folder, bridge.new_key())
+        return bridge.key_for(folder) if create else bridge.read_key(folder)
+    if not create and not renew:
+        return _bridge_key
+    if renew or not _bridge_key:
+        _bridge_key = bridge.new_key()
+    return _bridge_key
+
+
+def _bridge_upload(path, filename, plate_index, start):
+    """The bridge's thread: the file to the printer Kobra Control has selected (located now if the tab never was open)."""
+    svc = service()
+    if svc.target is None:   # never read the presets here: the UI thread does (preset_hints_from_worker)
+        svc.set_target(_target(preset_hints_from_worker(svc)))
+    try:
+        svc.wait_located(CHECK_SECONDS)
+    except Exception as e:
+        raise bridge.Refused(503, str(e)) from None
+    return svc.bridge_upload(path, filename, plate_index, start, get_store().effective())
+
+
+def sync_bridge(on_change=None):
+    """Start, restart or stop the bridge as Settings say. Binds on the caller's thread: OrcaSlicer asks for the
+    127.0.0.1 network permission there when it was not granted at load. Never waits: when the previous bridge on
+    the port is still stopping, a worker waits for it and binds again, then calls on_change() (the page's config)."""
+    global _bridge, _bridge_error
+    cfg = get_store().effective()
+    want, folder = cfg["bridge_enabled"], _storage()   # an upload is written to the storage folder first
+    if _bridge is not None and (not want or _bridge.port != cfg["bridge_port"]):
+        stop_bridge()
+    _bridge_error = ""
+    if want and _bridge is None and not folder:
+        _bridge_error = tr("no storage folder for the uploads")
+    elif want and _bridge is None:
+        try:
+            bridge_key()   # made once here; requests only read it
+            _bridge = _make_bridge(cfg["bridge_port"], folder)
+        except OSError as e:
+            stopping = _stopping
+            if stopping is not None and stopping.is_alive() and stopping.port == cfg["bridge_port"]:   # off and on quickly
+                _bridge_error = tr("waiting for the previous bridge to close")
+                threading.Thread(target=_retry_bridge, args=(stopping, cfg["bridge_port"], folder, on_change),
+                                 name="kobracontrol-bridge-retry", daemon=True).start()
+            else:
+                _bridge_error = tr("port %d could not be opened (%s)") % (cfg["bridge_port"], e.strerror or e)
+                log("upload bridge not started: %s" % _bridge_error)
+
+
+_stopping = None   # the thread stopping the previous bridge, while it runs
+
+
+def _make_bridge(port, folder):
+    return bridge.Bridge(port, lambda: bridge_key(create=False), _bridge_upload, folder, log).start()
+
+
+def _retry_bridge(stopping, port, folder, on_change):
+    """Worker: wait for the old bridge to let go of the port, bind once more if Settings still want this one."""
+    global _bridge, _bridge_error
+    stopping.join(STOP_WAIT)
+    cfg = get_store().effective()
+    if _bridge is None and cfg["bridge_enabled"] and cfg["bridge_port"] == port:
+        try:
+            _bridge, _bridge_error = _make_bridge(port, folder), ""
+        except OSError as e:
+            _bridge_error = tr("port %d could not be opened (%s)") % (port, e.strerror or e)
+            log("upload bridge not started: %s" % _bridge_error)
+    if on_change is not None:
+        try:
+            on_change()
+        except Exception as e:
+            log("bridge state not shown: %r" % e)
+
+
+def stop_bridge():
+    global _bridge, _stopping
+    running, _bridge = _bridge, None
+    if running is not None:   # shutdown waits for a request in progress: never on the UI thread
+        _stopping = threading.Thread(target=running.stop, name="kobracontrol-bridge-stop", daemon=True)
+        _stopping.port = running.port
+        _stopping.start()
+
+
+def bridge_state():
+    cfg = get_store().effective()
+    return {"enabled": cfg["bridge_enabled"], "running": _bridge is not None, "port": _bridge.port if _bridge else cfg["bridge_port"],
+            "host": bridge.HOST, "key": bridge_key(create=cfg["bridge_enabled"]), "error": _bridge_error}
 
 
 def start_link():
@@ -252,6 +386,49 @@ def spooler_state():
     return {**spooler_bridge.detect(ids, meta, has_file), "url": spooler_bridge.URL}
 
 
+def filament_catalog():
+    """(Spooler presets, printer label) for the Device tab's tray ids; UI thread, no I/O. Presets: the Spooler
+    presets OrcaSlicer counts as compatible with the selected printer, the only ones its sync from AMS loads, as
+    spooler_bridge.tray_filament_id meta."""
+    bundle = orca.host.preset_bundle()
+    printer = bundle.current_printer_preset()
+    collection = bundle.filaments
+    presets = []
+    for i in range(collection.size()):
+        preset = collection.preset(i)
+        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID or not getattr(preset, "is_compatible", COMPATIBLE_DEFAULT):
+            continue
+        first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
+        presets.append({"name": preset.name, "bundle_id": spooler_bridge.BUNDLE_ID, "vendor": first("filament_vendor"),
+                        "colour": first("default_filament_colour") or first("filament_colour")})
+    return presets, clean(printer.config_value("printer_model")) or printer.name
+
+
+def user_presets():
+    """The user's own filament presets, for a spool's orca_filament_preset (spooler_bridge.find_user_preset); UI
+    thread, no I/O. Not system or default presets, and not a plugin bundle's (named "_local/...")."""
+    collection = orca.host.preset_bundle().filaments
+    out = []
+    for i in range(collection.size()):
+        preset = collection.preset(i)
+        if preset.is_user() and not preset.name.startswith("_local/"):
+            out.append({"name": preset.name, "compatible": bool(getattr(preset, "is_compatible", COMPATIBLE_DEFAULT)), "file": preset.file or "",
+                        "inherits": clean(preset.config_value("inherits"))})
+    return out
+
+
+def _user_presets_safe():
+    """user_presets(), or [] when they can't be read (logged once a session): the rest of the catalog still works."""
+    global _user_presets_failed
+    try:
+        return user_presets()
+    except Exception as e:
+        if not _user_presets_failed:
+            _user_presets_failed = True
+            log("own filament presets not readable (%s); orca_filament_preset is ignored" % e)
+        return []
+
+
 def certificate_state():
     try:   # as connection.tls_from: a saved pair counts only when it loads
         certs.context(*certs.paths(cert_dir()))
@@ -276,13 +453,111 @@ def preset_hints():
     return host, preset.name, agent
 
 
-def _target():
-    cfg = get_store().effective()
+def ui_preset_hints():
+    """UI thread only: preset_hints(), kept for worker threads; ("", "", "") when no preset can be read yet."""
+    global _last_hints
     try:
-        preset_host, preset_name, agent = preset_hints()
+        _last_hints = preset_hints()
     except Exception as e:   # no preset bundle yet: the network search still runs
         log("printer preset not readable (%s)" % e)
-        preset_host, preset_name, agent = "", "", ""
+        return "", "", ""
+    return _last_hints
+
+
+def on_main(key, fn, default):
+    """Worker thread: fn() run on the UI thread through queue_on_main, waited for at most UI_WAIT s; default without
+    queue_on_main, when fn raises, or when the UI thread has not started fn in time (fn then never runs). Once fn has
+    started (a dialog of its own may be up) its answer is waited for."""
+    queue, box, done, lock = _queue_on_main, {}, threading.Event(), threading.Lock()
+    if queue is None:
+        return default
+
+    def task():
+        with lock:   # the worker gave up waiting: it has moved on, so no read and no dialog any more
+            if box.get("cancelled"):
+                return
+            box["started"] = True
+        try:
+            box["value"] = fn()
+        finally:
+            done.set()
+    try:
+        queue(lambda: call_safely(key, task))
+    except Exception as e:
+        log("queue_on_main failed: %r" % e)
+        return default
+    if not done.wait(UI_WAIT):
+        with lock:
+            if not box.get("started"):
+                box["cancelled"] = True
+                return default
+        done.wait()
+    return box.get("value", default)
+
+
+def preset_hints_from_worker(svc):
+    """Worker thread: preset_hints() read on the UI thread (and the preset's address asked about there, a script
+    being a user action). Presets are never read off the UI thread: without an answer, the hints the tab last read."""
+    def read():
+        hints = ui_preset_hints()
+        grant_on_ui_thread(svc, hints[0], user=True)
+        return hints
+    return on_main("check_connection", read, _last_hints)
+
+
+def ui_preset_gcode_problems():
+    """UI thread only: gcode_check.preset_problems() of the selected printer preset when it is a Kobra X (or uses
+    this agent); [] for another printer or when it can't be read."""
+    try:
+        bundle = orca.host.preset_bundle()
+        preset = bundle.current_printer_preset()
+        agent = clean(preset.config_value("printer_agent")) or clean(bundle.full_config_value("printer_agent"))
+        if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
+                                                preset.config_value("inherits")):
+            return []
+        return gcode_check.preset_problems(preset.config_value("gcode_skip_config_block"),
+                                           preset.config_value("thumbnails"))
+    except Exception as e:
+        log("printer preset not checked (%s)" % e)
+        return []
+
+
+def preset_gcode_warnings():
+    """Worker thread: translated warnings about the selected Kobra X preset's G-code settings, read on the UI thread;
+    [] (the check skipped) when OrcaSlicer does not answer in time."""
+    try:
+        return [tr(text) % values if values else tr(text)
+                for text, values in on_main("check_gcode", ui_preset_gcode_problems, [])]
+    except Exception as e:
+        log("printer preset not checked (%s)" % e)
+        return []
+
+
+def warn(warnings):
+    """OrcaSlicer's warning notification for each text, from a short thread of its own: push_notification hands the
+    call to the UI thread itself and waits for it (PluginHostUi.cpp v2.5.1:672, run_on_ui_blocking), and a print job
+    should not wait on the UI thread. A failed notification is only logged."""
+    def push():
+        try:
+            ui = orca.host.ui
+            level = getattr(ui.NotificationLevel, "WarningNotificationLevel", None) or ui.NotificationLevel.RegularNotificationLevel
+            for text in warnings:
+                ui.push_notification(level, "Kobra Control: " + text)
+        except Exception as e:
+            log("notification failed: %r" % e)
+    if warnings:
+        threading.Thread(target=push, name="kobracontrol-notify", daemon=True).start()
+
+
+def finished_line(text, warnings):
+    """The Print dialog's last line: short, the full warnings are in the notification."""
+    return text + " " + tr("G-code warning: see the notification.") if warnings else text
+
+
+def _target(hints=None):
+    """The tab's target. hints: preset_hints() already read on the UI thread; None reads them here (UI thread)."""
+    cfg = get_store().effective()
+    preset_host, preset_name, agent = ui_preset_hints() if hints is None else hints
     return Target(host_of(cfg.get("host")), settings.printer_label(cfg.get("printer_name")),
                   clean(cfg.get("spoolman_url")), bool(cfg["spoolman_auto"]), bool(cfg["spoolman_report_usage"]),
                   clean(cfg.get("ffmpeg_path")), bool(cfg["camera_enabled"]), preset_host=preset_host,
@@ -311,21 +586,40 @@ def job_read_grants():
 
 
 def known_hosts():
-    """Printer addresses known at load, for the network permission request: the Settings address, the Kobra X
-    preset's address (a hint the tab tries once) and the addresses found for presets before."""
+    """Printer addresses known at load, for the network permission request: the Settings address and the addresses
+    found for presets before. Only the plugin's own files: plugins load on a thread of their own while OrcaSlicer's
+    UI thread is still loading presets, so reading the printer preset here races it (and can crash OrcaSlicer).
+    The preset's address is granted later, on the UI thread (grant_on_ui_thread)."""
     hosts = set()
     try:
         hosts.add(host_of(get_store().effective().get("host")))
     except Exception as e:
         log("settings not readable at load (%s)" % e)
-    try:
-        hosts.add(preset_hints()[0])
-    except Exception as e:
-        log("printer preset not readable at load (%s)" % e)
     folder = _storage()
     if folder:
         hosts.update(locate.Addresses(os.path.join(folder, ADDRESSES_FILE)).hosts())
     return sorted(h for h in hosts if h)
+
+
+def grant_on_ui_thread(svc, host, user=False):
+    """UI thread only: let OrcaSlicer ask about a printer address not granted at load (the preset's print_host, the
+    Device tab's printer). The audited event (svc._ask_orcaslicer: getaddrinfo of a numeric LAN address, no network
+    I/O) shows its dialog inline and saves a Yes; an address allowed in an earlier session passes silently. Off the
+    UI thread each refused attempt would queue another dialog instead. An address refused this session is asked
+    about again only on a user action (user: Save, connecting the Device tab, the Check script), never on the tab's
+    own hello or a selection change."""
+    if not host or host in _granted or not locate.lan_address(host) or (host in _refused and not user):
+        return
+    try:
+        svc._ask_orcaslicer(host)
+    except PermissionError:
+        _refused.add(host)
+        log("network access to %s not allowed" % host)
+        return
+    except OSError:
+        pass
+    _refused.discard(host)
+    _granted.add(host)
 
 
 # ====================================================================== Kobra Control tab
@@ -370,14 +664,24 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         try:
             if kind == "hello":
                 sync_language()
-                svc.set_target(_target())   # locates the printer and starts its connection on their own threads
+                target = _target()
+                grant_on_ui_thread(svc, target.preset_host)
+                svc.set_target(target)   # locates the printer and starts its connection on their own threads
                 svc.touch(camera=False)
                 svc.submit(data.get("id"), "connect", {"retry": data.get("retry") is True})   # only Retry skips the backoff
-                self.post_message(self._config_message())
+                self._requirements(svc, self._post_config())
+            elif kind == "check_requirements":   # Settings > Requirements > Check again: all of them, now
+                self._requirements(svc, self._post_config(), force=True)
             elif kind == "lease":
-                svc.touch(camera=data.get("camera"), stock=data.get("stock") is True)
+                svc.touch(camera=data.get("camera"), stock=data.get("stock") is True, mse=data.get("mse") is True)
             elif kind == "frame_ack":
                 svc.ack_frame()
+            elif kind == "video_ack":   # the page took one fragment of the built-in player's stream
+                svc.video_ack()
+            elif kind == "video_reset":   # the page's player needs the stream's init segment again
+                svc.video_reset()
+            elif kind == "video_error":   # the page's player cannot play this stream: fall back to ffmpeg
+                svc.video_error()
             elif kind == "cmd":
                 svc.touch()
                 gen = data.get("gen")
@@ -386,17 +690,40 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "allow_hosts":   # UI thread: OrcaSlicer's dialog for a printer the search found
                 result = svc.allow(data.get("hosts"), user=data.get("user") is True)
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+            elif kind == "bridge_new_key":   # the old key stops working at once
+                bridge_key(renew=True)
+                self.post_message(self._config_message())
+                self.post_message({"type": "reply", "id": data.get("id"), "result": {"renewed": True}})
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
-                svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
+                sync_bridge(lambda: self.post_message(self._config_message()))
+                target = _target()
+                grant_on_ui_thread(svc, target.preset_host, user=True)
+                svc.set_target(target, retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
-                self.post_message(self._config_message())
+                self._requirements(svc, self._post_config(), force=True)   # a Settings save checks again too
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
+
+    def _post_config(self):
+        config = self._config_message()
+        self.post_message(config)
+        return config
+
+    def _requirements(self, svc, config, force=False):
+        """Publish the requirements: the certificate and Spooler as the config just read them, the printer agent as
+        seen now (UI thread), ffmpeg and Anycubic Slicer Next from the cached check (started on its own thread)."""
+        cert, spooler = config["certificate"], config["spooler"]
+        svc.host_requirements = (
+            requirements.item("certificate", requirements.OK if cert.get("found") else requirements.MISSING,
+                              cert.get("source", "") if cert.get("found") else ""),
+            requirements.item("spooler", requirements.OK if spooler.get("installed") else requirements.MISSING))
+        svc.agent_seen = note_agent()
+        svc.check_requirements(clean(get_store(self).effective().get("ffmpeg_path")), force)
 
     def _config_message(self):
         cfg = get_store(self).effective()
@@ -407,7 +734,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
         return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
-                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID}
+                "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
+                "bridge": bridge_state()}
 
     def on_lifecycle_event(self, event, ctx):
         if event == getattr(orca.LifecycleEvent, "DeviceSelected", None) or (
@@ -422,8 +750,13 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             start_link()
         except Exception as e:
             log("Spooler discovery not started: %r" % e)
+        try:
+            sync_bridge(lambda: self.post_message(self._config_message()))
+        except Exception as e:
+            log("upload bridge not started: %r" % e)
 
     def on_unload(self):
+        stop_bridge()
         stop_link()
         _unuse("page")
 
@@ -474,16 +807,35 @@ def job_task(params, defaults):
             "timelapse": opt("task_record_timelapse") and defaults.get("timelapse") is True}
 
 
+def call_safely(key, fn, *args):
+    """Run a host callback queued to OrcaSlicer's UI thread. Nothing may escape: an exception leaving a queued call
+    ends OrcaSlicer (GUI_App::OnExceptionInMainLoop returns false)."""
+    try:
+        fn(*args)
+    except Exception as e:   # pybind's error_already_set arrives as an Exception too; never re-raised
+        try:
+            log("host callback %s failed: %r" % (key, e))
+        except Exception:
+            pass
+
+
 class KobraAgent(pa.PrinterAgentBase):
     """Printer agent `kobracontrol`: Print / Send and the Device tab over the shared service connection."""
 
     def __init__(self):
+        global _agent_seen
         super().__init__()
+        _agent_seen = True   # OrcaSlicer makes printer agents only with "Use printer agents instead of print hosts" on
         self._cb = {}
         self._lock = threading.Lock()
         self.selected = ""
         self.dev_id, self.host, self.access_code = "", "", ""
-        self._filament_ids = {}
+        self._catalog = ([], "", None)       # (Spooler presets, printer label, Spooler's profiles.json) for tray ids
+        self._catalog_at = 0.0
+        self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
+        self._links_busy = threading.Lock()
+        self._user_presets = None            # user_presets(), once read on the UI thread
+        self._file_ids = {}                  # (preset file, mtime) -> spooler_bridge.standalone_id
         self._was_connected = False
         self._dirty = threading.Event()
         self._stop = threading.Event()
@@ -511,7 +863,10 @@ class KobraAgent(pa.PrinterAgentBase):
     def set_on_printer_connected_fn(self, fn): return self._store("printer_connected", fn)
     def set_on_subscribe_failure_fn(self, fn): return self._store("subscribe_failure", fn)
     def set_server_callback(self, fn): return self._store("server_error", fn)
-    def set_queue_on_main_fn(self, fn): return self._store("queue_on_main", fn)
+    def set_queue_on_main_fn(self, fn):
+        global _queue_on_main
+        _queue_on_main = fn   # also for the Check script's preset read (preset_hints_from_worker)
+        return self._store("queue_on_main", fn)
 
     def _emit(self, key, *args):
         """Call a host callback the way MoonrakerPrinterAgent dispatches: through queue_on_main when set."""
@@ -521,7 +876,7 @@ class KobraAgent(pa.PrinterAgentBase):
             return
         try:
             if queue is not None:
-                queue(lambda: fn(*args))
+                queue(lambda: call_safely(key, fn, *args))
             else:
                 fn(*args)
         except Exception as e:
@@ -568,9 +923,12 @@ class KobraAgent(pa.PrinterAgentBase):
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
         sync_language()
+        grant_on_ui_thread(service(), host, user=True)
         previous = self._detach()
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
-        self._filament_ids = self._generic_ids()
+        self._catalog_at = 0.0   # the first push re-reads Spooler's profiles.json
+        self._links = ([], {})   # another printer's links never reach this one's trays
+        self._refresh_catalog()
         self._was_connected = False
         self._stop = threading.Event()
         self._pusher = threading.Thread(target=self._push_loop, args=(self._stop,), name="kobracontrol-agent",
@@ -612,21 +970,93 @@ class KobraAgent(pa.PrinterAgentBase):
                 conn.remove_listener(self._on_change)
         return host
 
-    def _generic_ids(self):
-        """{"Generic <family> @System": filament_id} from the loaded system presets (UI thread, no I/O)."""
-        wanted = {bambu.generic_preset_name(m) for m in bambu.FILAMENT_FAMILIES}
-        out = {}
+    def _refresh_catalog(self, profiles=None):
+        """UI thread, no I/O: re-read Spooler's presets (it adds its own at any time), then the slots' links from
+        Spoolman on a thread of their own, so sync from AMS knows them without the tab ever opening."""
         try:
-            collection = orca.host.preset_bundle().filaments
-            for i in range(collection.size()):
-                preset = collection.preset(i)
-                if preset.name in wanted:
-                    fid = getattr(preset, "filament_id", "") or clean(preset.config_value("filament_id"))
-                    if fid:
-                        out[preset.name] = fid
+            presets, label = filament_catalog()
+            users = _user_presets_safe()
+            target = _target()
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
-        return out
+            return
+        self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+        self._user_presets = users
+        threading.Thread(target=self._load_links, args=(target,), name="kobracontrol-links", daemon=True).start()
+
+    def _load_links(self, target):
+        if not self._links_busy.acquire(blocking=False):
+            return   # the last read is still running
+        try:
+            self._links = service().links_for(target)
+        except Exception as e:   # Spoolman down: keep the last links
+            log("Spoolman links for the Device tab not read (%s)" % e)
+        finally:
+            self._links_busy.release()
+
+    def _bound_spools(self):
+        """{slot global_index: Spoolman spool} for this printer's slots linked to spools: the tab's (up to date
+        with every link made there) when it shows this printer, else the agent's own read."""
+        svc = _service
+        spools, bindings = self._links
+        if svc is not None:
+            with svc.lock:
+                if svc.target and svc.target.host == self.host and svc.spools:
+                    spools, bindings = list(svc.spools), dict(svc.bindings)
+        by_id = {s["id"]: s for s in spools}
+        return {g: by_id[sid] for g, sid in bindings.items() if sid in by_id}
+
+    def _preferred(self):
+        """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
+        if time.time() - self._catalog_at >= CATALOG_EVERY:   # this thread may read files, not presets
+            self._catalog_at = time.time()
+            folder = spooler_bridge.data_dir(_storage())
+            profiles = spooler_bridge.read_json(folder, spooler_bridge.PROFILES_FILE)
+            with self._lock:
+                queue = self._cb.get("queue_on_main")
+            if queue is not None:
+                queue(lambda: call_safely("filament catalog", self._refresh_catalog, profiles or {}))
+        bound = self._bound_spools()
+        presets, label, profiles = self._catalog
+
+        def preferred(slot):
+            spool = bound.get(slot["global_index"])
+            return self._linked_id(spool) or spooler_bridge.tray_filament_id(spool, presets, profiles, label)
+        return preferred
+
+    def _linked_id(self, spool):
+        """The filament_id of the user preset a spool names in Spoolman (orca_filament_preset), or "" to keep the
+        usual id. A name that isn't a compatible user preset is reported once a session."""
+        name, users = (spool or {}).get("orca_preset"), self._user_presets
+        if not name or users is None:
+            return ""
+        preset, problem = spooler_bridge.find_user_preset(name, users)
+        if preset is None:
+            self._preset_notice(name, problem)
+            return ""
+        _preset_notices.discard(name)   # usable again: a later break warns again
+        try:
+            key = (preset["file"], os.path.getmtime(preset["file"]))
+        except (OSError, ValueError):
+            key = (preset["file"], None)
+        if key not in self._file_ids:   # read once per file version; a bad file is logged once
+            self._file_ids[key] = spooler_bridge.standalone_id(preset, log)
+        return self._file_ids[key]
+
+    @staticmethod
+    def _preset_notice(name, problem):
+        if name in _preset_notices:
+            return
+        _preset_notices.add(name)
+        if problem == "ambiguous":
+            text = tr('Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer '
+                      'when upper and lower case are ignored. Its slot keeps the usual preset.') % name
+        else:
+            text = tr('Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer '
+                      'in OrcaSlicer. Its slot keeps the usual preset.') % name
+        log(text)
+        if _service is not None:
+            _service.publish({"type": "notice", "text": text})
 
     def _on_change(self, conn):   # the connection's threads: no I/O, no host calls here
         self._dirty.set()
@@ -656,8 +1086,7 @@ class KobraAgent(pa.PrinterAgentBase):
         if not view["connected"]:
             return
         data, _ = status_data(view)
-        self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX,
-                                        self._filament_ids.get))
+        self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX, self._preferred()))
 
     # commands -------------------------------------------------------------------------------------------
     def send_message(self, dev_id, json_str, qos, flag):
@@ -751,6 +1180,11 @@ class KobraAgent(pa.PrinterAgentBase):
                 return ERR_CONNECT
         if update_fn:
             update_fn(STAGE_CREATE, 0, tr("Preparing..."))
+        # A .3mf member is deflated: reaching its tail decompresses all of it once (about 0.1 s for 72 MB on a laptop).
+        warnings = service().check_gcode(params.filename, getattr(params, "plate_index", 1))
+        if cancel_fn and cancel_fn():
+            return ERR_CANCELED
+        warn(warnings)
         try:
             service().send_file(host, params.filename, clean(params.project_name) or clean(params.task_name),
                                 getattr(params, "plate_index", 1), self._progress(update_fn), cancel_fn)
@@ -759,7 +1193,7 @@ class KobraAgent(pa.PrinterAgentBase):
         except Exception as e:
             return self._fail(update_fn, ERR_SG_UPLOAD, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, tr("File uploaded"))
+            update_fn(STAGE_FINISHED, 100, finished_line(tr("File uploaded"), warnings))
         return OK
 
     def start_local_print(self, params, update_fn, cancel_fn):
@@ -772,6 +1206,10 @@ class KobraAgent(pa.PrinterAgentBase):
         path = params.dst_file if getattr(params, "dst_file", "") and os.path.exists(params.dst_file) else params.filename
         trays, filaments = job_filaments(params)
         task = job_task(params, get_store().effective())
+        warnings = service().check_gcode(path, getattr(params, "plate_index", 1))   # see start_send_gcode_to_sdcard
+        if cancel_fn and cancel_fn():
+            return ERR_CANCELED
+        warn(warnings)
         stage = ["prepare"]
 
         def on_stage(name):
@@ -789,7 +1227,7 @@ class KobraAgent(pa.PrinterAgentBase):
             code = {"upload": ERR_LP_UPLOAD, "start": ERR_LP_PUBLISH}.get(stage[0], ERR_LP_PUBLISH)
             return self._fail(update_fn, code, e)
         if update_fn:
-            update_fn(STAGE_FINISHED, 100, tr("Print started"))
+            update_fn(STAGE_FINISHED, 100, finished_line(tr("Print started"), warnings))
         return OK
 
     def start_local_print_with_record(self, params, update_fn, cancel_fn, wait_fn):
@@ -865,17 +1303,23 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
         try:
             svc = service()
             if svc.target is None:
-                svc.set_target(_target())
+                svc.set_target(_target(preset_hints_from_worker(svc)))
             deadline = time.monotonic() + CHECK_SECONDS
             host = svc.wait_located(CHECK_SECONDS).host
             conn = svc.ready(host, timeout=max(1.0, deadline - time.monotonic()))
+        except locate.NotFound as e:
+            text = tr("Couldn't reach the Kobra X: %s") % e
+            if e.pending or e.candidates:   # only the tab can ask OrcaSlicer about them or let the user choose
+                text += " " + tr("Open the Kobra Control tab to allow or choose the printer.")
+            return orca.ExecutionResult.skipped(text)
         except Exception as e:
-            return orca.ExecutionResult.skipped(tr("Couldn't reach the Kobra X: %s") % e)
+            return orca.ExecutionResult.skipped(" ".join([tr("Couldn't reach the Kobra X: %s") % e] + preset_gcode_warnings()))
         view = conn.view()
         data, _ = status_data(view)
         loaded = ", ".join("S%d %s" % (s["global_index"] + 1, s["type"] or "?") for s in data["slots"] if s["status"] == 5)
-        return orca.ExecutionResult.success(tr("%s at %s (firmware %s), %s. %s") % (
-            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded.")))
+        return orca.ExecutionResult.success(" ".join([tr("%s at %s (firmware %s), %s. %s") % (
+            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded."))]
+            + preset_gcode_warnings()))
 
 
 class FindCertificate(orca.script.ScriptPluginCapabilityBase):
@@ -903,14 +1347,18 @@ class KobraControl(orca.base):
         _storage()
         hosts = known_hosts()
         _granted.update(hosts)
+        try:   # the upload bridge listens on 127.0.0.1: asked for at load only when it is on
+            local = ["http://" + bridge.HOST] if get_store().effective()["bridge_enabled"] else []
+        except Exception:
+            local = []
         # Network I/O runs on the plugin's own threads. fs_read: OrcaSlicer's per-user temp folder, where Print and
         # Send hand over the sliced .3mf (the certificate is read from the plugin's own package, which needs no
         # grant; Anycubic Slicer Next's folders are read only when the user asks, and asked for then). network:
         # every printer address known now and the SSDP multicast group the network search sends to (a canonical
         # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
         # contact.
-        orca.request_permissions(threading=True, fs_read=job_read_grants(),
-                                 network=["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP])
+        network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
+        orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)
         orca.register_capability(CheckConnection)

@@ -44,11 +44,24 @@ From a file:
 |---|---|
 | OrcaSlicer | 2.5.0 or newer, the stock build. No patched build is needed. |
 | Printer | An Anycubic Kobra X on the same network, with LAN mode enabled. Checked on firmware 2.0.2.8. |
-| `ffmpeg` | Only for the camera in the Kobra Control tab. The Device tab camera works without it. |
+| `ffmpeg` | Optional. The Kobra Control tab plays the camera with its built-in player; `ffmpeg` is only needed when that player can't (an RTSP stream, or a system without H.264 video support, possible on Linux). The Device tab camera works without it. |
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
 
-> **Status: in development.** The plugin's service layer was run against a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing, jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the printer, and nothing has been tested inside OrcaSlicer itself.
+### Verified on the printer
+
+Run on a real Kobra X through the plugin's service layer, outside OrcaSlicer. The dates come from the [changelog](CHANGELOG.md) and [docs/protocol.md](docs/protocol.md).
+
+| What was checked | Firmware | Date |
+|---|---|---|
+| Connect, credentials, status, ACE slots, file list, details, upload and delete, light, camera stream | 2.0.2.8 | 2026-11-14 |
+| Homing, jogging and heating while idle | 2.0.2.8 | 2026-11-14 |
+| A print from a `.3mf` with a slot mapping, finish detection and the job's filament use | 2.0.2.8 | 2026-11-14 |
+| How the printer answers the network search (SSDP) | 2.0.2.8 | 2026-11-15 |
+| Listing the time-lapse videos | 2.0.2.8 | 2026-11-16 |
+| Deleting a time-lapse video | 2.0.2.8 | 2026-11-16 |
+
+Not tried on the printer yet: pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode, Spoolman booking, flow calibration and time-lapse at print start, the Printer panel and Print Assist, and the G-code checks. Nothing has been tested inside OrcaSlicer itself (Device tab, Print dialog, permission dialogs).
 
 Kobra Control is an independent project. It is not made or supported by Anycubic.
 
@@ -79,7 +92,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 
 | Feature | What you get |
 |---|---|
-| Printer agent | The agent id is `kobracontrol`. Print and Send use the filament-to-slot mapping you pick in OrcaSlicer's print dialog, with auto-leveling, flow calibration and time-lapse from that dialog and vibration compensation from the plugin's settings. |
+| Printer agent | The agent id is `kobracontrol`. Print and Send use the filament-to-slot mapping you pick in OrcaSlicer's print dialog, with auto-leveling, flow calibration and time-lapse from that dialog and vibration compensation from the plugin's settings. Before sending, it reads the sliced G-code and warns when the settings block or a PNG preview picture is missing. |
 | Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
 | Dashboard | Status and controls, moves and homing, the camera, the filament card, a Printer panel and the Spoolman and Spooler stock. |
 | Printer panel | Name and **Rename**, firmware, network address, print counters and the **Print Assist** switches. |
@@ -87,7 +100,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 | Time-lapses | The printer's time-lapse videos with print, date, length and size, and **Delete**. The printer offers no way to download a video over the local network yet. |
 | Spoolman | Link a Spoolman spool to a slot. Finished prints book their filament use there when the option is on. |
 | Works with Spooler | [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament profiles. With it installed, the Dashboard shows Spooler's stock. Kobra Control also works alongside [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
-| Settings | Connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
+| Settings | Requirements (ffmpeg, Anycubic Slicer Next, OrcaSlicer's printer agents and Spoolman: what is found, what needs it, how to install it), connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
 | Plugins > Run | **Check Kobra X connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
 
 Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and other Kobra models.
@@ -99,7 +112,7 @@ Not supported: Anycubic Cloud and access from outside your local network, a G-co
 2. Open the **Kobra Control** tab. It looks for the printer by itself. The first time, OrcaSlicer asks once whether kobracontrol may connect to that address. Allow it.
 3. Use the **Dashboard** to follow the print, set temperatures, turn the camera on with **Turn on**, and feed, retract or dry filament.
 4. To print a file stored on the printer, open **Files**, press **Print** on the file, check the panel and press **Start printing**.
-5. To send prints from OrcaSlicer itself, tick **Preferences > Developer > Experimental Features > Use printer agents**. Then, in a copy of your Kobra X printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
+5. To send prints from OrcaSlicer itself, open **Preferences > Developer > Experimental Features**, tick **Use printer agents instead of print hosts** and restart OrcaSlicer. Then, in a copy of your Kobra X printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
 6. Run **Plugins > Check Kobra X connection**. Then, in OrcaSlicer's print dialog, sync the ACE slots, map each filament to a slot and send the print.
 
 <p align="center">
@@ -118,6 +131,21 @@ After a print starts, the printer can spend many minutes in preparation (heating
 Full steps and a troubleshooting table are in [docs/setup.md](docs/setup.md).
 
 ## 🔒 Privacy and safety
+
+### What the plugin can access
+
+| OrcaSlicer permission | What it is used for |
+|---|---|
+| Network: the printer's address and the multicast group 239.255.255.250 | HTTP on port 18910 (credentials, G-code upload), MQTT over TLS on port 9883 (status and commands) and the network search. OrcaSlicer asks once for a printer found later. |
+| Network: your Spoolman address, only if you set one | Spool links and filament use. |
+| Read: OrcaSlicer's temporary folder | The sliced file that Print and Send hand over. It is read, checked and uploaded as it is, never changed. |
+| Read: Anycubic Slicer Next's files, only when you press **Find certificate** | Its client certificate. OrcaSlicer asks first. |
+| Run: `ffmpeg`, only for the camera in the tab | Turning the printer's stream into pictures. OrcaSlicer shows the command and asks. |
+| Threads | Network work off OrcaSlicer's main thread. |
+
+Print files and commands go to the printer, spool links and filament use go to Spoolman, and nothing goes anywhere else. There is no telemetry and no analytics. The plugin writes files only in its own storage folder (settings, the print ledger, the printers it found) and reads Spooler's stock list when Spooler is installed.
+
+### Network and certificate
 
 Kobra Control connects only to the Kobra X and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as a Kobra X in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. There is no cloud service.
 
@@ -150,7 +178,7 @@ Yes. Leave your printer preset as it is. The Kobra Control tab finds the printer
 <details>
 <summary>Why does OrcaSlicer ask for permission to run ffmpeg?</summary>
 
-The camera in the Kobra Control tab uses `ffmpeg` to turn the printer's stream into pictures. When the camera starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
+Only when the built-in player can't play the camera does the Kobra Control tab use `ffmpeg` to turn the printer's stream into pictures. When it starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
 </details>
 
 <details>
@@ -168,7 +196,13 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 <details>
 <summary>The printer preset has no kobracontrol Printer Agent.</summary>
 
-**Use printer agents** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
+**Use printer agents instead of print hosts** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
+</details>
+
+<details>
+<summary>Can a spool use my own tuned filament preset?</summary>
+
+Yes, through OrcaSlicer's sync from AMS. In Spoolman add a Text extra field with the key `orca_filament_preset` to spools or filaments (**Settings > Extra fields**) and type your preset's name in it; the spool's value wins over the filament's. It must be one of your own presets and compatible with the printer. Sync can only load a standalone preset (one that inherits nothing, such as a detached copy); a preset made with **Save as** inherits its parent and sync would load the parent, so the slot keeps the usual preset. A name that isn't found shows a notice once. Details in [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
 </details>
 
 <details>
@@ -179,7 +213,7 @@ Not yet. The printer has no known way to hand a video over the local network, so
 
 ## 🌍 Languages
 
-English, Brazilian Portuguese, Spanish, German and Simplified Chinese. The tab follows OrcaSlicer's language, and **Settings > Language** changes it.
+English, Brazilian Portuguese, Spanish, German, Simplified Chinese and Polish. The tab follows OrcaSlicer's language, and **Settings > Language** changes it.
 
 ## 🧩 More plugins by bloodf
 
@@ -201,5 +235,7 @@ Bug reports, logs and pull requests are welcome. Start with [CONTRIBUTING.md](CO
 ## 📄 License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
+
+Printer photo: Anycubic product image (see [NOTICE.md](NOTICE.md)).
 
 <p align="center"><sub>by bloodf</sub></p>
