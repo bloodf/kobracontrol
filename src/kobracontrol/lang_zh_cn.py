@@ -259,4 +259,11 @@ TEXT = {
     'Kobra Control — print setup': 'Kobra Control — 打印设置',
     'filament %d is another material than its slot holds; the print was not started': '耗材 %d 与其槽位中的材料不同；未开始打印',
     'ACE auto feed was not changed (%s); the print starts anyway': 'ACE 自动进料未更改（%s）；仍开始打印',
+    # G-code checks before sending (gcode_check.py)
+    'G-code warning: see the notification.': 'G-code 警告：请查看通知。',
+    'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'G-code 末尾没有设置块。Kobra X 的屏幕很可能从中读取耗材和打印信息。可能的原因：已开启“跳过 G-code 配置块”。请在“打印机设置 > 基础信息 > 高级”中关闭它，然后重新切片。',
+    'The G-code has no preview picture, so the Kobra X screen probably shows the file without one. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG, and slice again.': 'G-code 没有预览图，因此 Kobra X 的屏幕很可能显示不带图片的文件。请在“打印机设置 > 基础信息 > 高级”中设置“G-code缩略图尺寸”，例如 300x300/PNG，然后重新切片。',
+    "The G-code's preview picture is not a PNG, and the Kobra X screen probably shows only PNG pictures. Use /PNG sizes in Printer settings > Basic information > Advanced > G-code thumbnails, for example 300x300/PNG, and slice again.": 'G-code 的预览图不是 PNG，而 Kobra X 的屏幕很可能只显示 PNG 图片。请在“打印机设置 > 基础信息 > 高级 > G-code缩略图尺寸”中使用 /PNG 尺寸，例如 300x300/PNG，然后重新切片。',
+    'Skip G-code config block is on in this printer preset. The Kobra X screen probably reads the filament and print details from that block. Turn it off in Printer settings > Basic information > Advanced.': '此打印机预设已开启“跳过 G-code 配置块”。Kobra X 的屏幕很可能从该配置块读取耗材和打印信息。请在“打印机设置 > 基础信息 > 高级”中关闭它。',
+    'This printer preset writes no PNG preview picture (G-code thumbnails: %s). The Kobra X screen probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG.': '此打印机预设不写入 PNG 预览图（G-code缩略图尺寸：%s）。Kobra X 的屏幕很可能只显示 PNG 图片。请在“打印机设置 > 基础信息 > 高级”中设置“G-code缩略图尺寸”，例如 300x300/PNG。',
 }

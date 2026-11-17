@@ -26,6 +26,14 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   - A "Plugin settings" link switches the Kobra Control tab to Settings.
 - Settings > Print defaults: "Show print setup before sending" (on by default) and "Remember these options for this
   printer".
+- **G-code checks before sending.** OrcaSlicer's Print and Send through kobracontrol read the plate's G-code first
+  (only its first 1 MB and last 256 kB, never changing it) and warn when the settings block at its end is missing or
+  when it has no PNG preview picture. The Kobra X screen probably reads the filament and print details and the
+  picture from those blocks. The warning, an OrcaSlicer notification, names the setting to change (Skip G-code config
+  block, G-code thumbnails); the Print dialog's last line points to it. It never stops the print. Check Kobra X
+  connection names the same settings when the selected Kobra X printer preset has them, read on OrcaSlicer's main
+  thread. New texts in all six languages. See `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on
+  a Kobra X.
 - **Settings > Requirements** lists what Kobra Control needs and can't install itself: ffmpeg (the tab's camera),
   Anycubic Slicer Next (optional, only for Find certificate), OrcaSlicer's "Use printer agents instead of print
   hosts" (Print, Send and the Device tab) and Spoolman (optional, spool links). Each row says whether it was found,
@@ -44,7 +52,9 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - Notifications wait while OrcaSlicer is in another tab or app; errors stay until closed. A closed warning comes back when
   its problem clears and later returns, and a closed out-of-date warning stays closed while the status stays out of date.
 - Settings lists what the certificate, the camera (ffmpeg), Spoolman and Spooler need on this computer, whether each was found, and how to install it.
-
+- The README, its Portuguese version and the Orca Cloud description show what was verified on the printer, with the
+  firmware and the date, and what the plugin can access: each OrcaSlicer permission, what is sent where, and that
+  there is no telemetry.
 - The status card shows a photo of the Kobra X in place of the small printer icon. Its four spools take the colour
   of the Spoolman spool linked to each slot (bands for a multi-colour spool), else the colour the ACE reports, and an
   empty slot shows a bare reel; the wound texture stays. The feeding slot and its tube glow and the toolhead display
@@ -54,7 +64,6 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Without Spoolman, refreshing and linking spools are off.
 
 ### Fixed
-
 - OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
 - The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
   (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera

@@ -48,7 +48,20 @@ From a file:
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
 
-> **Status: in development.** The plugin's service layer was run against a real Kobra X (firmware 2.0.2.8) outside OrcaSlicer: connect, status, ACE, files, light, camera stream, homing, jogging, heating and a print from a `.3mf`. Pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode and Spoolman booking have not been tried on the printer, and nothing has been tested inside OrcaSlicer itself.
+### Verified on the printer
+
+Run on a real Kobra X through the plugin's service layer, outside OrcaSlicer. The dates come from the [changelog](CHANGELOG.md) and [docs/protocol.md](docs/protocol.md).
+
+| What was checked | Firmware | Date |
+|---|---|---|
+| Connect, credentials, status, ACE slots, file list, details, upload and delete, light, camera stream | 2.0.2.8 | 2026-11-14 |
+| Homing, jogging and heating while idle | 2.0.2.8 | 2026-11-14 |
+| A print from a `.3mf` with a slot mapping, finish detection and the job's filament use | 2.0.2.8 | 2026-11-14 |
+| How the printer answers the network search (SSDP) | 2.0.2.8 | 2026-11-15 |
+| Listing the time-lapse videos | 2.0.2.8 | 2026-11-16 |
+| Deleting a time-lapse video | 2.0.2.8 | 2026-11-16 |
+
+Not tried on the printer yet: pause, resume, stop, filament feed and retract, drying, slot edit, skip objects, speed mode, Spoolman booking, flow calibration and time-lapse at print start, the Printer panel and Print Assist, and the G-code checks. Nothing has been tested inside OrcaSlicer itself (Device tab, Print dialog, permission dialogs).
 
 Kobra Control is an independent project. It is not made or supported by Anycubic.
 
@@ -79,7 +92,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 
 | Feature | What you get |
 |---|---|
-| Printer agent | The agent id is `kobracontrol`. After OrcaSlicer's Print dialog, Kobra Control's own print setup window opens, so there are two dialogs: OrcaSlicer has no hook to replace its own. The window starts from OrcaSlicer's choice and shows each filament's slot (same material only, with its Spoolman spool) and the print options, then sends exactly that. Send uses OrcaSlicer's dialog only. |
+| Printer agent | The agent id is `kobracontrol`. After OrcaSlicer's Print dialog, Kobra Control's own print setup window opens, so there are two dialogs: OrcaSlicer has no hook to replace its own. The window starts from OrcaSlicer's choice and shows each filament's slot (same material only, with its Spoolman spool) and the print options, then sends exactly that. Send uses OrcaSlicer's dialog only. Before sending, it reads the sliced G-code and warns when the settings block or a PNG preview picture is missing. |
 | Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
 | Dashboard | Status and controls, moves and homing, the camera, the filament card, a Printer panel and the Spoolman and Spooler stock. |
 | Printer panel | Name and **Rename**, firmware, network address, print counters and the **Print Assist** switches. |
@@ -118,6 +131,21 @@ After a print starts, the printer can spend many minutes in preparation (heating
 Full steps and a troubleshooting table are in [docs/setup.md](docs/setup.md).
 
 ## 🔒 Privacy and safety
+
+### What the plugin can access
+
+| OrcaSlicer permission | What it is used for |
+|---|---|
+| Network: the printer's address and the multicast group 239.255.255.250 | HTTP on port 18910 (credentials, G-code upload), MQTT over TLS on port 9883 (status and commands) and the network search. OrcaSlicer asks once for a printer found later. |
+| Network: your Spoolman address, only if you set one | Spool links and filament use. |
+| Read: OrcaSlicer's temporary folder | The sliced file that Print and Send hand over. It is read, checked and uploaded as it is, never changed. |
+| Read: Anycubic Slicer Next's files, only when you press **Find certificate** | Its client certificate. OrcaSlicer asks first. |
+| Run: `ffmpeg`, only for the camera in the tab | Turning the printer's stream into pictures. OrcaSlicer shows the command and asks. |
+| Threads | Network work off OrcaSlicer's main thread. |
+
+Print files and commands go to the printer, spool links and filament use go to Spoolman, and nothing goes anywhere else. There is no telemetry and no analytics. The plugin writes files only in its own storage folder (settings, the print ledger, the printers it found) and reads Spooler's stock list when Spooler is installed.
+
+### Network and certificate
 
 Kobra Control connects only to the Kobra X and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as a Kobra X in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. There is no cloud service.
 
