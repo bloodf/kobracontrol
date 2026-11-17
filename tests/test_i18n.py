@@ -51,6 +51,10 @@ class CatalogueTests(unittest.TestCase):
             same = [en for en, text in cat.items() if en == text]
             self.assertLessEqual(len(same), 5, "%s: %s" % (lang, same))
 
+    def test_polish_is_complete(self):
+        self.assertIn("pl", i18n.LANGUAGES)
+        self.assertEqual(sorted(i18n.CATALOGUES["pl"]), sorted(marked_texts()))
+
     def test_chinese_uses_chinese_punctuation(self):
         for en, text in i18n.CATALOGUES["zh-CN"].items():
             if re.search(r"[一-鿿]", text):
@@ -63,13 +67,14 @@ class LanguageTests(unittest.TestCase):
 
     def test_normalize(self):
         cases = {"pt_BR": "pt-BR", "pt": "pt-BR", "es_ES": "es", "es-419": "es", "de_DE": "de", "de": "de",
-                 "zh_CN": "zh-CN", "zh_TW": "zh-CN", "zh-Hant": "zh-CN", "en_US": "en", "fr_FR": None, "": None, None: None}
+                 "zh_CN": "zh-CN", "zh_TW": "zh-CN", "zh-Hant": "zh-CN", "pl_PL": "pl", "pl": "pl", "PL-pl": "pl", "en_US": "en", "fr_FR": None, "": None, None: None}
         for code, want in cases.items():
             self.assertEqual(i18n.normalize(code), want, code)
 
     def test_resolve_prefers_settings_then_orcaslicer_then_english(self):
         self.assertEqual(i18n.resolve("de", "zh_CN"), "de")
         self.assertEqual(i18n.resolve("auto", "zh_TW"), "zh-CN")
+        self.assertEqual(i18n.resolve("auto", "pl_PL"), "pl")
         self.assertEqual(i18n.resolve("auto", "ja_JP"), "en")
         self.assertEqual(i18n.resolve("auto", None), "en")
 

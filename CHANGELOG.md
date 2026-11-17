@@ -11,13 +11,14 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   picture from those blocks. The warning, an OrcaSlicer notification, names the setting to change (Skip G-code config
   block, G-code thumbnails); the Print dialog's last line points to it. It never stops the print. Check Kobra X
   connection names the same settings when the selected Kobra X printer preset has them, read on OrcaSlicer's main
-  thread. See `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on
+  thread. New texts in all six languages. See `docs/setup.md`, section 7. Checked with the repository's tests and sample G-code files; not tried on
   a Kobra X.
 - **Settings > Requirements** lists what Kobra Control needs and can't install itself: ffmpeg (the tab's camera),
   Anycubic Slicer Next (optional, only for Find certificate), OrcaSlicer's "Use printer agents instead of print
   hosts" (Print, Send and the Device tab) and Spoolman (optional, spool links). Each row says whether it was found,
   what needs it and how to install it on macOS, Windows and Linux, with a Check again button. The check runs once
   on a thread of its own after the tab opens and again only on Check again or a Settings save.
+- Polish (pl) translation. Thanks to @xtronets for asking (u1control#20).
 
 ### Changed
 - Spools are drawn with the photo spool again.
@@ -39,6 +40,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Without Spoolman, refreshing and linking spools are off.
 
 ### Fixed
+- OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
 - The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
   (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
   on by itself.
