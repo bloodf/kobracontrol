@@ -18,6 +18,7 @@ TEXT = {
     'not a camera stream URL': '不是摄像头视频流地址',
     'ffmpeg was not found': '未找到 ffmpeg',
     'the printer has not announced a camera stream': '打印机尚未提供摄像头视频流',
+    'the camera stream ended': '摄像头视频流已中断',
     'ffmpeg ended': 'ffmpeg 已退出',
     "OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.": "OrcaSlicer 未允许 kobracontrol 读取 %s。请在 OrcaSlicer 的权限对话框（插件 > 权限）中允许，然后再次点击“查找证书”。在此之前，将使用插件内置的证书。",
     "%s is nested deeper than %d folders; point to the slicer's library folder": "%s 的文件夹层级超过 %d 层；请指向切片软件的库文件夹",

@@ -1,6 +1,7 @@
 """What Kobra Control needs and cannot install itself, for Settings > Requirements. Free of the `orca` module.
 
-    ffmpeg            the tab's camera (missing: the camera is not started at all)
+    ffmpeg            optional: the tab's camera when the page's own player can't play it (missing: that fallback
+                      is not started)
     anycubic_slicer   only Find certificate reads it; the certificate is bundled (missing: that search is off)
     printer_agents    OrcaSlicer's "Use printer agents instead of print hosts": Print/Send and the Device tab
                       ("missing" here means "not detected": a plugin can't read the preference itself)

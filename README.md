@@ -44,7 +44,7 @@ From a file:
 |---|---|
 | OrcaSlicer | 2.5.0 or newer, the stock build. No patched build is needed. |
 | Printer | An Anycubic Kobra X on the same network, with LAN mode enabled. Checked on firmware 2.0.2.8. |
-| `ffmpeg` | Only for the camera in the Kobra Control tab. The Device tab camera works without it. |
+| `ffmpeg` | Optional. The Kobra Control tab plays the camera with its built-in player; `ffmpeg` is only needed when that player can't (an RTSP stream, or a system without H.264 video support, possible on Linux). The Device tab camera works without it. |
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
 
@@ -178,7 +178,7 @@ Yes. Leave your printer preset as it is. The Kobra Control tab finds the printer
 <details>
 <summary>Why does OrcaSlicer ask for permission to run ffmpeg?</summary>
 
-The camera in the Kobra Control tab uses `ffmpeg` to turn the printer's stream into pictures. When the camera starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
+Only when the built-in player can't play the camera does the Kobra Control tab use `ffmpeg` to turn the printer's stream into pictures. When it starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
 </details>
 
 <details>

@@ -8,7 +8,7 @@ import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirem
 import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, wrench } from '../../shared/src/icons';
 import { UI_VERSION } from '../../shared/src';
 import CertFinder from './CertFinder.vue';
-import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, requirement, checkRequirements } from '../app/store';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, pagePlays, requirement, checkRequirements } from '../app/store';
 import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
 import type { Requirement, RequirementId } from '../app/types';
 import type { MessageKey } from '../core/messages';
@@ -48,7 +48,9 @@ const isKey = (k: string): k is MessageKey => k.includes('.');   // else a produ
 const need = (r: Requirement): Need => (s.checking && ROWS[r.id].fileCheck ? 'checking' : r.state === 'ok' ? 'found' : r.state);
 const needLabel = (r: Requirement) => {
   const n = need(r), row = ROWS[r.id];
-  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : row.missing);
+  // ffmpeg is optional only where the page plays the camera itself ('Not installed (optional)')
+  const missing = r.id === 'ffmpeg' && pagePlays.value ? 'req.slicer.missing' : row.missing;
+  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : missing);
 };
 const smDetail = computed(() => [requirement('spoolman')?.details, s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : '')].filter(Boolean).join(' · '));
 const detail = (r: Requirement) => (r.state !== 'ok' ? undefined : r.id === 'certificate' ? certText.value : r.id === 'spooler' ? t('spooler.installed')

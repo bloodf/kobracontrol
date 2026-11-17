@@ -18,6 +18,7 @@ TEXT = {
     'not a camera stream URL': 'no es una URL de transmisión de la cámara',
     'ffmpeg was not found': 'no se encontró ffmpeg',
     'the printer has not announced a camera stream': 'la impresora no ha anunciado ninguna transmisión de la cámara',
+    'the camera stream ended': 'la transmisión de la cámara se cortó',
     'ffmpeg ended': 'ffmpeg terminó',
     "OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.": "OrcaSlicer no permitió que kobracontrol leyera %s. Permítalo en el diálogo de permisos de OrcaSlicer (Plugins > Permisos) y pulse de nuevo Buscar certificado. Mientras tanto, se usa el certificado incluido en el plugin.",
     "%s is nested deeper than %d folders; point to the slicer's library folder": "%s está anidado a más de %d carpetas de profundidad; indique la carpeta de bibliotecas del laminador",

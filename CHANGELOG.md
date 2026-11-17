@@ -5,6 +5,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 ## [Unreleased]
 
 ### Added
+
+- The camera in the Kobra Control tab no longer needs `ffmpeg`. The plugin reads the printer's video stream
+  (H.264 in FLV) and the page plays it with the webview's own video player, at the printer's full 1280x720 and
+  10 fps. Playback was checked with a recording of a real Kobra X stream in Chrome (as in WebView2 on Windows)
+  and in WebKit (as on macOS); Linux has not been tried. It reconnects when the stream drops and follows the
+  printer when the stream address changes. `ffmpeg` is now optional: it is only used for an RTSP stream or
+  when the webview can't play H.264 (possible on Linux without the GStreamer codecs).
 - **G-code checks before sending.** OrcaSlicer's Print and Send through kobracontrol read the plate's G-code first
   (only its first 1 MB and last 256 kB, never changing it) and warn when the settings block at its end is missing or
   when it has no PNG preview picture. The Kobra X screen probably reads the filament and print details and the

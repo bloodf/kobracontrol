@@ -11,7 +11,7 @@ Run the Anycubic Kobra X from OrcaSlicer over your LAN.
 
 - OrcaSlicer 2.5.0 or newer.
 - An Anycubic Kobra X on the same network, with LAN mode enabled (checked on firmware 2.0.2.8).
-- `ffmpeg`, only for the camera in the Kobra Control tab.
+- `ffmpeg` is optional: only for the Kobra Control tab's camera when its built-in player can't play the stream.
 
 Anycubic Slicer Next is not required: the client certificate the printer asks for is bundled.
 
@@ -81,7 +81,7 @@ Controle a Anycubic Kobra X pelo OrcaSlicer na sua rede.
 
 - OrcaSlicer 2.5.0 ou mais novo.
 - Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado (conferido no firmware 2.0.2.8).
-- `ffmpeg`, só para a câmera da aba Kobra Control.
+- `ffmpeg` é opcional: só para a câmera da aba Kobra Control quando o player embutido não consegue mostrar a transmissão.
 
 O Anycubic Slicer Next não é necessário: o certificado de cliente que a impressora exige vem no plugin.
 

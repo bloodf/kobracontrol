@@ -677,6 +677,61 @@ test('camera errors: a plain explanation per reason', `
   await until(() => q('.cam-view img'), 'recovers when frames come back');
 `);
 
+// The printer's real stream (tests/kobra_x_camera.flv, 3.5 s from a Kobra X) remuxed by fmp4.py, as Relay sends it.
+const CAMERA = JSON.parse(execFileSync('python3', ['-c', `import base64, json, sys
+sys.path.insert(0, "src/kobracontrol")
+import fmp4
+ev = fmp4.Remuxer().feed(open("tests/kobra_x_camera.flv", "rb").read())
+b = lambda x: base64.b64encode(x).decode()
+print(json.dumps({"codec": ev[0][1], "init": b(ev[0][2]), "media": [b(e[1]) for e in ev[1:]], "keys": [e[2] for e in ev[1:]]}))`], { cwd: repo, encoding: 'utf8', maxBuffer: 64 << 20 }));
+
+test('camera: the page plays the printer stream itself (no ffmpeg) and says it can in the lease', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  assert(last('lease').mse === true, 'lease: this page plays H.264');
+  const cam = ${JSON.stringify(CAMERA)};
+  await until(() => last('video_reset'), 'the attached player asks for the stream init');
+  await post({type: 'video', data: cam.media[0], key: true});
+  assert(sent().filter(m => m.type === 'video_reset').length >= 1 && q('.cam-empty'), 'data without init: not shown, init asked for');
+  await post({type: 'video', codec: cam.codec, init: cam.init});
+  assert(q('.cam-empty'), 'still "starting" until frames actually play');
+  for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  eq(sent().filter(m => m.type === 'video_ack').length, cam.media.length + 1, 'every fragment acknowledged (Relay backpressure)');
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && v.videoHeight === 720 && v.currentTime > 0, 'the stream plays: ' + v.videoWidth + 'x' + v.videoHeight + ' t=' + v.currentTime + ' err=' + (v.error && v.error.message));
+  await until(() => !q('.cam-empty') && !v.classList.contains('cam-hidden'), 'shown once playing');
+  assert(!q('.cam-view img'), 'no JPEG');
+  await post({type: 'camera_error', error: 'gone', reason: 'failed'});
+  assert(q('.cam-empty') && v.classList.contains('cam-hidden'), 'an error replaces the picture');
+`);
+
+test('camera: a stream the page cannot decode is handed back to the plugin (video_error)', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  await until(() => last('video_reset'), 'player attached');
+  const cam = ${JSON.stringify(CAMERA)};
+  await post({type: 'video', codec: 'avc1.ffffff', init: cam.init});
+  await until(() => last('video_error'), 'an unplayable codec reports video_error');
+  assert(q('.cam-empty'), 'nothing shown as playing');
+  await post({type: 'video', codec: cam.codec, init: cam.init});   // the next stream (or a retry) plays again
+  for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && !q('.cam-empty'), 'recovers on a new init');
+`);
+
+test('camera: delta frames before a keyframe are skipped, and a long burst still plays', `
+  await ready(VIEW());
+  await click(byTest('camera'));
+  await until(() => last('video_reset'), 'player attached');
+  const cam = ${JSON.stringify(CAMERA)};
+  await post({type: 'video', codec: cam.codec, init: cam.init});
+  for (let i = 1; i < 10; i++) await post({type: 'video', data: cam.media[i], key: false});   // mid-GOP: unusable
+  for (let r = 0; r < 3; r++) for (let i = 0; i < cam.media.length; i++) await post({type: 'video', data: cam.media[i], key: cam.keys[i]});
+  const v = q('[data-test="cam-video"]');
+  await until(() => v.videoWidth === 1280 && !v.error, 'plays from the first keyframe: err=' + (v.error && v.error.message));
+  assert(!last('video_error'), 'no failure reported');
+`);
+
 test('the camera starts on only when the saved setting says so', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
@@ -685,11 +740,13 @@ test('the camera starts on only when the saved setting says so', `
 `);
 
 // ------------------------------------------------------------------ requirements
-test('requirements: no ffmpeg turns the camera off with one reason and leads to Settings', `
+test('requirements: no ffmpeg keeps the built-in player; a page without it turns the camera off with one reason', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, camera_enabled: true}}));
   await post({type: 'status', data: VIEW()});
   await post(REQS());
+  assert(q('.cam-view') && last('lease').mse === true, 'the built-in player needs no ffmpeg');
+  await post({type: 'status', data: VIEW({camera_url: 'rtsp://192.168.1.50/live'})});   // only ffmpeg plays RTSP
   assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
   assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
   assert(byTest('camera').disabled, 'Turn on is off');
@@ -698,6 +755,7 @@ test('requirements: no ffmpeg turns the camera off with one reason and leads to 
   await post(REQS());
   await click(byTest('cam-req'));
   assert(q('[data-need="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  assert(text(q('[data-need="ffmpeg"]')).includes('Not found') && !text(q('[data-need="ffmpeg"]')).includes('optional'), 'needed for RTSP, so not optional: ' + text(q('[data-need="ffmpeg"]')));
   await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
   await tab('dash');
   await until(() => q('.cam-view'), 'found again: the camera is back on');
@@ -721,7 +779,7 @@ test('requirements: Settings lists each one with its state, why and how; Check a
   const state = id => q('.oui-status', row(id));
   eq(qa('[data-need]').map(r => r.dataset.need), ['certificate', 'ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman', 'spooler'], 'one row each, one section');
   eq(qa('[data-test="requirements"]').length, 1, 'one Requirements section');
-  eq(text(state('ffmpeg')), 'Not found', 'ffmpeg missing');
+  eq(text(state('ffmpeg')), 'Not installed (optional)', 'ffmpeg missing: optional, the page plays the camera itself');
   assert(text(row('ffmpeg')).includes('brew install ffmpeg') && text(row('ffmpeg')).includes('winget install Gyan.FFmpeg')
     && text(row('ffmpeg')).includes('sudo apt install ffmpeg') && text(row('ffmpeg')).includes('ffmpeg path'), 'install help per OS: ' + text(row('ffmpeg')));
   eq(q('a', row('ffmpeg')).getAttribute('href'), 'https://ffmpeg.org/download.html', 'official link');
