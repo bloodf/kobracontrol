@@ -1,6 +1,5 @@
 /* Kobra Control's own layout on top of the shared foundation (ui/shared): the page grid, rows inside a panel, plain
    tables and the printer drawing. Colours are the foundation's --oui-* roles only; nothing here defines a colour. */
-html, body, #app { min-height: 100%; }
 
 /* Chinese punctuation from the system's Chinese font. Manrope has the Latin quotes and ellipsis, so “…” and … came out
    as narrow Latin marks in Chinese text; letters and figures stay Manrope's. */
