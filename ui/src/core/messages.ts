@@ -638,6 +638,7 @@ export const en = {
   'req.spoolman.missing': 'Not configured (optional)',
   'req.spoolman.how': 'Enter its address under Spoolman, or use Spooler with Spoolman.',
   'cam.noFfmpeg': 'ffmpeg isn’t installed: see Settings > Requirements.',
+  'cam.checkingFfmpeg': 'Looking for ffmpeg…',
   'cert.noSlicer': 'Anycubic Slicer Next isn’t in its usual folder: type where it is to search there.',
 } as const;
 
@@ -1279,5 +1280,6 @@ export const ptBR: Record<MessageKey, string> = {
   'req.spoolman.missing': 'Não configurado (opcional)',
   'req.spoolman.how': 'Informe o endereço em Spoolman, ou use o Spooler com Spoolman.',
   'cam.noFfmpeg': 'O ffmpeg não está instalado: veja Ajustes > Requisitos.',
+  'cam.checkingFfmpeg': 'Procurando o ffmpeg…',
   'cert.noSlicer': 'O Anycubic Slicer Next não está na pasta usual: digite onde ele está para procurar lá.',
 };

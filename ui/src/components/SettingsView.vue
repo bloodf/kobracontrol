@@ -27,7 +27,7 @@ const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form
 const smInfo = computed(() => (!spoolmanSet.value ? t('sm.notConfigured') : s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded'))));
 const smWhy = computed(() => controlsOff.value || (spoolmanSet.value ? '' : t('sm.notConfigured')));
 // Something the camera or OrcaSlicer's own Print/Device tab needs is missing (optional ones never warn).
-const reqWarn = computed(() => !s.checking && (noFfmpeg.value || requirement('printer_agents')?.state === 'unknown'));
+const reqWarn = computed(() => !s.checking && (noFfmpeg.value || requirement('printer_agents')?.state === 'missing'));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
   ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);

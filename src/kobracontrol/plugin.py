@@ -407,7 +407,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 svc.set_target(_target(), retry=True)   # a new address connects at once; the same one now
                 result = {"saved": True}
                 self.post_message(self._config_message())
-                self._requirements(svc)   # checked again only when the ffmpeg path changed
+                self._requirements(svc, force=True)   # a Settings save checks again, as Check again does
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})

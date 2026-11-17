@@ -608,5 +608,6 @@ export const zhCN: Record<MessageKey, string> = {
   'req.spoolman.missing': "未配置（可选）",
   'req.spoolman.how': "在 Spoolman 中填写其地址，或使用带 Spoolman 的 Spooler。",
   'cam.noFfmpeg': "未安装 ffmpeg：请查看“设置 > 运行要求”。",
+  'cam.checkingFfmpeg': "正在查找 ffmpeg…",
   'cert.noSlicer': "Anycubic Slicer Next 不在常用文件夹中：请填写其位置以在那里查找。",
 };

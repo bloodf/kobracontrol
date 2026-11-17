@@ -42,7 +42,7 @@ const SETTINGS = {host: '', printer_name: 'Bench Kobra', ui_language: 'auto', ff
 const CONFIG = extra => ({type: 'config', settings: SETTINGS, certificate: CERT, spooler: {installed: true, url: 'https://example.org/spooler', dismissed: false}, version: '0.1.0',
   limits: {nozzle_max: 300, bed_max: 100}, ...extra});
 const REQS = (o) => ({type: 'requirements', checking: false, items: [{id: 'ffmpeg', state: 'missing', details: ''},
-  {id: 'anycubic_slicer', state: 'missing', details: ''}, {id: 'printer_agents', state: 'unknown', details: ''},
+  {id: 'anycubic_slicer', state: 'missing', details: ''}, {id: 'printer_agents', state: 'missing', details: ''},
   {id: 'spoolman', state: 'ok', details: 'http://box:7912'}].map(i => ({...i, ...((o || {})[i.id] || {})}))});
 async function connect(gen) {
   await until(() => last('hello'), 'hello sent');
@@ -646,11 +646,23 @@ test('requirements: no ffmpeg turns the camera off with one reason and leads to 
   assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
   assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
   assert(byTest('camera').disabled, 'Turn on is off');
+  await post({...REQS(), checking: true});
+  assert(text(byTest('cam-why')).includes('Looking for ffmpeg'), 'a re-check says so: ' + text(byTest('cam-why')));
+  await post(REQS());
   await click(byTest('cam-req'));
   assert(q('[data-req="ffmpeg"]'), 'the button leads to Settings > Requirements');
   await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
   await tab('dash');
   await until(() => q('.cam-view'), 'found again: the camera is back on');
+`);
+
+test('requirements: before the first check the camera can be turned on and says it is starting', `
+  await ready(VIEW());
+  await post({type: 'requirements', checking: true, items: [{id: 'ffmpeg', state: 'unknown', details: ''}]});
+  assert(!byTest('camera').disabled, 'not off without a reason');
+  assert(text(q('.cam-card')).includes('Looking for ffmpeg'), 'says it is checking: ' + text(q('.cam-card')));
+  await click(byTest('camera'));
+  assert(text(q('.cam-empty')).length > 0 && q('.cam-view'), 'starting, with its text: ' + text(q('.cam-empty')));
 `);
 
 test('requirements: Settings lists each one with its state, why and how; Check again asks the plugin', `
@@ -668,6 +680,14 @@ test('requirements: Settings lists each one with its state, why and how; Check a
   assert(text(row('printer_agents')).includes('Use printer agents instead of print hosts') && text(row('printer_agents')).includes('restart OrcaSlicer'), 'agent steps');
   eq(text(row('spoolman').querySelector('[data-test="req-state"]')), 'Configured', 'spoolman');
   assert(!row('spoolman').querySelector('[data-test="req-link"]'), 'no install help once there');
+  await post(REQS({printer_agents: {state: 'unknown'}, ffmpeg: {state: 'ok', details: '/usr/bin/ffmpeg'}}));
+  eq(text(row('printer_agents').querySelector('[data-test="req-state"]')), 'Not checked yet', 'unknown is not a warning');
+  eq(row('printer_agents').querySelector('[data-test="req-state"]').dataset.state, 'pending', 'no warn badge');
+  const navWarn = () => qa('.oui-settings-link[data-state="warn"]').some(e => text(e).includes('Requirements'));
+  assert(!navWarn(), 'no warning on the nav either');
+  await post(REQS());
+  eq(row('printer_agents').querySelector('[data-test="req-state"]').dataset.state, 'warn', 'not detected warns');
+  assert(navWarn(), 'and the nav says so');
   await click(byTest('req-check'));
   assert(last('check_requirements'), 'Check again sent');
   await post({...REQS(), checking: true});

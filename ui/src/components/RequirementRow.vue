@@ -21,11 +21,12 @@ const SPECS: Record<RequirementId, Spec> = {
     how: ['req.spoolman.how'], link: 'https://github.com/Donkie/Spoolman', optional: true },
 };
 const spec = computed(() => SPECS[props.item.id]);
-// The printer agent setting can't be read, only seen in use: "unknown" there means "not detected".
+// "unknown" is "not checked yet" (no warning). The printer agent setting can't be read, only seen in use: its
+// "missing" means "not detected".
 const fileCheck = computed(() => props.item.id === 'ffmpeg' || props.item.id === 'anycubic_slicer');
-const pending = computed(() => fileCheck.value && (props.checking || props.item.state === 'unknown'));
+const pending = computed(() => props.item.state === 'unknown' || (fileCheck.value && !!props.checking));
 const tone = computed<OuiState>(() => (pending.value ? 'pending' : props.item.state === 'ok' ? 'ok' : spec.value.optional ? 'idle' : 'warn'));
-const label = computed(() => (pending.value ? t(props.checking ? 'req.checking' : 'req.unknown')
+const label = computed(() => (pending.value ? t(props.checking && fileCheck.value ? 'req.checking' : 'req.unknown')
   : t(props.item.state === 'ok' ? spec.value.ok : spec.value.missing)));
 </script>
 

@@ -116,7 +116,7 @@ Plugin to page:
 | `frame` | `image` (JPEG data URL) |
 | `camera_error` | `error`, `reason` (`no_ffmpeg`, `no_stream`, `failed`) |
 | `config` | `settings`, `certificate` (`{found, source}`), `spooler`, `version`, `limits` (`{nozzle_max, bed_max}`) |
-| `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`; `state` `ok`, `missing`, `unknown`). Sent after `hello`, `save_settings` and `check_requirements`, and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a new ffmpeg path; without ffmpeg the monitor never starts the camera |
+| `requirements` | `checking`, `items` (`[{id, state, details}]`: `id` `ffmpeg`, `anycubic_slicer`, `printer_agents`, `spoolman`; `state` `ok`, `missing`, `unknown` = not checked yet; for `printer_agents` `missing` means not detected). Sent after `hello`, `save_settings` and `check_requirements`, and when a check finishes. The file checks run once on their own thread (requirements.py) and are cached until Check again or a Settings save; without ffmpeg the monitor never starts the camera |
 | `notice` | `text` |
 | `offline` | `error` |
 | `selection_changed` | |

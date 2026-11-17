@@ -637,5 +637,6 @@ export const es: Record<MessageKey, string> = {
   'req.spoolman.missing': "Sin configurar (opcional)",
   'req.spoolman.how': "Indique su dirección en Spoolman, o use Spooler con Spoolman.",
   'cam.noFfmpeg': "ffmpeg no está instalado: vea Ajustes > Requisitos.",
+  'cam.checkingFfmpeg': "Buscando ffmpeg…",
   'cert.noSlicer': "Anycubic Slicer Next no está en su carpeta habitual: escriba dónde está para buscar allí.",
 };

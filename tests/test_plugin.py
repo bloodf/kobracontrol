@@ -512,15 +512,16 @@ class Requirements(Base):
         page.on_message({"type": "hello", "id": 1})
         msg = self.done(page)
         self.assertEqual({i["id"]: i["state"] for i in msg["items"]},
-                         {"ffmpeg": "missing", "anycubic_slicer": "missing", "printer_agents": "unknown", "spoolman": "missing"})
+                         {"ffmpeg": "missing", "anycubic_slicer": "missing", "printer_agents": "missing", "spoolman": "missing"})
         page.on_message({"type": "hello", "id": 2})                 # cached
-        page.on_message({"type": "save_settings", "id": 3, "settings": {"printer_name": "Bench"}})   # ffmpeg path unchanged
         self.assertEqual(self.runs, [""])
         page.on_message({"type": "check_requirements"})
-        self.done(page, 4)
-        page.on_message({"type": "save_settings", "id": 4, "settings": {"ffmpeg_path": "/opt/ffmpeg"}})
+        wait(lambda: len(self.runs) == 2)
+        page.on_message({"type": "save_settings", "id": 3, "settings": {"printer_name": "Bench"}})   # any save checks again
         wait(lambda: len(self.runs) == 3)
-        self.assertEqual(self.runs, ["", "", "/opt/ffmpeg"])
+        page.on_message({"type": "save_settings", "id": 4, "settings": {"ffmpeg_path": "/opt/ffmpeg"}})
+        wait(lambda: len(self.runs) == 4)
+        self.assertEqual(self.runs, ["", "", "", "/opt/ffmpeg"])
 
     def test_agent_detected_when_orca_made_one(self):
         plugin.KobraAgent()
@@ -545,6 +546,7 @@ class Requirements(Base):
     def test_nothing_checked_at_registration(self):
         plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
         plugin.KobraControl().register_capabilities()
+        plugin.KobraControlPage(), plugin.KobraAgent(), plugin.CheckConnection()   # nor on capability construction
         plugin.service()   # nor when the service starts: only a page asking checks
         time.sleep(0.2)
         self.assertEqual(self.runs, [])

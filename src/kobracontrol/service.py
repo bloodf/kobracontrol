@@ -496,8 +496,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             with self.lock:
                 target, gen = self.target, self.generation
                 active = now < self.lease_until and target is not None
-                # no ffmpeg (or not checked yet): the camera is not started at all, so nothing fails every second
-                cam = active and self.camera_on and target.camera_enabled and bool(self.requirements.ffmpeg())
+                # no ffmpeg: the camera is not started at all, so nothing fails every second (not checked yet: it
+                # starts and looks for ffmpeg once itself; a no_ffmpeg then marks it missing)
+                cam = active and self.camera_on and target.camera_enabled and self.requirements.ffmpeg() != ""
             if not active:
                 self._guard("camera", self.camera.stop)
                 self._closing.wait(0.25)
@@ -536,7 +537,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if key != self._capture:
             self._capture = key
             threading.Thread(target=printer.start_camera, name="kobracontrol-capture", daemon=True).start()
-        self.camera.set_ffmpeg(self.requirements.ffmpeg())
+        self.camera.set_ffmpeg(self.requirements.ffmpeg() or target.ffmpeg_path)
         self.camera.start()
 
     def check_requirements(self, ffmpeg_setting, force=False):
@@ -558,6 +559,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.publish({"type": "frame", "image": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()})
 
     def _on_camera_error(self, reason, text):
+        if reason == "no_ffmpeg":   # gone since the check: missing now, so the monitor stops starting the camera
+            self.requirements.mark_missing("ffmpeg")
         self.publish({"type": "camera_error", "reason": reason, "error": text})
 
     def _track_loop(self):

@@ -10,11 +10,11 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Anycubic Slicer Next (optional, only for Find certificate), OrcaSlicer's "Use printer agents instead of print
   hosts" (Print, Send and the Device tab) and Spoolman (optional, spool links). Each row says whether it was found,
   what needs it and how to install it on macOS, Windows and Linux, with a Check again button. The check runs once
-  on a thread of its own after the tab opens and again only on Check again or when the ffmpeg path changes.
+  on a thread of its own after the tab opens and again only on Check again or a Settings save.
 
 ### Changed
 
-- Without ffmpeg the camera is not started at all (it used to look for ffmpeg every second while on): its button is
+- Without ffmpeg the camera is not started at all (it used to look for ffmpeg every second while on), and if ffmpeg disappears mid-session the camera stops after one report: its button is
   off with the reason. Without an Anycubic Slicer Next install, Find certificate searches only a path typed in.
   Without Spoolman, refreshing and linking spools are off.
 

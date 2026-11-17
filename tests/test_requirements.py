@@ -69,7 +69,7 @@ class CheckerCache(unittest.TestCase):
         self.assertEqual(self.runs, [])
         self.assertFalse(self.checker.checking)
         self.assertEqual([i["state"] for i in self.checker.items()], ["unknown", "unknown"])
-        self.assertEqual(self.checker.ffmpeg(), "")   # unchecked: the camera waits
+        self.assertIsNone(self.checker.ffmpeg())   # unchecked: the camera looks for ffmpeg itself
 
     def test_cached_until_check_again_or_a_new_setting(self):
         self.checker.ensure("")
@@ -79,6 +79,7 @@ class CheckerCache(unittest.TestCase):
         self.assertFalse(self.checker.checking)
         self.assertEqual(self.runs, [""])
         self.checker.ensure("", force=True)         # Check again
+        self.assertEqual(self.checker.ffmpeg(), "/bin/ffmpeg")   # the last result stays while it runs
         self.settle()
         self.checker.ensure("/opt/ffmpeg")          # the ffmpeg path setting changed
         self.settle()
@@ -86,12 +87,24 @@ class CheckerCache(unittest.TestCase):
         self.assertEqual(self.checker.ffmpeg(), "/opt/ffmpeg")
         self.assertEqual([i["state"] for i in self.checker.items()], ["ok", "missing"])
 
+    def test_mark_missing(self):
+        self.checker.mark_missing("ffmpeg")   # before any check: the camera's own lookup found nothing
+        self.assertEqual(self.checker.ffmpeg(), "")
+        self.assertEqual([i["state"] for i in self.checker.items()], ["missing", "unknown"])
+        self.done.clear()
+        self.checker.ensure("")
+        self.settle()
+        self.checker.mark_missing("ffmpeg")
+        self.assertTrue(self.done.is_set())
+        self.assertEqual(self.checker.items()[0]["state"], "missing")
+        self.assertEqual(self.checker.ffmpeg(), "")
+
     def test_a_failing_check_is_unknown(self):
         with mock.patch.object(requirements, "check_ffmpeg", side_effect=OSError("boom")):
             self.checker.ensure("x")
             self.settle()
         self.assertEqual(self.checker.items()[0], {"id": "ffmpeg", "state": "unknown", "details": ""})
-        self.assertEqual(self.checker.ffmpeg(), "")
+        self.assertIsNone(self.checker.ffmpeg())
 
     def test_message(self):
         m = requirements.message(self.checker, True, "http://spoolman.lan:7912")
@@ -99,7 +112,7 @@ class CheckerCache(unittest.TestCase):
         self.assertEqual({i["id"]: i["state"] for i in m["items"]},
                          {"ffmpeg": "unknown", "anycubic_slicer": "unknown", "printer_agents": "ok", "spoolman": "ok"})
         m = requirements.message(self.checker, False, "")
-        self.assertEqual({i["id"]: i["state"] for i in m["items"]}["printer_agents"], "unknown")   # "not detected"
+        self.assertEqual({i["id"]: i["state"] for i in m["items"]}["printer_agents"], "missing")   # "not detected"
         self.assertEqual({i["id"]: i["state"] for i in m["items"]}["spoolman"], "missing")
 
 

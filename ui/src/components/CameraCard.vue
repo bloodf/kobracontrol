@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
-import { s, lease, controlsOff, link, printerName, noFfmpeg } from '../app/store';
+import { s, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
 import { t } from '../core/i18n';
 
 async function toggle() {
@@ -23,8 +23,11 @@ const msg = computed(() => {
 });
 // No ffmpeg: the camera can't run at all, so it shows as off with that one reason (the plugin does not start it).
 const off = computed(() => noFfmpeg.value || (link.value !== 'connected' && !s.camOn));
-const why = computed(() => (noFfmpeg.value ? t('cam.noFfmpeg') : controlsOff.value || t('reason.waiting')));
+// While a re-check runs the last answer stands; say it is being looked at again rather than only "missing".
+const why = computed(() => (noFfmpeg.value ? t(s.checking ? 'cam.checkingFfmpeg' : 'cam.noFfmpeg') : controlsOff.value || t('reason.waiting')));
 const shown = computed(() => s.camOn && !noFfmpeg.value);
+// Being looked for: said, but the camera can still be turned on (it then looks for ffmpeg itself).
+const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state !== 'ok');
 </script>
 
 <template>
@@ -36,7 +39,7 @@ const shown = computed(() => s.camOn && !noFfmpeg.value);
     </template>
     <!-- The same reason as every other control: the page shows one connection state. -->
     <OuiEmpty v-if="!shown" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
-      <span v-if="off" data-test="cam-why">{{ why }}</span><template v-else>{{ t('cam.offHint') }}</template>
+      <span v-if="off" data-test="cam-why">{{ why }}</span><template v-else>{{ ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint') }}</template>
       <template #actions><Button v-if="noFfmpeg" size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="s.tab = 'settings'" />
         <Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && !noFfmpeg && controlsOff ? 'kc-why' : undefined"
                                  data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>

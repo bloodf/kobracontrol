@@ -831,17 +831,69 @@ class CameraNeedsFfmpeg(Base):
         self.assertNotIn("start", self.svc.camera.calls)
         self.assertFalse([m for m in self.published if m.get("type") == "camera_error"])
 
+    def test_before_the_check_the_camera_looks_for_ffmpeg_itself(self):
+        self.svc.target.ffmpeg_path = "/my/ffmpeg"
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.assertIn(("ffmpeg", "/my/ffmpeg"), self.svc.camera.calls)
+        self.svc.camera.on_error("no_ffmpeg", "ffmpeg was not found")   # its one lookup failed
+        time.sleep(0.3)
+        starts = self.svc.camera.calls.count("start")
+        time.sleep(0.6)
+        self.assertEqual(self.svc.camera.calls.count("start"), starts)   # not started again and again
+
+    def test_requirements_reach_the_page_through_the_service_publish(self):
+        """The checker thread's answer goes out through Service.publish, the path every worker-thread message takes."""
+        threads, publish = [], self.svc.publish
+        self.svc.publish = lambda m: (threads.append((m.get("type"), threading.current_thread().name)), publish(m))
+        self.check("")
+        self.assertIn(("requirements", "kobracontrol-requirements"), threads)
+
     def test_found_ffmpeg_starts_the_camera_with_that_path(self):
         self.check("/opt/ff/ffmpeg")
         self.svc.touch(camera=True)
         wait(lambda: "start" in self.svc.camera.calls)
         self.assertIn(("ffmpeg", "/opt/ff/ffmpeg"), self.svc.camera.calls)
 
+    def test_ffmpeg_gone_mid_session_is_marked_missing_and_not_restarted(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        self.svc.camera.on_error("no_ffmpeg", "ffmpeg was not found")   # the reader found it gone and ended
+        self.assertEqual(self.svc.requirements.items()[0]["state"], "missing")
+        self.assertEqual(self.svc.requirements.ffmpeg(), "")
+        time.sleep(0.3)
+        starts = self.svc.camera.calls.count("start")
+        time.sleep(0.6)
+        self.assertEqual(self.svc.camera.calls.count("start"), starts)   # the monitor stopped starting it
+        last = [m for m in self.published if m.get("type") == "requirements"][-1]
+        self.assertEqual(last["items"][0]["state"], "missing")   # the page is told at once
+
+    def test_a_recheck_keeps_a_running_camera_running(self):
+        self.check("/opt/ff/ffmpeg")
+        self.svc.touch(camera=True)
+        wait(lambda: "start" in self.svc.camera.calls)
+        gate, seen = threading.Event(), len(self.svc.camera.calls)
+        self.addCleanup(gate.set)
+        slow = lambda s: gate.wait(10) and service.requirements.item("ffmpeg", "ok", "/opt/ff/ffmpeg")
+        with mock.patch.object(service.requirements, "check_ffmpeg", side_effect=slow), \
+                mock.patch.object(service.requirements, "check_anycubic_slicer",
+                                  return_value=service.requirements.item("anycubic_slicer", "missing")):
+            self.svc.check_requirements("", force=True)   # a Settings save
+            self.assertTrue(self.svc.requirements.checking)
+            self.assertEqual(self.svc.requirements.ffmpeg(), "/opt/ff/ffmpeg")   # the last result stays meanwhile
+            time.sleep(0.5)
+            gate.set()
+            wait(lambda: not self.svc.requirements.checking)
+        time.sleep(0.3)
+        self.svc.touch(camera=True)
+        self.assertNotIn("stop", self.svc.camera.calls[seen:])   # never switched off while checking
+
     def test_spoolman_and_agent_in_the_message(self):
         msg = self.check("")
         items = {i["id"]: i for i in msg["items"]}
         self.assertEqual(items["spoolman"], {"id": "spoolman", "state": "ok", "details": "http://spoolman.invalid"})
-        self.assertEqual(items["printer_agents"]["state"], "unknown")
+        self.assertEqual(items["printer_agents"]["state"], "missing")   # not detected
 
 
 class CameraPrinterGone(Base):
