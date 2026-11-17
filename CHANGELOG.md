@@ -6,6 +6,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ### Changed
 - Spools are drawn with the photo spool again.
+- The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.
+- Settings are tabs: one section at a time, and the save bar stays on screen at any window height.
 
 ## [0.7.0] - 2026-11-16
 

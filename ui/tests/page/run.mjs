@@ -48,7 +48,7 @@ async function connect(gen) {
 async function ready(view, gen) { await connect(gen); await post(CONFIG()); await post({type: 'status', data: view || VIEW()}); }
 async function tab(name) { await click(q('[data-tab="' + name + '"]')); }
 async function pick(root, label) {
-  assert(root, 'select to open'); root.click(); await until(() => q('.p-select-overlay') && !q('.p-select-overlay[class*="enter-active"]'), 'select overlay open');
+  assert(root, 'select to open'); await reveal(root); root.click(); await until(() => q('.p-select-overlay') && !q('.p-select-overlay[class*="enter-active"]'), 'select overlay open');
   // the overlay is positioned when the option stops moving (a filtered list shifts while it focuses its search field)
   const first = qa('.p-select-overlay [role=option]')[0];
   let at = '', steady = 0;
@@ -1435,7 +1435,7 @@ test('the tabs switch panels and the lease follows the visible tab', `
 test('one main landmark holds the three tab panels', `
   await ready(VIEW());
   eq(qa('main').length, 1, 'one main');
-  eq(qa('main [role=tabpanel]').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
+  eq(qa('main [role=tabpanel]:not(.oui-settings-body)').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
 `);
 
 test('skip objects says why it is off when Stop still works', `
