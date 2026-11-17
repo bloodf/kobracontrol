@@ -16,6 +16,11 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
   (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
   on by itself.
+- OrcaSlicer could fail to start, or crash, after Kobra Control was installed and a Kobra X printer preset was
+  edited: the plugin read the printer preset while OrcaSlicer was still loading its presets. It now reads only its
+  own files while loading and asks about the preset's printer address later, once OrcaSlicer is up.
+- OrcaSlicer could close by itself at start-up, or while the Device tab was open, if one of the status updates
+  Kobra Control hands to it failed. Such a failure is now written to the log and OrcaSlicer keeps running.
 
 ## [0.7.0] - 2026-11-16
 
