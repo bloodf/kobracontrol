@@ -50,6 +50,6 @@ const tabs = computed(() => [
   <ConfirmDialog />
 
   <!-- What commands answered, bottom-left; on Settings it sits above the save bar. -->
-  <OuiToastHost :close-label="t('common.close')" :label="t('msg.toasts')" :class="{ 'kc-toasts-raised': s.tab === 'settings' }" />
+  <OuiToastHost :close-label="t('common.close')" :label="t('msg.toasts')" />
 
 </template>
