@@ -18,6 +18,7 @@ TEXT = {
     'not a camera stream URL': 'no es una URL de transmisión de la cámara',
     'ffmpeg was not found': 'no se encontró ffmpeg',
     'the printer has not announced a camera stream': 'la impresora no ha anunciado ninguna transmisión de la cámara',
+    'the camera stream ended': 'la transmisión de la cámara se cortó',
     'ffmpeg ended': 'ffmpeg terminó',
     "OrcaSlicer did not let kobracontrol read %s. Allow it in OrcaSlicer's permission dialog (Plugins > Permissions), then press Find certificate again. Until then the certificate bundled with the plugin is used.": "OrcaSlicer no permitió que kobracontrol leyera %s. Permítalo en el diálogo de permisos de OrcaSlicer (Plugins > Permisos) y pulse de nuevo Buscar certificado. Mientras tanto, se usa el certificado incluido en el plugin.",
     "%s is nested deeper than %d folders; point to the slicer's library folder": "%s está anidado a más de %d carpetas de profundidad; indique la carpeta de bibliotecas del laminador",
@@ -259,6 +260,8 @@ TEXT = {
     'Kobra Control — print setup': 'Kobra Control — preparar impresión',
     'filament %d is another material than its slot holds; the print was not started': 'el filamento %d es de otro material que el de su ranura; la impresión no se inició',
     'ACE auto feed was not changed (%s); the print starts anyway': 'la alimentación automática del ACE no se cambió (%s); la impresión empieza de todos modos',
+    'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman indica el perfil de filamento "%s", que no es uno de sus perfiles para esta impresora en OrcaSlicer. La ranura mantiene el perfil habitual.',
+    'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman indica el perfil de filamento "%s", que coincide con varios de sus perfiles en OrcaSlicer si se ignoran mayúsculas y minúsculas. La ranura mantiene el perfil habitual.',
     # G-code checks before sending (gcode_check.py)
     'G-code warning: see the notification.': 'Aviso sobre el G-code: vea la notificación.',
     'The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic information > Advanced and slice again.': 'El G-code no tiene el bloque de ajustes al final. La pantalla de la Kobra X probablemente lee de él los filamentos y los detalles de la impresión. Causa probable: Omitir el bloque de configuración del G-code está activado. Desactívelo en Ajustes de la impresora > Información básica > Avanzado y vuelva a laminar.',

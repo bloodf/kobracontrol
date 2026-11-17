@@ -26,6 +26,12 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   - A "Plugin settings" link switches the Kobra Control tab to Settings.
 - Settings > Print defaults: "Show print setup before sending" (on by default) and "Remember these options for this
   printer".
+- The camera in the Kobra Control tab no longer needs `ffmpeg`. The plugin reads the printer's video stream
+  (H.264 in FLV) and the page plays it with the webview's own video player, at the printer's full 1280x720 and
+  10 fps. Playback was checked with a recording of a real Kobra X stream in Chrome (as in WebView2 on Windows)
+  and in WebKit (as on macOS); Linux has not been tried. It reconnects when the stream drops and follows the
+  printer when the stream address changes. `ffmpeg` is now optional: it is only used for an RTSP stream or
+  when the webview can't play H.264 (possible on Linux without the GStreamer codecs).
 - **G-code checks before sending.** OrcaSlicer's Print and Send through kobracontrol read the plate's G-code first
   (only its first 1 MB and last 256 kB, never changing it) and warn when the settings block at its end is missing or
   when it has no PNG preview picture. The Kobra X screen probably reads the filament and print details and the
@@ -40,6 +46,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   what needs it and how to install it on macOS, Windows and Linux, with a Check again button. The check runs once
   on a thread of its own after the tab opens and again only on Check again or a Settings save.
 - Polish (pl) translation. Thanks to @xtronets for asking (u1control#20).
+- A Spoolman spool (or its filament) can name your own OrcaSlicer filament preset in the extra field `orca_filament_preset`. When it is a standalone user preset compatible with the printer, the Device tab reports its `filament_id`, so OrcaSlicer's sync from AMS loads it for that ACE slot; a preset that inherits from another can't be loaded by sync and keeps the usual preset. A name that isn't one of your compatible presets shows a notice once.
 
 ### Changed
 

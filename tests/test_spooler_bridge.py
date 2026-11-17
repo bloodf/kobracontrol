@@ -134,3 +134,35 @@ class TrayIdTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LinkedPresetTests(unittest.TestCase):
+    """A spool's orca_filament_preset names one of the user's own presets (spoolman.linked_preset)."""
+
+    def user(self, name, compatible=True, file="", inherits=""):
+        return {"name": name, "compatible": compatible, "file": file, "inherits": inherits}
+
+    def test_exact_name_then_the_only_case_insensitive_match_and_only_when_compatible(self):
+        mine, other = self.user("My PLA"), self.user("my pla")
+        self.assertEqual(sb.find_user_preset("My PLA", [other, mine]), (mine, ""))
+        self.assertEqual(sb.find_user_preset("MY PLA", [other, mine]), (None, "ambiguous"))   # two loose matches
+        self.assertEqual(sb.find_user_preset("MY PLA", [mine]), (mine, ""))
+        self.assertEqual(sb.find_user_preset("My PLA", [self.user("My PLA", compatible=False)]), (None, "missing"))
+        self.assertEqual(sb.find_user_preset("Missing", [mine]), (None, "missing"))
+
+    def test_standalone_id_from_the_preset_file_never_for_an_inheriting_preset(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        path = os.path.join(folder, "My PLA.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"name": "My PLA", "inherits": "", "filament_id": " P1234567 "}, f)
+        self.assertEqual(sb.standalone_id(self.user("My PLA", file=path)), "P1234567")
+        self.assertEqual(sb.standalone_id(self.user("My PLA", file=path, inherits="Generic PLA @System")), "")
+        logged = []
+        self.assertEqual(sb.standalone_id(self.user("My PLA", file=os.path.join(folder, "gone.json")), logged.append), "")
+        self.assertEqual(len(logged), 1)
+        self.assertEqual(sb.standalone_id(self.user("My PLA")), "")
+        self.assertEqual(sb.standalone_id(None), "")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"name": "My PLA", "filament_id": ""}, f)
+        self.assertEqual(sb.standalone_id(self.user("My PLA", file=path)), "")

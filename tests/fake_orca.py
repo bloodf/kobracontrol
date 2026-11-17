@@ -136,6 +136,11 @@ def install_orca(answer=None, preset=None, filament_names=(), filament_meta=None
             self.name = name
             self.bundle_id = filament_meta.get(name, {}).get("bundle_id", "")
             self.filament_id = filament_meta.get(name, {}).get("filament_id", "")
+            self.is_compatible = filament_meta.get(name, {}).get("is_compatible", True)
+            self.file = filament_meta.get(name, {}).get("file", "")
+
+        def is_user(self):
+            return filament_meta.get(self.name, {}).get("is_user", False)
 
         def config_value(self, key):
             return filament_meta.get(self.name, {}).get(key)

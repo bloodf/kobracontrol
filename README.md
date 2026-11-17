@@ -44,7 +44,7 @@ From a file:
 |---|---|
 | OrcaSlicer | 2.5.0 or newer, the stock build. No patched build is needed. |
 | Printer | An Anycubic Kobra X on the same network, with LAN mode enabled. Checked on firmware 2.0.2.8. |
-| `ffmpeg` | Only for the camera in the Kobra Control tab. The Device tab camera works without it. |
+| `ffmpeg` | Optional. The Kobra Control tab plays the camera with its built-in player; `ffmpeg` is only needed when that player can't (an RTSP stream, or a system without H.264 video support, possible on Linux). The Device tab camera works without it. |
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
 
@@ -178,7 +178,7 @@ Yes. Leave your printer preset as it is. The Kobra Control tab finds the printer
 <details>
 <summary>Why does OrcaSlicer ask for permission to run ffmpeg?</summary>
 
-The camera in the Kobra Control tab uses `ffmpeg` to turn the printer's stream into pictures. When the camera starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
+Only when the built-in player can't play the camera does the Kobra Control tab use `ffmpeg` to turn the printer's stream into pictures. When it starts, OrcaSlicer shows the full command with the printer's stream address and asks. It asks again when that address changes, which happens when the printer restarts. The Device tab camera does not need `ffmpeg`.
 </details>
 
 <details>
@@ -197,6 +197,12 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 <summary>The printer preset has no kobracontrol Printer Agent.</summary>
 
 **Use printer agents instead of print hosts** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
+</details>
+
+<details>
+<summary>Can a spool use my own tuned filament preset?</summary>
+
+Yes, through OrcaSlicer's sync from AMS. In Spoolman add a Text extra field with the key `orca_filament_preset` to spools or filaments (**Settings > Extra fields**) and type your preset's name in it; the spool's value wins over the filament's. It must be one of your own presets and compatible with the printer. Sync can only load a standalone preset (one that inherits nothing, such as a detached copy); a preset made with **Save as** inherits its parent and sync would load the parent, so the slot keeps the usual preset. A name that isn't found shows a notice once. Details in [docs/setup.md](docs/setup.md#8-use-your-own-filament-preset-for-a-spool-optional).
 </details>
 
 <details>

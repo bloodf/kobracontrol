@@ -13,14 +13,23 @@ acknowledged (ACK_TIMEOUT s later it goes on anyway, a lost ack must not freeze 
 on_error(reason, text): reason is "no_ffmpeg", "no_stream" or "failed" (ffmpeg ended without a frame; text
 is the last line of its stderr). Called again only when the reason or text changes. "no_ffmpeg" ends the reader:
 it is reported once, not looked up again every second (the service marks ffmpeg missing and stops asking).
+
+Relay is the default without ffmpeg: it reads the printer's HTTP-FLV itself and hands fragmented MP4 to the
+page's own player (fmp4.py). Same start/stop/close; on_video({"codec", "init"}) then on_video({"data"}); its
+on_error adds "unsupported" (the stream is not FLV/H.264: use ffmpeg instead).
 """
 
+import http.client
 import os
 import shutil
+import socket
+import struct
 import subprocess
 import threading
 import time
+import urllib.parse
 
+import fmp4
 from i18n import tr
 
 MAX_FPS = 5.0
@@ -264,3 +273,158 @@ class Camera:
                 self.on_frame(frame)
             except Exception as e:
                 self.log("kobracontrol camera: on_frame raised %r" % (e,))
+
+
+STALL_S = 10.0   # no bytes for this long: the stream is dead, reconnect
+RECONNECT_S = 0.5
+STEADY_S = 5.0   # a connection that played this long resets the backoff; a shorter one counts as a failure
+MAX_UNACKED = 30   # fragments the page has not acknowledged (3 s at 10 fps): drop to the next keyframe
+
+
+class Relay(Camera):
+    """The printer's HTTP-FLV stream remuxed to fragmented MP4 for the page's player: no ffmpeg involved.
+    Reconnects when the stream drops, starts over when the printer rotates the stream token (a new URL), and
+    sends nothing before the first keyframe. resend_init(): a page player that (re)attached gets the current
+    stream's init segment again (it then skips fragments up to the next keyframe). ack(): the page took a
+    fragment; while MAX_UNACKED are outstanding, fragments are dropped up to the next keyframe. stop() and close()
+    return at once (the threads wind down on their own), so the UI thread never waits on the network."""
+
+    def __init__(self, get_url, on_video, on_error=None, connect=http.client.HTTPConnection, backoff=(2.0, 60.0),
+                 idle_s=15.0, log=print, clock=time.monotonic):
+        super().__init__(get_url, on_video, "", on_error, backoff=backoff, idle_s=idle_s, log=log, clock=clock)
+        self.connect = connect
+        self._init = None   # the current stream's init message, for a player that attaches later
+        self._unacked, self._skipping, self._acked_at = 0, False, 0.0
+        self._sgen = 0   # the current connection; fragments of an older one are dropped
+
+    def resend_init(self):
+        init = self._init
+        if init is not None and not self._stop.is_set():
+            with self._cond:   # a new player: acks owed by the old one will never come
+                self._unacked, self._skipping = 0, False
+            self._deliver(init)
+
+    def ack(self):
+        with self._cond:
+            self._unacked = max(0, self._unacked - 1)
+            self._acked_at = self.clock()
+        self._touched = self.clock()
+
+    def _join(self):   # never waits: the old threads see their stop event and end within a poll
+        self._stop.set()
+        self._threads = []
+
+    def _send(self):   # Camera's frame pacing is not needed: every fragment goes out, the decoder needs them all
+        self._stop.wait()
+
+    def _run(self):
+        stop, fails = self._stop, 0
+        try:
+            while not stop.is_set():
+                if self.clock() - self._touched > self.idle_s:
+                    return
+                url = self.get_url()
+                if not isinstance(url, str) or not url.lower().startswith("http://") or not url[7:]:
+                    self._fail("no_stream", tr("the printer has not announced a camera stream"))
+                    stop.wait(0.5)
+                    continue
+                began = self.clock()
+                got, reason, text, changed = self._session(url, stop)
+                if stop.is_set():
+                    return
+                if changed or got and self.clock() - began >= STEADY_S:   # it played: reconnect at once
+                    fails = 0
+                    stop.wait(0 if changed else RECONNECT_S)
+                    continue
+                if not got:   # a stream that plays a moment and drops backs off quietly, without an error
+                    self._fail(reason, text or tr("the camera stream ended"))
+                fails += 1
+                stop.wait(min(self.backoff[0] * 2 ** (fails - 1), self.backoff[1]))
+        finally:
+            stop.set()
+
+    def _session(self, url, stop):
+        """Read one connection until it ends, the URL changes or we stop. (got, reason, error text, url_changed)"""
+        parts = urllib.parse.urlsplit(url)
+        done = threading.Event()
+        box = {"sock": None, "got": False, "reason": "failed", "error": ""}
+        self._sgen += 1
+        gen = self._sgen
+
+        def pump():
+            conn = None
+            try:
+                conn = self.connect(parts.hostname, parts.port or 80, timeout=STALL_S)
+                conn.connect()
+                box["sock"] = conn.sock
+                if done.is_set():
+                    return
+                conn.request("GET", (parts.path or "/") + ("?" + parts.query if parts.query else ""))
+                resp = conn.getresponse()
+                if resp.status not in (200, 206):
+                    raise fmp4.FlvError("HTTP %d" % resp.status)
+                remux = fmp4.Remuxer()
+                self._init = None
+                while not done.is_set():
+                    chunk = resp.read1(65536)
+                    if not chunk:
+                        return
+                    for event in remux.feed(chunk):
+                        if done.is_set():
+                            return
+                        if not box["got"]:
+                            box["got"], self._last_error = True, None
+                        if gen != self._sgen:   # a newer connection took over
+                            return
+                        self._emit(event)
+            except fmp4.Unsupported as e:
+                box.update(reason="unsupported", error=str(e))
+            except (OSError, ValueError, struct.error, http.client.HTTPException) as e:   # FlvError is a ValueError
+                box["error"] = str(e) or type(e).__name__
+            finally:
+                if conn is not None:
+                    conn.close()
+
+        worker = threading.Thread(target=pump, daemon=True, name="kobracontrol-camera-relay")
+        worker.start()
+        changed = False
+        while not stop.is_set() and worker.is_alive():
+            if self.clock() - self._touched > self.idle_s:
+                stop.set()
+            elif self.get_url() != url:
+                changed = True
+                break
+            stop.wait(POLL)
+        done.set()
+        if box["sock"] is not None:
+            try:
+                box["sock"].shutdown(socket.SHUT_RDWR)   # unblocks a read waiting on a silent printer
+            except OSError:
+                pass
+        worker.join(2)
+        return box["got"], box["reason"], box["error"], changed
+
+    def _emit(self, event):
+        if event[0] == "init":
+            message = self._init = {"codec": event[1], "init": event[2]}
+            with self._cond:
+                self._unacked, self._skipping = 0, False
+        else:
+            with self._cond:   # a page that falls behind: skip to a keyframe rather than queue without end
+                if self._unacked and self.clock() - self._acked_at > ACK_TIMEOUT:
+                    self._unacked = 0   # acks lost (a reloaded page): never freeze the picture on them
+                if self._unacked >= MAX_UNACKED or self._skipping and not event[2]:
+                    self._skipping = True
+                    return
+                self._skipping = False
+                if not self._unacked:
+                    self._acked_at = self.clock()   # the clock for ACK_TIMEOUT starts at the first unacked one
+                self._unacked += 1
+            message = {"data": event[1], "key": event[2]}
+        self._deliver(message)
+
+    def _deliver(self, message):
+        try:
+            self.on_frame(message)
+        except Exception as e:
+            self.log("kobracontrol camera: on_video raised %r" % (e,))

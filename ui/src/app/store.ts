@@ -5,6 +5,7 @@ import { showToast } from '../../shared/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { boundSlots } from '../core/logic';
+import { playable } from '../core/player';
 import type { Certificate, Config, Info, Limits, Located, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
 
 export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 'unreachable';
@@ -30,6 +31,7 @@ export const s = reactive({
   hidden: document.hidden,
   camOn: false,
   frame: '',
+  video: false,                      // the page's own player shows the stream (no ffmpeg)
   camError: '',
   camReason: '',
   stock: null as StockView | null,
@@ -65,7 +67,9 @@ export const tracker = new Tracker(
 export const run = (o: RunOptions) => tracker.run(o);
 export const requirement = (id: RequirementId) => s.requirements.find(r => r.id === id);
 /** ffmpeg was looked for and is not there: the camera is off (the plugin does not start it either). */
-export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing');
+// ffmpeg only matters when this page can't play the camera itself: no H.264 here, or an RTSP stream.
+export const pagePlays = computed(() => playable() && !String(s.status?.camera_url ?? '').toLowerCase().startsWith('rtsp://'));
+export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing' && !pagePlays.value);
 /** Anycubic Slicer Next is not in its usual folder: Find certificate searches only a path typed in. */
 export const noSlicer = computed(() => requirement('anycubic_slicer')?.state === 'missing');
 /** Settings > Requirements > Check again: the plugin looks for ffmpeg and Anycubic Slicer Next again. */
@@ -111,7 +115,7 @@ export const bindings = computed(() => boundSlots(
 function reset(): void {
   s.epoch++;
   Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
-    frame: '', camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0, device: '' });   // candidates stay until an answer replaces them
+    frame: '', video: false, camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0, device: '' });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
@@ -248,8 +252,8 @@ function onMessage(m: any): void {
       break;
     // s.now too: the countdown is retry_at minus now, and the 1 s clock can lag behind in a throttled tab.
     case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; s.now = Date.now(); break;
-    case 'frame': s.frame = m.image; s.camError = ''; s.camReason = ''; break;
-    case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; } break;
+    case 'frame': s.frame = m.image; s.video = false; s.camError = ''; s.camReason = ''; break;
+    case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; s.video = false; } break;
     case 'requirements': s.requirements = Array.isArray(m.items) ? m.items : []; s.checking = m.checking === true; break;
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
     case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
@@ -270,7 +274,7 @@ export const onConfig = (h: (m: Config) => void) => { configHandlers.add(h); ret
 
 export function lease(): void {
   const vis = !s.hidden && s.tab === 'dash';
-  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: vis && stockVisible.value });
+  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: vis && stockVisible.value, mse: playable() });
 }
 
 export function start(): () => void {
