@@ -498,7 +498,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 active = now < self.lease_until and target is not None
                 # no ffmpeg: the camera is not started at all, so nothing fails every second (not checked yet: it
                 # starts and looks for ffmpeg once itself; a no_ffmpeg then marks it missing)
-                cam = active and self.camera_on and target.camera_enabled and self.requirements.ffmpeg() != ""
+                cam = active and self.camera_on and self.requirements.ffmpeg() != ""
             if not active:
                 self._guard("camera", self.camera.stop)
                 self._closing.wait(0.25)
