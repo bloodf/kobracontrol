@@ -4,6 +4,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-18
+
 ### Added
 - **Upload bridge** (opt-in, off by default): OrcaSlicer's OctoPrint host type (Upload, Upload and Print) reaches
   the Kobra X through Kobra Control on 127.0.0.1. Every request needs an API key the plugin makes (Settings, with
@@ -54,6 +56,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ### Changed
 
+- The plugin icon is the new brand tile: the Kobra Control tab in OrcaSlicer shows the purple tile instead of the
+  old line drawing.
 - With the print setup turned off, OrcaSlicer's choice is used as before. A filament sent to a slot of another
   material is now refused there too.
 - Spools are drawn with the photo spool again.
@@ -62,7 +66,6 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - Notifications appear bottom-left and each one can be closed; warnings and notices on the page can be dismissed.
 - Notifications wait while OrcaSlicer is in another tab or app; errors stay until closed. A closed warning comes back when
   its problem clears and later returns, and a closed out-of-date warning stays closed while the status stays out of date.
-- Settings lists what the certificate, the camera (ffmpeg), Spoolman and Spooler need on this computer, whether each was found, and how to install it.
 - The README, its Portuguese version and the Orca Cloud description show what was verified on the printer, with the
   firmware and the date, and what the plugin can access: each OrcaSlicer permission, what is sent where, and that
   there is no telemetry.
@@ -97,13 +100,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   - The plugin checks the slots and the confirmed warnings again before it sends.
 - OrcaSlicer has no hook to replace its own Print dialog (SelectMachineDialog), so the user sees two dialogs:
   OrcaSlicer's first, then Kobra Control's.
-
-## [0.7.1] - 2026-11-16
-
-### Changed
-
-- The plugin icon is the new brand tile: the Kobra Control tab in OrcaSlicer shows the purple tile instead of the
-  old line drawing.
+- The purge and bed-wait add-on is not part of this release.
 
 ## [0.7.0] - 2026-11-16
 
