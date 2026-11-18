@@ -33,9 +33,7 @@ ACE slots with feed, retract, auto-feed and drying, and a Spoolman spool linked 
 
 The printer's files, with time, layers, filament and slot mapping shown before you print, and the time-lapse videos.
 
-## Verified on the printer
-
-On a Kobra X with firmware 2.0.2.8, outside OrcaSlicer: connecting, status, ACE slots, files, camera and a print from a `.3mf` with a slot mapping (2026-11-14); the network search (2026-11-15); listing and deleting time-lapse videos (2026-11-16). Not tried on the printer yet: pause, resume, stop, feed, retract and drying. Nothing has been tested inside OrcaSlicer itself.
+Checked on a Kobra X (firmware 2.0.2.8) outside OrcaSlicer; pause, resume, stop, feed, retract and drying are not tried yet. Details in the README.
 
 ## How to start
 
@@ -47,7 +45,7 @@ On a Kobra X with firmware 2.0.2.8, outside OrcaSlicer: connecting, status, ACE 
 
 Kobra Control connects only to your Kobra X and, if you set one, your Spoolman server. It has no cloud service and no telemetry.
 
-What OrcaSlicer is asked to allow: network access to the printer's address and the local multicast group 239.255.255.250, and to your Spoolman address if you set one; reading OrcaSlicer's temporary folder, where the sliced file is read and checked but never changed; reading Anycubic Slicer Next only when you press Find certificate; running `ffmpeg` for the tab's camera.
+What OrcaSlicer is asked to allow: network access to the printer's address and the local multicast group 239.255.255.250, and to your Spoolman address if you set one; reading OrcaSlicer's temporary folder, where the sliced file is read and checked but never changed; reading Anycubic Slicer Next only when you press Find certificate; running `ffmpeg` only as a fallback for the tab's camera.
 
 Use it on a network you trust: the printer's LAN protocol hands out its credentials to anyone on the network.
 
@@ -103,9 +101,7 @@ Slots do ACE com alimentar, recolher, alimentação automática e secagem, e uma
 
 Os arquivos da impressora, com tempo, camadas, filamento e os slots de cada cor antes de imprimir, e os vídeos de time-lapse.
 
-## Conferido na impressora
-
-Em uma Kobra X com firmware 2.0.2.8, fora do OrcaSlicer: conexão, status, slots do ACE, arquivos, câmera e uma impressão a partir de um `.3mf` com mapeamento de slots (2026-11-14); a busca na rede (2026-11-15); listar e excluir vídeos de time-lapse (2026-11-16). Ainda não experimentados na impressora: pausar, retomar, parar, alimentar, recolher e secagem. Nada foi testado dentro do OrcaSlicer.
+Conferido em uma Kobra X (firmware 2.0.2.8) fora do OrcaSlicer; pausar, retomar, parar, alimentar, recolher e secagem ainda não foram experimentados. Detalhes no README.
 
 ## Como começar
 
@@ -117,7 +113,7 @@ Em uma Kobra X com firmware 2.0.2.8, fora do OrcaSlicer: conexão, status, slots
 
 O Kobra Control se conecta só à sua Kobra X e, se você configurar, ao seu servidor Spoolman. Não existe serviço na nuvem nem telemetria.
 
-O que o OrcaSlicer vai pedir: acesso de rede ao endereço da impressora e ao grupo multicast local 239.255.255.250, e ao seu Spoolman, se houver; leitura da pasta temporária do OrcaSlicer (o arquivo fatiado é lido, nunca alterado); leitura do Anycubic Slicer Next só quando você toca em Procurar certificado; execução do `ffmpeg` para a câmera da aba.
+O que o OrcaSlicer vai pedir: acesso de rede ao endereço da impressora e ao grupo multicast local 239.255.255.250, e ao seu Spoolman, se houver; leitura da pasta temporária do OrcaSlicer (o arquivo fatiado é lido, nunca alterado); leitura do Anycubic Slicer Next só quando você toca em Procurar certificado; `ffmpeg` só como alternativa para a câmera da aba.
 
 Use em uma rede em que você confia: o protocolo LAN da impressora entrega as credenciais a qualquer um na rede.
 
