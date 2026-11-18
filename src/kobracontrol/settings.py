@@ -7,6 +7,7 @@ import os
 import threading
 
 import i18n
+import printsetup
 import spoolman
 
 DEFAULT_PRINTER_NAME = "Anycubic Kobra X"
@@ -25,6 +26,9 @@ DEFAULTS = {
     "spoolman_auto": True,               # bind a spool when a slot changes
     "spoolman_report_usage": True,       # deduct each slot's grams when a print finishes
     "spooler_hint_dismissed": False,
+    "print_dialog": True,                # "Show print setup before sending": Kobra Control's window after OrcaSlicer's Print
+    "remember_print_options": True,      # its options start from the last ones chosen for that printer
+    "print_memory": {},                  # printer -> {option: bool}, the last options chosen (printsetup.remember)
     "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
     "bridge_port": 8765,
 }
@@ -49,6 +53,8 @@ def _clean(key, value):
         return spoolman.clean_url(value, strict=False)
     if key == "printer_name":
         return printer_label(value)
+    if key == "print_memory":
+        return printsetup.clean_memory(value)
     return value.strip() if isinstance(value, str) else value
 
 

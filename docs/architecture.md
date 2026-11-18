@@ -64,6 +64,7 @@ state, so `usage_track` never runs for it). A Spooler that does must list `"anyc
 `provides.books`; Kobra Control then does not book in that same Spoolman (`Target.spoolman_report_usage`).
 | `gcode_check.py` | Read-only checks of the plate G-code (settings block, PNG preview) and of the printer preset | no |
 | `jobs.py` | Print and Send: plate G-code streamed from the sliced `.3mf` to the printer, then print start | no |
+| `printsetup.py` | The print dialog after OrcaSlicer's Print: slot matching, warnings, options, checking the answer | no |
 | `bridge.py` | Upload bridge (opt-in): OctoPrint-compatible `GET /api/version` and `POST /api/files/local` on 127.0.0.1, API key in `bridge_key.txt` (0600) | no |
 | `service.py` | The connections, shared by the printer agent and the tab; command worker; monitor | no |
 | `plugin.py` | OrcaSlicer glue: printer agent, tab, scripts | yes |
