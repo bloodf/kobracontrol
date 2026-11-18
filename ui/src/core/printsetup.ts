@@ -4,7 +4,7 @@
 // ace.normalize_material), so both sides judge alike.
 export interface PdFilament { index: number; colour: string; type: string; family: string; material: string; grams: number }
 export interface PdSlot { tray: number; global_index: number; box_id: number; index: number; type: string; family: string; material: string;
-  colour: string; usable: boolean; spool: string }
+  colour: string; usable: boolean; spool: string; /** Filament left, 0..1 (Spoolman, else the ACE's percentage); null when unknown. */ fraction?: number | null }
 export interface PdIssue { id: string; kind: 'none' | 'empty' | 'material' | 'variant' | 'colour'; f: number; tray: number }
 
 const same = (a: string, b: string) => !a || !b || a === b;

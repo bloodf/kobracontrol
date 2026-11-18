@@ -25,7 +25,7 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   storage: {total: 8000, used: 2100}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
   // The print head's three slots are the photo's spools 1-3 (white, red, a multi-colour Spoolman spool); the fourth is empty with an ACE.
   slots: [slot(0, -1, 0, {color: [245, 245, 245]}), slot(1, -1, 1, {activity: 'loaded'}), slot(2, -1, 2, {color: [255, 140, 40], spool_id: 12}),
-    slot(3, 0, 0, {spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213]})],
+    slot(3, 0, 0, {spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213], percent: 30, weight: 300})],
   loaded_slot: 1, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
   can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
   features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',

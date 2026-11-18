@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // One project filament's chip: its material on its own colour, and under it the slot it prints from. The chip opens a
-// row of spool discs, one per printer slot; slots of another material family (and empty ones) can't be chosen.
+// row of spools, one per printer slot, each drawn as full as the filament left on it; slots of another material family (and empty ones) can't be chosen.
 // Keyboard: the discs are one radio group (arrows move, Enter/Space choose, Escape closes and returns to the chip).
 import { computed, nextTick, ref } from 'vue';
 import Popover from 'primevue/popover';
-import { OuiIcon } from '../../shared/src/components';
+import { OuiIcon, OuiSpool } from '../../shared/src/components';
 import { check, chevronDown } from '../../shared/src/icons';
 import { fmt, t } from '../core/i18n';
 import { sameFamily, type PdFilament, type PdSlot } from '../core/printsetup';
@@ -18,8 +18,9 @@ const group = ref<HTMLElement | null>(null);
 
 const chosen = computed(() => props.slots.find(s => s.tray === props.tray));
 const choosable = (s: PdSlot) => s.usable && sameFamily(props.filament, s);
-const discLabel = (s: PdSlot) => [fmt.pair(slotName(s, props.slots), s.usable ? (s.type || t('slot.noType')) : t('slot.empty')), s.spool]
-  .filter(Boolean).join(' · ');
+const left = (s: PdSlot) => (s.usable && typeof s.fraction === 'number' ? s.fraction : null);
+const discLabel = (s: PdSlot) => [fmt.pair(slotName(s, props.slots), s.usable ? (s.type || t('slot.noType')) : t('slot.empty')), s.spool,
+  left(s) !== null ? fmt.percent(Math.round(left(s)! * 100)) : ''].filter(Boolean).join(' · ');
 const chipLabel = computed(() => t('pd.slotBtn', { n: props.filament.index + 1, type: props.filament.type || '?',
   slot: chosen.value ? discLabel(chosen.value) : t('pd.noSlot') }));
 
@@ -57,9 +58,8 @@ function onKey(e: KeyboardEvent) {
         <div v-for="s in slots" :key="s.tray" class="sp-disc" role="radio" :aria-checked="s.tray === tray" :aria-disabled="!choosable(s) || undefined"
              :tabindex="choosable(s) ? 0 : -1" :aria-label="discLabel(s)" :title="discLabel(s)" :data-tray="s.tray"
              @click="choose(s)" @keydown.enter.prevent="choose(s)" @keydown.space.prevent="choose(s)">
-          <span class="sp-reel" :data-empty="!s.usable || undefined" :style="s.usable ? { background: s.colour, color: inkOn(s.colour) } : {}">
-            <span class="sp-n oui-num">{{ slotNumber(s, slots) }}</span><span class="sp-hub" /><span class="sp-type">{{ s.usable ? (s.type || '?') : '–' }}</span>
-          </span>
+          <OuiSpool :color="s.usable ? s.colour : null" :fraction="left(s)" :size="56" />
+          <span class="sp-type"><span class="sp-n oui-num">{{ slotNumber(s, slots) }}</span> {{ s.usable ? (s.type || '?') : '–' }}</span>
           <OuiIcon v-if="s.tray === tray" :icon="check" :size="14" class="sp-check" />
           <span class="sp-spool">{{ s.spool }}</span>
         </div>
@@ -82,12 +82,8 @@ function onKey(e: KeyboardEvent) {
 .sp-disc[aria-checked="true"] { background: var(--oui-primary-soft); box-shadow: inset 0 0 0 2px var(--oui-primary); }
 .sp-disc[aria-disabled="true"] { cursor: not-allowed; opacity: .45; }
 .sp-disc:focus-visible { outline: 2px solid var(--oui-primary); outline-offset: 1px; }
-.sp-reel { display: grid; justify-items: center; align-content: center; width: 64px; height: 64px; border-radius: 50%; line-height: 1.05;
-  box-shadow: inset 0 0 0 2px rgb(255 255 255 / .55), 0 0 0 1px var(--oui-border); font-weight: 700; }
-.sp-reel[data-empty] { background: var(--oui-raised); color: var(--oui-muted); box-shadow: inset 0 0 0 2px var(--oui-border); border: 1px dashed var(--oui-control-border); }
-.sp-n { font-size: var(--oui-text-sm); }
-.sp-hub { width: 14px; height: 14px; margin: 2px 0; border-radius: 50%; background: var(--oui-text); box-shadow: 0 0 0 2px rgb(255 255 255 / .8); }
-.sp-type { font-size: var(--oui-text-xs); max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-type { max-width: 72px; font-size: var(--oui-text-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-n { font-size: var(--oui-text-sm); font-weight: 700; }
 .sp-check { position: absolute; inset: 4px 4px auto auto; color: var(--oui-primary); }
 .sp-spool { max-width: 80px; font-size: var(--oui-text-xs); color: var(--oui-muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-spool:empty { display: none; }

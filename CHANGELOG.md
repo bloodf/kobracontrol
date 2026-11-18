@@ -4,6 +4,11 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Fixed
+- The spool picture shows how much filament is left: an ACE slot without a Spoolman spool is drawn at the percentage
+  the ACE reports (it was drawn at a made-up level), and with no amount at all as the bare reel. The print setup's slot
+  picker draws each slot as a spool at its level too (Spoolman's, else the ACE's) and says the amount to screen readers.
+
 ## [0.7.1] - 2026-11-18
 
 ### Added

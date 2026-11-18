@@ -201,9 +201,19 @@ class Plate(unittest.TestCase):
         self.assertEqual(ps.plate_summary(path)["filaments"], {})
         self.assertEqual(ps.plate_summary("/nope/x.3mf")["seconds"], 0)
 
-    def test_spool_names(self):
-        spools = [{"id": 4, "vendor": "Elegoo", "name": "Red"}, {"id": 5, "vendor": "", "name": ""}]
-        self.assertEqual(ps.spool_names(spools, {0: 4, 1: 5, 2: 9}), {0: "Elegoo Red", 1: "#5"})
+    def test_spool_links(self):
+        spools = [{"id": 4, "vendor": "Elegoo", "name": "Red", "remaining": 250, "initial": 1000}, {"id": 5, "vendor": "", "name": "", "remaining": 300}]
+        self.assertEqual(ps.spool_links(spools, {0: 4, 1: 5, 2: 9}),
+                         {0: {"name": "Elegoo Red", "fraction": 0.25}, 1: {"name": "#5", "fraction": None}})
+
+    def test_page_slots_fraction(self):
+        """The level drawn on each slot's spool: Spoolman's, else the ACE percentage, else unknown; never for an empty slot."""
+        def slot(g, **o):
+            return {"global_index": g, "box_id": 0, "box_pos": 1, "index": g, "type": "PLA", "color": [255, 0, 0], "usable": True, **o}
+        data = {"slots": [slot(0, percent=80), slot(1, percent=40), slot(2), slot(3, percent=55, usable=False), slot(4, percent=130)]}
+        links = {0: {"name": "Elegoo Red", "fraction": 0.25}, 1: {"name": "#5", "fraction": None}}
+        got = [(s["spool"], s["fraction"]) for s in ps.page_slots(data, links)]
+        self.assertEqual(got, [("Elegoo Red", 0.25), ("#5", 0.4), ("", None), ("", None), ("", 1.0)])
 
 
 if __name__ == "__main__":
