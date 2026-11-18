@@ -98,6 +98,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - OrcaSlicer has no hook to replace its own Print dialog (SelectMachineDialog), so the user sees two dialogs:
   OrcaSlicer's first, then Kobra Control's.
 
+## [0.7.1] - 2026-11-16
+
+### Changed
+
+- The plugin icon is the new brand tile: the Kobra Control tab in OrcaSlicer shows the purple tile instead of the
+  old line drawing.
+
 ## [0.7.0] - 2026-11-16
 
 Kobra Control speaks Spanish, German and Simplified Chinese, next to English and Brazilian Portuguese. Checked

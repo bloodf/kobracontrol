@@ -158,10 +158,14 @@ def _asset(name):
     """From the generated _assets module in the wheel; from src/kobracontrol/ui during development."""
     if __package__:
         from . import _assets
-        if name == "icon.svg":
-            return _assets.ICON_SVG
+        if name == "icon.png":
+            return _assets.ICON_PNG
         return zlib.decompress(base64.b64decode(_assets.APP_HTML_Z64)).decode("utf-8")
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", name), encoding="utf-8") as f:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", name)
+    if name.endswith(".png"):
+        with open(path, "rb") as f:
+            return f.read()
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 
@@ -630,18 +634,20 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
 
     def get_icon(self):
         """The icon file in the plugin storage folder (data_dir(), writable for the plugin); none without it."""
-        svg = _asset("icon.svg")
+        png = _asset("icon.png")
+        # A different base name from the old kobracontrol.svg: OrcaSlicer strips the extension and tries <name>.svg
+        # before <name>.png, so a leftover SVG of the same name would win.
         for folder in [f for f in [_storage()] if f]:
-            path = os.path.join(folder, "kobracontrol.svg")
+            path = os.path.join(folder, "kobracontrol-icon.png")
             try:
                 try:
-                    with open(path, encoding="utf-8") as f:
-                        same = f.read() == svg
+                    with open(path, "rb") as f:
+                        same = f.read() == png
                 except OSError:
                     same = False
                 if not same:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(svg)
+                    with open(path, "wb") as f:
+                        f.write(png)
                 return path
             except OSError as e:
                 log("icon: can't write %s (%s)" % (path, e))
