@@ -669,7 +669,7 @@ test('camera errors: a plain explanation per reason', `
   await post({type: 'camera_error', error: 'ffmpeg not found', reason: 'no_ffmpeg'});
   assert(text(q('.cam-empty')).includes('ffmpeg is not installed') && text(q('.cam-empty')).includes('Settings > Camera'), 'no_ffmpeg: ' + text(q('.cam-empty')));
   await click(byTest('cam-settings'));
-  assert(q('#c-ffmpeg'), 'the button leads to the ffmpeg path field');
+  assert(q('#c-ffmpeg') && !q('#cam-s-h').hidden, 'the button leads to the ffmpeg path field');
   await tab('dash');
   await post({type: 'camera_error', error: 'no rtsp', reason: 'no_stream'});
   assert(text(q('.cam-empty')).includes('isn’t sending a camera stream'), 'no_stream: ' + text(q('.cam-empty')));
@@ -757,7 +757,7 @@ test('requirements: no ffmpeg keeps the built-in player; a page without it turns
   assert(text(byTest('cam-why')).includes('Looking for ffmpeg'), 'a re-check says so: ' + text(byTest('cam-why')));
   await post(REQS());
   await click(byTest('cam-req'));
-  assert(q('[data-need="ffmpeg"]'), 'the button leads to Settings > Requirements');
+  assert(q('[data-need="ffmpeg"]') && !q('#needs-h').hidden, 'the button leads to Settings > Requirements');
   assert(text(q('[data-need="ffmpeg"]')).includes('Not found') && !text(q('[data-need="ffmpeg"]')).includes('optional'), 'needed for RTSP, so not optional: ' + text(q('[data-need="ffmpeg"]')));
   await post(REQS({ffmpeg: {state: 'ok', details: '/opt/homebrew/bin/ffmpeg'}}));
   await tab('dash');
@@ -890,7 +890,7 @@ test('first run: no usable printer says how to select one', `
   assert(box && text(box).includes('No Kobra X answered the network search') && text(box).includes('looks for the printer by itself'), 'explains: ' + text(box));
   assert(text(byTest('link')) === 'No printer found', 'pill');
   await click(btn('Open Settings', box));
-  assert(q('#c-host'), 'goes to the address field');
+  assert(q('#c-host') && !q('#conn-h').hidden, 'goes to the address field');
   await tab('files');
   assert(text(byTest('files-why')).includes('No Kobra X found yet'), 'Files says what is missing');
   eq(cmds('files'), [], 'no file request without a printer');
@@ -1944,6 +1944,72 @@ test('print setup: Portuguese, narrow window, no auto feed without an ACE', PD_H
   const a = q('[data-option="auto_leveling"]').getBoundingClientRect(), b = q('[data-option="vibration_compensation"]').getBoundingClientRect();
   assert(b.top >= a.bottom - 1, 'one column of options');
 `, { boot: {...PD, data: {...PRINT_DATA, auto_feed: null}}, lang: 'pt-BR', pref: 'pt-BR', size: [380, 800] });
+// ------------------------------------------------------------------ settings pages (one page per section)
+const PAGES = ['conn-h', 'cert-h', 'print-h', 'cam-s-h', 'sm-s-h', 'bridge-h', 'needs-h', 'lang-h', 'about-h'];
+const PAGES_JS = `
+const PAGES = ${JSON.stringify(PAGES)};
+const link = id => q('.oui-settings-link[data-section="' + id + '"]');
+const shown = () => PAGES.filter(id => q('#' + id) && !q('#' + id).hidden);
+const onHeading = id => document.activeElement === q('#' + id + ' .oui-panel-title');
+const listShown = () => getComputedStyle(q('.oui-settings-nav')).display !== 'none';
+const pageShown = () => getComputedStyle(q('.oui-settings-body')).display !== 'none';
+`;
+test('settings pages: list beside one page; a page opens with focus on its heading and is remembered', PAGES_JS + `
+  await ready(VIEW());
+  await tab('settings');
+  eq(qa('.oui-settings-link').map(e => e.dataset.section), PAGES, 'one page per section');
+  eq(shown(), ['conn-h'], 'only the first page');
+  assert(listShown() && pageShown() && !byTest('settings-back').getClientRects().length, 'wide: list and page side by side, no Back');
+  await click(link('sm-s-h'));
+  eq(shown(), ['sm-s-h'], 'only Spoolman');
+  assert(onHeading('sm-s-h'), 'focus on the page heading');
+  assert(Object.entries(localStorage).some(([k, v]) => k.startsWith('oui-settings:') && v === 'sm-s-h'), 'last page stored');
+  link('sm-s-h').focus(); await press('ArrowDown'); await settle();
+  eq([shown(), document.activeElement.dataset.section], [['bridge-h'], 'bridge-h'], 'arrow keys move along the list');
+  assert(byTest('save-top'), 'one save bar');
+`);
+test('settings pages: narrow shows the list, then one page with Back', PAGES_JS + `
+  await ready(VIEW());
+  await tab('settings');
+  assert(listShown() && !pageShown(), 'narrow: the list first');
+  await click(link('print-h'));
+  assert(!listShown() && pageShown(), 'then the page alone');
+  eq(shown(), ['print-h'], 'Print defaults only');
+  assert(onHeading('print-h'), 'focus on its heading');
+  assert(byTest('settings-back').getClientRects().length, 'Back shown');
+  await click(byTest('settings-back'));
+  assert(listShown() && !pageShown(), 'Back returns to the list');
+  eq(document.activeElement, link('print-h'), 'focus back on the page it came from');
+`, { size: [600, 900] });
+test('settings pages: the last page opens again; a link opens its own page instead', PAGES_JS + `
+  await ready(VIEW());
+  await tab('settings');
+  eq(shown(), ['lang-h'], 'remembered page');
+  await tab('dash');
+  await post({type: 'show_tab', tab: 'settings'});
+  await until(() => shown()[0] === 'print-h', 'the print dialog link opens Print defaults');
+  assert(onHeading('print-h'), 'heading focused');
+  eq(text(q('[data-tab="settings"][aria-selected="true"]')) !== '', true, 'Settings tab selected');
+`, { lastPage: 'lang-h' });
+test('settings pages: Open Settings links open the page they are about', PAGES_JS + `
+  await connect();
+  await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
+  await post({type: 'status', data: VIEW()});
+  await until(() => last('cmd', 'spools'), 'spools asked');
+  await fail(last('cmd', 'spools'), 'Spoolman: no address set');
+  await click(btn('Open Settings', byTest('spoolman-card')));
+  eq(shown(), ['sm-s-h'], 'Spoolman page');
+  assert(onHeading('sm-s-h'), 'heading focused');
+`, { lastPage: 'about-h' });
+test('settings pages: a page that needs attention is marked in the list', PAGES_JS + `
+  await connect();
+  await post(CONFIG({certificate: {found: false}}));
+  await post({type: 'status', data: VIEW()});
+  await tab('settings');
+  eq(shown(), ['conn-h'], 'on another page');
+  eq(link('cert-h').dataset.state, 'warn', 'certificate page flagged');
+  assert(link('cert-h').querySelector('.oui-settings-flag'), 'with the flag icon');
+`);
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');
@@ -1965,7 +2031,9 @@ try {
       const started = Date.now();
       try {
         await p.size(...(sc.size ?? [1280, 900]));
-        await p.init(MOCK_HOST + 'try { localStorage.clear(); } catch {}');
+        // seed: the settings page remembered from an earlier visit (OuiSettings' own key: page path and its page ids)
+        const seed = sc.lastPage ? `localStorage.setItem('oui-settings:' + location.pathname + ':' + ${JSON.stringify(PAGES.join(','))}, ${JSON.stringify(sc.lastPage)});` : '';
+        await p.init(MOCK_HOST + `try { localStorage.clear(); ${seed} } catch {}`);
         await p.goto(pathToFileURL(file).href);
         const body = `(async () => { ${HELPERS} ${PRELUDE}
           await until(() => document.querySelector('#app > *'), 'app mounted');

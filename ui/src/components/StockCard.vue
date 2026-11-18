@@ -7,7 +7,7 @@ import Select from 'primevue/select';
 import { OuiBanner, OuiIcon, OuiLevel, OuiPanel, OuiSpool, OuiStatus, OuiToolbar, materialTone } from '../../shared/src/components';
 import { boxes, link as linkIcon, refresh, settings, spoolman } from '../../shared/src/icons';
 import { spoolFraction } from '../core/spool-level';
-import { s, run, tracker, loadStock, loadSpools, controlsOff, targetKnown, printerName, stockVisible } from '../app/store';
+import { s, openSettings, run, tracker, loadStock, loadSpools, controlsOff, targetKnown, printerName, stockVisible } from '../app/store';
 import { config, spoolmanSet as configured } from '../app/settings';
 import { ask } from '../core/dialog';
 import { t, tMaybe, fmt } from '../core/i18n';
@@ -82,7 +82,7 @@ async function link(r: Spool) {
 
     <div v-if="!configured && !s.spoolsLoaded" class="oui-row kc-pad">
       <p class="oui-meta">{{ t('sm.help') }}</p>
-      <Button severity="secondary" size="small" :label="t('common.openSettings')" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+      <Button severity="secondary" size="small" :label="t('common.openSettings')" @click="openSettings('sm-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
     </div>
 
     <div v-if="stockVisible" class="sc-body" data-test="stock-card">

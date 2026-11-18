@@ -12,6 +12,9 @@ export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 
 export const LIMITS: Limits = { nozzle_max: 300, bed_max: 100 };
 export const STALE_STATUS_S = 10;
 
+/** Open Settings at one page (conn-h, print-h, ...): a "Settings" link elsewhere on the page. */
+export function openSettings(page: string): void { s.settingsPage = page; s.tab = 'settings'; }
+
 export const s = reactive({
   phase: 'connecting' as Phase,
   epoch: 0,
@@ -28,6 +31,7 @@ export const s = reactive({
   spoolsLoaded: false,
   config: null as Config | null,
   tab: 'dash',
+  settingsPage: '',                 // the settings page a link asked for, opened once Settings shows
   hidden: document.hidden,
   camOn: false,
   frame: '',
@@ -258,7 +262,7 @@ function onMessage(m: any): void {
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
     case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
     case 'selection_changed': void hello(); break;
-    case 'show_tab': if (['dash', 'files', 'settings'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
+    case 'show_tab': if (m.tab === 'settings') openSettings('print-h'); else if (['dash', 'files'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
     case 'reply': if (m.error) tracker.notify('error', t('msg.plugin', { error: String(m.error) })); break;
   }
 }

@@ -555,6 +555,7 @@ export const pl: Record<PolishKey, string> = {
   'usage.more': 'i jeszcze {n}',
   'usage.review': 'Przejrzyj',
   'usage.hide': 'Ukryj',
+  'settings.back': 'Wstecz', 'settings.hasError': 'zawiera wartość do poprawienia',
   'settings.nav': 'Sekcje ustawień',
   'settings.discard': 'Odrzuć',
   'settings.save': 'Zapisz ustawienia',
