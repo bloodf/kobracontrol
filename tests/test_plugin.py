@@ -414,8 +414,32 @@ class Agent(Base):
             self.assertEqual(len(logged), 1)
             with open(preset["file"], "w", encoding="utf-8") as f:
                 f.write("{not json")
+            os.utime(preset["file"], ns=(10**18, 10**18))   # a new version whatever the timestamp resolution
             self.assertEqual([self.agent._linked_id(spool) for _ in range(3)], ["", "", ""])
             self.assertEqual(len(logged), 2)
+
+    def test_deleted_preset_file_drops_the_cached_id(self):
+        """A file read once and then deleted gives "", even when nothing else about the preset changed."""
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        with mock.patch.object(plugin, "log"):
+            self.assertEqual(self.agent._linked_id(spool), "P1234567")
+            os.remove(preset["file"])
+            self.assertEqual(self.agent._linked_id(spool), "")
+
+    def test_rewrite_with_the_same_mtime_is_read_again(self):
+        """A rewrite inside one timestamp tick (coarse clocks, Windows) still counts as a new version: size is in the key."""
+        preset = self.user_preset("My PLA")
+        self.agent._user_presets = [preset]
+        spool = {"orca_preset": "My PLA"}
+        before = os.stat(preset["file"]).st_mtime_ns
+        with mock.patch.object(plugin, "log"):
+            self.assertEqual(self.agent._linked_id(spool), "P1234567")
+            with open(preset["file"], "w", encoding="utf-8") as f:
+                f.write("{not json")
+            os.utime(preset["file"], ns=(before, before))
+            self.assertEqual(self.agent._linked_id(spool), "")
 
     def test_preset_file_read_once_per_version(self):
         preset = self.user_preset("My PLA")

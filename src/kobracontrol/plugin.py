@@ -1173,9 +1173,10 @@ class KobraAgent(pa.PrinterAgentBase):
             return ""
         _preset_notices.discard(name)   # usable again: a later break warns again
         try:
-            key = (preset["file"], os.path.getmtime(preset["file"]))
-        except (OSError, ValueError):
-            key = (preset["file"], None)
+            st = os.stat(preset["file"])
+            key = (preset["file"], st.st_mtime_ns, st.st_size)   # size too: a rewrite can keep a coarse mtime
+        except (OSError, ValueError, TypeError):
+            key = (preset["file"], None, None)   # gone or unreadable: never a cached id of an older version
         if key not in self._file_ids:   # read once per file version; a bad file is logged once
             self._file_ids[key] = spooler_bridge.standalone_id(preset, log)
         return self._file_ids[key]
