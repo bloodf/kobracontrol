@@ -356,7 +356,11 @@ test('slot reports: brand, material name, percent and weight from the printer; b
   const t = text(q('[data-slot="4"]'));
   assert(t.includes('Acme ABS Pro') && t.includes('40%') && t.includes('400 g'), 'slot details: ' + t);
   eq(q('[data-slot="4"] .oui-spool').dataset.level, '5', 'the spool is drawn at the ACE percentage (40%)');
-  eq(q('[data-slot="2"] .oui-spool').dataset.level, '8', 'no Spoolman spool and no percentage: the bare reel, never a made-up level');
+  const unknown = q('[data-slot="2"] .oui-spool');
+  eq([unknown.dataset.level, unknown.hasAttribute('data-unknown'), unknown.querySelector('.oui-spool-unknown')?.textContent], ['1', true, '?'],
+    'loaded, no Spoolman spool and no percentage: the full reel in its colour with the unknown badge, never a made-up level');
+  const empty = q('[data-slot="1"] .oui-spool');
+  assert(empty.dataset.level === '8' && !empty.hasAttribute('data-unknown') && !empty.querySelector('.oui-spool-unknown'), 'an empty slot is the bare reel');
   assert(text(byTest('unit-humidity')).includes('32'), 'box humidity: ' + text(q('[data-unit="0"]')));
   await post({type: 'status', data: VIEW({ace_units: [{id: 0, auto_feed: true, humidity: 30, temp: 44, drying: {status: 1, target_temp: 50, duration: 86400, remain_time: 901, humidity: null, current_temp: null}}]})});
   const d = text(byTest('drying'));
@@ -1909,7 +1913,8 @@ test('print setup: the slot picker allows only the same material, by keyboard to
   await openPicker(0);
   const pla = qa('.p-popover [role=radio]');
   eq(pla.map(d => d.getAttribute('aria-disabled')), [null, 'true', 'true', null], 'PLA: PLA and PLA Silk');
-  eq(pla.map(d => d.querySelector('.oui-spool').dataset.level), ['4', '6', '8', '8'], 'each spool drawn as full as the filament left; unknown is the bare reel');
+  eq(pla.map(d => d.querySelector('.oui-spool').dataset.level), ['4', '6', '8', '1'], 'each spool drawn as full as the filament left; a slot that cannot be chosen is the bare reel, an unknown amount the full reel');
+  eq(pla.map(d => d.querySelector('.oui-spool-unknown')?.textContent ?? ''), ['', '', '', '?'], 'only the unknown amount has the unknown badge');
   assert(pla[0].getAttribute('aria-label').includes('62'), 'the amount left is said: ' + pla[0].getAttribute('aria-label'));
   await press('ArrowRight'); await settle();
   eq(document.activeElement, pla[3], 'arrow skips the slots that cannot be chosen');
