@@ -75,6 +75,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Without Spoolman, refreshing and linking spools are off.
 
 ### Fixed
+- Publishing to Orca Cloud: the wheel carries the 1.1 MB page compressed (zlib + base64), as Spooler does, instead of as readable text in a Python file. Orca Cloud's automated permission review timed out repeatedly on U1 Control 0.12.1, which shipped its page that way. The wheel now holds 1.2 MB of Python instead of 1.8 MB; the page, the icon and everything the plugin does are unchanged.
 - OrcaSlicer's "sync from AMS" no longer turns every ACE slot into "Generic PLA". The Device tab sent an empty filament id for every tray, because OrcaSlicer's plugin API doesn't show a preset's `filament_id`, and OrcaSlicer reads an empty id as Generic PLA. A ACE slot linked to a Spoolman spool now reports the id of that spool's Spooler preset (from Spooler's `profiles.json`; Spooler's presets are standalone copies now, which OrcaSlicer's sync can load), so sync loads that preset. Any other loaded ACE slot reports the Generic preset of its real material, also for materials such as "PLA+", "PETG HF". The links are read from Spoolman when the printer connects, so this works without opening the tab.
 - The camera stayed on "Starting the camera…" after Turn on when "Turn the camera on when the page opens" was off
   (the default): that option also blocked the camera itself. It now only decides whether the page turns the camera
