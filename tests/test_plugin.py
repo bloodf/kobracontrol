@@ -1640,9 +1640,12 @@ class AddOns(Base):
         self.assertIn("waiting for the previous bridge", state["error"])
         posted = len(self.page.posted)
         release.set()
-        wait(lambda: plugin._bridge is not None)
-        wait(lambda: len(self.page.posted) > posted)
-        self.assertTrue(self.config()["bridge"]["running"])
+        # other threads (the Requirements check a save starts) post too: wait for the worker's own config, the one
+        # that says the bridge runs, rather than for any new message
+        wait(lambda: plugin._bridge is not None, 20)
+        running = wait(lambda: next((m for m in self.page.posted[posted:] if m.get("type") == "config"
+                                     and m["bridge"]["running"]), None), 20)
+        self.assertEqual(running["bridge"]["error"], "")
 
     def test_unload_stops_the_bridge(self):
         self.save(bridge_enabled=True, bridge_port=free_port())
