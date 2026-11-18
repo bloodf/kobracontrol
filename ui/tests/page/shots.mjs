@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launch, MOCK_HOST, HELPERS, preparePage } from './cdp.mjs';
+import { PRINT_DATA } from './print-data.mjs';
 
 const OUT = process.env.OUT; const page = await readFile(process.env.PAGE, 'utf8');
 await mkdir(OUT, { recursive: true });
@@ -100,6 +101,8 @@ const THUMB = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http:
   + '<path d="M22 86 80 104 138 86 80 68Z" fill="#332d55"/><path d="M40 48v30l40 13V61Z" fill="#6240c8"/><path d="M120 48v30L80 91V61Z" fill="#4e33a0"/>'
   + '<path d="M40 48 80 35 120 48 80 61Z" fill="#c0acff"/><path d="M52 48 80 39 108 48 80 57Z" fill="#392c6a"/></svg>');
 const FRAME = process.env.FRAME ? 'data:image/jpeg;base64,' + (await readFile(process.env.FRAME)).toString('base64') : '';
+// The plate picture in the print dialog scenes: any PNG does (the plugin sends Metadata/plate_<n>.png).
+const THUMB_PNG = (await readFile(new URL('../../../src/kobracontrol/ui/icon.png', import.meta.url))).toString('base64');
 const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   // scene, theme, lang, width, height
   ['dash', 'dark', 'en', 1900, 1000], ['dash', 'light', 'en', 1900, 1000], ['dash', 'dark', 'en', 1280, 720], ['dash', 'light', 'en', 1280, 720],
@@ -124,7 +127,10 @@ const metrics = [];
 try {
   for (const [scn, theme, lang, width, height, scale = 1] of SCENES) {
     const file = join(dir, `${scn}.html`);
-    await writeFile(file, preparePage(page, { version: '0.1.0', lang }));
+    // print / print-warn / print-pick: the print dialog (print-pick: its slot picker open) (boot mode "print"), with a material warning in print-warn.
+    const dialog = scn.startsWith('print') ? { mode: 'print', data: { ...PRINT_DATA, job: { ...PRINT_DATA.job, thumbnail: THUMB_PNG },
+      trays: scn === 'print-warn' ? { '0': 4, '2': 7 } : PRINT_DATA.trays } } : {};
+    await writeFile(file, preparePage(page, { version: '0.1.0', lang, ...dialog }));
     const p = await browser.newPage();
     await p.size(width, height, scale);
     await p.init(MOCK_HOST);
@@ -132,7 +138,7 @@ try {
     const m = await p.evaluate(`(async () => { ${HELPERS} const SCENE = ${JSON.stringify(scn)}; const STORE = SCENE.startsWith('store-'); const SCN = ${JSON.stringify(STORE_AS[scn] ?? scn)};
       const THUMB = ${JSON.stringify(THUMB)}; const FRAME = ${JSON.stringify(scn === 'store-status' ? FRAME : '')};
       await until(() => document.querySelector('#app > *'));
-      ${STATE}
+      ${scn.startsWith('print') ? 'await settle();' + (scn === 'print-pick' ? "document.querySelector('[data-test=slot-0]').click(); await until(() => document.querySelector('.p-popover [role=radio]')); await sleep(400);" : '') : STATE}
       const over = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
         .slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
       // Text cut inside its own box (a button, tab, chip or cell narrower than its words), which page overflow misses.

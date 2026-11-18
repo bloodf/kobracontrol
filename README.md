@@ -92,7 +92,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 
 | Feature | What you get |
 |---|---|
-| Printer agent | The agent id is `kobracontrol`. Print and Send use the filament-to-slot mapping you pick in OrcaSlicer's print dialog, with auto-leveling, flow calibration and time-lapse from that dialog and vibration compensation from the plugin's settings. Before sending, it reads the sliced G-code and warns when the settings block or a PNG preview picture is missing. |
+| Printer agent | The agent id is `kobracontrol`. After OrcaSlicer's Print dialog, Kobra Control's own print setup window opens, so there are two dialogs: OrcaSlicer has no hook to replace its own. The window starts from OrcaSlicer's choice and shows each filament's slot (same material only, with its Spoolman spool) and the print options, then sends exactly that. Send uses OrcaSlicer's dialog only. Before sending, it reads the sliced G-code and warns when the settings block or a PNG preview picture is missing. |
 | Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
 | Dashboard | Status and controls, moves and homing, the camera, the filament card, a Printer panel and the Spoolman and Spooler stock. |
 | Printer panel | Name and **Rename**, firmware, network address, print counters and the **Print Assist** switches. |

@@ -10,6 +10,26 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Copy, New key and the OrcaSlicer steps). Upload and Print never starts by itself: the tab shows the waiting print
   with Start and Don't print, and refuses while the printer is busy. Loopback only, rate and size limited.
 
+- **Kobra Control — print setup.** When you press Print in OrcaSlicer's dialog for a Kobra X, a Kobra Control window
+  opens before anything is sent. It starts from OrcaSlicer's choice, so it works as a second confirmation step.
+  - The window shows:
+    - the print task's name, which you can edit and which becomes the file name on the printer;
+    - the plate with its time and filament use;
+    - one chip per filament, with the slot it prints from;
+    - the printer with its state and slot colours, and a button to read the slots again;
+    - the print options as checkboxes: auto-leveling, vibration compensation, time-lapse, flow calibration and ACE
+      auto feed;
+    - "Remember these options for this printer";
+    - Cancel and Start print.
+  - A filament's chip opens a row of spool discs, one per slot, each showing its colour, material and linked Spoolman
+    spool. You can only choose a slot with the same material family. A different kind in the same family (PLA in a
+    PLA Silk slot) needs "Use these slots anyway", and a different colour is pointed out. Slots are matched by
+    material and colour when OrcaSlicer's choice can't be used.
+  - What you leave in the window is exactly what is sent. Cancel sends nothing, and the window gives up after 15
+    minutes.
+  - A "Plugin settings" link switches the Kobra Control tab to Settings.
+- Settings > Print defaults: "Show print setup before sending" (on by default) and "Remember these options for this
+  printer".
 - The camera in the Kobra Control tab no longer needs `ffmpeg`. The plugin reads the printer's video stream
   (H.264 in FLV) and the page plays it with the webview's own video player, at the printer's full 1280x720 and
   10 fps. Playback was checked with a recording of a real Kobra X stream in Chrome (as in WebView2 on Windows)
@@ -33,6 +53,9 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - A Spoolman spool (or its filament) can name your own OrcaSlicer filament preset in the extra field `orca_filament_preset`. When it is a standalone user preset compatible with the printer, the Device tab reports its `filament_id`, so OrcaSlicer's sync from AMS loads it for that ACE slot; a preset that inherits from another can't be loaded by sync and keeps the usual preset. A name that isn't one of your compatible presets shows a notice once.
 
 ### Changed
+
+- With the print setup turned off, OrcaSlicer's choice is used as before. A filament sent to a slot of another
+  material is now refused there too.
 - Spools are drawn with the photo spool again.
 - The page fills the whole tab at every height, also after the window is resized: no more grey under a short page.
 - Settings are tabs: one section at a time, and the save bar stays on screen at any window height.
@@ -64,6 +87,16 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   Kobra Control hands to it failed. Such a failure is now written to the log and OrcaSlicer keeps running.
 - The README and setup guide name the OrcaSlicer preference by its real label, "Use printer agents instead of
   print hosts", and say to restart OrcaSlicer after ticking it.
+
+### Notes
+
+- The safety rules stay:
+  - Flow calibration and time-lapse can only be on when their Kobra Control setting is on.
+  - Auto-leveling is locked off while its setting is off.
+  - While the printer is busy, the window says that settings can't change during a print, and Start print stays off.
+  - The plugin checks the slots and the confirmed warnings again before it sends.
+- OrcaSlicer has no hook to replace its own Print dialog (SelectMachineDialog), so the user sees two dialogs:
+  OrcaSlicer's first, then Kobra Control's.
 
 ## [0.7.1] - 2026-11-16
 

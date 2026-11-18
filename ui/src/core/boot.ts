@@ -3,6 +3,9 @@
 import type { LangPref } from './i18n-core';
 
 export interface Boot {
+  /** "print": Kobra Control's print dialog (with its data); "app": the tab. */
+  mode?: 'app' | 'print';
+  data?: unknown;
   version: string;
   lang: string | null;
   pref?: LangPref;

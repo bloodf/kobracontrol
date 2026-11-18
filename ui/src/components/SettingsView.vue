@@ -80,7 +80,7 @@ const sections = computed<OuiSettingsSection[]>(() => [
 ]);
 // The save bar names what is not saved yet.
 const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
-  auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
+  auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', print_dialog: 'printdef.dialog', remember_print_options: 'pd.remember', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
   bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port' };
 const changedText = computed(() => fmt.list(changed.value.map(k => t(FIELD[k] as 'conn.host'))));
 const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
@@ -132,6 +132,8 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
           <OuiFormRow :label="t('files.vibration')" for="c-vib" :hint="t('printdef.vibrationHint')"><ToggleSwitch v-model="form.vibration" input-id="c-vib" data-test="def-vibration" /></OuiFormRow>
           <OuiFormRow :label="t('files.flow')" for="c-flow" :hint="t('printdef.untestedHint')"><ToggleSwitch v-model="form.flow" input-id="c-flow" data-test="def-flow" /></OuiFormRow>
           <OuiFormRow :label="t('files.timelapse')" for="c-tl" :hint="t('printdef.untestedHint')"><ToggleSwitch v-model="form.timelapse" input-id="c-tl" data-test="def-timelapse" /></OuiFormRow>
+          <OuiFormRow :label="t('printdef.dialog')" for="c-pd" :hint="t('printdef.dialogHint')"><ToggleSwitch v-model="form.printDialog" input-id="c-pd" data-test="def-dialog" /></OuiFormRow>
+          <OuiFormRow :label="t('pd.remember')" for="c-pdr"><ToggleSwitch v-model="form.rememberOptions" input-id="c-pdr" data-test="def-remember" /></OuiFormRow>
         </OuiFormSection>
       </div>
 

@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "kobracontrol"
-MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "bridge", "jobs", "locating", "service")  # dependency order
+MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "printsetup", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "bridge", "jobs", "locating", "service")  # dependency order
 
 def page_html(name):
     """ui/<name> as shipped: the compiled page draws its icons from the shared foundation (no icon map to inject)."""

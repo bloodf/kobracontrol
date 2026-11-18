@@ -1,6 +1,8 @@
 """plugin.py with a fake `orca` module, against FakeKobra on 127.0.0.1. Run: python3 -m unittest tests/test_plugin.py -v"""
 
 import json
+import re
+import types
 import os
 import sys
 import shutil
@@ -85,6 +87,8 @@ class Base(unittest.TestCase):
         f.print_start = "ok"
         self.tmp = tempfile.mkdtemp()
         plugin._storage_dir, plugin._store = self.tmp, None
+        # Tests of the print path outside ShowDialog print without the print setup window (its default answer is Cancel).
+        plugin.get_store().update({"print_dialog": False})
         self.published = []
         plugin._service = service.Service(self.published.append, lambda m: None, cert_dir=self.tmp, tls=lambda: None,
                                           http_port=f.http_port, mqtt_port=f.mqtt_port, camera_factory=FakeCamera)
@@ -754,6 +758,260 @@ class AgentWhilePrinting(Base):
         jog = {"print": {"command": "gcode_line", "param": "G91 \nG1 X10.0 F3000\nG90 \n"}}
         self.assertEqual(self.agent.send_message_to_printer("127.0.0.1", json.dumps(jog), 0, 0), -1)
         self.assertEqual(self.connect()["print"]["gcode_state"], "RUNNING")
+
+
+class ShowDialog:
+    """Kobra Control's own print dialog after OrcaSlicer's Print (plugin.ask_print)."""
+
+    def setUp(self):
+        super().setUp()
+        plugin.get_store().update({"print_dialog": True})
+
+    def test_unpatched_window_cancels(self):
+        """The fake window's default answer is Cancel: a test that forgets to answer can't print by accident."""
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
+
+    def show(self, answer, params=None, cancel=lambda: False):
+        """Print with the dialog answering `answer` (a callable gets the page data); returns (code, page data, stages)."""
+        seen, stages = {}, []
+
+        def create_window(html, title="", width=0, height=0, on_message=None, on_close=None, on_submit=None, style=None):
+            text = re.search(r'id="kobra-boot">(.*?)</script>', html, re.S).group(1)
+            seen["boot"] = json.loads(text)
+            seen["title"] = title
+            data = seen["boot"]["data"]
+            return fake_orca.FakeWindow(on_message, on_submit, answer(data) if callable(answer) else answer)
+
+        params = params or pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]",
+                                          ams_mapping_info='[{"sourceColor": "#FF0000FF", "filamentType": "PLA"}]',
+                                          task_bed_leveling=True)
+        with mock.patch.object(orca.host.ui, "create_window", create_window):
+            code = self.agent.start_local_print(params, lambda *a: stages.append(a), cancel)
+        return code, seen.get("boot", {}).get("data"), stages
+
+
+class PrintDialog(ShowDialog, Base):
+    def test_dialog_shows_the_job_slots_and_options(self):
+        self.connect()
+        code, data, stages = self.show({})
+        self.assertEqual(code, 0)
+        self.assertEqual(data["printer"]["host"], self.fake.host)
+        self.assertEqual([(f["index"], f["type"], f["colour"]) for f in data["filaments"]], [(0, "PLA", "#FF0000")])
+        self.assertEqual([s["type"] for s in data["slots"]], ["PLA", "PETG", "", "PLA"])
+        self.assertEqual(data["trays"], {"0": data["slots"][0]["tray"]})
+        self.assertEqual({o["key"]: o["lock"] for o in data["options"]}["timelapse"], "setting")
+        self.assertIs(data["auto_feed"], True)
+        self.assertEqual(stages[0][0], plugin.STAGE_CREATE)
+        wait(lambda: self.sent("print", "start"))
+
+    def test_chosen_slot_and_options_are_sent(self):
+        self.connect()
+        code, _, _ = self.show(lambda d: {"trays": {"0": d["slots"][3]["tray"]},
+                                          "options": {"auto_leveling": False, "vibration_compensation": False},
+                                          "remember": True})
+        self.assertEqual(code, 0)
+        start = wait(lambda: self.sent("print", "start"))[0]["data"]
+        self.assertEqual([m["ams_index"] for m in start["ams_settings"]["ams_box_mapping"]], [3])
+        self.assertEqual((start["task_settings"]["auto_leveling"], start["task_settings"]["vibration_compensation"]), (0, 0))
+        memory = plugin.get_store().effective()["print_memory"][self.fake.host]
+        self.assertEqual(memory["auto_leveling"], False)   # the next dialog starts from it (test_printsetup)
+
+    def test_refused_send_remembers_nothing(self):
+        self.connect()
+        code, _, _ = self.show(lambda d: {"trays": {"0": d["slots"][2]["tray"]}, "options": {"auto_leveling": False},
+                                          "remember": False, "auto_feed": False})
+        self.assertEqual(code, plugin.ERR_LP_PUBLISH)
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
+        self.assertTrue(plugin.get_store().effective()["remember_print_options"])
+        self.assertEqual(self.sent("multiColorBox", "setAutoFeed"), [])   # nothing reached the printer
+
+    def test_cancel_sends_nothing(self):
+        self.connect()
+        before = len(self.fake.requests)
+        code, _, _ = self.show({"cancelled": True, "auto_feed": False})
+        self.assertEqual(code, plugin.ERR_CANCELED)
+        self.assertEqual((self.fake.uploads, self.sent("print", "start"), self.sent("multiColorBox", "setAutoFeed")), ([], [], []))
+        writes = [r["msg"] for r in self.fake.requests[before:] if isinstance(r["msg"], dict)
+                  and (r["msg"].get("type"), r["msg"].get("action")) not in test_service.READ_ONLY]
+        self.assertEqual(writes, [])
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
+
+    def silent(self, open_for, ready=True):
+        """A window that never answers: ready (or not), open for `open_for` checks of is_open()."""
+        calls, closed = [0], []
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            if ready:
+                on_message({"ready": True})
+
+            def is_open():
+                calls[0] += 1
+                return calls[0] <= open_for
+            return types.SimpleNamespace(is_open=is_open, post=lambda d: None, close=lambda: closed.append(1))
+        return create_window, closed
+
+    def print_with(self, create_window):
+        stages = []
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        with mock.patch.object(orca.host.ui, "create_window", create_window):
+            code = self.agent.start_local_print(params, lambda *a: stages.append(a), lambda: False)
+        return code, stages
+
+    def test_window_closed_by_the_system_sends_nothing(self):
+        self.connect()
+        create_window, _ = self.silent(open_for=1)
+        self.assertEqual(self.print_with(create_window)[0], plugin.ERR_CANCELED)
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_window_that_never_shows_times_out(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6, ready=False)
+        with mock.patch.object(plugin, "DIALOG_READY", 0.3):
+            code, stages = self.print_with(create_window)
+        self.assertEqual((code, closed, self.fake.uploads), (plugin.ERR_LP_PUBLISH, [1], []))
+        self.assertIn("didn't open", stages[-1][2])
+
+    def test_window_left_open_times_out(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6)
+        with mock.patch.object(plugin, "DIALOG_TIMEOUT", 0.3):
+            code, stages = self.print_with(create_window)
+        self.assertEqual((code, closed, self.fake.uploads), (plugin.ERR_LP_PUBLISH, [1], []))
+        self.assertIn("timed out", stages[-1][2])
+
+    def test_unload_closes_an_open_window(self):
+        self.connect()
+        create_window, closed = self.silent(open_for=10 ** 6)
+
+        def unload_while_open(*a, **kw):
+            w = create_window(*a, **kw)
+            threading.Timer(0.3, self.agent.on_unload).start()
+            return w
+        self.assertEqual((self.print_with(unload_while_open)[0], closed), (plugin.ERR_CANCELED, [1]))
+        self.assertEqual(plugin._open_dialogs, set())
+
+    def test_refresh_after_a_failed_read_unlocks_start(self):
+        """A read fails (the window shows the printer offline), the next one succeeds with the same slots: the
+        window is told the printer can print again."""
+        self.connect()
+        posted, real, calls = [], plugin.service().print_snapshot, [0]
+
+        def flaky(host):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise kobra.KobraError("no answer")
+            return real(host)
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            on_message({"ready": True})
+            w = types.SimpleNamespace(is_open=lambda: True, close=lambda: None, post=posted.append)
+
+            def answer():
+                wait(lambda: any(p.get("can_print") for p in posted[1:]) if posted else False, 10)
+                on_submit({"cancelled": True})
+            threading.Thread(target=answer, daemon=True).start()
+            return w
+        with mock.patch.object(plugin, "DIALOG_REFRESH", 0.1), mock.patch.object(plugin.service(), "print_snapshot", flaky):
+            self.assertEqual(self.print_with(create_window)[0], plugin.ERR_CANCELED)
+        self.assertEqual((posted[0]["state"], posted[0]["can_print"]), ("offline", False))
+        self.assertTrue(posted[1]["can_print"])
+
+    def test_job_cancelled_in_orcaslicer_closes_the_dialog(self):
+        self.connect()
+        windows, created = [], []
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            created.append(1)
+            w = types.SimpleNamespace(open=True, is_open=lambda: True, post=lambda d: None)
+            w.close = lambda: windows.append("closed")
+            on_message({"ready": True})
+            return w
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        with mock.patch.object(orca.host.ui, "create_window", create_window):
+            code = self.agent.start_local_print(params, None, lambda: bool(created))
+        self.assertEqual((code, windows, self.fake.uploads), (plugin.ERR_CANCELED, ["closed"], []))
+
+    def test_other_material_refused(self):
+        self.connect()
+        petg = lambda d: {"trays": {"0": d["slots"][1]["tray"]}, "acknowledged": ["material:0:%d" % d["slots"][1]["tray"]]}
+        code, _, stages = self.show(petg)
+        self.assertEqual(code, plugin.ERR_LP_PUBLISH)
+        self.assertIn("another material", stages[-1][2])
+        self.assertEqual(self.sent("print", "start"), [])
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_same_family_variant_needs_use_anyway(self):
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]",
+                                ams_mapping_info='[{"sourceColor": "#FF0000FF", "filamentType": "PLA Silk"}]')
+        code, _, stages = self.show({}, params)
+        self.assertEqual(code, plugin.ERR_LP_PUBLISH)
+        self.assertIn("not confirmed", stages[-1][2])
+        code, _, _ = self.show(lambda d: {"acknowledged": ["variant:0:%d" % d["slots"][0]["tray"]]}, params)
+        self.assertEqual(code, 0)
+
+    def test_task_name_from_the_dialog_names_the_file(self):
+        self.connect()
+        self.assertEqual(self.show({"name": "Desk tidy v2"})[0], 0)
+        self.assertEqual(self.fake.uploads[0]["filename"], "Desk tidy v2.gcode")
+
+    def test_settings_link_reaches_the_tab(self):
+        self.connect()
+        windows = []
+
+        def create_window(html, on_message=None, on_submit=None, **kw):
+            on_message({"ready": True})
+            on_message({"open_settings": True})
+            w = fake_orca.FakeWindow(lambda m: None, on_submit, {"cancelled": True})
+            windows.append(w)
+            return w
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]")
+        with mock.patch.object(orca.host.ui, "create_window", create_window):
+            self.assertEqual(self.agent.start_local_print(params, None, lambda: False), plugin.ERR_CANCELED)
+        self.assertIn({"type": "show_tab", "tab": "settings"}, self.published)
+
+    def test_setting_off_still_refuses_another_material(self):
+        self.connect()
+        plugin.get_store().update({"print_dialog": False})
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), ams_mapping="[0]",
+                                ams_mapping_info='[{"sourceColor": "#FF0000FF", "filamentType": "PETG"}]')
+        code, data, stages = self.show({}, params)
+        self.assertEqual((code, data, self.fake.uploads), (plugin.ERR_LP_PUBLISH, None, []))
+        self.assertIn("another material", stages[-1][2])
+        self.assertEqual(self.sent("print", "start"), [])
+
+    def test_empty_slot_refused(self):
+        self.connect()
+        code, _, stages = self.show(lambda d: {"trays": {"0": d["slots"][2]["tray"]}})
+        self.assertEqual(code, plugin.ERR_LP_PUBLISH)
+        self.assertEqual(self.fake.uploads, [])
+
+    def test_auto_feed_change_is_applied_before_the_print(self):
+        self.connect()
+        self.assertEqual(self.show({"auto_feed": False})[0], 0)
+        self.assertEqual(wait(lambda: self.sent("multiColorBox", "setAutoFeed"))[0]["data"]["multi_color_box"][0]["auto_feed"], 0)
+
+    def test_setting_off_skips_the_dialog(self):
+        self.connect()
+        plugin.get_store().update({"print_dialog": False})
+        code, data, _ = self.show({"cancelled": True})
+        self.assertEqual((code, data), (0, None))
+
+
+class PrintDialogWhilePrinting(ShowDialog, Base):
+    state = "printing"
+
+    def test_busy_printer_shown_and_refused(self):
+        """The dialog says the printer is busy (Print stays off there); an answer anyway is refused, nothing sent."""
+        self.connect()
+        code, data, stages = self.show({})
+        self.assertEqual((data["printer"]["state"], data["printer"]["can_print"]), ("printing", False))
+        self.assertEqual((code, self.fake.uploads), (plugin.ERR_LP_PUBLISH, []))
+        self.assertIn("printing", stages[-1][2])
+        self.assertEqual(plugin.get_store().effective()["print_memory"], {})
 
 
 class Page(Base):
