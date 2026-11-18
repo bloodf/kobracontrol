@@ -1030,12 +1030,12 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return smc
 
     def print_snapshot(self, host):
-        """(status data, {global slot: spool name}) for the print dialog: the printer's state as last reported and the
+        """(status data, {global slot: {"name", "fraction"}}) for the print dialog: the printer's state as last reported and the
         Spoolman links already known. Waits for the session like a print job; never asks Spoolman."""
         conn = self.ready(host)
         data = self._data(conn)
         with self.lock:
-            names = printsetup.spool_names(self.spools, self.bindings) if self.target and self.target.host == host else {}
+            names = printsetup.spool_links(self.spools, self.bindings) if self.target and self.target.host == host else {}
         return data, names
 
     def cmd_spools(self):

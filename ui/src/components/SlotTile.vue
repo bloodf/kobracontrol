@@ -7,6 +7,7 @@ import { s, run, tracker, controlsOff, printerName, loadSpools, stale } from '..
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
 import { family, hexOf } from '../core/logic';
+import { slotFraction } from '../core/spool-level';
 import type { Slot, Spool } from '../app/types';
 
 // One slot as an object card: its filament colour across the top, the drawn spool, the amount left, the Spoolman spool
@@ -26,6 +27,7 @@ const meta = computed(() => (!ready.value ? null : linked.value ? [linked.value.
   : [props.slot.type || t('slot.noType'), props.slot.spool_id != null ? t('pick.unknown', { id: props.slot.spool_id }) : t('slot.notLinked')].join(' · ')));
 // The level comes from the linked Spoolman spool, else from what the printer reports for the slot (percent), else unknown.
 const reportedPct = computed(() => (typeof props.slot.percent === 'number' ? Math.max(0, Math.min(100, props.slot.percent)) : null));
+const level = computed(() => slotFraction(linked.value, props.slot.percent));
 const state = computed<{ state: OuiState; text: string } | null>(() => {
   const a = props.slot.activity;
   if (a === 'loading') return { state: 'busy', text: t('slot.loading') };
@@ -99,14 +101,19 @@ async function choose(id: number | null) {
 
 <template>
   <OuiSlot class="kc-slot" :label="String(slot.index + 1)" :name="name" :material="meta" :color="ready ? colour || null : null"
-           :colors="ready && linked?.colours?.length ? linked.colours : null" :remaining="ready ? linked?.remaining ?? null : null" :initial="ready ? linked?.initial ?? null : null"
-           :low="!!linked?.low" :active="loaded && !stale" :empty-label="t('slot.empty')" :unknown-label="t('slot.weightUnknown')"
+           :colors="ready && linked?.colours?.length ? linked.colours : null" :remaining="ready ? level ?? 0 : null" :initial="1"
+           :active="loaded && !stale" :empty-label="t('slot.empty')"
            :aria-label="label" :data-slot="key">
     <template v-if="state" #state><OuiStatus :state="state.state" :title="state.text" data-test="slot-state">{{ state.text }}</OuiStatus></template>
-    <template v-if="!linked && reportedPct !== null" #amount>
+    <!-- OuiSlot draws its spool from remaining / initial and fakes a level when that is unknown, so it gets the chosen
+         fraction (an unknown one as 0: the same bare reel) and the amount is written here. -->
+    <template #amount>
       <div class="oui-slot-amount">
-        <p class="oui-num"><strong>{{ reportedPct }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></p>
-        <OuiLevel :fraction="reportedPct / 100" />
+        <p v-if="typeof linked?.remaining === 'number'" class="oui-num"><strong>{{ fmt.number(Math.round(linked.remaining), 0) }}</strong> g<span
+          v-if="typeof linked.initial === 'number'" class="oui-muted"> / {{ fmt.grams(linked.initial) }}</span></p>
+        <p v-else-if="reportedPct !== null" class="oui-num"><strong>{{ reportedPct }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></p>
+        <p v-else class="oui-muted">{{ t('slot.weightUnknown') }}</p>
+        <OuiLevel :fraction="level" :tone="linked?.low ? 'low' : 'normal'" />
       </div>
     </template>
 

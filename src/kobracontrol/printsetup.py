@@ -3,6 +3,7 @@ project filament prints from, and the print options. What the page shows is buil
 checked here, so nothing the page sends is trusted as is. Free of the `orca` module."""
 
 import base64
+import math
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -219,27 +220,43 @@ def clean_memory(value):
 
 # ---------------------------------------------------------------------- the page
 
-def spool_names(spools, bindings):
-    """{global slot index: "Vendor Name"} for the slots linked to a Spoolman spool."""
+def _fraction(part, whole):
+    """part / whole clamped to 0..1; None unless both are numbers and whole is above 0."""
+    ok = all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (part, whole))
+    return max(0.0, min(1.0, part / whole)) if ok and whole > 0 else None
+
+
+def spool_links(spools, bindings):
+    """{global slot index: {"name": "Vendor Name", "fraction": remaining / initial or None}} for the slots linked to a
+    Spoolman spool."""
     by_id = {s.get("id"): s for s in spools or []}
     out = {}
     for g, sid in (bindings or {}).items():
         s = by_id.get(sid)
         if s:
-            out[g] = " ".join(x for x in (s.get("vendor"), s.get("name")) if x) or "#%s" % sid
+            out[g] = {"name": " ".join(x for x in (s.get("vendor"), s.get("name")) if x) or "#%s" % sid,
+                      "fraction": _fraction(s.get("remaining"), s.get("initial"))}
     return out
 
 
-def page_slots(data, names):
-    """The slots as the dialog shows them."""
-    return [{"tray": ace.tray_id(s), "global_index": s["global_index"], "box_id": s["box_id"], "index": s["index"],
-             "type": s["type"], "family": ace.material_family(s["type"]),
-             "material": ace.normalize_material(s["type"]) if s["type"] else "", "colour": hex6("%02X%02X%02X" % tuple(s["color"][:3])), "usable": bool(s.get("usable")),
-             "spool": names.get(s["global_index"], "")} for s in data["slots"]]
+def page_slots(data, links):
+    """The slots as the dialog shows them. "fraction" (filament left, 0..1) is the linked Spoolman spool's, else the
+    percentage the ACE reports, else None (unknown)."""
+    out = []
+    for s in data["slots"]:
+        link = links.get(s["global_index"]) or {}
+        fraction = link.get("fraction")
+        if fraction is None:
+            fraction = _fraction(s.get("percent"), 100)
+        out.append({"tray": ace.tray_id(s), "global_index": s["global_index"], "box_id": s["box_id"], "index": s["index"],
+                    "type": s["type"], "family": ace.material_family(s["type"]),
+                    "material": ace.normalize_material(s["type"]) if s["type"] else "", "colour": hex6("%02X%02X%02X" % tuple(s["color"][:3])),
+                    "usable": bool(s.get("usable")), "spool": link.get("name", ""), "fraction": fraction if s.get("usable") else None})
+    return out
 
 
-def page_data(printer, job, filaments, data, names, trays, options, auto_feed, remember_on):
-    return {"printer": printer, "job": job, "filaments": filaments, "slots": page_slots(data, names),
+def page_data(printer, job, filaments, data, links, trays, options, auto_feed, remember_on):
+    return {"printer": printer, "job": job, "filaments": filaments, "slots": page_slots(data, links),
             "trays": {str(k): v for k, v in trays.items()}, "options": options, "auto_feed": auto_feed,
             "remember": bool(remember_on)}
 
