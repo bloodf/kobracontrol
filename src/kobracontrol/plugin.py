@@ -45,7 +45,7 @@ _granted = set()   # printer addresses declared at load or allowed since: the se
 _refused = set()   # addresses refused in OrcaSlicer's dialog this session: asked again only on a user action
 _queue_on_main = None   # OrcaSlicer's queue_on_main, once it hands it to the printer agent
 _last_hints = ("", "", "")   # preset_hints() as last read on the UI thread, for the script's worker thread
-STOP_WAIT = 1.0    # s a restarted bridge waits for the previous one to let go of its port
+STOP_WAIT = 10.0   # s a restart worker waits for the previous bridge to let go of its port (an upload may be finishing)
 UI_WAIT = 5.0      # s a worker thread waits for the UI thread to read the presets
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
 OK, ERR_INVALID_HANDLE, ERR_CANCELED, ERR_INVALID_RESULT = 0, -1, -18, -19
