@@ -101,12 +101,12 @@ async function choose(id: number | null) {
 
 <template>
   <OuiSlot class="kc-slot" :label="String(slot.index + 1)" :name="name" :material="meta" :color="ready ? colour || null : null"
-           :colors="ready && linked?.colours?.length ? linked.colours : null" :remaining="ready ? level ?? 0 : null" :initial="1"
+           :colors="ready && linked?.colours?.length ? linked.colours : null" :remaining="ready ? level : null" :initial="1"
            :active="loaded && !stale" :empty-label="t('slot.empty')"
            :aria-label="label" :data-slot="key">
     <template v-if="state" #state><OuiStatus :state="state.state" :title="state.text" data-test="slot-state">{{ state.text }}</OuiStatus></template>
-    <!-- OuiSlot draws its spool from remaining / initial and fakes a level when that is unknown, so it gets the chosen
-         fraction (an unknown one as 0: the same bare reel) and the amount is written here. -->
+    <!-- OuiSlot draws its spool from remaining / initial: it gets the chosen fraction (null when unknown: the full reel in
+         the slot's colour with the unknown badge) and the amount is written here. -->
     <template #amount>
       <div class="oui-slot-amount">
         <p v-if="typeof linked?.remaining === 'number'" class="oui-num"><strong>{{ fmt.number(Math.round(linked.remaining), 0) }}</strong> g<span
