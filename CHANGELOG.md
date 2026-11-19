@@ -4,17 +4,20 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-18
+
 ### Changed
-- Settings is a set of pages: a list of pages beside the open one, or in a narrow window the list first and one page
-  at a time with a Back button. The last page opens again next time, a page that needs attention is marked in the
-  list, and focus moves to the page heading when a page opens. Every "Open Settings" link opens the page it is about
-  (Connection, Camera, Spoolman, Requirements), and the print setup's "Plugin settings" opens Print defaults.
+- Settings is split into pages: a list of pages beside the open one, or in a narrow window the list first and one page
+  at a time with a Back button. Settings opens on the page you used last, and a page that needs attention is marked in
+  the list. Every "Open Settings" link opens the page it is about (Connection, Camera, Spoolman, Requirements), and the
+  print setup's "Plugin settings" opens Print defaults.
 
 ### Fixed
-- The spool picture shows how much filament is left: an ACE slot without a Spoolman spool is drawn at the percentage
-  the ACE reports (it was drawn at a made-up level). A loaded slot with no amount at all is a full reel in its colour with a
-  small "?" badge, so it no longer looks like an empty slot, which keeps the bare reel (shared UI foundation 4.2.2). The print setup's slot
-  picker draws each slot as a spool at its level too (Spoolman's, else the ACE's) and says the amount to screen readers.
+- The spool picture shows how much filament is left. An ACE slot without a Spoolman spool is drawn at the percentage
+  the ACE reports (before, it was drawn at a made-up level). A loaded slot with no known amount shows a full reel in its
+  colour with a small "?" badge, so it no longer looks like an empty slot, which keeps the bare reel. The print setup's
+  slot picker also draws each slot as a spool at its level (Spoolman's, else the ACE's) and reads the amount out to
+  screen readers.
 
 ## [0.7.1] - 2026-11-18
 
