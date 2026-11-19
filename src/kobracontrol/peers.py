@@ -232,11 +232,14 @@ class Presence:
         self._poke = threading.Event()
         self._thread = None
         self._failed = False
+        self.links = 0      # unix ms of this plugin's last spool link change: peers re-read Spoolman when it moves
+        self.printer = {}   # {"host", "name"} of the printer the tab shows: Spooler writes and reads links with this name
 
     def doc(self, state="active"):
         return {"schema": SCHEMA, "version": VERSION, "plugin": self.plugin, "plugin_version": self.version,
                 "session": self.session, "pid": os.getpid(), "started": int(self.started), "ts": self.clock(),
-                "state": state, **({"wants": self.wants()} if state == "active" else {})}
+                "state": state, "links": self.links, **({"printer": self.printer} if self.printer else {}),
+                **({"wants": self.wants()} if state == "active" else {})}
 
     def write(self, state="active"):
         if not self.path:
@@ -300,8 +303,21 @@ class SpoolerLink:
                 self.stock_request += 1
         self.presence.poke()
 
+    def links_changed(self):
+        """A spool link changed here: say so in the presence now, so Spooler's open tab re-reads Spoolman."""
+        self.presence.links = int(self.clock() * 1000)
+        self.presence.poke()
+
+    def set_printer(self, host, name):
+        """The printer the tab shows, by address and the name its slot links use."""
+        printer = {"host": str(host or ""), "name": str(name or "")} if host else {}
+        if printer != self.presence.printer:
+            self.presence.printer = printer
+            self.presence.poke()
+
     def spooler(self):
-        """{"state", "text", "detail", "version", "session", "origin"} of the Spooler plugin."""
+        """{"state", "text", "detail", "version", "session", "origin", "links", ...} of the Spooler plugin. "links" moves
+        whenever Spooler linked or unlinked a spool (0 from a Spooler that doesn't say)."""
         doc, _ = read_json(peer_file(self.root, SPOOLER))
         state, detail = peer_status(doc, self.clock())
         spoolman = (doc or {}).get("spoolman") if isinstance((doc or {}).get("spoolman"), dict) else {}
@@ -316,7 +332,8 @@ class SpoolerLink:
                 # and does not say so; a version that does book one must list "anycubic" here.
                 "books_anycubic": isinstance(books, list) and "anycubic" in books,
                 "session": (doc or {}).get("session") if state == "active" else "",
-                "origin": normalize_origin(spoolman.get("origin")) if state == "active" else ""}
+                "origin": normalize_origin(spoolman.get("origin")) if state == "active" else "",
+                "links": _num((doc or {}).get("links")) or 0 if state == "active" else 0}
 
     def stock(self):
         """(spooler, stock): the peer and, while it runs, its stock list."""

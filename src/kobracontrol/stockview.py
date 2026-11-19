@@ -30,6 +30,15 @@ class StockMixin:
 
     peers = None
 
+    def links_changed(self):
+        if self.peers is not None:
+            self.peers.links_changed()
+
+    def tell_printer(self, target):
+        """Publish the shown printer's address and link name, so Spooler links its slots by that name."""
+        if self.peers is not None and target is not None:
+            self.peers.set_printer(target.host, target.name)
+
     def want_stock(self, refresh=False):
         if self.peers is not None:
             self.peers.want_stock(refresh)

@@ -36,7 +36,7 @@ export interface Located { address: string; source: AddressSource; preset_host: 
 export interface Spool { id: number; name: string; vendor: string; material: string; colour?: string; colours?: string[];
   remaining?: number | null; initial?: number | null; location?: string; filament_id?: number; low?: boolean; use_first?: boolean; bound_slot?: number | null }
 export interface StockView {
-  spooler: { state: string; text: string; detail?: string; version?: string };
+  spooler: { state: string; text: string; detail?: string; version?: string; links?: number };
   stock: { state: string; code?: string; text: string; detail?: string; rows: Spool[]; key: string; ts?: number };
   same_spoolman: boolean | 'fallback' | null; usage: string; bindings: Record<string, number>;
   /** true when the list is usable; otherwise `reason` says why (absent, stale, waiting, unsupported, or a stock state code). */

@@ -25,6 +25,7 @@ DEFAULTS = {
     "spoolman_url": "",
     "spoolman_auto": True,               # bind a spool when a slot changes
     "spoolman_report_usage": True,       # deduct each slot's grams when a print finishes
+    "spoolman_refresh_s": 30,            # the page re-reads Spoolman this often while it shows (0 = off; 10-300)
     "spooler_hint_dismissed": False,
     "print_dialog": True,                # "Show print setup before sending": Kobra Control's window after OrcaSlicer's Print
     "remember_print_options": True,      # its options start from the last ones chosen for that printer
@@ -33,6 +34,7 @@ DEFAULTS = {
     "bridge_port": 8765,
 }
 PORT_RANGE = (1024, 65535)
+REFRESH_RANGE = (10, 300)
 
 
 def printer_label(name):
@@ -45,6 +47,8 @@ def _clean(key, value):
     default = DEFAULTS[key]
     if key == "ui_language":
         return value if value in UI_LANGUAGES else None
+    if key == "spoolman_refresh_s":
+        return value if type(value) is int and (value == 0 or REFRESH_RANGE[0] <= value <= REFRESH_RANGE[1]) else None
     if key == "bridge_port":
         return value if type(value) is int and PORT_RANGE[0] <= value <= PORT_RANGE[1] else None
     if type(value) is not type(default):

@@ -710,6 +710,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "ui_language":
                 get_store(self).update({"ui_language": data.get("value")})
                 sync_language()
+            elif kind == "spoolman_refresh":   # Settings: how often the page re-reads Spoolman; invalid keeps the stored one
+                get_store(self).update({"spoolman_refresh_s": data.get("value")})
+                self._post_config()
             elif kind == "save_settings":
                 get_store(self).update(dict(data.get("settings") or {}))
                 sync_bridge(lambda: self.post_message(self._config_message()))
