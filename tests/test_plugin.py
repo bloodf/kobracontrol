@@ -1714,5 +1714,20 @@ class AddOns(Base):
         self.assertEqual(self.fake.uploads[-1]["filename"], "cube.gcode")
 
 
+class PrintPageSize(unittest.TestCase):
+    def boot(self, html):
+        return json.loads(re.search(r'id="kobra-boot">(.*?)</script>', html, re.S).group(1))["data"]
+
+    def test_plate_image_left_out_when_page_too_big_for_webview2(self):
+        big = {"job": {"name": "cube", "thumbnail": "A" * (512 * 1024 * 4 // 3)}, "slots": []}
+        with mock.patch.object(plugin, "log") as log:
+            html = plugin.page_html("auto", "print", big)
+        self.assertLessEqual(len(html.encode("utf-8")), plugin.WEBVIEW_PAGE_LIMIT)
+        self.assertEqual(self.boot(html), {"job": {"name": "cube", "thumbnail": ""}, "slots": []})
+        self.assertIn("plate image is left out", log.call_args[0][0])
+        small = {"job": {"name": "cube", "thumbnail": "QUJD"}, "slots": []}
+        self.assertEqual(self.boot(plugin.page_html("auto", "print", small)), small)
+
+
 if __name__ == "__main__":
     unittest.main()
