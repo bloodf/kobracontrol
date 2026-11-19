@@ -39,6 +39,17 @@ tab. A spool (else its filament) whose Spoolman extra field `orca_filament_prese
 preset that inherits nothing reports that preset's own `filament_id` instead, read from its JSON file
 (`Preset.file`; presets are listed on the UI thread only). Each plugin works on its own.
 
+A slot's link is the spool's Spoolman location `"<printer name> S<n>"`, where n is the 1-based global
+slot index (`spoolman.location_for`, read back by `bindings_from_locations`). The name must match
+exactly, ignoring case and extra spaces. Spooler (newer than 0.29.1) reads the same location for the
+ACE slots on its Printer tab, ahead of its colour match. It writes the location in one case only:
+when you press **Assign spool**, **Change spool** or **Unassign** on an ACE slot. Assign writes
+`"<printer model> S<n>"`, with n = box × 4 + slot + 1, for example `Anycubic Kobra X S2`. It clears
+that location from any other spool, as `cmd_bind` does. Spooler uses the printer model as the name,
+which is Kobra Control's default printer name. If you renamed the printer in Kobra Control's
+Settings, Kobra Control won't see a link Spooler writes: link the spool from Kobra Control instead.
+Spooler sends nothing to the printer.
+
 ## Modules
 
 | Module | Job | Uses `orca`? |
