@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirement, OuiSettings, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
+import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirement, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
 import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, upload, wrench } from '../../shared/src/icons';
 import { UI_VERSION } from '../../shared/src';
 import BridgeSettings from './BridgeSettings.vue';
+import SettingsPages from './SettingsPages.vue';
 import CertFinder from './CertFinder.vue';
 import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, pagePlays, requirement, checkRequirements } from '../app/store';
 import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
@@ -78,6 +79,15 @@ const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'lang-h', label: t('lang.title'), icon: languages },
   { id: 'about-h', label: t('about.title'), icon: info },
 ]);
+// A "Settings" link elsewhere (openSettings(page)) opens its page once Settings shows and the page is on it (some
+// wait for the plugin's config).
+const pages = ref<InstanceType<typeof SettingsPages>>();
+watch(() => [s.settingsPage, s.tab, !!config.value], () => {
+  const id = s.settingsPage;
+  if (!id || s.tab !== 'settings' || !document.getElementById(id)) return;
+  s.settingsPage = '';
+  pages.value?.select(id);
+}, { immediate: true, flush: 'post' });
 // The save bar names what is not saved yet.
 const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
   auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', print_dialog: 'printdef.dialog', remember_print_options: 'pd.remember', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
@@ -90,7 +100,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
 
 <template>
   <div class="sv">
-    <OuiSettings :sections="sections" :nav-label="t('settings.nav')">
+    <SettingsPages ref="pages" :sections="sections" :nav-label="t('settings.nav')" :back-label="t('settings.back')" :error-label="t('settings.hasError')">
       <div class="oui-stack">
         <OuiFormSection id="conn-h" :icon="linkIcon" tone="cobalt" :title="t('conn.title')" :description="t('conn.help')">
           <template v-if="link === 'connected'" #status><OuiStatus state="ok">{{ t('conn.answering') }}</OuiStatus></template>
@@ -195,7 +205,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
         <Button :label="saving ? t('settings.saving') : t('settings.save')" :loading="saving" :disabled="!config" data-test="save-top" @click="save">
           <template #icon><OuiIcon :icon="saveIcon" :size="14" /></template></Button>
       </template>
-    </OuiSettings>
+    </SettingsPages>
   </div>
 </template>
 

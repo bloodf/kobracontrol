@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import Button from 'primevue/button';
 import { OuiBanner, OuiIcon } from '../../shared/src/components';
 import { dashboard, refresh, settings, play, shieldCheck, upload } from '../../shared/src/icons';
-import { s, tracker, hello, link, printerName, run, statusAge, STALE_STATUS_S } from '../app/store';
+import { s, openSettings, tracker, hello, link, printerName, run, statusAge, STALE_STATUS_S } from '../app/store';
 import { t, fmt } from '../core/i18n';
 
 // What the whole page has to say, once, under the app bar on every tab: why the printer's controls are off and which
@@ -49,7 +49,7 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
                  dismissible dismiss-key="no-target" :close-label="t('common.close')">
         {{ t('banner.target') }}
         <template v-if="s.tab !== 'settings'" #actions>
-          <Button size="small" severity="secondary" :label="t('common.openSettings')" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+          <Button size="small" severity="secondary" :label="t('common.openSettings')" @click="openSettings('conn-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
         </template>
       </OuiBanner>
       </div>
@@ -59,7 +59,7 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
         {{ t('target.offline.body', { printer: printerName, error: s.offline || s.error }) }}
         <span v-if="retryIn" class="oui-meta" data-test="retry-in">{{ t('target.retryIn', { n: retryIn }) }}</span>
         <template #actions>
-          <Button v-if="s.tab !== 'settings'" size="small" severity="secondary" text :label="t('banner.connSettings')" @click="s.tab = 'settings'" />
+          <Button v-if="s.tab !== 'settings'" size="small" severity="secondary" text :label="t('banner.connSettings')" @click="openSettings('conn-h')" />
           <Button size="small" severity="secondary" :label="t('common.retry')" @click="hello(true)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
         </template>
       </OuiBanner>

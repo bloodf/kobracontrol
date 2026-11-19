@@ -519,6 +519,7 @@ export const zhCN: Record<MessageKey, string> = {
   'usage.more': "还有 {n} 条",
   'usage.review': "查看",
   'usage.hide': "隐藏",
+  'settings.back': '返回', 'settings.hasError': '有需要修正的值',
   'settings.nav': "设置分区",
   'settings.discard': "放弃",
   'settings.save': "保存设置",

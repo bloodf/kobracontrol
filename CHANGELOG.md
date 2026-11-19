@@ -4,6 +4,12 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changed
+- Settings is a set of pages: a list of pages beside the open one, or in a narrow window the list first and one page
+  at a time with a Back button. The last page opens again next time, a page that needs attention is marked in the
+  list, and focus moves to the page heading when a page opens. Every "Open Settings" link opens the page it is about
+  (Connection, Camera, Spoolman, Requirements), and the print setup's "Plugin settings" opens Print defaults.
+
 ### Fixed
 - The spool picture shows how much filament is left: an ACE slot without a Spoolman spool is drawn at the percentage
   the ACE reports (it was drawn at a made-up level). A loaded slot with no amount at all is a full reel in its colour with a

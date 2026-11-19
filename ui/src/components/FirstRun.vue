@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { printer, refresh, settings } from '../../shared/src/icons';
 import CertFinder from './CertFinder.vue';
-import { s, searchAgain, choosePrinter, tracker } from '../app/store';
+import { s, openSettings, searchAgain, choosePrinter, tracker } from '../app/store';
 import { t } from '../core/i18n';
 import art from '../assets/kobra-connect.webp';
 
@@ -29,7 +29,7 @@ const title = computed(() => (different.value ? t('fr.pick.different') : s.candi
       <span data-test="fr-target-why">{{ s.error }}</span>
       <template v-if="!s.candidates.length">{{ ' ' + t('fr.target.body') }}</template>
       <template #actions>
-        <Button :severity="s.candidates.length ? 'secondary' : undefined" :label="t('common.openSettings')" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+        <Button :severity="s.candidates.length ? 'secondary' : undefined" :label="t('common.openSettings')" @click="openSettings('conn-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
         <Button severity="secondary" :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" data-test="search-again" @click="searchAgain()"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
       </template>
     </OuiEmpty></div>
