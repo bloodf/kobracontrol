@@ -1177,6 +1177,10 @@ test('stale status shows its age', `
   Date.now = () => real() + 30000;
   await until(() => text(byTest('target-banner')).includes('out of date'), 'stale banner', 15000);
   assert(text(byTest('target-banner')).includes('Last printer status'), 'says the age: ' + text(byTest('target-banner')));
+  // the reasons the disabled controls point at stay on screen beside it: an old status does not hide them
+  assert(q('[data-move="x+"]').disabled, 'moves are still off');
+  assert(q('#kc-busy') && text(q('#kc-busy')).includes('idle or paused'), 'the busy banner is still there: ' + text(byTest('target-banner')));
+  eq(q('[data-move="x+"]').getAttribute('aria-describedby'), 'kc-busy', 'and the control points at it');
   Date.now = real;
 `);
 

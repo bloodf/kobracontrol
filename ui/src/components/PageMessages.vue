@@ -27,7 +27,9 @@ function cancelWaiting(): void {
   if (id) void run({ key: 'bridge-cancel', label: t('act.bridgeCancel'), cmd: 'bridge_cancel', args: { id }, okText: t('ok.bridgeCancel') });
 }
 // What a connected printer refuses while it works, for the tab that is open: the dashboard's controls, or starting a
-// print on Files. One sentence each, in one banner.
+// print on Files. One sentence each, in one banner. It is not one of the chained link banners below: its reasons are
+// empty whenever one of those says more (offline, connecting, no status), and an old status must not hide it, as the
+// controls it turns off point at it.
 const busyWhy = computed(() => {
   const b = busy.value, st = s.status;
   const list = s.tab === 'dash' ? [b.feed && t('reason.noFeed'), b.move && t('reason.noMove'), b.heat && t('reason.noHeat'), b.print && t('reason.noDeviceChange'),
@@ -39,7 +41,7 @@ const busyWhy = computed(() => {
  * one holds while that case lasts and is forgotten when it clears: the same problem coming back later shows again. */
 const top = computed(() => (link.value === 'noCertificate' ? 'cert' : link.value === 'noTarget' ? 'target' : link.value === 'offline' ? 'offline'
   : link.value === 'connecting' ? 'connecting' : link.value === 'connected' && !s.status?.connected ? 'noStatus'
-  : s.status && statusAge.value > STALE_STATUS_S ? 'stale' : busyWhy.value.length ? 'busy' : ''));
+  : s.status && statusAge.value > STALE_STATUS_S ? 'stale' : ''));
 const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [text, ''] : [text.slice(0, i + 1), text.slice(i + 2)]; };
 </script>
 
@@ -47,7 +49,7 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
   <div class="kc-top">
     <div class="kc-live" role="status" aria-live="polite" data-test="target-banner">
 
-      <OuiBanner :show="top === 'busy'" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
+      <OuiBanner :show="busyWhy.length > 0" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
                  dismissible :dismiss-key="`busy:${where}:${s.tab}:${busyWhy.join('|')}`" :close-label="t('common.close')">
         {{ busyWhy.map(text => t('fmt.sentence', { text })).join(' ') }}
       </OuiBanner>
