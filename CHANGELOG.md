@@ -4,6 +4,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-19
+
 ### Fixed
 - The print setup window no longer opens blank on Windows when the plate image is large; it opens without the
   picture.
