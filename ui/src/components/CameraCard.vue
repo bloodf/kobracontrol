@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
-import { s, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
+import { s, openSettings, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
 import { t } from '../core/i18n';
 import { Player } from '../core/player';
 
@@ -65,7 +65,7 @@ const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state 
     <!-- The same reason as every other control: the page shows one connection state. -->
     <OuiEmpty v-if="!shown" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
       <span v-if="off" data-test="cam-why">{{ why }}</span><template v-else>{{ ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint') }}</template>
-      <template #actions><Button v-if="noFfmpeg" size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="s.tab = 'settings'" />
+      <template #actions><Button v-if="noFfmpeg" size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="openSettings('needs-h')" />
         <Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && !noFfmpeg && controlsOff ? 'kc-why' : undefined"
                                  data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiEmpty>
@@ -75,7 +75,7 @@ const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state 
       <div v-else-if="!s.video" class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
         <OuiEmpty :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg">
           <template v-if="s.camReason === 'no_ffmpeg'" #actions>
-            <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="s.tab = 'settings'"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+            <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="openSettings('cam-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
           </template>
         </OuiEmpty>
       </div>

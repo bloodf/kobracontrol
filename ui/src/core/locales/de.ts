@@ -519,6 +519,7 @@ export const de: Record<MessageKey, string> = {
   'usage.more': "{n} weitere",
   'usage.review': "Prüfen",
   'usage.hide': "Ausblenden",
+  'settings.back': 'Zurück', 'settings.hasError': 'enthält einen Wert zum Korrigieren',
   'settings.nav': "Bereiche der Einstellungen",
   'settings.discard': "Verwerfen",
   'settings.save': "Einstellungen speichern",
