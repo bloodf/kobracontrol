@@ -160,6 +160,28 @@ and the settings in the config block at the end. A file without either has not b
 screen shows then is not known; the plugin warns before sending such a file (`gcode_check.py`,
 [setup.md](setup.md) section 7) and sends it unchanged.
 
+## Files on the printer
+
+| Message | Data | State |
+|---|---|---|
+| `file/listLocal` | `{page_num: 1, page_size: 200, path: "/"}` | verified on firmware 2.0.2.8 |
+| `file/fileDetails` | `{root: "local", filename}` | verified on firmware 2.0.2.8 |
+| `file/deleteBatch` | `{root: "local", files: [{path: "/", filename}, ...]}` | verified on firmware 2.0.2.8 |
+
+That is the whole file interface known for the local network: list the storage's root, read one file's details,
+delete one or several files in one message, and upload (under Printing). The Files tab does exactly that: a list with
+multi-select and one `deleteBatch` for the selection.
+
+- **No folders to work with.** `listLocal` answers with `is_dir` records too (firmware 2.0.2.8 reports one,
+  `test_model`, shown on the printer as "Built-in Files"), and the request carries a `path`, but listing any path other
+  than `"/"` has never been sent to a printer, by this plugin or by Kobralink or KX-Bridge, which both list `"/"` and
+  drop the folder records. The plugin does the same.
+- **No move, no rename, no new folder.** No message for any of them is known. The printer reports the feature
+  `file_rename_support`, but the message behind it has not been read anywhere. So the Files tab has no folder tree to
+  drop files on and no "Move to": its two places, **Print files** and **Time-lapses**, are the printer's two lists
+  (`listLocal` and `listVideo`), and nothing can be moved between them.
+- **No download**, of a file or of a video.
+
 ## Time-lapse videos
 
 | Message | Data | On the printer |
