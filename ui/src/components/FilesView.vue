@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vu
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiBanner, OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiLevel, OuiPageHeader, OuiPanel, OuiSwatch, type OuiFileBrowserLabels } from '../../shared/src/components';
+import { OuiBanner, OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, type OuiFileBrowserLabels } from '../../shared/src/components';
 import { printer, refresh } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, run, tracker, targetKnown, printerName, controlsOff, busy, whyId } from '../app/store';
@@ -12,19 +12,20 @@ import { ask } from '../core/dialog';
 import { t, tn, fmt } from '../core/i18n';
 import { message } from '../core/tracker';
 import { clipLength, thumbSrc, listFiles } from '../core/logic';
-import { levelTone } from '../core/spool-level';
 import type { FileDetails, FileEntry, FileMaterial, FilesResult, VideoEntry, VideosResult } from '../app/types';
 
 // The Files tab, on the shared file browser: what is on the printer, with multi-select and delete, and one file's
 // details and print options beside the list.
 // What the Kobra X's LAN protocol offers (docs/protocol.md): file/listLocal of the storage's root, file/fileDetails,
 // file/deleteBatch (several files in one message), file/listVideo and file/deleteVideo (one video per message). It has
-// no message to move, rename or create a folder, and no download. So the places on the left are the printer's two
-// lists, not folders: nothing can be moved between them (both are locked, and "Move to" is hidden).
+// no folders to work with and no message to move, rename or create one, and no download. So the browser is shown
+// without its folder tree and without "Move to"; the printer's two lists (print files, time-lapses) are a switch over
+// the table.
 type Place = 'local' | 'videos';
+/** One array for good: a new one on each render would look like a changed tree to the browser. */
+const NO_FOLDERS: never[] = [];
 type Load = 'idle' | 'loading' | 'ok' | 'error';
-const folder = ref<string>('local');
-const place = computed<Place>(() => (folder.value === 'videos' ? 'videos' : 'local'));
+const place = ref<Place>('local');
 const selected = ref<string[]>([]);
 const state = ref<Record<Place, Load>>({ local: 'idle', videos: 'idle' });
 const error = ref<Record<Place, string>>({ local: '', videos: '' });
@@ -64,12 +65,13 @@ async function loadVideos() {
 const load = () => Promise.all([loadFiles(), loadVideos()]);
 const reloadOpen = () => (place.value === 'videos' ? loadVideos() : loadFiles());
 watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); else selected.value = []; }, { immediate: true });
-watch(hasVideos, on => { if (!on && place.value === 'videos') folder.value = 'local'; });
+watch(hasVideos, on => { if (!on) place.value = 'local'; });
+/** The other list: nothing stays selected across the two. */
+function openList(to: Place) { if (to !== place.value) { selected.value = []; place.value = to; } }
 
 // Storage comes with the status, in MB.
 const storage = computed(() => { const st = s.status?.storage; return st?.total ? { used: (st.used ?? 0) * 1e6, total: st.total * 1e6 } : null; });
 const disk = computed(() => (storage.value ? t('files.used', { used: fmt.bytes(storage.value.used), total: fmt.bytes(storage.value.total) }) : ''));
-const free = computed(() => (storage.value ? Math.max(0, 1 - storage.value.used / storage.value.total) : null));
 const seconds = (ts: number) => (ts > 1e12 ? ts / 1000 : ts);
 
 // ---------------------------------------------------------------- one file selected: its details and the print options
@@ -151,10 +153,7 @@ async function onOpen(id: string) {
 const query = ref('');
 const KIND: Record<string, string> = { gcode: 'G-code', gco: 'G-code', '3mf': '3MF' };
 const kind = (name: string) => KIND[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
-const folders = computed(() => [
-  { id: 'local', name: t('files.local'), count: state.value.local === 'ok' ? files.value.length : undefined, locked: true },
-  ...(hasVideos.value ? [{ id: 'videos', name: t('videos.title'), count: state.value.videos === 'ok' ? videos.value.length : undefined, locked: true }] : []),
-]);
+const places = computed<{ id: Place; name: string }[]>(() => [{ id: 'local', name: t('files.local') }, { id: 'videos', name: t('videos.title') }]);
 const needle = computed(() => query.value.trim().toLowerCase());
 const rows = computed(() => (place.value === 'videos'
   ? videos.value.filter(v => !needle.value || `${v.name} ${v.filename}`.toLowerCase().includes(needle.value)).map(v => ({
@@ -237,13 +236,15 @@ async function onDelete(ids: string[]) {
     <OuiEmpty state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
   </OuiPanel>
 
-  <OuiFileBrowser v-else ref="browser" v-model:folder="folder" v-model:selected="selected" :folders="folders" :files="rows" :labels="labels" :loading="state[place] === 'loading' && !total"
+  <!-- No folders are passed: the printer has none, so the tree has nothing in it and nothing can take a drop. -->
+  <OuiFileBrowser v-else ref="browser" :folder="place" v-model:selected="selected" :folders="NO_FOLDERS" :files="rows" :labels="labels" :loading="state[place] === 'loading' && !total"
                   :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place" @delete="onDelete" @open="onOpen" @vue:mounted="newestFirst">
     <template #toolbar>
+      <span v-if="hasVideos" class="kc-seg" role="group" :aria-label="t('files.places')" data-test="files-lists">
+        <Button v-for="p in places" :key="p.id" size="small" :severity="place === p.id ? undefined : 'secondary'" :text="place !== p.id" :aria-pressed="place === p.id"
+                :label="p.name" :data-list="p.id" @click="openList(p.id)" />
+      </span>
       <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
-    </template>
-    <template v-if="storage" #rail>
-      <div class="fv-space"><span class="oui-meta oui-num">{{ disk }}</span><OuiLevel :fraction="free" :tone="levelTone(free)" :label="disk" /></div>
     </template>
     <template v-if="place === 'local'" #actions="{ file }">
       <div class="fv-print" role="region" :aria-label="t('files.panel', { name: file.name })" data-test="print-panel">
@@ -277,7 +278,6 @@ async function onDelete(ids: string[]) {
 <style>
 .fv-alert:empty { display: none; }
 .fv-q { width: 220px; max-width: 100%; }
-.fv-space { display: grid; gap: 6px; }
 .fv-print { flex: 1 1 100%; display: grid; gap: var(--oui-s3); min-width: 0; }
 .fv-print > .p-button { justify-self: start; }
 .fv-warn { font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-warning); }
@@ -287,11 +287,18 @@ async function onDelete(ids: string[]) {
 .fv-mats li[data-check='differs'], .fv-mats li[data-check='missing'] { color: var(--oui-warning); }
 .fv-opts { display: grid; gap: var(--oui-s1); margin: 0; padding: 0; border: 0; }
 .fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 32px; }
-/* foundation-gap, two rules to delete once OuiFileBrowser has them (5.0.0 does not):
-   - "Move to" stays on screen, disabled for ever, when no folder can take a file. The Kobra X has no message to move a
-     file, so it is hidden here.
-   - A detail pane taller than the browser squeezes the picture's row to nothing, and the picture is then drawn over the
-     name and the facts. Its rows keep their own height, and the pane scrolls. */
-.kc-files .oui-files-move { display: none; }
+/* foundation-gap: OuiFileBrowser 5.0.0 cannot leave its folder tree, its breadcrumb or "Move to" out, and the Kobra X
+   has no folders and no message to move a file. These rules reach into it to show the browser without them: the list
+   and the detail take the whole width, and the toolbar holds the switch between the two lists and the search. Delete
+   them once the foundation can do it; the page tests fail if its class names change. */
+.kc-files .oui-files-rail, .kc-files .oui-files-path, .kc-files .oui-files-move { display: none; }
+.kc-files .oui-files-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+.kc-files .oui-files-tools { flex: 1 1 auto; justify-content: space-between; }
+/* Narrow, the detail goes under the list. foundation-gap: there the browser gives the detail all the height it asks
+   for, and a tall one (the print options) squeezes the list to nothing. It gets its content's height up to 55 % of the
+   browser and scrolls inside; the list keeps the rest. */
+@container oui-files (max-width: 980px) { .kc-files .oui-files-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) fit-content(55%); } }
+/* foundation-gap: a detail pane taller than the browser squeezes the picture's row to nothing, and the picture is then
+   drawn over the name and the facts. Its rows keep their own height, and the pane scrolls. */
 .kc-files .oui-files-detail { grid-auto-rows: max-content; }
 </style>

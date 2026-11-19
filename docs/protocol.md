@@ -177,9 +177,9 @@ multi-select and one `deleteBatch` for the selection.
   than `"/"` has never been sent to a printer, by this plugin or by Kobralink or KX-Bridge, which both list `"/"` and
   drop the folder records. The plugin does the same.
 - **No move, no rename, no new folder.** No message for any of them is known. The printer reports the feature
-  `file_rename_support`, but the message behind it has not been read anywhere. So the Files tab has no folder tree to
-  drop files on and no "Move to": its two places, **Print files** and **Time-lapses**, are the printer's two lists
-  (`listLocal` and `listVideo`), and nothing can be moved between them.
+  `file_rename_support`, but the message behind it has not been read anywhere. So the Files tab shows no folder tree
+  and no "Move to". A switch over the list changes between **Print files** and **Time-lapses**, the printer's two lists
+  (`listLocal` and `listVideo`); nothing can be moved between them.
 - **No download**, of a file or of a video.
 
 ## Time-lapse videos

@@ -79,7 +79,7 @@ if (TAB === 'files') {
   else ans('videos', {videos: SCN === 'videos-empty' ? [] : [video('desk_organiser_plate_1', '20261116215053', 8, 5400, 83, 14109048), video('benchy', '20261115101010', 7, 90000, 41, 6209048),
     video('cable_clips_x12', '20261114181500', 6, 2 * 86400, 0, 156), video('vase_spiral_tall', '20261110090000', 5, 6 * 86400, 3725, 1310000000)]});
   await sleep(100);
-  if (SCN.startsWith('videos')) { document.querySelector('[data-folder="videos"]').click(); await sleep(200); }
+  if (SCN.startsWith('videos')) { document.querySelector('[data-list="videos"]').click(); await sleep(200); }
 }
 if (SCN === 'videos-delete') { document.querySelector('[data-file^="cable_clips"]').click(); await sleep(100);
   [...document.querySelectorAll('.oui-files-bar button')].pop().click(); await until(() => document.querySelector('.p-dialog')); }

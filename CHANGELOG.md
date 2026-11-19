@@ -29,11 +29,13 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   keyboard), and **Delete** removes the selection in one go after one question that lists the names. Sort by any
   column; the list opens newest first. One selected file shows its picture, details, the slot of each filament and the
   print options, with **Start printing**.
-- Time-lapses are a second list in the same browser, with the same multi-select and **Delete** (the printer takes one
-  video per message, so they go one after the other).
+- Time-lapses are a second list in the same browser (**Print files** | **Time-lapses** over the table), with the same
+  multi-select and **Delete** (the printer takes one video per message, so they go one after the other).
 - The Kobra X has no folders to file prints in and no way to move or rename a file over the local network, so the Files
-  tab has no folder tree to drop files on and no **Move to**: its two places, **Print files** and **Time-lapses**, are
-  the printer's two lists. `docs/protocol.md` lists what the printer's file messages allow.
+  tab shows no folder tree and no **Move to**. A switch over the list changes between the printer's two lists, **Print
+  files** and **Time-lapses**. `docs/protocol.md` lists what the printer's file messages allow.
+- In a narrow window the details of the selected file sit under the list and scroll in their own share of the height,
+  so the list stays on screen.
 
 ### Removed
 - The per-row **Print** and **Delete** buttons of the Files tab (select the file instead) and its sort menu (use the

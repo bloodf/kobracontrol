@@ -89,7 +89,8 @@ async function openDetails(details) {
   await reply(last('cmd', 'file_details'), details);
   await until(() => q('.oui-files-preview img'), 'file details shown');
 }
-// The Files tab is the shared file browser: rows carry data-file, places data-folder, and the bar over the table holds
+// The Files tab is the shared file browser without its folder tree (the Kobra X has no folders): rows carry data-file,
+// the switch between the printer's two lists carries data-list, and the bar over the table holds
 // the count and, with a selection, Clear and Delete. Its own confirmation answers to data-dlg="confirm" / "cancel".
 const fileRow = name => q('[data-view="files"] [data-file="' + name + '"]');
 const fileNames = () => qa('[data-view="files"] [data-file]').map(e => e.getAttribute('data-file'));
@@ -105,8 +106,10 @@ async function openVideos(videos, view) {
   await tab('files');
   await until(() => last('cmd', 'videos'), 'videos asked');
   await reply(last('cmd', 'videos'), {videos: videos || VIDEOS()});
-  await click(q('[data-folder="videos"]'));
+  await click(q('[data-list="videos"]'));
 }
+// Shown to the user: in the page and not display: none (a hidden tab's content is neither).
+const visible = el => !!el && !!el.offsetParent;
 `;
 
 const scenarios = [];
@@ -467,8 +470,10 @@ test('drying: running unit shows remaining time, humidity and temperature; stop 
 test('Spoolman: bind per slot asks first; unbind too', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 3 ? {...s, spool_id: 7} : s))}));
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}, via: 'direct'});
-  assert(text(byTest('spool-source')).includes('2 spools'), 'source line: ' + text(byTest('spool-source')));
-  eq(qa('[data-pick]').length, 7, 'one picker per slot');
+  eq(qa('[data-pick]').filter(visible).length, 7, 'one picker per slot, on the Dashboard');
+  await tab('stock');
+  assert(visible(byTest('spool-source')) && text(byTest('spool-source')).includes('2 spools'), 'source line in the Stock tab\u2019s header: ' + text(byTest('spool-source')));
+  await tab('dash');
   await pick(q('[data-pick="4"]'), '#11 Acme White · PETG · 40 g');
   assert(dialogOpen() && dialogText().includes('#11'), 'bind asks: ' + dialogText()); await yes();
   eq(cmds('bind').map(m => m.args), [{slot: 4, spool_id: 11}], 'bind');
@@ -531,8 +536,13 @@ test('Spoolman without an address says where to set it', `
   await post({type: 'status', data: VIEW()});
   await until(() => last('cmd', 'spools'), 'spools asked');
   await fail(last('cmd', 'spools'), 'Spoolman: no address set: enter one under Settings, or use Spooler with Spoolman');
+  eq(qa('[data-pick]').length, 0, 'no spool chooser in the slot cards without Spoolman');
+  await tab('stock');
+  assert(visible(byTest('spool-source')), 'the Stock tab says it');
   eq(text(byTest('spool-source')), 'No Spoolman address', 'one short line, not the error three times');
-  assert(text(byTest('spoolman-card')).includes('Set a Spoolman address under Settings') && btn('Open Settings', byTest('spoolman-card')), 'where to set it');
+  assert(visible(byTest('spoolman-card')) && text(byTest('spoolman-card')).includes('Set a Spoolman address under Settings'), 'where to set it: ' + text(byTest('spoolman-card')));
+  await click(btn('Open Settings', byTest('spoolman-card')));
+  assert(visible(q('#sm-s-h')), 'and its button opens Settings > Spoolman');
 `);
 
 test('Spoolman: the address Spooler uses is taken when none is set here, and Settings says so', `
@@ -541,8 +551,10 @@ test('Spoolman: the address Spooler uses is taken when none is set here, and Set
     spoolman_url: 'http://box:7912', spoolman_source: 'spooler'}}));
   await post({type: 'status', data: VIEW()});
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
-  eq(text(byTest('spool-source')), '2 spools in Spoolman', 'the slot pickers work from the Spoolman of Spooler');
-  assert(!text(byTest('spoolman-card')).includes('Set a Spoolman address'), 'no contradiction with the Stock card');
+  eq(qa('[data-pick]').filter(visible).length, 7, 'the slot pickers work from the Spoolman of Spooler');
+  await tab('stock');
+  eq(text(byTest('spool-source')), '2 spools in Spoolman', 'and the Stock tab counts its spools');
+  assert(!text(q('[data-view="stock"]')).includes('Set a Spoolman address'), 'no contradiction: nothing asks for an address');
   await tab('settings');
   assert(text(byTest('sm-from')).includes('Spooler’s Spoolman is used: http://box:7912'), 'source: ' + text(byTest('sm-from')));
 `);
@@ -914,7 +926,8 @@ test('requirements: without Spoolman, refreshing and linking spools are off', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
   await post({type: 'status', data: VIEW()});
-  assert(q('[data-focus-key="sm-refresh"]').disabled, 'Spools refresh off on the Dashboard');
+  await tab('stock');
+  assert(visible(byTest('stock-refresh')) && byTest('stock-refresh').disabled, 'Refresh is off on the Stock tab');
   await tab('settings');
   const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
   assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
@@ -1399,14 +1412,18 @@ test('files: select several, delete asks once with the count and the names, and 
   assert(toasts().includes('File deleted.'), 'one file: ' + toasts());
 `);
 
-test('files: the Kobra X has no folders, so there is nothing to move a file to; a refused delete reads the list again', `
+test('files: the Kobra X has no folders, so no folder tree and no Move; a refused delete reads the list again', `
   await ready(VIEW());
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}, {name: 'b.gcode', size: 1, timestamp: 1700000001}]});
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  // the two lists the printer has, not folders
-  eq(qa('[data-folder]').map(f => f.dataset.folder), ['local', 'videos'], 'the places on the printer');
-  assert(text(q('[data-folder="local"]')).includes('Print files') && text(q('[data-folder="local"]')).includes('2'), 'named, with its count: ' + text(q('[data-folder="local"]')));
+  // no folder tree, no breadcrumb: the printer's two lists are a switch over the table
+  const files = q('[data-view="files"]');
+  for (const part of ['.oui-files-rail', '.oui-files-path']) assert(q(part, files) && !visible(q(part, files)), part + ' is not shown');
+  eq(qa('[data-folder], [role=treeitem]', files).length, 0, 'and has no folder in it');
+  eq(qa('[data-list]', files).map(b => [b.dataset.list, text(b), b.getAttribute('aria-pressed')]), [['local', 'Print files', 'true'], ['videos', 'Time-lapses', 'false']], 'the two lists');
+  const list = q('.oui-files-list', files).getBoundingClientRect(), box = q('.oui-files-grid', files).getBoundingClientRect();
+  assert(Math.abs(list.left - box.left) < 1.5, 'the list starts at the browser\u2019s edge: no empty column where the tree was (' + list.left + ' / ' + box.left + ')');
   await click(q('.oui-files-table thead input'));
   eq(filesCount(), '2 selected', 'select all');
   const move = q('[data-view="files"] .oui-files-move');
@@ -1415,8 +1432,8 @@ test('files: the Kobra X has no folders, so there is nothing to move a file to; 
   const data = new DataTransfer();
   fileRow('a.gcode').dispatchEvent(new DragEvent('dragstart', {dataTransfer: data, bubbles: true, cancelable: true}));
   await settle();
-  eq(qa('[data-folder][data-target]').length, 0, 'no folder takes a drop');
-  q('[data-folder="videos"]').dispatchEvent(new DragEvent('drop', {dataTransfer: data, bubbles: true, cancelable: true}));
+  eq(qa('[data-target], [data-drop]', files).length, 0, 'nothing takes a drop');
+  q('[data-list="videos"]').dispatchEvent(new DragEvent('drop', {dataTransfer: data, bubbles: true, cancelable: true}));
   fileRow('a.gcode').dispatchEvent(new DragEvent('dragend', {bubbles: true}));
   await settle();
   eq(fileNames().sort(), ['a.gcode', 'b.gcode'], 'nothing moved');
@@ -1429,6 +1446,29 @@ test('files: the Kobra X has no folders, so there is nothing to move a file to; 
   eq(fileNames().length, 2, 'both still there');
   assert(!toasts().includes('files deleted'), 'not reported as deleted');
 `);
+
+for (const [width, height] of [[420, 900], [720, 560]]) {
+  test(`files (${width} x ${height}): the details go under the list and never squeeze it away`, `
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: ['a', 'b', 'c', 'd', 'e', 'f'].map((n, i) => ({name: n + '.gcode', size: 1000, timestamp: 1700000000 + i}))});
+  await click(fileRow('f.gcode'));
+  await reply(last('cmd', 'file_details'), DETAILS({name: 'f.gcode'}));
+  await until(() => byTest('mat-warn'), 'details shown');
+  const files = q('[data-view="files"]'), box = q('.oui-files-grid', files).getBoundingClientRect();
+  const scroll = q('.oui-files-scroll', files).getBoundingClientRect(), detail = q('.oui-files-detail', files), d = detail.getBoundingClientRect();
+  assert(d.top >= scroll.bottom - 0.5, 'the details are under the list: ' + d.top + ' / ' + scroll.bottom);
+  const row = fileRow('f.gcode').getBoundingClientRect();
+  assert(scroll.height >= 44 && row.top >= scroll.top - 0.5 && row.bottom <= scroll.bottom + 0.5, 'the selected file is still on screen in the list: list ' + scroll.height + ' px, row ' + row.top + '-' + row.bottom + ' in ' + scroll.top + '-' + scroll.bottom);
+  assert(d.bottom <= box.bottom + 0.5 && d.height <= box.height * 0.6, 'the details keep to their share of the browser: ' + d.height + ' of ' + box.height);
+  assert(detail.scrollHeight > detail.clientHeight, 'and scroll inside it');
+  const q0 = byTest('files-q').getBoundingClientRect();
+  assert(q0.height > 20 && q0.bottom <= scroll.top + 0.5, 'the search field is whole, above the table: ' + q0.bottom + ' / ' + scroll.top);
+  byTest('print-start').scrollIntoView({block: 'nearest'}); await settle();
+  const start = byTest('print-start').getBoundingClientRect(), now = detail.getBoundingClientRect();
+  assert(start.top >= now.top - 0.5 && start.bottom <= now.bottom + 0.5, 'Start printing can be reached by scrolling the details');
+`, { size: [width, height] });
+}
 
 test('files: delete and select are off while the printer is away, pointing at the page banner', `
   await ready(VIEW());
@@ -1459,11 +1499,11 @@ test('files: a list error says so and can be retried', `
 `);
 
 // ------------------------------------------------------------------ time-lapses (Files tab)
-test('time-lapses: their own place in the browser; each video shows its print, date, length and size; an empty one is marked; no download', `
+test('time-lapses: a second list in the browser; each video shows its print, date, length and size; an empty one is marked; no download', `
   await openVideos();
-  eq(qa('[data-folder]').map(f => f.dataset.folder), ['local', 'videos'], 'a place beside the print files');
-  assert(text(q('[data-folder="videos"]')).includes('Time-lapses') && text(q('[data-folder="videos"]')).includes('2'), 'named, with its count: ' + text(q('[data-folder="videos"]')));
-  eq(q('[data-folder="videos"]').getAttribute('aria-selected'), 'true', 'open');
+  eq(qa('[data-list]').map(b => b.dataset.list), ['local', 'videos'], 'a second list beside the print files');
+  eq([text(q('[data-list="videos"]')), q('[data-list="videos"]').getAttribute('aria-pressed'), q('[data-list="local"]').getAttribute('aria-pressed')], ['Time-lapses', 'true', 'false'], 'named, and open');
+  eq(q('[data-test="files-lists"]').getAttribute('role'), 'group', 'the switch is one group');
   eq(filesCount(), '2 videos', 'count');
   eq(fileNames(), ['benchy-20261116215053_8.mp4', CUBE], 'newest first');
   const cells = qa('td', videoRow('benchy-20261116215053_8.mp4')).map(text);
@@ -1479,6 +1519,8 @@ test('time-lapses: their own place in the browser; each video shows its print, d
   assert(!byTest('print-panel'), 'a video is not printed');
   assert(btn('Delete', filesBar()) && !btn('Delete', filesBar()).disabled, 'an empty one can be deleted');
   eq(qa('[data-view="files"] .oui-files-list img, [data-view="files"] .oui-files-detail img').length, 0, 'no cover picture is fetched');
+  await click(q('[data-list="local"]'));
+  eq([filesCount(), q('[data-list="local"]').getAttribute('aria-pressed')], ['0 files', 'true'], 'back to the print files, with nothing selected');
   assert(text(byTest('videos-note')).includes('can’t be downloaded'), 'says why there is no download: ' + text(byTest('videos-note')));
   assert(!qa('button, a', q('[data-view="files"]')).some(b => /download/i.test(text(b))), 'no download control');
 `);
@@ -1554,9 +1596,9 @@ test('time-lapses: empty list, a list error with retry, and a refused delete rea
   await fail(last('cmd', 'videos'), 'the printer did not answer the time-lapse list');
   assert(text(byTest('files-error')).includes('did not answer the time-lapse list'), 'error shown: ' + text(byTest('files-error')));
   assert(byTest('files-error').closest('[role=alert]'), 'announced');
-  await click(q('[data-folder="local"]'));
+  await click(q('[data-list="local"]'));
   assert(!byTest('files-error'), 'the file list is not affected');
-  await click(q('[data-folder="videos"]'));
+  await click(q('[data-list="videos"]'));
   await click(btn('Try again', byTest('files-error')));
   eq(cmds('videos').length, 3, 'retry');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
@@ -1573,26 +1615,27 @@ test('time-lapses: empty list, a list error with retry, and a refused delete rea
 test('time-lapses: offered only for a connected printer, also while it prints', `
   await until(() => last('hello'), 'hello sent');
   await tab('files');
-  assert(!q('[data-folder="videos"]'), 'no place for them before the printer answered');
+  assert(!q('[data-list]'), 'no list to switch to before the printer answered');
   eq(cmds('videos'), [], 'nothing asked without a printer');
   await ready(PRINTING(), 4);
   await until(() => last('cmd', 'videos'), 'asked once connected');
   eq(last('cmd', 'videos').gen, 4, 'for this printer');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  await click(q('[data-folder="videos"]'));
+  await click(q('[data-list="videos"]'));
   await click(videoRow(CUBE));
   assert(!btn('Delete', filesBar()).disabled && !byTest('refresh').disabled, 'usable during a print');
   await click(btn('Delete', filesBar())); await answer('confirm');
   eq(cmds('video_delete').map(m => [m.args, m.gen]), [[{name: CUBE}, 4]], 'delete during a print, for this printer');
   await post({type: 'selection_changed'});
-  assert(!q('[data-folder="videos"]'), 'gone with the printer');
+  assert(!q('[data-list="videos"]'), 'gone with the printer');
 `);
 
 test('pt-BR: the files browser and its time-lapses are translated', `
   await openVideos();
   eq(filesCount(), '2 vídeos', 'count');
   eq(qa('[data-view="files"] thead th').map(text).slice(1), ['Nome', 'Tamanho', 'Gravado'], 'columns');
-  eq(qa('[data-folder]').map(f => text(q('.oui-files-foldername', f))), ['Arquivos de impressão', 'Time-lapses'], 'places');
+  eq(qa('[data-list]').map(text), ['Arquivos de impressão', 'Time-lapses'], 'the two lists');
+  eq(q('[data-test="files-lists"]').getAttribute('aria-label'), 'Na impressora', 'the switch is named');
   assert(text(videoRow(CUBE)).includes('Vazio'), 'empty: ' + text(videoRow(CUBE)));
   assert(text(byTest('videos-note')).includes('Ainda não é possível baixar'), 'note: ' + text(byTest('videos-note')));
   await click(videoRow(CUBE));
@@ -2242,6 +2285,8 @@ test('settings pages: Open Settings links open the page they are about', PAGES_J
   await post({type: 'status', data: VIEW()});
   await until(() => last('cmd', 'spools'), 'spools asked');
   await fail(last('cmd', 'spools'), 'Spoolman: no address set');
+  await tab('stock');
+  assert(visible(btn('Open Settings', byTest('spoolman-card'))), 'the link is on the Stock tab');
   await click(btn('Open Settings', byTest('spoolman-card')));
   eq(shown(), ['sm-s-h'], 'Spoolman page');
   assert(onHeading('sm-s-h'), 'heading focused');
