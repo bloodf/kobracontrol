@@ -24,8 +24,10 @@ const VIEW = {connected: true, state: 'printing', preparing: false, kobra_state:
   nozzle_temp: 219.6, nozzle_target: 220, bed_temp: 59.8, bed_target: 60, fan_pct: 70, light_on: true, speed_mode: 2, files: [], 
   storage: {total: 8000, used: 2100}, skipped_objects: [], pause_reason: null, last_error: null, box_set_failed: false, updated_at: 1700000000, mode: 'ace_hub',
   // The print head's three slots are the photo's spools 1-3 (white, red, a multi-colour Spoolman spool); the fourth is empty with an ACE.
-  slots: [slot(0, -1, 0, {color: [245, 245, 245]}), slot(1, -1, 1, {activity: 'loaded'}), slot(2, -1, 2, {color: [255, 140, 40], spool_id: 12}),
-    slot(3, 0, 0, {spool_id: 7}), slot(4, 0, 1, {type: 'ABS', color: [20, 20, 20]}), slot(5, 0, 2, {status: 0, type: ''}), slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213], percent: 30, weight: 300})],
+  // The ACE holds a believable mix: a full Spoolman spool, one loaded with no amount known (the ? badge), a half and a low one.
+  slots: [slot(0, -1, 0, {color: [245, 245, 245], percent: 90, weight: 1000}), slot(1, -1, 1, {activity: 'loaded', percent: 75, weight: 1000}), slot(2, -1, 2, {color: [255, 140, 40], spool_id: 12}),
+    slot(3, 0, 0, {spool_id: 7, color: [17, 17, 17]}), slot(4, 0, 1, {type: 'ABS', color: [245, 197, 24]}), slot(5, 0, 2, {type: 'PETG', color: [46, 160, 67], percent: 48, weight: 1000}),
+    slot(6, 0, 3, {activity: 'loading', color: [120, 207, 213], percent: 12, weight: 1000})],
   loaded_slot: 1, ace_units: [{id: 0, auto_feed: true, drying: {status: 1, target_temp: 50, duration: 240, remain_time: 130, humidity: 28, current_temp: 47.5}}],
   can: {pause: true, resume: false, stop: true, move: false, heat: true, feed: false, print: false},
   features: {flow_calibration_support: true, camera_timelapse_support: true}, mac: 'A4:7D:9F:12:6C:3E',
@@ -51,9 +53,9 @@ await settle();
 const SUNSET = {id: 12, name: 'Sunset', vendor: 'Acme', material: 'PLA', colour: '#ff8c28', colours: ['#ff8c28', '#e5484d', '#7c3aed'], remaining: 520, initial: 1000, low: false, use_first: false, location: 'Shelf B'};
 const ans = (cmd, r) => { const m = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === cmd); if (m) __t.handler({type: 'reply', id: m.id, result: r}); };
 await sleep(50);
-ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 640, initial: 1000}, SUNSET, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
+ans('spools', {spools: [{id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', remaining: 960, initial: 1000}, SUNSET, {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', remaining: 40, initial: 1000, low: true}]});
 ans('stock', {spooler: {state: 'active', text: '', version: '0.20.1'}, stock: {state: 'ok', code: 'ok', text: '', key: 's:1', ts: Date.now() / 1000 - 30,
-  rows: [SUNSET, {id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 640, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
+  rows: [SUNSET, {id: 7, name: 'Matte Black', vendor: 'Generic', material: 'PLA', colour: '#111111', colours: [], remaining: 960, initial: 1000, low: false, use_first: true, location: 'Shelf A'},
          {id: 11, name: 'Cobalt Blue', vendor: 'Acme', material: 'PETG', colour: '#2850a8', colours: [], remaining: 40, initial: 1000, low: true, use_first: false, location: 'Dry box'}]},
   same_spoolman: true, usage: 'kobracontrol', bindings: {'2': 12, '3': 7}, available: true, reason: null});
 ans('device', {sent: true, assist: true});
@@ -91,6 +93,27 @@ if (SCN === 'toasts') { __t.handler({type: 'notice', text: 'Kobra Control found 
   document.querySelector('[data-test="pause"]')?.click(); await sleep(50); }
 if (SCN === 'needs') { document.querySelector('.oui-settings-link[data-section="needs-h"]').click(); await sleep(200); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
+// the main and hero images: the print card without the printer photo, times or buttons, and right under it the ACE's four
+// slots and their spools (full, unknown, half, low) without their spool pickers, buttons or drying controls; hidden by a
+// style sheet, as the page keeps re-rendering them. Four in a row where the page is wide, else two, and only the cards that
+// fit whole; the social preview's short panel leaves the print card out (the app bar still says Printing).
+if (SCENE === 'store-dash') {
+  const job = document.querySelector('[data-test="job-card"]'), ace = document.querySelector('[data-test="ace-card"]');
+  job.after(ace);
+  const css = document.createElement('style');
+  css.textContent = \`[data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .kc-job-actions) { display: none !important; }
+    .kc-hero .oui-job-block { grid-template-columns: minmax(0, 1fr) auto !important; }
+    .kc-hero .oui-job-id { grid-column: 1 !important; } .kc-hero .oui-job-figure { grid-column: 2 !important; } .kc-hero .oui-job-bar { grid-column: 1 / 3 !important; }
+    [data-test="ace-card"] :is(.kc-group[data-box="-1"], .kc-group-head, .kc-group-head ~ :not(.oui-cards), .sl-pick, .oui-slot-actions, .kc-slot > .oui-meta) { display: none !important; }
+    [data-test="ace-card"] .oui-cards { grid-template-columns: repeat(\${innerWidth >= 760 ? 4 : 2}, minmax(0, 1fr)) !important; }
+    \${innerHeight < 450 ? '[data-test="job-card"] { display: none !important; }' : ''}\`;
+  document.head.append(css);
+  await sleep(300);
+  ace.querySelectorAll('.kc-slot').forEach(e => { if (e.getBoundingClientRect().bottom > innerHeight - 8) e.style.setProperty('display', 'none', 'important'); });
+  await sleep(100);   // and no line of text cut by the bottom edge
+  document.querySelectorAll('#app *').forEach(e => { const r = e.getBoundingClientRect();
+    if (!e.children.length && r.height && r.top < innerHeight && r.bottom > innerHeight) e.style.visibility = 'hidden'; });
+}
 await sleep(400);
 // once the page has settled: the Filament panel just under the app bar
 if (SCENE === 'store-ace') { scrollTo({top: document.querySelector('[data-test="ace-card"]').getBoundingClientRect().top + scrollY - 64, behavior: 'instant'}); await sleep(200); }
