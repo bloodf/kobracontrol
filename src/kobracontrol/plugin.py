@@ -189,11 +189,20 @@ def sync_language():
         log("language not read (%s)" % e)
 
 
+WEBVIEW_PAGE_LIMIT = 1_572_864   # bytes of UTF-8 HTML: WebView2 (Windows) takes at most 2 MiB of base64 and draws a bigger page blank
+
+
 def page_html(language="auto", mode="app", data=None):
-    """The Kobra Control tab ("app"), or the print dialog ("print", with its data)."""
+    """The Kobra Control tab ("app"), or the print dialog ("print", with its data). A print dialog page that would be
+    too big for WebView2 leaves out the plate image."""
     boot = {"version": VERSION, "lang": _host_language(),
             "pref": language if language in settings.UI_LANGUAGES else "auto", "mode": mode, "data": data}
-    return _asset("app.html").replace("__BOOT__", json_for_html(boot), 1)
+    html = _asset("app.html").replace("__BOOT__", json_for_html(boot), 1)
+    size = len(html.encode("utf-8"))
+    if mode == "print" and size > WEBVIEW_PAGE_LIMIT and data.get("job", {}).get("thumbnail"):
+        log("print setup page is %d bytes, over WebView2's %d; the plate image is left out" % (size, WEBVIEW_PAGE_LIMIT))
+        return page_html(language, mode, {**data, "job": {**data["job"], "thumbnail": ""}})
+    return html
 
 
 # ---------------------------------------------------------------------- service and Spooler link
