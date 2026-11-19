@@ -4,6 +4,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-19
+
 ### Fixed
 - A spool assigned to an ACE slot in Spooler now shows in Kobra Control without reconnecting: the tab re-reads
   Spoolman every 30 s while it is visible (Settings > Spoolman > **Refresh Spoolman every**: 10 to 300 s, or off),
