@@ -22,6 +22,7 @@ const smUrl = computed(() => s.located?.spoolman_url || config.value?.settings.s
 // One visible spool source per screen: when Spooler's stock uses the same Spoolman, say so.
 const source = computed(() => {
   if (!configured.value && !s.spoolsLoaded) return t('sm.notConfigured');
+  if (s.spoolsRetrying) return t('sm.retrying');
   if (s.spoolsError) return t('sm.error', { error: s.spoolsError });
   if (!s.spoolsLoaded) return t('sm.notLoaded');
   const n = s.spools.length;

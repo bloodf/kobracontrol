@@ -1045,7 +1045,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             if gen is not None and gen != self.generation:
                 raise kobra.KobraError(tr(STALE))
             self.spools, self.bindings = spools, sm.bindings_from_locations(spools, target.name)
-            return {"spools": spools, "bindings": {str(k): v for k, v in self.bindings.items()}}
+            out = {"spools": spools, "bindings": {str(k): v for k, v in self.bindings.items()}}
+        self.tell_printer(target)
+        return out
 
     def links_for(self, target):
         """(spools, {slot: spool id}) for target from Spoolman, for the printer agent before (or without) the tab;
@@ -1068,11 +1070,13 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if not any(s["id"] == spool_id for s in self.spools):
             raise ValueError(tr("spool #%d not found in Spoolman") % spool_id)
         smc = self._spoolman(target)
-        with self.lock:
-            previous = self.bindings.get(slot)
+        with self.lock:   # every other spool on this slot, the model-name form Spooler may have written included
+            previous = {s["id"] for s in self.spools if not s.get("archived") and sm.location_score(s.get("location"), target.name, slot)}
+            previous.add(self.bindings.get(slot))
         smc.set_location(spool_id, sm.location_for(target.name, slot))
-        if previous and previous != spool_id:
-            smc.set_location(previous, "")
+        for other in sorted(p for p in previous if p and p != spool_id):
+            smc.set_location(other, "")
+        self.links_changed()
         with self.lock:
             if gen is None or gen == self.generation:
                 self.bindings = {g: s for g, s in self.bindings.items() if s != spool_id and g != slot}
@@ -1087,6 +1091,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             sid = self.bindings.get(slot)
         if sid:
             self._spoolman(target).set_location(sid, "")
+            self.links_changed()
         with self.lock:
             if (gen is None or gen == self.generation) and self.bindings.get(slot) == sid:
                 self.bindings.pop(slot, None)

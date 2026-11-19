@@ -19,6 +19,10 @@ import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
 import { fingerprintText } from '../core/logic';
+import * as bridge from '../core/bridge';
+
+// How often the page re-reads Spoolman (stored by the plugin as spoolman_refresh_s; 0 = off).
+const EVERY = computed(() => [0, 10, 15, 30, 60, 120, 300].map(n => ({ value: n, label: n ? t('sm.everyOption', { n }) : t('sm.everyOff') })));
 
 const cert = computed(() => s.certificate ?? config.value?.certificate ?? null);
 const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.found ? t('cert.missing')
@@ -163,6 +167,10 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
           </OuiFormRow>
           <OuiFormRow :label="t('sm.auto')" for="c-sm-auto"><ToggleSwitch v-model="form.spoolmanAuto" input-id="c-sm-auto" /></OuiFormRow>
           <OuiFormRow :label="t('sm.usage')" for="c-sm-usage"><ToggleSwitch v-model="form.usage" input-id="c-sm-usage" /></OuiFormRow>
+          <OuiFormRow :label="t('sm.every')" :hint="t('sm.everyHelp')">
+            <Select :model-value="s.refreshS" :options="EVERY" option-label="label" option-value="value" :aria-label="t('sm.every')" data-test="sm-every"
+                    @update:model-value="bridge.post({ type: 'spoolman_refresh', value: $event })" />
+          </OuiFormRow>
           <OuiFormRow :label="t('sm.spools')">
             <span class="oui-muted" role="status">{{ smInfo }}</span>
             <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!smWhy" :title="smWhy || undefined" :aria-describedby="controlsOff ? 'kc-why' : undefined"

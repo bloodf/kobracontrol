@@ -1,9 +1,10 @@
-import { computed, reactive } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import * as bridge from '../core/bridge';
 import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
 import { showToast } from '../../shared/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
+import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';
 import { boundSlots } from '../core/logic';
 import { playable } from '../core/player';
 import type { Certificate, Config, Info, Limits, Located, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
@@ -27,6 +28,9 @@ export const s = reactive({
   limits: { ...LIMITS },
   certificate: null as Certificate | null,
   spools: [] as Spool[],
+  /** Seconds between Spoolman re-reads (settings spoolman_refresh_s; 0 = off), and whether the last ones failed. */
+  refreshS: REFRESH_DEFAULT_S,
+  spoolsRetrying: false,
   spoolsError: '',
   spoolsLoaded: false,
   config: null as Config | null,
@@ -203,11 +207,12 @@ export async function choosePrinter(c: bridge.Candidate): Promise<void> {
   if (r.ok) { s.candidates = []; void hello(); }   // chosen: the offer is answered
 }
 
-export async function loadSpools(quiet: boolean): Promise<void> {
-  if (!targetKnown.value) return;
+/** Spools and slot links from Spoolman; false when the read failed. */
+export async function loadSpools(quiet: boolean): Promise<boolean> {
+  if (!targetKnown.value) return true;
   const epoch = s.epoch;
   const r = await run({ key: 'spools', label: t('act.spools'), cmd: 'spools', quiet: true });
-  if (epoch !== s.epoch) return;
+  if (epoch !== s.epoch) return true;
   if (r.ok) {
     s.spools = r.result.spools ?? [];
     s.spoolsError = '';
@@ -216,6 +221,7 @@ export async function loadSpools(quiet: boolean): Promise<void> {
     s.spoolsError = r.error ?? t('common.unknown');
     if (!quiet) tracker.notify('error', t('msg.failed', { action: t('act.spools'), error: s.spoolsError }));
   }
+  return r.ok || r.reason === 'busy';
 }
 
 let stockSeq = 0;
@@ -292,6 +298,11 @@ export function start(): () => void {
     window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadStock(false); }, 5000),
     window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadUsage(); }, 10000),
   ];
+  // Spoolman can change from elsewhere (Spooler, Spoolman's own page): re-read the links while the page shows.
+  const auto = autoRefresh({ load: () => loadSpools(true), every: () => s.refreshS, held: userBusy, onFailing: f => { s.spoolsRetrying = f; } });
+  const offCfg = onConfig(m => { const v = cleanEvery(m.settings?.spoolman_refresh_s); if (v !== s.refreshS) { s.refreshS = v; auto.restart(); } });
+  // Spooler says right away when it linked or unlinked a spool (its presence's "links"): re-read without waiting.
+  const offLinks = watch(() => s.stock?.spooler?.links, (now, was) => { if (was !== undefined && now !== was) void loadSpools(true); });
   void hello();
-  return () => { off(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
+  return () => { off(); offCfg(); offLinks(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
 }

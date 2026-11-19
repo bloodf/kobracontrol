@@ -15,6 +15,7 @@ import urllib.request
 from i18n import tr
 
 MAX_SLOTS = 32                  # slot numbers above this in a location are not ours
+MODEL_NAME = "Anycubic Kobra X"  # the printer model: the name Spooler links with when it doesn't know a renamed one
 LOCATION_MAX = 64
 MAX_BODY = 8 * 1024 * 1024      # a Spoolman answer larger than this is refused
 PRESET_FIELD = "orca_filament_preset"   # extra field (spool, else filament): an OrcaSlicer filament preset's name
@@ -229,24 +230,33 @@ def location_for(printer_name, slot):
     return ("%s S%d" % (" ".join(str(printer_name or "").split()), slot + 1))[:LOCATION_MAX]
 
 
+def _name_score(name, printer_name):
+    """2 for this printer's own name, 1 for the model name Spooler writes when it doesn't know a renamed printer."""
+    if name == _location_key(printer_name):
+        return 2
+    return 1 if name == _location_key(MODEL_NAME) else 0
+
+
 def location_score(location, printer_name, slot):
-    """2 when a Spoolman location is exactly "<printer name> S<n>" for 0-based `slot`, else 0."""
-    return 2 if _location_key(location) == _location_key(location_for(printer_name, slot)) else 0
+    """2 when a Spoolman location is exactly "<printer name> S<n>" for 0-based `slot`, 1 when it is
+    "<printer model> S<n>" (a renamed printer, linked from Spooler), else 0."""
+    m = re.fullmatch(r"(.*)\s+s(\d+)", _location_key(location))
+    return _name_score(m.group(1), printer_name) if m and int(m.group(2)) == slot + 1 else 0
 
 
 def bindings_from_locations(spools, printer_name):
     """{slot: spool_id} from spool locations like "Anycubic Kobra X S2" (1-based in the UI). Archived spools
-    never bind; between spools with the same location the one used last wins."""
-    key = _location_key(printer_name)
+    never bind; this printer's own name beats the model name; between equals the one used last wins."""
     found = {}
     for sp in spools:
         if sp.get("archived"):
             continue
         m = re.fullmatch(r"(.*)\s+s(\d+)", _location_key(sp.get("location")))
-        if not m or m.group(1) != key or not 1 <= int(m.group(2)) <= MAX_SLOTS:
+        score = _name_score(m.group(1), printer_name) if m else 0
+        if not score or not 1 <= int(m.group(2)) <= MAX_SLOTS:
             continue
-        found.setdefault(int(m.group(2)) - 1, []).append(sp)
-    return {slot: max(sps, key=lambda sp: str(sp.get("last_used") or ""))["id"] for slot, sps in found.items()}
+        found.setdefault(int(m.group(2)) - 1, []).append((score, str(sp.get("last_used") or ""), sp["id"]))
+    return {slot: max(items)[2] for slot, items in found.items()}
 
 
 def slot_changed(old, new):

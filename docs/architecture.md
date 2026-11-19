@@ -46,9 +46,23 @@ ACE slots on its Printer tab, ahead of its colour match. It writes the location 
 when you press **Assign spool**, **Change spool** or **Unassign** on an ACE slot. Assign writes
 `"<printer model> S<n>"`, with n = box × 4 + slot + 1, for example `Anycubic Kobra X S2`. It clears
 that location from any other spool, as `cmd_bind` does. Spooler uses the printer model as the name,
-which is Kobra Control's default printer name. If you renamed the printer in Kobra Control's
-Settings, Kobra Control won't see a link Spooler writes: link the spool from Kobra Control instead.
-Spooler sends nothing to the printer.
+which is Kobra Control's default printer name. A printer renamed in Kobra Control's Settings still
+links both ways: Kobra Control's presence names the printer it shows (`"printer": {"host", "name"}`),
+and Spooler then writes and reads `"<that name> S<n>"`; Kobra Control also reads `"<printer model> S<n>"`
+(a Spooler that didn't know the new name), its own name winning over the model name on the same slot.
+Linking clears the slot's location from every other spool, in either form. Spooler sends nothing to
+the printer.
+
+**One rule for both sides:** the spool's Spoolman location is the only record of which spool is on a
+slot. Neither plugin keeps links of its own, so a slot linked from both sides holds whichever location
+was written last, and both tabs show that after their next read. The tab re-reads spools and links
+every 30 s while it is visible (Settings > Spoolman > **Refresh Spoolman every**: 10 to 300 s, or off;
+`spoolman_refresh_s`), pauses while hidden and reads at once when shown again, one read at a time,
+waiting 30, 60, 120 s and so on up to 5 minutes after failed reads ("Spoolman unreachable, retrying" on
+the Stock card), and never while a dialog or picker is open or a form field has focus. Each presence
+file carries `"links"`, the time (unix ms) that plugin last linked or unlinked a spool: Kobra Control
+moves its own on every link and unlink and reads Spooler's with the stock list, re-reading Spoolman at
+once when it moved; Spooler does the same with Kobra Control's.
 
 ## Modules
 
