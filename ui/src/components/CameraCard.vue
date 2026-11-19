@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
+import { OuiCamera, OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { camera, cameraOff, settings } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, openSettings, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
@@ -53,42 +53,45 @@ const why = computed(() => (noFfmpeg.value ? t(s.checking ? 'cam.checkingFfmpeg'
 const shown = computed(() => s.camOn && !noFfmpeg.value);
 // Being looked for: said, but the camera can still be turned on (it then looks for ffmpeg itself).
 const ffmpegPending = computed(() => s.checking && requirement('ffmpeg')?.state !== 'ok');
+const alt = computed(() => t('cam.alt', { printer: printerName.value }));
 </script>
 
 <template>
-  <!-- Off: one row, not a 16:9 hole, so the printer's state stays above the fold. -->
-  <OuiPanel class="cam-card" :class="{ compact: !shown }" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
+  <!-- OuiCamera's 16:9 box keeps its size whether the camera is off, starting, failed or live, so turning it on does not
+       move the page. A camera that cannot run at all (no printer, no ffmpeg) is one row with the reason. -->
+  <OuiPanel class="cam-card" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
     <template #title><span id="cam-h">{{ t('cam.title') }}</span></template>
     <template v-if="shown" #actions>
       <Button severity="secondary" size="small" :label="t('cam.stop')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="cameraOff" :size="14" /></template></Button>
     </template>
     <!-- The same reason as every other control: the page shows one connection state. -->
-    <OuiEmpty v-if="!shown" compact tone="sky" :icon="cameraOff" :title="off ? t('cam.unavailable') : t('cam.offTitle')">
-      <span v-if="off" data-test="cam-why">{{ why }}</span><template v-else>{{ ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint') }}</template>
-      <template #actions><Button v-if="noFfmpeg" size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="openSettings('needs-h')" />
-        <Button severity="secondary" :label="t('cam.start')" :disabled="off" :aria-describedby="off && !noFfmpeg && controlsOff ? 'kc-why' : undefined"
-                                 data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
+    <OuiEmpty v-if="off" compact :state="noFfmpeg ? 'empty' : 'offline'" :icon="cameraOff" :title="t('cam.unavailable')">
+      <span data-test="cam-why">{{ why }}</span>
+      <template v-if="noFfmpeg" #actions><Button size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="openSettings('needs-h')" /></template>
     </OuiEmpty>
+    <OuiCamera v-else-if="!shown" state="off" :alt="alt" :title="t('cam.offTitle')" :text="ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint')">
+      <template #actions><Button severity="secondary" size="small" :label="t('cam.start')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
+    </OuiCamera>
     <div v-else class="cam-view">
-      <video ref="vid" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="t('cam.alt', { printer: printerName })"></video>
-      <img v-if="!s.video && s.frame" :src="s.frame" :alt="t('cam.alt', { printer: printerName })" @load="bridge.post({ type: 'frame_ack' })">
-      <div v-else-if="!s.video" class="cam-empty oui-on-band" role="status" :data-reason="s.camReason">
-        <OuiEmpty :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg">
-          <template v-if="s.camReason === 'no_ffmpeg'" #actions>
-            <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="openSettings('cam-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
-          </template>
-        </OuiEmpty>
-      </div>
+      <!-- OuiCamera draws the JPEG frames and the starting and failed states; the stream the page plays itself is the
+           <video> over it (foundation-gap: OuiCamera 5.0.0 takes a picture address only, it has no slot for a player). -->
+      <OuiCamera v-show="!s.video" :class="{ 'cam-empty': !s.frame && !s.video }" :src="s.frame || null" :alt="alt" :state="s.frame ? 'live' : s.camError ? 'error' : 'loading'" :title="msg"
+                 :role="s.frame ? undefined : 'status'" :data-reason="s.frame ? undefined : s.camReason" @load.capture="bridge.post({ type: 'frame_ack' })">
+        <template v-if="s.camReason === 'no_ffmpeg'" #actions>
+          <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="openSettings('cam-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+        </template>
+      </OuiCamera>
+      <video ref="vid" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="alt"></video>
+      <div v-if="s.video || s.frame" class="oui-camera-overlay"><span class="oui-chip">{{ t('cam.live') }}</span></div>
     </div>
   </OuiPanel>
 </template>
 
 <style>
-/* The picture area: always black behind the picture, whatever the theme (it is the camera's frame, not a surface). */
-.cam-view { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; aspect-ratio: 16 / 9; background: #000;
-  border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); }
-.cam-view img, .cam-view video { width: 100%; height: 100%; object-fit: contain; }
+/* The stage while the camera is on: OuiCamera's own 16:9 box, with the page's player over it once it plays. */
+.cam-view { position: relative; aspect-ratio: 16 / 9; min-height: 120px; overflow: hidden; border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); background: var(--oui-inset); }
+.cam-view > .oui-camera { height: 100%; }
+.cam-view > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
 /* Not display:none: WebKit may not decode a hidden video, and it must play to say it plays. */
-.cam-view video.cam-hidden { position: absolute; opacity: 0; pointer-events: none; }
-.cam-view .cam-empty { background: none; max-width: 560px; text-align: center; }
+.cam-view > video.cam-hidden { opacity: 0; pointer-events: none; }
 </style>

@@ -114,6 +114,14 @@ export const controlsOff = computed(() => {
   if (!s.status?.connected) return t('reason.waiting');
   return '';
 });
+/** What a connected printer refuses right now (it prints, prepares, dries...). The page says it once, in the banner
+ *  under the page header (#kc-busy); the controls it turns off point there. All false while `controlsOff` says more. */
+export const busy = computed(() => {
+  const can = controlsOff.value ? null : s.status?.can;
+  return { feed: !!can && !can.feed, move: !!can && !can.move, heat: !!can && !can.heat, print: !!can && !can.print };
+});
+/** The id of the banner that says why a control is off: the page's (#kc-why), the busy one (#kc-busy), or none. */
+export const whyId = (off: boolean) => (controlsOff.value ? 'kc-why' : off ? 'kc-busy' : undefined);
 /** Numbers in the status are real only after the printer has reported once (blank is never 0). */
 export const reported = computed(() => !!s.status?.updated_at);
 /** Spool id bound to each slot (global index). */
@@ -248,7 +256,7 @@ export async function loadUsage(): Promise<void> {
   }
 }
 
-/** The Stock card shows only when the plugin says the list is usable (`available`); every other reason hides it. */
+/** The Stock tab lists spools only when the plugin says the list is usable (`available`); otherwise it says why not. */
 export const stockVisible = computed(() => !s.stockError && s.stock?.available === true);
 
 function onMessage(m: any): void {
@@ -268,7 +276,7 @@ function onMessage(m: any): void {
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
     case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
     case 'selection_changed': void hello(); break;
-    case 'show_tab': if (m.tab === 'settings') openSettings('print-h'); else if (['dash', 'files'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
+    case 'show_tab': if (m.tab === 'settings') openSettings('print-h'); else if (['dash', 'stock', 'files'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
     case 'reply': if (m.error) tracker.notify('error', t('msg.plugin', { error: String(m.error) })); break;
   }
 }
@@ -282,9 +290,11 @@ function keepHistory(d: Status): void {
 const configHandlers = new Set<(m: Config) => void>();
 export const onConfig = (h: (m: Config) => void) => { configHandlers.add(h); return () => configHandlers.delete(h); };
 
+const stockTab = () => s.tab === 'dash' || s.tab === 'stock';
 export function lease(): void {
   const vis = !s.hidden && s.tab === 'dash';
-  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: vis && stockVisible.value, mse: playable() });
+  // The stock is read for its own tab and for the dashboard, whose slot cards and drawing show the linked spools.
+  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: !s.hidden && stockTab() && stockVisible.value, mse: playable() });
 }
 
 export function start(): () => void {
@@ -295,7 +305,7 @@ export function start(): () => void {
   const timers = [
     window.setInterval(lease, 2000),
     window.setInterval(() => { s.now = Date.now(); }, 1000),
-    window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadStock(false); }, 5000),
+    window.setInterval(() => { if (stockTab() && !s.hidden) void loadStock(false); }, 5000),
     window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadUsage(); }, 10000),
   ];
   // Spoolman can change from elsewhere (Spooler, Spoolman's own page): re-read the links while the page shows.

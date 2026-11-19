@@ -66,9 +66,10 @@ if (SCN === 'stale') { const real = Date.now; Date.now = () => real() + 4 * 6000
 if (SCN === 'usage') { await sleep(50); document.querySelector('[data-test="usage-review"]')?.click(); }
 if (SCENE === 'store-status') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'frame', image: FRAME}); }
 if (SCN === 'camera') { document.querySelector('[data-test="camera"]').click(); await sleep(100); __t.handler({type: 'camera_error', error: 'x', reason: 'no_ffmpeg'}); }
-// videos, videos-empty, videos-error, videos-delete: the Files tab's Time-lapses section in each of its states.
-const TAB = SCN.startsWith('videos') ? 'files' : SCN === 'needs' ? 'settings' : SCN;
-if (TAB === 'settings' || TAB === 'files') { document.querySelector('[data-tab="' + TAB + '"]').click(); await sleep(300); }
+// videos, videos-empty, videos-error, videos-delete: the Files tab's Time-lapses list in each of its states.
+// files-multi: three files selected (the bar's count and Delete). stock: the Stock tab.
+const TAB = SCN.startsWith('videos') || SCN === 'files-multi' ? 'files' : SCN === 'needs' ? 'settings' : SCN;
+if (TAB === 'settings' || TAB === 'files' || TAB === 'stock') { document.querySelector('[data-tab="' + TAB + '"]').click(); await sleep(300); }
 if (TAB === 'files') {
   ans('files', {files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {name: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400},
     {name: 'cable_clips_x12.gcode', size: 1300000, timestamp: Date.now()/1000 - 3 * 86400}]});
@@ -78,10 +79,13 @@ if (TAB === 'files') {
   else ans('videos', {videos: SCN === 'videos-empty' ? [] : [video('desk_organiser_plate_1', '20261116215053', 8, 5400, 83, 14109048), video('benchy', '20261115101010', 7, 90000, 41, 6209048),
     video('cable_clips_x12', '20261114181500', 6, 2 * 86400, 0, 156), video('vase_spiral_tall', '20261110090000', 5, 6 * 86400, 3725, 1310000000)]});
   await sleep(100);
+  if (SCN.startsWith('videos')) { document.querySelector('[data-folder="videos"]').click(); await sleep(200); }
 }
-if (SCN === 'videos-delete') { const del = document.querySelector('[data-empty] [data-video-delete]'); del.focus(); del.click(); await until(() => document.querySelector('.p-dialog')); }
+if (SCN === 'videos-delete') { document.querySelector('[data-file^="cable_clips"]').click(); await sleep(100);
+  [...document.querySelectorAll('.oui-files-bar button')].pop().click(); await until(() => document.querySelector('.p-dialog')); }
+if (SCN === 'files-multi') { document.querySelector('.oui-files-table thead input').click(); await sleep(100); }
 if (SCN === 'files') {
-  document.querySelector('[data-print]').click(); await sleep(100);
+  document.querySelector('[data-file]').click(); await sleep(100);
   ans('file_details', {name: 'desk_organiser_plate_1.gcode', thumbnail: STORE ? THUMB : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="%23888"/></svg>',
     info: {estimated_s: 25816, layers: 380, filament_g: 102.9, layer_height: 0.2, nozzle_temp: 220, bed_temp: 60, nozzle: 0.4, printer_model: 'Anycubic Kobra X', model_ok: true},
     materials: [{paint_index: 0, material: 'PLA', colour: '#111111', grams: 84.1, slot: 3, slot_type: 'PLA', slot_colour: '#E5484D', check: 'ok'},
@@ -93,18 +97,20 @@ if (SCN === 'toasts') { __t.handler({type: 'notice', text: 'Kobra Control found 
   document.querySelector('[data-test="pause"]')?.click(); await sleep(50); }
 if (SCN === 'needs') { document.querySelector('.oui-settings-link[data-section="needs-h"]').click(); await sleep(200); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
+// the listing pictures show a quiet page: the "printer is printing" banner is closed, as a user would close it
+if (STORE) { document.querySelector('[data-test="busy-banner"] .oui-banner-close')?.click(); await sleep(100); }
 // the main and hero images: the print card without the printer photo, times or buttons, and right under it the ACE's four
 // slots and their spools (full, unknown, half, low) without their spool pickers, buttons or drying controls; hidden by a
 // style sheet, as the page keeps re-rendering them. Four in a row where the page is wide, else two, and only the cards that
 // fit whole; the social preview's short panel leaves the print card out (the app bar still says Printing).
 if (SCENE === 'store-dash') {
   const job = document.querySelector('[data-test="job-card"]'), ace = document.querySelector('[data-test="ace-card"]');
-  job.after(ace);
+  document.querySelector('.oui-dash-main').before(ace);   // under the print, across the page
+  ace.style.gridColumn = '1 / -1';
   const css = document.createElement('style');
-  css.textContent = \`[data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .kc-job-actions) { display: none !important; }
-    .kc-hero .oui-job-block { grid-template-columns: minmax(0, 1fr) auto !important; }
-    .kc-hero .oui-job-id { grid-column: 1 !important; } .kc-hero .oui-job-figure { grid-column: 2 !important; } .kc-hero .oui-job-bar { grid-column: 1 / 3 !important; }
-    [data-test="ace-card"] :is(.kc-group[data-box="-1"], .kc-group-head, .kc-group-head ~ :not(.oui-cards), .sl-pick, .oui-slot-actions, .kc-slot > .oui-meta) { display: none !important; }
+  css.textContent = \`[data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .oui-job-actions) { display: none !important; }
+    .kc-job .oui-job-block { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+    [data-test="ace-card"] :is(.kc-group[data-box="-1"], .kc-group-head, .kc-group-head ~ :not(.oui-cards), .sl-pick, .oui-slot-actions) { display: none !important; }
     [data-test="ace-card"] .oui-cards { grid-template-columns: repeat(\${innerWidth >= 760 ? 4 : 2}, minmax(0, 1fr)) !important; }
     \${innerHeight < 450 ? '[data-test="job-card"] { display: none !important; }' : ''}\`;
   document.head.append(css);
@@ -136,7 +142,8 @@ const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   ['different', 'dark', 'en', 1280, 720], ['nocert', 'light', 'en', 1280, 720], ['nocert', 'dark', 'pt_BR', 720, 1000],
   ['settings', 'dark', 'en', 1900, 1000], ['settings', 'light', 'en', 1280, 720], ['settings', 'dark', 'en', 720, 1000], ['settings', 'dark', 'pt_BR', 1280, 720],
   ['settings', 'light', 'pt_BR', 720, 1000],
-  ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1900, 1000], ['files', 'dark', 'en', 720, 1000],
+  ['files', 'light', 'en', 1280, 720], ['files', 'dark', 'pt_BR', 1900, 1000], ['files', 'dark', 'en', 720, 1000], ['files-multi', 'dark', 'en', 1280, 720],
+  ['stock', 'dark', 'en', 1900, 1000], ['stock', 'light', 'en', 1280, 720], ['stock', 'light', 'pt_BR', 720, 1000],
   ['videos', 'dark', 'en', 1280, 900], ['videos', 'light', 'pt_BR', 1280, 900], ['videos', 'dark', 'en', 400, 1300], ['videos-empty', 'light', 'en', 1280, 900],
   ['videos-error', 'dark', 'en', 1280, 900], ['videos-delete', 'dark', 'pt_BR', 1280, 900],
   ['idle', 'light', 'en', 1280, 2200], ['idle', 'dark', 'en', 1900, 1400], ['idle', 'dark', 'pt_BR', 1280, 2200], ['idle', 'light', 'en', 720, 3600],

@@ -1,76 +1,104 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiEmpty, OuiIcon, OuiKeyValue, OuiPanel, OuiSwatch, OuiThumb, OuiToolbar } from '../../shared/src/components';
-import { file as fileIcon, files as filesIcon, printer, refresh, trash, x } from '../../shared/src/icons';
+import { OuiBanner, OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiLevel, OuiPageHeader, OuiPanel, OuiSwatch, type OuiFileBrowserLabels } from '../../shared/src/components';
+import { printer, refresh } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
-import { s, run, tracker, targetKnown, printerName, controlsOff } from '../app/store';
+import { s, run, tracker, targetKnown, printerName, controlsOff, busy, whyId } from '../app/store';
 import { config } from '../app/settings';
 import { ask } from '../core/dialog';
-import { t, fmt } from '../core/i18n';
+import { t, tn, fmt } from '../core/i18n';
 import { message } from '../core/tracker';
-import { thumbSrc, listFiles, type FileSort } from '../core/logic';
-import type { FileDetails, FileEntry, FileMaterial, FilesResult } from '../app/types';
-import TimelapsePanel from './TimelapsePanel.vue';
+import { clipLength, thumbSrc, listFiles } from '../core/logic';
+import { levelTone } from '../core/spool-level';
+import type { FileDetails, FileEntry, FileMaterial, FilesResult, VideoEntry, VideosResult } from '../app/types';
 
-const state = ref<'idle' | 'loading' | 'ok' | 'error'>('idle');
-const error = ref('');
+// The Files tab, on the shared file browser: what is on the printer, with multi-select and delete, and one file's
+// details and print options beside the list.
+// What the Kobra X's LAN protocol offers (docs/protocol.md): file/listLocal of the storage's root, file/fileDetails,
+// file/deleteBatch (several files in one message), file/listVideo and file/deleteVideo (one video per message). It has
+// no message to move, rename or create a folder, and no download. So the places on the left are the printer's two
+// lists, not folders: nothing can be moved between them (both are locked, and "Move to" is hidden).
+type Place = 'local' | 'videos';
+type Load = 'idle' | 'loading' | 'ok' | 'error';
+const folder = ref<string>('local');
+const place = computed<Place>(() => (folder.value === 'videos' ? 'videos' : 'local'));
+const selected = ref<string[]>([]);
+const state = ref<Record<Place, Load>>({ local: 'idle', videos: 'idle' });
+const error = ref<Record<Place, string>>({ local: '', videos: '' });
+const set = (which: Place, to: Load, why = '') => { state.value = { ...state.value, [which]: to }; error.value = { ...error.value, [which]: why }; };
 const files = ref<FileEntry[]>([]);
-let loadSeq = 0;
+const videos = ref<VideoEntry[]>([]);
+const seq = { local: 0, videos: 0 };
+// Time-lapses are listed for a connected printer (idle or printing).
+const hasVideos = computed(() => s.phase === 'connected');
 
-async function load() {
-  if (!targetKnown.value || !s.info) { state.value = 'idle'; files.value = []; return; }
-  const mine = ++loadSeq;
-  state.value = 'loading';
+async function loadFiles() {
+  if (!targetKnown.value || !s.info) { set('local', 'idle'); files.value = []; return; }
+  const mine = ++seq.local;
+  set('local', 'loading');
   try {
     const r: FilesResult = await bridge.command('files', {}, s.info.generation);
-    if (mine !== loadSeq) return;
+    if (mine !== seq.local) return;
     files.value = r.files ?? [];
-    state.value = 'ok';
+    set('local', 'ok');
   } catch (e) {
-    if (mine !== loadSeq) return;
-    error.value = message(e); state.value = 'error';
+    if (mine === seq.local) set('local', 'error', message(e));
   }
 }
-
-// Search and order: on the page only, over the list the printer gave.
-const query = ref('');
-const sort = ref<FileSort>('newest');
-const sortOptions = computed(() => (['newest', 'oldest', 'name', 'largest'] as const).map(v => ({ value: v, label: t(`files.sort.${v}`) })));
-const shown = computed(() => listFiles(files.value, query.value, sort.value));
+async function loadVideos() {
+  if (!hasVideos.value || !s.info) { set('videos', 'idle'); videos.value = []; return; }
+  const mine = ++seq.videos;
+  set('videos', 'loading');
+  try {
+    const r: VideosResult = await bridge.command('videos', {}, s.info.generation);
+    if (mine !== seq.videos) return;
+    videos.value = r.videos ?? [];
+    set('videos', 'ok');
+  } catch (e) {
+    if (mine === seq.videos) set('videos', 'error', message(e));
+  }
+}
+const load = () => Promise.all([loadFiles(), loadVideos()]);
+const reloadOpen = () => (place.value === 'videos' ? loadVideos() : loadFiles());
+watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); else selected.value = []; }, { immediate: true });
+watch(hasVideos, on => { if (!on && place.value === 'videos') folder.value = 'local'; });
 
 // Storage comes with the status, in MB.
-const disk = computed(() => { const st = s.status?.storage; return st?.total ? t('files.used', { used: fmt.bytes((st.used ?? 0) * 1e6), total: fmt.bytes(st.total * 1e6) }) : ''; });
+const storage = computed(() => { const st = s.status?.storage; return st?.total ? { used: (st.used ?? 0) * 1e6, total: st.total * 1e6 } : null; });
+const disk = computed(() => (storage.value ? t('files.used', { used: fmt.bytes(storage.value.used), total: fmt.bytes(storage.value.total) }) : ''));
+const free = computed(() => (storage.value ? Math.max(0, 1 - storage.value.used / storage.value.total) : null));
 const seconds = (ts: number) => (ts > 1e12 ? ts / 1000 : ts);
 
-// ---------------------------------------------------------------- print panel: details and the two print options
-const selected = ref<string | null>(null);
+// ---------------------------------------------------------------- one file selected: its details and the print options
+const one = computed(() => (place.value === 'local' && selected.value.length === 1 ? selected.value[0] : null));
 const details = ref<FileDetails | null>(null);
 const detailsError = ref('');
+const thumbs = ref<Record<string, string>>({});
 const options = ref({ leveling: true, vibration: true, flow: false, timelapse: false });
 // Flow calibration and time-lapse only where the printer says it has them (info/report features; unknown = offered).
 const canFlow = computed(() => s.status?.features?.flow_calibration_support !== false);
 const canTimelapse = computed(() => s.status?.features?.camera_timelapse_support !== false);
 let detailSeq = 0;
-watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); else selected.value = null; }, { immediate: true });
-async function openPanel(name: string) {
-  selected.value = name; details.value = null; detailsError.value = '';
+watch(one, async name => {
+  details.value = null; detailsError.value = '';
+  const mine = ++detailSeq;
+  if (!name) return;
   const st = config.value?.settings;
   options.value = { leveling: st?.auto_leveling !== false, vibration: st?.vibration_compensation !== false, flow: st?.flow_calibration === true,
     timelapse: st?.timelapse === true };
-  const mine = ++detailSeq;
   try {
-    const r = await bridge.command('file_details', { name }, s.info?.generation);
-    if (mine === detailSeq) details.value = r ?? {};
+    const r: FileDetails = (await bridge.command('file_details', { name }, s.info?.generation)) ?? {};
+    if (mine !== detailSeq) return;
+    details.value = r;
+    const src = thumbSrc(r.thumbnail);
+    if (src) thumbs.value = { ...thumbs.value, [name]: src };
   } catch (e) {
     if (mine === detailSeq) detailsError.value = message(e);
   }
-}
-const closePanel = () => { selected.value = null; };
-const thumb = computed(() => thumbSrc(details.value?.thumbnail));
+});
 const info = computed(() => details.value?.info ?? null);
 const materials = computed(() => details.value?.materials ?? []);
 function slotLabel(g: number | null): string {
@@ -96,11 +124,10 @@ const facts = computed(() => {
     { label: t('files.info.nozzle'), value: i.nozzle != null ? `${n0(i.nozzle, 1)} mm` : '—' },
   ];
 });
-const printWhyId = computed(() => (!printWhy.value ? undefined : controlsOff.value ? 'kc-why' : 'print-start-why'));
-const printWhy = computed(() => controlsOff.value || (s.status && !s.status.can.print ? t('reason.noPrintNow') : tracker.isBusy('print') ? t('reason.pending') : ''));
+const printOff = computed(() => !!controlsOff.value || busy.value.print || tracker.isBusy('print'));
 async function print() {
-  const name = selected.value;
-  if (!name) return;
+  const name = one.value;
+  if (!name || printOff.value) return;
   const flow = canFlow.value && options.value.flow, timelapse = canTimelapse.value && options.value.timelapse;
   const warn = [mismatch.value ? t('files.mat.warn', { list: mismatch.value }) : '',
     info.value && !info.value.model_ok ? t('files.modelOther', { model: info.value.printer_model }) : ''].filter(Boolean).join('\n');
@@ -110,80 +137,125 @@ async function print() {
   const r = await run({ key: 'print', label: t('act.print'), cmd: 'file_print', args: { name, auto_leveling: options.value.leveling, vibration_compensation: options.value.vibration,
     flow_calibration: flow, timelapse },
     okText: t('ok.print'), timeoutMs: 60000 });
-  if (r.ok) closePanel();
+  if (r.ok) selected.value = [];
+}
+// Enter or a double click on a file: it becomes the one selected, with the keyboard on Start printing.
+async function onOpen(id: string) {
+  if (place.value !== 'local') return;
+  selected.value = [id];
+  await nextTick();
+  document.querySelector<HTMLElement>('[data-focus-key="print-start"]')?.focus();
 }
 
-async function del(name: string) {
-  if (!await ask({ title: t('files.delete'), text: t('confirm.delete.text', { name }), yes: t('confirm.delete.yes'), no: t('common.goBack'), danger: true })) return;
-  const r = await run({ key: `del:${name}`, label: t('act.delete'), cmd: 'file_delete', args: { names: [name] }, okText: t('ok.delete') });
-  if (r.ok) { if (selected.value === name) closePanel(); void load(); }
+// ---------------------------------------------------------------- what the browser shows
+const query = ref('');
+const KIND: Record<string, string> = { gcode: 'G-code', gco: 'G-code', '3mf': '3MF' };
+const kind = (name: string) => KIND[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
+const folders = computed(() => [
+  { id: 'local', name: t('files.local'), count: state.value.local === 'ok' ? files.value.length : undefined, locked: true },
+  ...(hasVideos.value ? [{ id: 'videos', name: t('videos.title'), count: state.value.videos === 'ok' ? videos.value.length : undefined, locked: true }] : []),
+]);
+const needle = computed(() => query.value.trim().toLowerCase());
+const rows = computed(() => (place.value === 'videos'
+  ? videos.value.filter(v => !needle.value || `${v.name} ${v.filename}`.toLowerCase().includes(needle.value)).map(v => ({
+    id: v.filename, name: v.filename, size: v.size, sizeText: fmt.bytes(v.size), modified: v.created || null, modifiedText: v.created ? fmt.when(v.created, s.now / 1000) : undefined,
+    kind: v.empty ? t('videos.aborted') : clipLength(v.duration) || undefined,
+    facts: [{ label: t('videos.col.print'), value: v.name }, { label: t('videos.col.length'), value: v.empty ? t('videos.abortedHint') : clipLength(v.duration) || '—' },
+      ...(v.created ? [{ label: t('videos.col.recorded'), value: fmt.dateTime(v.created) }] : [])] }))
+  : listFiles(files.value, query.value, 'newest').map(f => ({
+    id: f.name, name: f.name, size: f.size, sizeText: fmt.bytes(f.size), modified: f.timestamp ? seconds(f.timestamp) : null, modifiedText: f.timestamp ? fmt.when(seconds(f.timestamp), s.now / 1000) : undefined,
+    kind: kind(f.name), thumb: thumbs.value[f.name] || thumbSrc(f.thumbnail) || null, facts: one.value === f.name ? facts.value : undefined }))));
+const total = computed(() => (place.value === 'videos' ? videos.value.length : files.value.length));
+const count = (n: number) => (place.value === 'videos' ? tn('videos.count', n) : tn('files.items', n));
+const labels = computed<OuiFileBrowserLabels>(() => {
+  const vid = place.value === 'videos';
+  return {
+    folders: t('files.places'), files: vid ? t('videos.title') : t('files.title'), name: t('files.col.name'), size: t('files.col.size'),
+    modified: vid ? t('videos.col.recorded') : t('files.col.modified'), selectAll: t('files.selectAll'), select: name => t('files.select', { name }),
+    items: n => (needle.value ? t('files.count', { shown: n, total: total.value }) : count(n)), selected: n => tn('files.selected', n),
+    clear: t('common.clear'), moveTo: '', remove: t('files.delete'),
+    removeTitle: n => fmt.pair(t(vid ? 'act.videoDelete' : 'files.delete'), count(n)), removeText: t('files.deleteText'), andMore: n => t('usage.more', { n }), cancel: t('common.goBack'),
+    empty: needle.value ? t('files.noMatch', { q: query.value.trim() }) : vid ? t('videos.empty') : t('files.empty'),
+    emptyText: needle.value ? undefined : vid ? t('videos.emptyHint') : undefined,
+    loading: vid ? t('videos.loading') : t('files.loading'), nothingSelected: t('files.noneSelected'),
+  };
+});
+const openError = computed(() => (state.value[place.value] === 'error' ? t(place.value === 'videos' ? 'videos.error' : 'files.error', { error: error.value[place.value] }) : ''));
+
+// foundation-gap: OuiFileBrowser 5.0.0 always starts sorted by name and has no prop for it. A printer's list reads
+// newest first (the file just sent is on top), so its own "Added" header is pressed once when it is drawn.
+const browser = ref<ComponentPublicInstance | null>(null);
+const newestFirst = () => (browser.value?.$el as HTMLElement | undefined)?.querySelectorAll<HTMLElement>('.oui-files-sort')[2]?.click();
+
+// ---------------------------------------------------------------- delete (the browser has already asked)
+// Refresh stands for the rows that went. The browser's own confirmation is still leaving when the printer has already
+// answered, so the check waits for it: the keyboard is never left on <body>.
+async function afterDelete() {
+  await reloadOpen();   // after an error too: the list then shows what is still on the printer
+  for (const end = Date.now() + 1500; document.querySelector('.p-dialog') && Date.now() < end;) await new Promise(r => setTimeout(r, 50));
+  await nextTick();
+  if (document.activeElement === document.body) document.querySelector<HTMLElement>('[data-focus-key="files-refresh"]')?.focus();
+}
+async function onDelete(ids: string[]) {
+  if (!ids.length) return;
+  const vid = place.value === 'videos';
+  const done = (n: number) => (n === 1 ? t(vid ? 'ok.videoDelete' : 'ok.delete') : t('ok.deleteMany', { n }));
+  if (vid) {
+    // The printer deletes one video per message: one after the other, each failure said by itself.
+    let ok = 0;
+    for (const name of ids) {
+      const r = await run({ key: `vdel:${name}`, label: t('act.videoDelete'), cmd: 'video_delete', args: { name } });
+      if (r.ok) ok++;
+    }
+    if (ok) tracker.notify('success', done(ok));
+  } else {
+    await run({ key: 'files-delete', label: t('act.delete'), cmd: 'file_delete', args: { names: ids }, okText: done(ids.length) });
+  }
+  await afterDelete();
 }
 </script>
-<template>
-  <div class="fv" :data-detail="selected ? true : undefined">
-    <OuiPanel :icon="filesIcon" flush aria-labelledby="files-h" class="fv-list">
-      <template #title><span id="files-h">{{ t('files.title') }}</span></template>
-      <template #meta><span data-test="disk">{{ disk }}</span></template>
-      <template #actions>
-        <Button severity="secondary" size="small" :label="t('common.refresh')" :loading="state === 'loading'" :disabled="!targetKnown" data-test="refresh" @click="load">
-          <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
-      </template>
-      <OuiToolbar v-if="state === 'ok' && files.length" class="fv-bar" :label="t('files.search')">
-        <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
-        <Select v-model="sort" :options="sortOptions" option-label="label" option-value="value" size="small" :aria-label="t('files.sort')" data-test="files-sort" />
-        <span v-if="query.trim()" class="oui-meta oui-num" role="status" data-test="files-count">{{ t('files.count', { shown: shown.length, total: files.length }) }}</span>
-      </OuiToolbar>
-      <OuiEmpty v-if="!targetKnown" state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
-      <OuiEmpty v-else-if="state === 'loading' && !files.length" state="loading" :title="t('files.loading')" role="status" />
-      <OuiEmpty v-else-if="state === 'error'" state="error" class="fv-error" :title="t('files.error', { error })">
-        <template #actions><Button size="small" severity="secondary" :label="t('common.retry')" @click="load"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button></template>
-      </OuiEmpty>
-      <OuiEmpty v-else-if="state === 'ok' && !files.length" class="fv-empty" :icon="fileIcon" :title="t('files.empty')" />
-      <div v-else-if="state === 'ok'" class="oui-table-wrap">
-        <table class="kc-table fv-table">
-          <thead><tr><th scope="col">{{ t('files.col.name') }}</th><th scope="col" class="oui-num fv-size">{{ t('files.col.size') }}</th>
-            <th scope="col" class="fv-date">{{ t('files.col.modified') }}</th><th scope="col" class="oui-end fv-act"><span class="oui-sr">{{ t('files.col.actions') }}</span></th></tr></thead>
-          <tbody>
-            <tr v-for="f in shown" :key="f.name" :class="{ sel: selected === f.name }" :data-file="f.name">
-              <td><span class="fv-name"><OuiIcon :icon="fileIcon" :size="14" tile soft /><span class="oui-strong">{{ f.name }}</span></span></td>
-              <td class="oui-num">{{ fmt.bytes(f.size) }}</td>
-              <td class="fv-date">{{ f.timestamp ? fmt.dateTime(seconds(f.timestamp)) : '' }}</td>
-              <td class="oui-end"><span class="fv-acts">
-                <Button size="small" severity="secondary" :label="t('files.print')" :aria-label="t('files.printLabel', { name: f.name })" :data-focus-key="`print:${f.name}`" data-print
-                        @click="openPanel(f.name)"><template #icon><OuiIcon :icon="printer" :size="14" /></template></Button>
-                <!-- Delete is the destructive one: red, last, a gap away from Print. It always asks first. -->
-                <Button size="small" severity="danger" text class="fv-del" :aria-label="t('files.deleteLabel', { name: f.name })" :title="t('files.delete')" :loading="tracker.isBusy(`del:${f.name}`)"
-                        :data-focus-key="`del:${f.name}`" data-delete @click="del(f.name)"><template #icon><OuiIcon :icon="trash" :size="14" /></template></Button>
-              </span></td>
-            </tr>
-            <tr v-if="files.length && !shown.length"><td colspan="4" class="oui-muted" data-test="files-nomatch">{{ t('files.noMatch', { q: query.trim() }) }}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </OuiPanel>
 
-    <OuiPanel v-if="selected" :icon="printer" class="fv-detail" role="region" :aria-label="t('files.panel', { name: selected })" data-test="print-panel">
-      <template #title><span class="oui-truncate" :title="selected">{{ selected }}</span></template>
-      <template #actions>
-        <Button severity="secondary" text size="small" :aria-label="t('common.close')" :title="t('common.close')" @click="closePanel"><template #icon><OuiIcon :icon="x" :size="14" /></template></Button>
-      </template>
-      <div class="oui-stack">
-        <div class="fv-top">
-          <OuiThumb v-if="thumb" class="fv-thumb" :src="thumb" :alt="t('files.thumbAlt', { name: selected })" :size="132" />
-          <div class="fv-facts">
-            <p v-if="detailsError" class="kc-why" data-tone="danger">{{ t('files.detailsError', { error: detailsError }) }}</p>
-            <OuiEmpty v-else-if="!details" compact state="loading" :title="t('files.detailsLoading')" role="status" />
-            <OuiKeyValue v-if="info" :items="facts" :aria-label="t('files.info')" data-test="file-info" />
-          </div>
-        </div>
+<template>
+  <OuiPageHeader :title="t('nav.files')" data-test="files-head">
+    <template #meta><span data-test="disk">{{ disk }}</span></template>
+    <template #actions>
+      <OuiHint v-if="hasVideos" end :label="t('videos.title')" :text="t('videos.noDownload')" data-test="videos-note" />
+      <Button severity="secondary" :label="t('common.refresh')" :loading="state.local === 'loading' || state.videos === 'loading'" :disabled="!targetKnown" data-test="refresh" data-focus-key="files-refresh" @click="load">
+        <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+    </template>
+  </OuiPageHeader>
+
+  <div class="kc-msgs" data-msgs="files" />
+
+  <div role="alert" class="kc-live fv-alert">
+    <OuiBanner :show="!!openError && targetKnown" tone="error" :title="openError" data-test="files-error">
+      <template #actions><Button size="small" severity="secondary" :label="t('common.retry')" @click="reloadOpen"><template #icon><OuiIcon :icon="refresh" :size="13" /></template></Button></template>
+    </OuiBanner>
+  </div>
+
+  <OuiPanel v-if="!targetKnown" flush>
+    <OuiEmpty state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
+  </OuiPanel>
+
+  <OuiFileBrowser v-else ref="browser" v-model:folder="folder" v-model:selected="selected" :folders="folders" :files="rows" :labels="labels" :loading="state[place] === 'loading' && !total"
+                  :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place" @delete="onDelete" @open="onOpen" @vue:mounted="newestFirst">
+    <template #toolbar>
+      <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
+    </template>
+    <template v-if="storage" #rail>
+      <div class="fv-space"><span class="oui-meta oui-num">{{ disk }}</span><OuiLevel :fraction="free" :tone="levelTone(free)" :label="disk" /></div>
+    </template>
+    <template v-if="place === 'local'" #actions="{ file }">
+      <div class="fv-print" role="region" :aria-label="t('files.panel', { name: file.name })" data-test="print-panel">
+        <p v-if="detailsError" class="kc-err" role="alert">{{ t('files.detailsError', { error: detailsError }) }}</p>
+        <OuiEmpty v-else-if="!details" compact state="loading" :title="t('files.detailsLoading')" role="status" />
         <p v-if="info && !info.model_ok" class="fv-warn" role="alert" data-test="model-warn">{{ t('files.modelOther', { model: info.printer_model }) }}</p>
         <div v-if="materials.length" class="fv-mats">
           <p class="oui-label">{{ t('files.mat.title') }}</p>
           <ul>
             <li v-for="m in materials" :key="m.paint_index" :data-mat="m.paint_index" :data-check="m.check">
-              <OuiSwatch :color="m.colour || null" /><span>{{ fmt.pair(t('files.mat.name', { n: m.paint_index + 1 }), m.material || t('slot.noType')) }} · {{ fmt.grams(m.grams) }}</span>
-              <span class="oui-muted" aria-hidden="true">→</span>
-              <OuiSwatch :color="m.slot_colour || null" /><span>{{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template></span>
+              <span class="fv-mat"><OuiSwatch :color="m.colour || null" /><span>{{ fmt.pair(t('files.mat.name', { n: m.paint_index + 1 }), m.material || t('slot.noType')) }} · {{ fmt.grams(m.grams) }}</span></span>
+              <span class="fv-mat"><span class="oui-muted" aria-hidden="true">→</span><OuiSwatch :color="m.slot_colour || null" /><span>{{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template></span></span>
             </li>
           </ul>
           <p v-if="mismatch" class="fv-warn" role="alert" data-test="mat-warn">{{ t('files.mat.warn', { list: mismatch }) }}</p>
@@ -195,40 +267,31 @@ async function del(name: string) {
           <label v-if="canFlow" class="fv-opt" for="opt-flow"><span>{{ t('files.flow') }}</span><ToggleSwitch v-model="options.flow" input-id="opt-flow" data-opt="flow_calibration" /></label>
           <label v-if="canTimelapse" class="fv-opt" for="opt-tl"><span>{{ t('files.timelapse') }}</span><ToggleSwitch v-model="options.timelapse" input-id="opt-tl" data-opt="timelapse" /></label>
         </fieldset>
-      </div>
-      <template #footer>
-        <Button :label="t('files.startPrint')" :disabled="!!printWhy" :aria-describedby="printWhyId" :loading="tracker.isBusy('print')" data-test="print-start" data-focus-key="print-start" @click="print">
+        <Button :label="t('files.startPrint')" :disabled="printOff" :aria-describedby="whyId(busy.print)" :loading="tracker.isBusy('print')" data-test="print-start" data-focus-key="print-start" @click="print">
           <template #icon><OuiIcon :icon="printer" :size="14" /></template></Button>
-        <Button severity="secondary" text :label="t('common.cancel')" data-test="print-close" @click="closePanel" />
-        <span v-if="printWhy && !controlsOff" id="print-start-why" class="oui-meta">{{ printWhy }}</span>
-      </template>
-    </OuiPanel>
-
-    <TimelapsePanel />
-  </div>
+      </div>
+    </template>
+  </OuiFileBrowser>
 </template>
 
 <style>
-.fv { display: grid; gap: var(--oui-s3); grid-template-columns: minmax(0, 1fr); align-items: start; }
-/* Wide, with a file open: its panel is a second column beside the file list and the time-lapses under it. */
-@container oui-page (min-width: 1160px) {
-  .fv[data-detail] { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); grid-template-rows: auto 1fr; }
-  .fv[data-detail] > .fv-detail { grid-column: 2; grid-row: 1 / span 2; }
-}
-.fv-bar { border-bottom: 1px solid var(--oui-border); }
-.fv-q { width: 240px; max-width: 100%; }
-.fv-table { table-layout: fixed; min-width: 520px; }
-.fv-size { width: 96px; } .fv-date { width: 150px; } .fv-act { width: 160px; }   /* Print + Delete: fits "Imprimir" (pt-BR, es), "Drucken" */
-.fv-name { display: inline-flex; align-items: center; gap: var(--oui-s2); min-width: 0; overflow-wrap: anywhere; }
-.fv-acts { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--oui-s1); white-space: nowrap; }
-.fv-del { margin-inline-start: var(--oui-s3); }
-.fv-table tr.sel > td { background: var(--oui-primary-soft); }
-.fv-top { display: flex; flex-wrap: wrap; gap: var(--oui-s4); align-items: flex-start; }
-.fv-facts { flex: 1 1 200px; min-width: 0; }
+.fv-alert:empty { display: none; }
+.fv-q { width: 220px; max-width: 100%; }
+.fv-space { display: grid; gap: 6px; }
+.fv-print { flex: 1 1 100%; display: grid; gap: var(--oui-s3); min-width: 0; }
+.fv-print > .p-button { justify-self: start; }
 .fv-warn { font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-warning); }
 .fv-mats ul { list-style: none; margin: var(--oui-s1) 0 0; padding: 0; display: grid; gap: var(--oui-s1); }
-.fv-mats li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s2); }
+.fv-mats li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--oui-s2); }
+.fv-mat { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .fv-mats li[data-check='differs'], .fv-mats li[data-check='missing'] { color: var(--oui-warning); }
 .fv-opts { display: grid; gap: var(--oui-s1); margin: 0; padding: 0; border: 0; }
-.fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 36px; }
+.fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 32px; }
+/* foundation-gap, two rules to delete once OuiFileBrowser has them (5.0.0 does not):
+   - "Move to" stays on screen, disabled for ever, when no folder can take a file. The Kobra X has no message to move a
+     file, so it is hidden here.
+   - A detail pane taller than the browser squeezes the picture's row to nothing, and the picture is then drawn over the
+     name and the facts. Its rows keep their own height, and the pane scrolls. */
+.kc-files .oui-files-move { display: none; }
+.kc-files .oui-files-detail { grid-auto-rows: max-content; }
 </style>

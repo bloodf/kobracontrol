@@ -112,10 +112,8 @@ const label = computed(() => t('figure.label', { slots: fmt.list(props.spools.ma
 .kx-hub { stroke: rgb(0 0 0 / .35); stroke-width: 1.5; }
 .kx-empty-edge { fill: none; stroke: rgb(255 255 255 / .9); stroke-width: 2.5; stroke-dasharray: 9 7; }
 .kx-unknown { fill: #9aa1ab; }
-.kx-glow { fill: var(--oui-primary); opacity: .45; }
-.oui-on-band .kx-glow { fill: #fff; opacity: .4; }
-.kx-tube-glow { fill: none; stroke: var(--oui-primary); stroke-width: 10; stroke-linecap: round; opacity: .4; }
-.oui-on-band .kx-tube-glow { stroke: #fff; opacity: .45; }
+.kx-glow { fill: var(--oui-primary-mark); opacity: .45; }
+.kx-tube-glow { fill: none; stroke: var(--oui-primary-mark); stroke-width: 10; stroke-linecap: round; opacity: .4; }
 .kx-tube-on { fill: none; stroke: rgb(255 255 255 / .55); stroke-width: 3; stroke-linecap: round; }
 .kx-display > rect { fill: #0e0f11; }
 .kx-display > text { font: 300 38px/1 var(--oui-font, sans-serif); fill: #f4f6f8; text-anchor: middle; }

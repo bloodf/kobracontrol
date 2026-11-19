@@ -76,15 +76,15 @@ function onKey(e: KeyboardEvent) {
 .sp-slot { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; border: 0; border-top: 1px solid rgb(0 0 0 / .18);
   font: inherit; font-weight: 700; cursor: pointer; }
 .sp-slot:disabled { cursor: default; opacity: .6; }
-.sp-slot:focus-visible { outline: 2px solid var(--oui-primary); outline-offset: -4px; }
+.sp-slot:focus-visible { outline: 2px solid var(--oui-primary-mark); outline-offset: -4px; }
 .sp-discs { display: flex; flex-wrap: wrap; gap: var(--oui-s2); max-width: min(92vw, 460px); }
 .sp-disc { position: relative; display: grid; justify-items: center; gap: 4px; width: 84px; padding: 6px; border-radius: var(--oui-radius); cursor: pointer; }
-.sp-disc[aria-checked="true"] { background: var(--oui-primary-soft); box-shadow: inset 0 0 0 2px var(--oui-primary); }
+.sp-disc[aria-checked="true"] { background: var(--oui-primary-soft); box-shadow: inset 0 0 0 2px var(--oui-primary-mark); }
 .sp-disc[aria-disabled="true"] { cursor: not-allowed; opacity: .45; }
-.sp-disc:focus-visible { outline: 2px solid var(--oui-primary); outline-offset: 1px; }
+.sp-disc:focus-visible { outline: 2px solid var(--oui-primary-mark); outline-offset: 1px; }
 .sp-type { max-width: 72px; font-size: var(--oui-text-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-n { font-size: var(--oui-text-sm); font-weight: 700; }
-.sp-check { position: absolute; inset: 4px 4px auto auto; color: var(--oui-primary); }
+.sp-check { position: absolute; inset: 4px 4px auto auto; color: var(--oui-primary-mark); }
 .sp-spool { max-width: 80px; font-size: var(--oui-text-xs); color: var(--oui-muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-spool:empty { display: none; }
 .sp-only { margin: var(--oui-s2) 0 0; font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-tone); }

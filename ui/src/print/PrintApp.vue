@@ -123,7 +123,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
       <InputText v-model="name" :aria-label="t('pd.taskName')" :placeholder="t('pd.taskName')" :disabled="sent" maxlength="120" data-test="name" fluid />
     </label>
 
-    <section class="pd-plate oui-on-band" :aria-label="t('pd.thumb')">
+    <section class="pd-plate" :aria-label="t('pd.thumb')">
       <span class="pd-for">{{ t('pd.for', { model: D.printer.model || 'Kobra X' }) }}<template v-if="D.job.plate"> · {{ t('pd.plate', { n: D.job.plate }) }}</template></span>
       <img v-if="D.job.thumbnail" class="pd-thumb" :src="'data:image/png;base64,' + D.job.thumbnail" :alt="t('pd.thumb')" />
       <OuiIcon v-else :icon="plateIcon" :size="72" class="pd-thumb pd-thumb-none" />
@@ -201,12 +201,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
 <style>
 .pd { max-width: 720px; margin: 0 auto; padding-bottom: 112px; }
 .pd-name .p-inputtext { font-weight: 600; }
-.pd-plate { position: relative; display: grid; place-items: center; min-height: 190px; padding: var(--oui-s6) var(--oui-s4) var(--oui-s4); border-radius: var(--oui-radius-lg); overflow: hidden; }
-.pd-for { position: absolute; inset: var(--oui-s2) auto auto var(--oui-s3); font-size: var(--oui-text-sm); font-weight: 600; opacity: .85; }
+/* The plate's picture on a neutral well (5.0: no block is filled with the plugin's colour). */
+.pd-plate { position: relative; display: grid; place-items: center; min-height: 190px; padding: var(--oui-s6) var(--oui-s4) var(--oui-s4); border-radius: var(--oui-radius-lg); overflow: hidden;
+  background: var(--oui-inset); box-shadow: inset 0 0 0 1px var(--oui-border); }
+.pd-for { position: absolute; inset: var(--oui-s2) auto auto var(--oui-s3); font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-muted); }
 .pd-thumb { width: min(220px, 60%); aspect-ratio: 1; object-fit: contain; }
 .pd-thumb-none { opacity: .5; }
 .pd-facts { position: absolute; inset: auto auto var(--oui-s2) var(--oui-s2); display: grid; gap: 2px; margin: 0; padding: 6px 10px; border-radius: var(--oui-radius);
-  background: rgb(0 0 0 / .42); color: var(--oui-on-band); font-size: var(--oui-text-sm); }
+  background: rgb(0 0 0 / .62); color: #fff; font-size: var(--oui-text-sm); }
 .pd-facts > div { display: flex; align-items: center; gap: 6px; }
 .pd-facts dt { display: inline-flex; }
 .pd-facts dd { margin: 0; font-weight: 600; }
@@ -227,7 +229,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
 .pd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--oui-s2); }
 .pd-box { display: flex; align-items: flex-start; gap: var(--oui-s2); min-height: 44px; padding: var(--oui-s2) var(--oui-s3); border-radius: var(--oui-radius);
   background: var(--oui-surface); box-shadow: inset 0 0 0 1px var(--oui-border); cursor: pointer; font-weight: 600; }
-.pd-box:has(:checked) { box-shadow: inset 0 0 0 1.5px var(--oui-primary); }
+.pd-box:has(:checked) { box-shadow: inset 0 0 0 1.5px var(--oui-primary-mark); }
 .pd-box[data-locked] { cursor: default; color: var(--oui-muted); }
 .pd-box-text { display: grid; gap: 1px; min-width: 0; }
 .pd-box-text .oui-meta { font-weight: 400; }

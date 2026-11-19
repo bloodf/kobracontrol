@@ -10,3 +10,10 @@ export function spoolFraction(remaining: number | null | undefined, initial: num
 export function slotFraction(spool: { remaining?: number | null; initial?: number | null } | null | undefined, percent: number | null | undefined): number | null {
   return spoolFraction(spool?.remaining, spool?.initial) ?? (typeof percent === 'number' && Number.isFinite(percent) ? Math.max(0, Math.min(1, percent / 100)) : null);
 }
+
+/** The level bar's colour: red when almost empty (5 % or less), amber when Spoolman says low or 15 % or less is left,
+ *  else green. An unknown amount is never low. */
+export function levelTone(fraction: number | null | undefined, low?: boolean | null): 'normal' | 'low' | 'critical' {
+  const known = typeof fraction === 'number' && Number.isFinite(fraction);
+  return known && fraction <= 0.05 ? 'critical' : low || (known && fraction <= 0.15) ? 'low' : 'normal';
+}

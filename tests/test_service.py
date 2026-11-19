@@ -597,6 +597,17 @@ class Files(Base):
         self.assertIn("files", self.run_cmd("file_delete", names=["b.gcode"])["result"])
         self.assertIn("path separators", self.run_cmd("file_details", name="../x")["error"])
 
+    def test_several_files_are_deleted_in_one_message(self):
+        """The Files tab's multi-select: one file/deleteBatch carries every selected name, in the order chosen."""
+        records = [{"filename": name, "size": 1, "timestamp": i} for i, name in enumerate(("a.gcode", "b.gcode", "c.gcode"))]
+        self.fake.reply("file", "listLocal", {"records": records}, code=200)
+        self.fake.reply("file", "deleteBatch", {}, code=200)
+        self.assertIn("files", self.run_cmd("file_delete", names=["c.gcode", "a.gcode"])["result"])
+        sent = self.sent("file", "deleteBatch")
+        self.assertEqual([m["data"] for m in sent], [{"root": "local", "files": [{"path": "/", "filename": "c.gcode"},
+                                                                                  {"path": "/", "filename": "a.gcode"}]}])
+        self.assertIn("no files chosen", self.run_cmd("file_delete", names=[])["error"])
+
 
 VIDEO = {"createTime": 1794838471, "duration": 6, "fileKey": "f" * 32, "fileSize": 109048,
          "file_image": "benchy-20261116215053_8_6.jpg", "filename": "benchy-20261116215053_8.mp4", "main_file_name": "benchy"}

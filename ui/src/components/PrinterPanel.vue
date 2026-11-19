@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiIcon, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
-import { edit, printer, shieldCheck } from '../../shared/src/icons';
-import { s, run, tracker, controlsOff, printerName, stale, loadDevice } from '../app/store';
-import { ask, prompt } from '../core/dialog';
+import { OuiControlRow, OuiEmpty, OuiHint, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
+import { printer } from '../../shared/src/icons';
+import { s, run, tracker, busy, controlsOff, link, printerName, stale, loadDevice, whyId as pageWhy } from '../app/store';
+import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
 import type { MessageKey } from '../core/messages';
 
-// The printer itself: its name (Rename asks first), firmware, network address and lifetime counters, then the Print
-// Assist switches. Every value is the printer's own report; a counter or switch the firmware does not report is left
-// out, never shown as 0 or off. Changing a switch or the name asks first and needs an idle printer (status.can.print).
+// The printer itself: firmware, network address and lifetime counters, then the Print Assist switches (its name and
+// Rename are in the page header). Every value is the printer's own report; a counter or switch the firmware does not
+// report is left out, never shown as 0 or off. Changing a switch asks first and needs an idle printer
+// (status.can.print): while it works that is said once, in the page's banner (#kc-busy). What each switch does is
+// behind the module's (i), and in the question it asks.
 // The details and the switches come from messages read in Anycubic Slicer Next's Workbench; they are not yet tried
 // on a Kobra X, so a firmware that ignores them just shows less.
 const st = computed(() => s.status);
-const NAME_MAX = 32;   // service.NAME_MAX, in UTF-8 bytes
 
 // The details and switches are asked for when this panel is shown with the printer idle, once per connection. An ask
 // that failed (loadDevice puts s.device back to '') is made again the next time the printer becomes idle, not in a loop.
@@ -35,8 +35,8 @@ const facts = computed(() => {
 });
 
 // Idle only: the printer is not asked to change how it prints while it prints.
-const changeWhy = computed(() => controlsOff.value || (st.value && !st.value.can.print ? t('reason.noDeviceChange') : ''));
-const whyId = computed(() => (controlsOff.value ? 'kc-why' : changeWhy.value ? 'device-why' : undefined));
+const changeOff = computed(() => !!controlsOff.value || busy.value.print);
+const whyId = computed(() => pageWhy(busy.value.print));
 
 interface Switch { key: string; option: number | null; on: boolean }
 // The order of Anycubic Slicer Next's Print Assist dialog. option null: auto-feed, which is each ACE's own setting.
@@ -72,53 +72,33 @@ async function toggle(sw: Switch, on: boolean) {
     okText: t(on ? 'ok.assistOn' : 'ok.assistOff', { what }), sentText: t('sent.assist', { what }) });
 }
 
-// service.cmd_rename's rule: 1-32 UTF-8 bytes, no control characters, quotes, backslashes or angle brackets.
-const validName = (v: string) => { const n = v.trim().replace(/\s+/g, ' ');
-  return n && new TextEncoder().encode(n).length <= NAME_MAX && !/["<>\\\u0000-\u001f]/.test(n) ? n : ''; };
-async function rename() {
-  const typed = await prompt({ title: t('confirm.rename.title'), text: t('confirm.rename.text', { max: NAME_MAX }),
-    input: { label: t('device.name'), value: st.value?.printer_name ?? '' }, yes: t('confirm.rename.yes'), no: t('common.goBack') });
-  if (typed == null) return;
-  const next = validName(typed);
-  if (!next) { tracker.notify('error', t('device.nameInvalid', { max: NAME_MAX })); return; }
-  if (next === st.value?.printer_name) return;
-  await run({ key: 'rename', label: t('act.rename'), cmd: 'rename', args: { name: next }, okText: t('ok.rename', { name: next }),
-    sentText: t('sent.rename'), timeoutMs: 20000 });
-}
 </script>
 
 <template>
-  <OuiPanel :title="t('device.panel')" :icon="printer" tone="cobalt" data-test="device">
+  <OuiPanel :title="t('device.panel')" :icon="printer" :flush="!st" data-test="device">
     <template v-if="stale" #meta><OuiStatus state="stale">{{ t('status.lastKnownShort') }}</OuiStatus></template>
-    <div class="kc-device">
-      <div class="kc-line">
-        <span class="kc-line-label kc-device-name"><span class="oui-meta">{{ t('device.name') }}</span><strong data-test="device-name">{{ st?.printer_name || '—' }}</strong></span>
-        <Button severity="secondary" size="small" :label="t('device.rename')" :disabled="!!changeWhy || !st?.printer_name" :aria-describedby="whyId"
-                :loading="tracker.isBusy('rename')" data-focus-key="rename" data-test="rename" @click="rename">
-          <template #icon><OuiIcon :icon="edit" :size="14" /></template></Button>
-      </div>
+    <!-- In the header, opening towards the start: this module sits by the page's right edge, where a bubble that opens
+         the other way would widen the page. -->
+    <template v-if="switches.length" #actions>
+      <OuiHint end :label="t('assist.title')"><span class="kc-assist-help"><span v-for="sw in switches" :key="sw.key"><strong>{{ name(sw.key) }}</strong> {{ help(sw.key) }}</span></span></OuiHint>
+    </template>
+    <OuiEmpty v-if="!st" compact :state="link === 'offline' ? 'offline' : 'loading'" :title="t('status.noStatus')" />
+    <div v-else class="oui-controls kc-device">
       <OuiKeyValue v-if="facts.length" :items="facts" data-test="device-facts" />
-
-      <h3 class="kc-device-sub"><OuiIcon :icon="shieldCheck" :size="14" tile tone="lime" />{{ t('assist.title') }}</h3>
-      <div v-if="switches.length" :key="rev" class="kc-rows" data-test="assist">
-        <div v-for="sw in switches" :key="sw.key" class="kc-line">
-          <label :for="`assist-${sw.key}`" class="kc-line-label kc-assist-label">{{ name(sw.key) }}
-            <span class="oui-meta">{{ help(sw.key) }}</span></label>
-          <ToggleSwitch :input-id="`assist-${sw.key}`" :model-value="sw.on" :disabled="!!changeWhy || tracker.isBusy(`assist:${sw.key}`)" :pt="{ input: { 'aria-describedby': whyId } }"
+      <div :key="rev" class="oui-controls-group" data-test="assist">
+        <p class="oui-label">{{ t('assist.title') }}
+          <OuiStatus v-if="assistNote" :state="s.device === 'asking' ? 'connecting' : 'idle'" variant="plain" class="kc-assist-note" data-test="assist-none" role="status">{{ assistNote }}</OuiStatus></p>
+        <OuiControlRow v-for="sw in switches" :key="sw.key" :label="name(sw.key)" :for="`assist-${sw.key}`">
+          <ToggleSwitch :input-id="`assist-${sw.key}`" :model-value="sw.on" :disabled="changeOff || tracker.isBusy(`assist:${sw.key}`)" :pt="{ input: { 'aria-describedby': whyId } }"
                         :data-assist="sw.key" :data-focus-key="`assist-${sw.key}`" @update:model-value="v => toggle(sw, v)" />
-        </div>
+        </OuiControlRow>
       </div>
-      <p v-if="assistNote" class="oui-meta" data-test="assist-none" role="status">{{ assistNote }}</p>
-      <p v-if="changeWhy && !controlsOff" id="device-why" class="oui-meta" data-test="device-why">{{ changeWhy }}</p>
     </div>
   </OuiPanel>
 </template>
 
 <style>
-.kc-device { display: grid; gap: var(--oui-s3); }
-.kc-device-name { display: grid; gap: 0; font-weight: 400; }
-.kc-device-name strong { font-weight: 700; overflow-wrap: anywhere; }
-.kc-device-sub { display: flex; align-items: center; gap: var(--oui-s2); margin: var(--oui-s1) 0 0; font-size: var(--oui-text-sm); font-weight: 700; }
-.kc-assist-label { display: grid; gap: 0; font-weight: 600; }
-.kc-assist-label .oui-meta { font-weight: 400; }
+.kc-device { grid-template-columns: minmax(0, 1fr); }
+.kc-assist-help { display: grid; gap: var(--oui-s1); }
+.kc-assist-note { margin-inline-start: auto; font-weight: 400; letter-spacing: 0; text-transform: none; }
 </style>
