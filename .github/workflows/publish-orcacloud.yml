@@ -38,7 +38,7 @@ jobs:
           ref: refs/tags/${{ github.event.release.tag_name }}
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       # Node runs the UI build and the page test driver; the page tests drive the built Vue page in headless Chrome
       # (always --use-mock-keychain --password-store=basic). Same setup as ci.yml.
       - uses: actions/setup-node@v7
