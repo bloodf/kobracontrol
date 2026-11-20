@@ -2,15 +2,14 @@
 that imports `orca`. Printer work runs in service.py on the plugin's own threads; everything here that runs
 on OrcaSlicer's UI thread only queues work and returns."""
 
-import base64
 import json
 import os
+import pkgutil
 import re
 import sys
 import tempfile
 import threading
 import time
-import zlib
 
 import orca
 
@@ -155,12 +154,16 @@ def _cap_config(cap):
 
 
 def _asset(name):
-    """From the generated _assets module in the wheel; from src/kobracontrol/ui during development."""
+    """Packaged: the icon from _assets, the page from app.html next to the modules (pkgutil reads it from a folder
+    or a zip alike). During development: from src/kobracontrol/ui."""
     if __package__:
-        from . import _assets
         if name == "icon.png":
+            from . import _assets
             return _assets.ICON_PNG
-        return zlib.decompress(base64.b64decode(_assets.APP_HTML_Z64)).decode("utf-8")
+        data = pkgutil.get_data(__package__, name)
+        if data is None:
+            raise FileNotFoundError("%s is missing from the kobracontrol package" % name)
+        return data.decode("utf-8")
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", name)
     if name.endswith(".png"):
         with open(path, "rb") as f:

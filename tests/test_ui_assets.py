@@ -1,15 +1,12 @@
 """Built wheel ships the compiled Vue page (icons from the shared foundation) and the tab icon, with no unresolved placeholders."""
 
 import hashlib
-import ast
-import base64
 import json
 import re
 import sys
 import tempfile
 import unittest
 import zipfile
-import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +23,7 @@ class UiAssets(unittest.TestCase):
         cls.artifact = build.build(out_dir=Path(tempfile.mkdtemp()))
         with zipfile.ZipFile(cls.artifact) as z:
             cls.text = z.read("kobracontrol/_assets.py").decode("utf-8")
+            cls.shipped = z.read("kobracontrol/app.html").decode("utf-8")
 
     def test_page_ships_as_built(self):
         """Icons come from the shared foundation, compiled into the page: nothing is injected at build time."""
@@ -62,19 +60,14 @@ class UiAssets(unittest.TestCase):
         self.assertFalse((ROOT / "ui" / "src" / "assets" / "spool").exists(), "the spool is drawn (OuiSpool), not rendered pictures")
 
     def page(self):
-        """The page as plugin._asset unpacks it from the wheel's _assets.py."""
-        node = next(n for n in ast.parse(self.text).body if isinstance(n, ast.Assign) and n.targets[0].id == "APP_HTML_Z64")
-        return zlib.decompress(base64.b64decode(ast.literal_eval(node.value))).decode("utf-8")
+        """The page as the wheel ships it: kobracontrol/app.html."""
+        return self.shipped
 
-    def test_page_ships_packed(self):
-        """Orca Cloud's upload review reads the wheel's Python source and timed out on U1 Control's 1.2 MB of readable
-        page: the page ships zlib + base64 in short lines, as Spooler's does, and none of its markup is readable."""
-        self.assertNotIn("APP_HTML =", self.text)
+    def test_page_ships_as_a_plain_file(self):
+        """The page is kobracontrol/app.html, byte for byte the build, not a Python string: _assets.py holds the icon only."""
+        self.assertEqual(self.shipped, build.page_html("app.html"))
+        self.assertNotIn("APP_HTML", self.text)
         self.assertNotIn("<script", self.text)
-        blob = [line for line in self.text.splitlines() if line.startswith('    "')]
-        self.assertGreater(len(blob), 1000)
-        self.assertLessEqual(max(map(len, blob)), 106)
-        self.assertLess(len(self.text), len(build.page_html("app.html")) * 0.7)
 
     def test_installed_plugin_unpacks_the_page(self):
         """The wheel imported as OrcaSlicer imports it: _asset returns the exact page and the tab icon."""
