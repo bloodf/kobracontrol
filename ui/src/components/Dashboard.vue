@@ -29,22 +29,22 @@ import { t } from '../core/i18n';
 const n = (v: number) => ({ value: v, label: String(v) });
 const widgets = computed<OuiWidget[]>(() => [
   { id: 'job', title: t('status.title'), icon: printer, component: markRaw(JobCard), w: 12, h: 3, minW: 4, minH: 3 },
-  { id: 'ace', title: t('ace.title'), icon: ace, component: markRaw(AceCard), w: 8, h: 9, minW: 4, minH: 4 },
-  { id: 'controls', title: t('controls.title'), icon: thermometer, component: markRaw(ControlsPanel), w: 8, h: 7, minW: 4, minH: 4 },
+  { id: 'ace', title: t('ace.title'), icon: ace, component: markRaw(AceCard), w: 12, h: 16, minW: 4, minH: 4 },
+  { id: 'controls', title: t('controls.title'), icon: thermometer, component: markRaw(ControlsPanel), w: 8, h: 6, minW: 4, minH: 4 },
   { id: 'temps', title: t('widget.temps'), icon: thermometer, component: markRaw(TempsCard), w: 4, h: 4, minW: 2, minH: 3,
     settings: [{ key: 'nozzle', label: t('temps.nozzle'), default: true }, { key: 'bed', label: t('temps.bed'), default: true }, { key: 'fan', label: t('fan.label'), default: true }] },
   { id: 'camera', title: t('cam.title'), icon: camera, component: markRaw(CameraCard), w: 4, h: 6, minW: 3, minH: 4,
     settings: [{ key: 'aspect', label: t('widget.aspect'), default: '16/9', options: [{ value: '16/9', label: '16:9' }, { value: '4/3', label: '4:3' }, { value: '1/1', label: '1:1' }] }] },
-  { id: 'motion', title: t('motion.title'), icon: move, component: markRaw(MotionPanel), w: 4, h: 5, minW: 3, minH: 4 },
-  { id: 'printer', title: t('device.panel'), icon: printer, component: markRaw(PrinterPanel), w: 4, h: 7, minW: 3, minH: 3 },
-  { id: 'console', title: t('console.title'), icon: terminal, component: markRaw(ConsoleCard), w: 12, h: 6, minW: 3, minH: 4,
+  { id: 'motion', title: t('motion.title'), icon: move, component: markRaw(MotionPanel), w: 4, h: 6, minW: 3, minH: 4 },
+  { id: 'printer', title: t('device.panel'), icon: printer, component: markRaw(PrinterPanel), w: 4, h: 12, minW: 3, minH: 3 },
+  { id: 'console', title: t('console.title'), icon: terminal, component: markRaw(ConsoleCard), w: 8, h: 12, minW: 3, minH: 4,
     settings: [{ key: 'lines', label: t('widget.lines'), default: 400, options: [100, 400, LOG_MAX].map(n) }] },
   { id: 'files', title: t('nav.files'), icon: files, component: markRaw(FilesCard), w: 4, h: 3, minW: 3, minH: 3 },
 ]);
 const defaults = computed(() => ({ name: t('layout.default'), items: [
-  { id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 8, h: 9 }, { id: 'camera', x: 8, y: 3, w: 4, h: 6 },
-  { id: 'motion', x: 8, y: 9, w: 4, h: 5 }, { id: 'controls', x: 0, y: 12, w: 8, h: 7 }, { id: 'printer', x: 8, y: 14, w: 4, h: 7 },
-  { id: 'console', x: 0, y: 21, w: 12, h: 6 }] }));
+  { id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 12, h: 16 },
+  { id: 'controls', x: 0, y: 19, w: 8, h: 6 }, { id: 'camera', x: 8, y: 19, w: 4, h: 6 },
+  { id: 'console', x: 0, y: 25, w: 8, h: 12 }, { id: 'motion', x: 8, y: 25, w: 4, h: 6 }, { id: 'printer', x: 8, y: 31, w: 4, h: 12 }] }));
 const labels = computed<OuiDashboardLabels>(() => ({
   toolbar: t('layout.toolbar'), layout: t('layout.layout'), edit: t('layout.edit'), save: t('layout.save'), cancel: t('layout.cancel'), add: t('layout.add'),
   addTitle: t('layout.addTitle'), added: t('layout.added'), close: t('layout.close'), newLayout: t('layout.new'), rename: t('layout.rename'), remove: t('layout.remove'),

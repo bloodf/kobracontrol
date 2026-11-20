@@ -100,6 +100,8 @@ if (SCN === 'assist') { const sw = document.querySelector('#assist-remain'); sw.
 if (SCN === 'toasts') { __t.handler({type: 'notice', text: 'Kobra Control found the printer at 192.168.1.50.'}); __t.handler({type: 'reply', id: 987654, error: 'Spoolman timed out'});
   document.querySelector('[data-test="pause"]')?.click(); await sleep(50); }
 if (SCN === 'needs') { document.querySelector('.oui-settings-link[data-section="needs-h"]').click(); await sleep(200); }
+// The dashboard in edit mode: grid dots, frames and handles, the console's settings open.
+if (SCN === 'edit') { document.querySelector('[data-test="dash-edit"]').click(); await sleep(100); document.querySelector('[data-settings="console"]')?.click(); await sleep(100); }
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 // the listing pictures show a quiet page: the "printer is printing" banner is closed, as a user would close it
 if (STORE) { document.querySelector('[data-test="busy-banner"] .oui-banner-close')?.click(); await sleep(100); }
@@ -109,10 +111,11 @@ if (STORE) { document.querySelector('[data-test="busy-banner"] .oui-banner-close
 // fit whole; the social preview's short panel leaves the print card out (the app bar still says Printing).
 if (SCENE === 'store-dash') {
   const job = document.querySelector('[data-test="job-card"]'), ace = document.querySelector('[data-test="ace-card"]');
-  document.querySelector('.oui-dash-main').before(ace);   // under the print, across the page
-  ace.style.gridColumn = '1 / -1';
   const css = document.createElement('style');
-  css.textContent = \`[data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .oui-job-actions) { display: none !important; }
+  // under the print, across the page; the other widgets are not in the picture
+  css.textContent = \`.oui-dash-cell[data-widget="ace"] { grid-column: 1 / -1 !important; grid-row: 4 / span 12 !important; }
+    .oui-dash-cell:not([data-widget="job"]):not([data-widget="ace"]), .oui-dash-bar { display: none !important; }
+    [data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .oui-job-actions) { display: none !important; }
     .kc-job .oui-job-block { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
     [data-test="ace-card"] :is(.kc-group[data-box="-1"], .kc-group-head, .kc-group-head ~ :not(.oui-cards), .sl-pick, .oui-slot-actions) { display: none !important; }
     [data-test="ace-card"] .oui-cards { grid-template-columns: repeat(\${innerWidth >= 760 ? 4 : 2}, minmax(0, 1fr)) !important; }
@@ -127,12 +130,10 @@ if (SCENE === 'store-dash') {
 // store-status in a listing panel (one column): the camera right under the print, across the page, so the picture is
 // whole. The README screenshot is wide enough for the page's own two columns and keeps them.
 if (SCENE === 'store-status' && innerWidth < 1000) {
-  const cam = document.querySelector('[data-test="camera"]').closest('.oui-panel');
-  document.querySelector('.oui-dash-main').before(cam);
-  cam.style.gridColumn = '1 / -1';
   // the print's times stay, its buttons go (they wrap in Portuguese), and nothing follows the camera
   const css = document.createElement('style');
-  css.textContent = '[data-test="job-card"] .oui-job-actions, .oui-dash-main, .oui-dash-side { display: none !important; }';
+  css.textContent = '[data-test="job-card"] .oui-job-actions, .oui-dash-cell:not([data-widget="job"]):not([data-widget="camera"]), .oui-dash-bar { display: none !important; }'
+    + '.oui-dash-cell[data-widget="camera"] { grid-column: 1 / -1 !important; grid-row: 4 / span 12 !important; }';
   document.head.append(css);
 }
 if (STORE) { const css = document.createElement('style'); css.textContent = '::-webkit-scrollbar { display: none; }'; document.head.append(css); }
@@ -185,6 +186,7 @@ const SCENES = (process.env.SCENES ? JSON.parse(process.env.SCENES) : [
   ['idle', 'light', 'en', 1280, 2200], ['idle', 'dark', 'en', 1900, 1400], ['idle', 'dark', 'pt_BR', 1280, 2200], ['idle', 'light', 'en', 720, 3600],
   ['idle', 'dark', 'en', 400, 4400], ['dash', 'dark', 'en', 1280, 2200], ['assist', 'dark', 'en', 1280, 900], ['assist', 'light', 'pt_BR', 1280, 900],
   ['toasts', 'light', 'en', 1280, 720], ['toasts', 'dark', 'en', 1280, 720], ['toasts', 'dark', 'en', 380, 900], ['needs', 'light', 'en', 1280, 720], ['needs', 'dark', 'pt_BR', 720, 1000],
+  ['edit', 'light', 'en', 1280, 1800], ['edit', 'dark', 'en', 1280, 1800],
   ['camera', 'light', 'en', 1280, 720], ['usage', 'light', 'en', 1280, 720], ['usage', 'dark', 'pt_BR', 1280, 720], ['dialog', 'dark', 'pt_BR', 1280, 720],
 ]);
 const dir = await mkdtemp(join(tmpdir(), 'kobra-shots-'));
@@ -211,11 +213,12 @@ try {
       const clipped = [...document.querySelectorAll('button, [role=tab], th, td, label, .p-tag, .p-button-label, .oui-chip, .p-select-label')]
         .filter(e => e.offsetParent && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible')
         .slice(0, 8).map(e => e.tagName + '.' + String(e.className).slice(0, 30) + ' ' + JSON.stringify((e.textContent || '').trim().slice(0, 30)));
+      const natural = [...document.querySelectorAll('.oui-dash-cell')].map(c => { const p = c.querySelector('.oui-panel'); const b = p && p.querySelector(':scope > .oui-panel-body'); return [c.dataset.widget, Math.round(c.getBoundingClientRect().height), b && b.firstElementChild ? Math.round(b.firstElementChild.getBoundingClientRect().height + (p.getBoundingClientRect().height - b.getBoundingClientRect().height) + parseFloat(getComputedStyle(b).paddingTop) * 2) : 0]; });
       const b = document.querySelector('.p-button'); const cs = b ? getComputedStyle(b) : null;
       return { overflowX: document.documentElement.scrollWidth > innerWidth, clipped, scrollWidth: document.documentElement.scrollWidth, innerWidth, overflowing: over,
         dom: document.getElementsByTagName('*').length, lang: document.documentElement.lang, dark: document.documentElement.classList.contains('orca-dark'),
         bodyFont: getComputedStyle(document.body).fontSize, buttonRadius: cs && cs.borderRadius, buttonFont: cs && cs.fontSize,
-        violations: __t.violations, errors: __t.errors, rejections: __t.rejections }; })()`);
+        natural, violations: __t.violations, errors: __t.errors, rejections: __t.rejections }; })()`);
     const name = `kobra-${scn}-${theme}-${lang}-${width}x${height}.png`;
     await writeFile(join(OUT, name), await p.screenshot());
     metrics.push({ name, ...m });

@@ -2399,10 +2399,10 @@ test('settings pages: a page that needs attention is marked in the list', PAGES_
 const DASH_PLUGIN = `
 const STORE = dash => post(CONFIG({settings: {...SETTINGS, dashboard: dash}}));
 async function READY(dash) { await connect(); await (dash === undefined ? post(CONFIG()) : STORE(dash)); await post({type: 'status', data: VIEW()}); }
-const DEFAULT_IDS = ['job', 'ace', 'camera', 'motion', 'controls', 'printer', 'console'];
+const DEFAULT_IDS = ['job', 'ace', 'controls', 'camera', 'console', 'motion', 'printer'];
 const DEFAULT_ORDER = DEFAULT_IDS;
 const ALL_IDS = ['job', 'ace', 'controls', 'temps', 'camera', 'motion', 'printer', 'console', 'files'];
-const MOVER = 'camera', MOVER_FROM = '9 / span 4 | 4 / span 6', MOVE_COLS = 8, MOVER_TO = '1 / span 4 | 4 / span 6';
+const MOVER = 'camera', MOVER_FROM = '9 / span 4 | 20 / span 6', MOVE_COLS = 8, MOVER_TO = '1 / span 4 | 20 / span 6';
 const CAM_W = 4, CAM_H = 6, TEMPS = 'temps';
 const TEMPS_COMPACT = () => { const subs = qa('.oui-readout-sub', cell('temps')); return subs.length > 0 && subs.every(e => getComputedStyle(e).display === 'none'); };
 `;
