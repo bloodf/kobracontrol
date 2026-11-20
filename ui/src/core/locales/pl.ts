@@ -737,6 +737,8 @@ export const pl: Record<PolishKey, string> = {
   'files.places': 'Na drukarce',
   'files.local': 'Pliki wydruku',
   'files.selectAll': 'Zaznacz wszystkie pliki',
+  'files.view.list': 'Lista',
+  'files.view.grid': 'Siatka',
   'files.select': 'Zaznacz {name}',
   'files.items_one': '1 plik',
   'files.items_few': '{n} pliki',

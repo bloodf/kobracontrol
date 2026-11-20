@@ -28,6 +28,8 @@ export function interpolate(text: string, params?: Record<string, unknown>): str
 /** The plural key for `n`: "<base>_<form>" by the language's rule when the dictionary has it (Polish "_few", "_many"),
  *  else "<base>_one" or "<base>_other". */
 export function pluralKey(dict: Record<string, string>, locale: string, base: string, n: number): string {
-  const form = new Intl.PluralRules(locale).select(n);
+  // "_one" texts are written for exactly one ("1 arquivo"); Portuguese also puts 0 in "one", which read "1 arquivo" for no files.
+  const rule = new Intl.PluralRules(locale).select(n);
+  const form = rule === 'one' && n !== 1 ? 'other' : rule;
   return `${base}_${form}` in dict ? `${base}_${form}` : form === 'one' ? `${base}_one` : `${base}_other`;
 }

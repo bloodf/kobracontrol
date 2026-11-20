@@ -696,6 +696,8 @@ export const de: Record<MessageKey, string> = {
   'files.places': "Auf dem Drucker",
   'files.local': "Druckdateien",
   'files.selectAll': "Alle Dateien auswählen",
+  'files.view.list': "Liste",
+  'files.view.grid': "Raster",
   'files.select': "{name} auswählen",
   'files.items_one': "1 Datei",
   'files.items_other': "{n} Dateien",

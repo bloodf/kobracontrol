@@ -724,6 +724,8 @@ export const es: Record<MessageKey, string> = {
   'files.places': "En la impresora",
   'files.local': "Archivos de impresión",
   'files.selectAll': "Seleccionar todos los archivos",
+  'files.view.list': "Lista",
+  'files.view.grid': "Cuadrícula",
   'files.select': "Seleccionar {name}",
   'files.items_one': "1 archivo",
   'files.items_other': "{n} archivos",
