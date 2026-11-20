@@ -43,7 +43,7 @@ jobs:
       # (always --use-mock-keychain --password-store=basic). Same setup as ci.yml.
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version: "26"
       - uses: browser-actions/setup-chrome@v2
         id: chrome
         with:
