@@ -73,13 +73,17 @@ if (TAB === 'settings' || TAB === 'files' || TAB === 'stock') { document.querySe
 if (TAB === 'files') {
   ans('files', {files: [{name: 'desk_organiser_plate_1.gcode', size: 4200000, timestamp: Date.now()/1000 - 3600}, {name: 'benchy.gcode', size: 900000, timestamp: Date.now()/1000 - 86400},
     {name: 'cable_clips_x12.gcode', size: 1300000, timestamp: Date.now()/1000 - 3 * 86400}]});
+  await sleep(100);
+}
+// the time-lapses are read when their list is opened
+if (SCN.startsWith('videos')) {
+  document.querySelector('[data-list="videos"]').click(); await sleep(200);
   const video = (name, stamp, n, ago, duration, size) => ({filename: name + '-' + stamp + '_' + n + '.mp4', name, created: Date.now()/1000 - ago, duration, size, empty: !duration});
   const asked = [...__t.sent].reverse().find(x => x.type === 'cmd' && x.cmd === 'videos');
   if (SCN === 'videos-error') __t.handler({type: 'reply', id: asked.id, error: 'the printer did not answer the time-lapse list'});
   else ans('videos', {videos: SCN === 'videos-empty' ? [] : [video('desk_organiser_plate_1', '20261116215053', 8, 5400, 83, 14109048), video('benchy', '20261115101010', 7, 90000, 41, 6209048),
     video('cable_clips_x12', '20261114181500', 6, 2 * 86400, 0, 156), video('vase_spiral_tall', '20261110090000', 5, 6 * 86400, 3725, 1310000000)]});
-  await sleep(100);
-  if (SCN.startsWith('videos')) { document.querySelector('[data-list="videos"]').click(); await sleep(200); }
+  await sleep(200);
 }
 if (SCN === 'videos-delete') { document.querySelector('[data-file^="cable_clips"]').click(); await sleep(100);
   [...document.querySelectorAll('.oui-files-bar button')].pop().click(); await until(() => document.querySelector('.p-dialog')); }

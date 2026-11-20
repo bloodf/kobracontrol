@@ -384,7 +384,6 @@ export const de: Record<MessageKey, string> = {
   'files.col.modified': "Hinzugefügt",
   'files.delete': "Löschen",
   'files.loading': "Dateiliste wird geladen…",
-  'files.error': "Die Dateiliste konnte nicht gelesen werden: {error}",
   'files.empty': "Keine Dateien auf dem Drucker.",
   'files.noTarget': "Noch kein Kobra X gefunden; die Übersicht nennt den Grund und kann erneut suchen.",
   'files.noCertificate': "Suchen Sie in der Übersicht das Anycubic-Zertifikat, um die Dateien des Druckers zu sehen.",
@@ -563,7 +562,6 @@ export const de: Record<MessageKey, string> = {
   'videos.count_one': "1 Video",
   'videos.count_other': "{n} Videos",
   'videos.loading': "Zeitraffer werden geladen…",
-  'videos.error': "Die Zeitraffer konnten nicht gelesen werden: {error}",
   'videos.empty': "Keine Zeitraffer auf dem Drucker.",
   'videos.emptyHint': "Ein Druck, der mit eingeschaltetem Zeitraffer gestartet wurde, legt sein Video hier ab.",
   'videos.col.print': "Druck",
@@ -706,4 +704,15 @@ export const de: Record<MessageKey, string> = {
   'files.deleteText': "Sie werden vom Drucker gelöscht. Das lässt sich nicht rückgängig machen.",
   'files.noneSelected': "Keine Datei ausgewählt",
   'ok.deleteMany': "{n} Dateien gelöscht.",
+
+  // 5.0.7: the file browser asks, fails and hints in these words
+  'files.loadFailed': "Die Dateiliste konnte nicht gelesen werden",
+  'videos.loadFailed': "Die Zeitraffer konnten nicht gelesen werden",
+  'files.deleteTitle_one': "1 Datei löschen?",
+  'files.deleteTitle_other': "{n} Dateien löschen?",
+  'videos.deleteTitle_one': "1 Zeitraffer löschen?",
+  'videos.deleteTitle_other': "{n} Zeitraffer löschen?",
+  'files.andMore': "und {n} weitere",
+  'files.selectHint': "Wählen Sie eine Datei aus, um ihre Details zu sehen und sie zu drucken.",
+  'files.deleteSome': "{failed} von {n} konnten nicht gelöscht werden: {error}",
 };

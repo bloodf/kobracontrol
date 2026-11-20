@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiControlRow, OuiEmpty, OuiHint, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
+import { OuiControlRow, OuiEmpty, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
 import { printer } from '../../shared/src/icons';
 import { s, run, tracker, busy, controlsOff, link, printerName, stale, loadDevice, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
@@ -75,13 +75,9 @@ async function toggle(sw: Switch, on: boolean) {
 </script>
 
 <template>
-  <OuiPanel :title="t('device.panel')" :icon="printer" :flush="!st" data-test="device">
+  <OuiPanel :title="t('device.panel')" :icon="printer" :flush="!st" :hint-label="t('assist.title')" data-test="device">
     <template v-if="stale" #meta><OuiStatus state="stale">{{ t('status.lastKnownShort') }}</OuiStatus></template>
-    <!-- In the header, opening towards the start: this module sits by the page's right edge, where a bubble that opens
-         the other way would widen the page. -->
-    <template v-if="switches.length" #actions>
-      <OuiHint end :label="t('assist.title')"><span class="kc-assist-help"><span v-for="sw in switches" :key="sw.key"><strong>{{ name(sw.key) }}</strong> {{ help(sw.key) }}</span></span></OuiHint>
-    </template>
+    <template v-if="switches.length" #hint><span class="kc-assist-help"><span v-for="sw in switches" :key="sw.key"><strong>{{ name(sw.key) }}</strong> {{ help(sw.key) }}</span></span></template>
     <OuiEmpty v-if="!st" compact :state="link === 'offline' ? 'offline' : 'loading'" :title="t('status.noStatus')" />
     <div v-else class="oui-controls kc-device">
       <OuiKeyValue v-if="facts.length" :items="facts" data-test="device-facts" />

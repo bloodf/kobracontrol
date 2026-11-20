@@ -7,7 +7,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
-import { OuiAppBar, OuiBanner, OuiIcon, OuiStatus } from '../../shared/src/components';
+import { OuiAppBar, OuiBanner, OuiHint, OuiIcon, OuiStatus } from '../../shared/src/components';
 import { ace as aceIcon, clock, play, plate as plateIcon, refresh, settings as settingsIcon, spool } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { boot } from '../core/boot';
@@ -171,11 +171,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
         <label v-for="o in shownOptions" :key="o.key" class="pd-box" :for="`pd-o-${o.key}`" :data-option="o.key" :data-locked="(o.lock || locked) || undefined">
           <Checkbox v-model="options[o.key]" :input-id="`pd-o-${o.key}`" binary :disabled="!!o.lock || locked"
                     :aria-describedby="o.lock ? `pd-o-${o.key}-why` : undefined" />
-          <span class="pd-box-text"><span>{{ t(OPTION_LABEL[o.key]) }}</span><span v-if="o.lock" :id="`pd-o-${o.key}-why`" class="oui-meta">{{ lockText(o) }}</span></span>
+          <span>{{ t(OPTION_LABEL[o.key]) }}</span>
+          <OuiHint v-if="o.lock" :id="`pd-o-${o.key}-why`" :label="t(OPTION_LABEL[o.key])" :text="lockText(o)" />
         </label>
         <label v-if="autoFeed !== null" class="pd-box pd-wide" for="pd-o-feed" data-option="auto_feed" :data-locked="locked || undefined">
           <Checkbox v-model="autoFeed" input-id="pd-o-feed" binary :disabled="locked" aria-describedby="pd-o-feed-why" />
-          <span class="pd-box-text"><span>{{ t('assist.autoFeed') }}</span><span id="pd-o-feed-why" class="oui-meta">{{ t('assist.autoFeed.help') }}</span></span>
+          <span>{{ t('assist.autoFeed') }}</span>
+          <OuiHint id="pd-o-feed-why" :label="t('assist.autoFeed')" :text="t('assist.autoFeed.help')" />
         </label>
       </div>
       <label class="pd-check" for="pd-remember"><Checkbox v-model="remember" input-id="pd-remember" binary :disabled="sent" data-test="remember" />{{ t('pd.remember') }}</label>
@@ -227,12 +229,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
 .pd-sq { width: 18px; height: 18px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .25); }
 .pd-sq[data-empty] { background: var(--oui-raised); box-shadow: inset 0 0 0 1px var(--oui-control-border); background-image: linear-gradient(135deg, transparent 45%, var(--oui-control-border) 45% 55%, transparent 55%); }
 .pd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--oui-s2); }
-.pd-box { display: flex; align-items: flex-start; gap: var(--oui-s2); min-height: 44px; padding: var(--oui-s2) var(--oui-s3); border-radius: var(--oui-radius);
+.pd-box { display: flex; align-items: center; gap: var(--oui-s2); min-height: 40px; padding: var(--oui-s2) var(--oui-s3); border-radius: var(--oui-radius);
   background: var(--oui-surface); box-shadow: inset 0 0 0 1px var(--oui-border); cursor: pointer; font-weight: 600; }
 .pd-box:has(:checked) { box-shadow: inset 0 0 0 1.5px var(--oui-primary-mark); }
 .pd-box[data-locked] { cursor: default; color: var(--oui-muted); }
-.pd-box-text { display: grid; gap: 1px; min-width: 0; }
-.pd-box-text .oui-meta { font-weight: 400; }
+/* What an option needs explained (why it is locked, what it does) is behind its (i), at the end of its box. */
+.pd-box > .oui-hint { margin-inline-start: auto; }
 .pd-wide { grid-column: 1 / -1; }
 .pd-check { display: inline-flex; align-items: center; gap: var(--oui-s2); font-weight: 600; justify-self: start; }
 .pd-bar { position: fixed; inset: auto 0 0 0; z-index: 5; background: var(--oui-surface); border-top: 1px solid var(--oui-border); box-shadow: 0 -6px 16px rgb(0 0 0 / .12); }

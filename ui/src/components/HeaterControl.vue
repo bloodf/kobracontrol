@@ -16,9 +16,9 @@ const dot = computed(() => acceptDot(locale.value));
 // One heater: what it reads, what it is set to, and the field to change it. Safety rules kept here: a blank field
 // never sends 0, an out-of-range value is refused with the real limit from config (not clamped), heating always asks
 // first, Off needs no question and is never withheld, and nothing is sent while the printer doesn't allow heating (`off`).
-// foundation-gap: OuiSetpoint (5.0.0) owns its draft, clamps instead of refusing, has no confirm hook before `set`, no
-// refusal message, no id on its field, and turns Off off while the target reads 0, so these rules can't run inside it.
-// This row is drawn on OuiSetpoint's columns, so it lines up with the OuiControlRow lines beside it.
+// This is the plugin's own row, drawn on OuiSetpoint's columns so it lines up with the OuiControlRow lines beside it.
+// The shared OuiSetpoint can carry these rules since foundation 5.0.6 (validate, draft, invalid, off-always). The move
+// was left out on purpose: the heater scenarios would have had to change with it, and they are the safety tests.
 const props = defineProps<{ id: 'nozzle' | 'bed'; /** Heating is off: the page's reason, or the printer's. */ off: boolean; whyId?: string }>();
 const name = computed(() => t(props.id === 'bed' ? 'temps.bed' : 'temps.nozzle'));
 const temp = computed(() => (props.id === 'bed' ? s.status?.bed_temp : s.status?.nozzle_temp));

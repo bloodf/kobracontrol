@@ -384,7 +384,6 @@ export const zhCN: Record<MessageKey, string> = {
   'files.col.modified': "添加时间",
   'files.delete': "删除",
   'files.loading': "正在加载文件列表…",
-  'files.error': "无法读取文件列表：{error}",
   'files.empty': "打印机上没有文件。",
   'files.noTarget': "尚未找到 Kobra X；仪表盘会说明原因并可重新搜索。",
   'files.noCertificate': "请在仪表盘中查找 Anycubic 证书，以查看打印机上的文件。",
@@ -563,7 +562,6 @@ export const zhCN: Record<MessageKey, string> = {
   'videos.count_one': "1 个视频",
   'videos.count_other': "{n} 个视频",
   'videos.loading': "正在加载延时摄影…",
-  'videos.error': "无法读取延时摄影：{error}",
   'videos.empty': "打印机上没有延时摄影。",
   'videos.emptyHint': "开启延时摄影后开始的打印，其视频会保存在这里。",
   'videos.col.print': "打印",
@@ -706,4 +704,15 @@ export const zhCN: Record<MessageKey, string> = {
   'files.deleteText': "它们将从打印机中删除，无法撤销。",
   'files.noneSelected': "未选择文件",
   'ok.deleteMany': "已删除 {n} 个文件。",
+
+  // 5.0.7: the file browser asks, fails and hints in these words
+  'files.loadFailed': "无法读取文件列表",
+  'videos.loadFailed': "无法读取延时摄影",
+  'files.deleteTitle_one': "删除 1 个文件？",
+  'files.deleteTitle_other': "删除 {n} 个文件？",
+  'videos.deleteTitle_one': "删除 1 个延时摄影？",
+  'videos.deleteTitle_other': "删除 {n} 个延时摄影？",
+  'files.andMore': "以及另外 {n} 项",
+  'files.selectHint': "选择一个文件以查看详情并打印。",
+  'files.deleteSome': "{n} 项中有 {failed} 项无法删除：{error}",
 };

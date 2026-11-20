@@ -41,7 +41,8 @@ const tabs = computed(() => [
   <main class="kc-main">
     <div v-show="s.tab === 'dash'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-dash" data-view="dash"><Dashboard /></div>
     <div v-show="s.tab === 'stock'" class="oui-page" role="tabpanel" aria-labelledby="oui-tab-stock" data-view="stock"><StockView /></div>
-    <div v-show="s.tab === 'files'" class="oui-page kc-files" role="tabpanel" aria-labelledby="oui-tab-files" data-view="files"><FilesView /></div>
+    <!-- Files is there while its tab is open: the printer is asked for its files when the tab is opened. -->
+    <div v-show="s.tab === 'files'" class="oui-page kc-files" role="tabpanel" aria-labelledby="oui-tab-files" data-view="files"><FilesView v-if="s.tab === 'files'" /></div>
     <div v-show="s.tab === 'settings'" role="tabpanel" aria-labelledby="oui-tab-settings" data-view="settings">
       <div class="kc-msgs kc-msgs-settings" data-msgs="settings" />
       <SettingsView />

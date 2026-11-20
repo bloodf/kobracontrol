@@ -69,29 +69,28 @@ const alt = computed(() => t('cam.alt', { printer: printerName.value }));
       <span data-test="cam-why">{{ why }}</span>
       <template v-if="noFfmpeg" #actions><Button size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="openSettings('needs-h')" /></template>
     </OuiEmpty>
-    <OuiCamera v-else-if="!shown" state="off" :alt="alt" :title="t('cam.offTitle')" :text="ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint')">
+    <OuiCamera v-else-if="!shown" fit="contain" state="off" :alt="alt" :title="t('cam.offTitle')" :text="ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint')">
       <template #actions><Button severity="secondary" size="small" :label="t('cam.start')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiCamera>
-    <div v-else class="cam-view">
-      <!-- OuiCamera draws the JPEG frames and the starting and failed states; the stream the page plays itself is the
-           <video> over it (foundation-gap: OuiCamera 5.0.0 takes a picture address only, it has no slot for a player). -->
-      <OuiCamera v-show="!s.video" :class="{ 'cam-empty': !s.frame && !s.video }" :src="s.frame || null" :alt="alt" :state="s.frame ? 'live' : s.camError ? 'error' : 'loading'" :title="msg"
-                 :role="s.frame ? undefined : 'status'" :data-reason="s.frame ? undefined : s.camReason" @load.capture="bridge.post({ type: 'frame_ack' })">
-        <template v-if="s.camReason === 'no_ffmpeg'" #actions>
-          <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="openSettings('cam-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
-        </template>
-      </OuiCamera>
-      <video ref="vid" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="alt"></video>
-      <div v-if="s.video || s.frame" class="oui-camera-overlay"><span class="oui-chip">{{ t('cam.live') }}</span></div>
-    </div>
+    <!-- On: the page's own picture. The <video> is there from the start (it must be, to play at all) and shows once frames
+         play; until then ffmpeg's JPEG frames, or what the camera is doing (starting, failed and why). -->
+    <OuiCamera v-else class="cam-view" fit="contain" state="live" :alt="alt">
+      <template #picture>
+        <video ref="vid" class="oui-camera-picture" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="alt"></video>
+        <img v-if="!s.video && s.frame" class="oui-camera-picture" :src="s.frame" :alt="alt" draggable="false" @load="bridge.post({ type: 'frame_ack' })">
+        <OuiEmpty v-else-if="!s.video" class="cam-empty" :state="s.camError ? 'error' : 'loading'" :icon="cameraOff" :title="msg" role="status" :data-reason="s.camReason">
+          <template v-if="s.camReason === 'no_ffmpeg'" #actions>
+            <Button size="small" severity="secondary" :label="t('cam.ffmpegSettings')" data-test="cam-settings" @click="openSettings('cam-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
+          </template>
+        </OuiEmpty>
+      </template>
+      <template v-if="s.video || s.frame" #overlay><span class="oui-chip">{{ t('cam.live') }}</span></template>
+    </OuiCamera>
   </OuiPanel>
 </template>
 
 <style>
-/* The stage while the camera is on: OuiCamera's own 16:9 box, with the page's player over it once it plays. */
-.cam-view { position: relative; aspect-ratio: 16 / 9; min-height: 120px; overflow: hidden; border-radius: 0 0 var(--oui-radius-lg) var(--oui-radius-lg); background: var(--oui-inset); }
-.cam-view > .oui-camera { height: 100%; }
-.cam-view > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-/* Not display:none: WebKit may not decode a hidden video, and it must play to say it plays. */
-.cam-view > video.cam-hidden { opacity: 0; pointer-events: none; }
+/* The player waits behind what is shown until its frames play. Not display:none: WebKit may not decode a hidden video,
+   and it must play to say it plays. */
+.cam-view > video.cam-hidden { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 </style>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiBanner, OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, type OuiFileBrowserLabels } from '../../shared/src/components';
+import { OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, useFileBackend, type OuiFileBackend, type OuiFileBrowserLabels } from '../../shared/src/components';
 import { printer, refresh } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
 import { s, run, tracker, targetKnown, printerName, controlsOff, busy, whyId } from '../app/store';
@@ -11,71 +11,76 @@ import { config } from '../app/settings';
 import { ask } from '../core/dialog';
 import { t, tn, fmt } from '../core/i18n';
 import { message } from '../core/tracker';
-import { clipLength, thumbSrc, listFiles } from '../core/logic';
+import { clipLength, thumbSrc } from '../core/logic';
 import type { FileDetails, FileEntry, FileMaterial, FilesResult, VideoEntry, VideosResult } from '../app/types';
 
 // The Files tab, on the shared file browser: what is on the printer, with multi-select and delete, and one file's
-// details and print options beside the list.
+// details and print options beside the list. It is mounted while its tab is open, so the printer is asked for its
+// files when the tab is opened, not before.
 // What the Kobra X's LAN protocol offers (docs/protocol.md): file/listLocal of the storage's root, file/fileDetails,
 // file/deleteBatch (several files in one message), file/listVideo and file/deleteVideo (one video per message). It has
-// no folders to work with and no message to move, rename or create one, and no download. So the browser is shown
-// without its folder tree and without "Move to"; the printer's two lists (print files, time-lapses) are a switch over
-// the table.
+// no folders to work with and no message to move, rename or create one, and no download. So the storage behind the
+// browser lists and deletes, and nothing else: the browser then has no folder tree, no "Move to" and no dragging. The
+// printer's two lists (print files, time-lapses) are a switch over the table.
 type Place = 'local' | 'videos';
-/** One array for good: a new one on each render would look like a changed tree to the browser. */
-const NO_FOLDERS: never[] = [];
-type Load = 'idle' | 'loading' | 'ok' | 'error';
 const place = ref<Place>('local');
-const selected = ref<string[]>([]);
-const state = ref<Record<Place, Load>>({ local: 'idle', videos: 'idle' });
-const error = ref<Record<Place, string>>({ local: '', videos: '' });
-const set = (which: Place, to: Load, why = '') => { state.value = { ...state.value, [which]: to }; error.value = { ...error.value, [which]: why }; };
-const files = ref<FileEntry[]>([]);
-const videos = ref<VideoEntry[]>([]);
-const seq = { local: 0, videos: 0 };
 // Time-lapses are listed for a connected printer (idle or printing).
 const hasVideos = computed(() => s.phase === 'connected');
+// What the printer last listed. The rows are drawn from these (below), so they follow the page's language and clock.
+const local = ref<FileEntry[]>([]);
+const videos = ref<VideoEntry[]>([]);
 
-async function loadFiles() {
-  if (!targetKnown.value || !s.info) { set('local', 'idle'); files.value = []; return; }
-  const mine = ++seq.local;
-  set('local', 'loading');
-  try {
-    const r: FilesResult = await bridge.command('files', {}, s.info.generation);
-    if (mine !== seq.local) return;
-    files.value = r.files ?? [];
-    set('local', 'ok');
-  } catch (e) {
-    if (mine === seq.local) set('local', 'error', message(e));
-  }
-}
-async function loadVideos() {
-  if (!hasVideos.value || !s.info) { set('videos', 'idle'); videos.value = []; return; }
-  const mine = ++seq.videos;
-  set('videos', 'loading');
-  try {
-    const r: VideosResult = await bridge.command('videos', {}, s.info.generation);
-    if (mine !== seq.videos) return;
-    videos.value = r.videos ?? [];
-    set('videos', 'ok');
-  } catch (e) {
-    if (mine === seq.videos) set('videos', 'error', message(e));
-  }
-}
-const load = () => Promise.all([loadFiles(), loadVideos()]);
-const reloadOpen = () => (place.value === 'videos' ? loadVideos() : loadFiles());
-watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); else selected.value = []; }, { immediate: true });
-watch(hasVideos, on => { if (!on) place.value = 'local'; });
+/** The tracker has already told the user (no answer in time, or the same command still running): no second toast. */
+class Said extends Error {}
+const failed = (r: { reason: string; error?: string }) => (r.reason === 'error' ? new Error(r.error || t('common.unknown')) : new Said());
+let deleting: Place = 'local';
+const backend: OuiFileBackend = {
+  async list() {
+    const generation = s.info?.generation;
+    if (generation == null) throw new Error(t('files.waiting'));
+    if (place.value === 'videos') {
+      videos.value = ((await bridge.command('videos', {}, generation)) as VideosResult).videos ?? [];
+      return videos.value.map(v => ({ id: v.filename, name: v.filename }));
+    }
+    local.value = ((await bridge.command('files', {}, generation)) as FilesResult).files ?? [];
+    return local.value.map(f => ({ id: f.name, name: f.name }));
+  },
+  // The browser has already asked. A delete that removed only some rejects with how many are left.
+  async remove(ids) {
+    deleting = place.value;
+    if (deleting === 'local') {
+      const r = await run({ key: 'files-delete', label: t('act.delete'), cmd: 'file_delete', args: { names: ids }, quiet: true });
+      if (!r.ok) throw failed(r);
+      // The plugin answers with the list as it is now: a name still in it was not deleted.
+      const now: FileEntry[] = (r.result as Partial<FilesResult> | null)?.files ?? [];
+      const left = ids.filter(id => now.some(f => f.name === id)).length;
+      if (left) throw new Error(t('files.deleteSome', { failed: left, n: ids.length, error: t('common.unknown') }));
+      return;
+    }
+    // The printer deletes one video per message: one after the other, behind the one question.
+    let last: { reason: string; error?: string } | null = null, count = 0;
+    for (const name of ids) {
+      const r = await run({ key: `vdel:${name}`, label: t('act.videoDelete'), cmd: 'video_delete', args: { name }, quiet: true });
+      if (!r.ok) { count++; last = r; }
+    }
+    if (last) throw ids.length === 1 ? failed(last) : new Error(t('files.deleteSome', { failed: count, n: ids.length, error: last.error || t('common.unknown') }));
+  },
+};
+const files = useFileBackend(backend, {
+  onDone: (_action, ids) => tracker.notify('success', ids.length === 1 ? t(deleting === 'videos' ? 'ok.videoDelete' : 'ok.delete') : t('ok.deleteMany', { n: ids.length })),
+  onError: (_action, e) => { if (!(e instanceof Said)) tracker.notify('error', t('msg.failed', { action: t(deleting === 'videos' ? 'act.videoDelete' : 'act.delete'), error: message(e) })); },
+});
+// Another printer, or the same one answering again: read its list.
+watch(() => [s.epoch, s.phase], () => { if (!hasVideos.value) place.value = 'local'; void files.reload(); });
 /** The other list: nothing stays selected across the two. */
-function openList(to: Place) { if (to !== place.value) { selected.value = []; place.value = to; } }
+function openList(to: Place) { if (to !== place.value) { files.selected = []; place.value = to; void files.reload(); } }
 
 // Storage comes with the status, in MB.
-const storage = computed(() => { const st = s.status?.storage; return st?.total ? { used: (st.used ?? 0) * 1e6, total: st.total * 1e6 } : null; });
-const disk = computed(() => (storage.value ? t('files.used', { used: fmt.bytes(storage.value.used), total: fmt.bytes(storage.value.total) }) : ''));
+const disk = computed(() => { const st = s.status?.storage; return st?.total ? t('files.used', { used: fmt.bytes((st.used ?? 0) * 1e6), total: fmt.bytes(st.total * 1e6) }) : ''; });
 const seconds = (ts: number) => (ts > 1e12 ? ts / 1000 : ts);
 
 // ---------------------------------------------------------------- one file selected: its details and the print options
-const one = computed(() => (place.value === 'local' && selected.value.length === 1 ? selected.value[0] : null));
+const one = computed(() => (place.value === 'local' && files.selected.length === 1 ? files.selected[0] : null));
 const details = ref<FileDetails | null>(null);
 const detailsError = ref('');
 const thumbs = ref<Record<string, string>>({});
@@ -139,12 +144,12 @@ async function print() {
   const r = await run({ key: 'print', label: t('act.print'), cmd: 'file_print', args: { name, auto_leveling: options.value.leveling, vibration_compensation: options.value.vibration,
     flow_calibration: flow, timelapse },
     okText: t('ok.print'), timeoutMs: 60000 });
-  if (r.ok) selected.value = [];
+  if (r.ok) files.selected = [];
 }
 // Enter or a double click on a file: it becomes the one selected, with the keyboard on Start printing.
 async function onOpen(id: string) {
   if (place.value !== 'local') return;
-  selected.value = [id];
+  files.selected = [id];
   await nextTick();
   document.querySelector<HTMLElement>('[data-focus-key="print-start"]')?.focus();
 }
@@ -155,95 +160,58 @@ const KIND: Record<string, string> = { gcode: 'G-code', gco: 'G-code', '3mf': '3
 const kind = (name: string) => KIND[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
 const places = computed<{ id: Place; name: string }[]>(() => [{ id: 'local', name: t('files.local') }, { id: 'videos', name: t('videos.title') }]);
 const needle = computed(() => query.value.trim().toLowerCase());
+const NEWEST = { key: 'modified', down: true } as const;   // a printer's list reads newest first: the file just sent is on top
 const rows = computed(() => (place.value === 'videos'
   ? videos.value.filter(v => !needle.value || `${v.name} ${v.filename}`.toLowerCase().includes(needle.value)).map(v => ({
     id: v.filename, name: v.filename, size: v.size, sizeText: fmt.bytes(v.size), modified: v.created || null, modifiedText: v.created ? fmt.when(v.created, s.now / 1000) : undefined,
     kind: v.empty ? t('videos.aborted') : clipLength(v.duration) || undefined,
     facts: [{ label: t('videos.col.print'), value: v.name }, { label: t('videos.col.length'), value: v.empty ? t('videos.abortedHint') : clipLength(v.duration) || '—' },
       ...(v.created ? [{ label: t('videos.col.recorded'), value: fmt.dateTime(v.created) }] : [])] }))
-  : listFiles(files.value, query.value, 'newest').map(f => ({
+  : local.value.filter(f => !needle.value || f.name.toLowerCase().includes(needle.value)).map(f => ({
     id: f.name, name: f.name, size: f.size, sizeText: fmt.bytes(f.size), modified: f.timestamp ? seconds(f.timestamp) : null, modifiedText: f.timestamp ? fmt.when(seconds(f.timestamp), s.now / 1000) : undefined,
     kind: kind(f.name), thumb: thumbs.value[f.name] || thumbSrc(f.thumbnail) || null, facts: one.value === f.name ? facts.value : undefined }))));
-const total = computed(() => (place.value === 'videos' ? videos.value.length : files.value.length));
-const count = (n: number) => (place.value === 'videos' ? tn('videos.count', n) : tn('files.items', n));
+const total = computed(() => (place.value === 'videos' ? videos.value.length : local.value.length));
 const labels = computed<OuiFileBrowserLabels>(() => {
   const vid = place.value === 'videos';
   return {
     folders: t('files.places'), files: vid ? t('videos.title') : t('files.title'), name: t('files.col.name'), size: t('files.col.size'),
     modified: vid ? t('videos.col.recorded') : t('files.col.modified'), selectAll: t('files.selectAll'), select: name => t('files.select', { name }),
-    items: n => (needle.value ? t('files.count', { shown: n, total: total.value }) : count(n)), selected: n => tn('files.selected', n),
+    items: n => (needle.value ? t('files.count', { shown: n, total: total.value }) : tn(vid ? 'videos.count' : 'files.items', n)), selected: n => tn('files.selected', n),
     clear: t('common.clear'), moveTo: '', remove: t('files.delete'),
-    removeTitle: n => fmt.pair(t(vid ? 'act.videoDelete' : 'files.delete'), count(n)), removeText: t('files.deleteText'), andMore: n => t('usage.more', { n }), cancel: t('common.goBack'),
+    removeTitle: n => tn(vid ? 'videos.deleteTitle' : 'files.deleteTitle', n), removeText: t('files.deleteText'), andMore: n => t('files.andMore', { n }), cancel: t('common.goBack'),
     empty: needle.value ? t('files.noMatch', { q: query.value.trim() }) : vid ? t('videos.empty') : t('files.empty'),
     emptyText: needle.value ? undefined : vid ? t('videos.emptyHint') : undefined,
-    loading: vid ? t('videos.loading') : t('files.loading'), nothingSelected: t('files.noneSelected'),
+    loading: vid ? t('videos.loading') : t('files.loading'), loadFailed: vid ? t('videos.loadFailed') : t('files.loadFailed'), retry: t('common.retry'),
+    nothingSelected: t('files.noneSelected'), nothingSelectedText: vid ? undefined : t('files.selectHint'),
   };
 });
-const openError = computed(() => (state.value[place.value] === 'error' ? t(place.value === 'videos' ? 'videos.error' : 'files.error', { error: error.value[place.value] }) : ''));
-
-// foundation-gap: OuiFileBrowser 5.0.0 always starts sorted by name and has no prop for it. A printer's list reads
-// newest first (the file just sent is on top), so its own "Added" header is pressed once when it is drawn.
-const browser = ref<ComponentPublicInstance | null>(null);
-const newestFirst = () => (browser.value?.$el as HTMLElement | undefined)?.querySelectorAll<HTMLElement>('.oui-files-sort')[2]?.click();
-
-// ---------------------------------------------------------------- delete (the browser has already asked)
-// Refresh stands for the rows that went. The browser's own confirmation is still leaving when the printer has already
-// answered, so the check waits for it: the keyboard is never left on <body>.
-async function afterDelete() {
-  await reloadOpen();   // after an error too: the list then shows what is still on the printer
-  for (const end = Date.now() + 1500; document.querySelector('.p-dialog') && Date.now() < end;) await new Promise(r => setTimeout(r, 50));
-  await nextTick();
-  if (document.activeElement === document.body) document.querySelector<HTMLElement>('[data-focus-key="files-refresh"]')?.focus();
-}
-async function onDelete(ids: string[]) {
-  if (!ids.length) return;
-  const vid = place.value === 'videos';
-  const done = (n: number) => (n === 1 ? t(vid ? 'ok.videoDelete' : 'ok.delete') : t('ok.deleteMany', { n }));
-  if (vid) {
-    // The printer deletes one video per message: one after the other, each failure said by itself.
-    let ok = 0;
-    for (const name of ids) {
-      const r = await run({ key: `vdel:${name}`, label: t('act.videoDelete'), cmd: 'video_delete', args: { name } });
-      if (r.ok) ok++;
-    }
-    if (ok) tracker.notify('success', done(ok));
-  } else {
-    await run({ key: 'files-delete', label: t('act.delete'), cmd: 'file_delete', args: { names: ids }, okText: done(ids.length) });
-  }
-  await afterDelete();
-}
 </script>
 
 <template>
   <OuiPageHeader :title="t('nav.files')" data-test="files-head">
     <template #meta><span data-test="disk">{{ disk }}</span></template>
     <template #actions>
-      <OuiHint v-if="hasVideos" end :label="t('videos.title')" :text="t('videos.noDownload')" data-test="videos-note" />
-      <Button severity="secondary" :label="t('common.refresh')" :loading="state.local === 'loading' || state.videos === 'loading'" :disabled="!targetKnown" data-test="refresh" data-focus-key="files-refresh" @click="load">
+      <OuiHint v-if="hasVideos" :label="t('videos.title')" :text="t('videos.noDownload')" data-test="videos-note" />
+      <Button severity="secondary" :label="t('common.refresh')" :loading="files.loading" :disabled="!targetKnown" data-test="refresh" @click="files.reload()">
         <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
     </template>
   </OuiPageHeader>
 
   <div class="kc-msgs" data-msgs="files" />
 
-  <div role="alert" class="kc-live fv-alert">
-    <OuiBanner :show="!!openError && targetKnown" tone="error" :title="openError" data-test="files-error">
-      <template #actions><Button size="small" severity="secondary" :label="t('common.retry')" @click="reloadOpen"><template #icon><OuiIcon :icon="refresh" :size="13" /></template></Button></template>
-    </OuiBanner>
-  </div>
-
   <OuiPanel v-if="!targetKnown" flush>
     <OuiEmpty state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
   </OuiPanel>
 
-  <!-- No folders are passed: the printer has none, so the tree has nothing in it and nothing can take a drop. -->
-  <OuiFileBrowser v-else ref="browser" :folder="place" v-model:selected="selected" :folders="NO_FOLDERS" :files="rows" :labels="labels" :loading="state[place] === 'loading' && !total"
-                  :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place" @delete="onDelete" @open="onOpen" @vue:mounted="newestFirst">
+  <!-- The rows are this page's (search, language, the opened file's picture and facts); the rest is the storage's. -->
+  <OuiFileBrowser v-else v-bind="files.props" :files="rows" :labels="labels" :sort="NEWEST" :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place"
+                  v-on="files.on" @open="onOpen">
     <template #toolbar>
       <span v-if="hasVideos" class="kc-seg" role="group" :aria-label="t('files.places')" data-test="files-lists">
         <Button v-for="p in places" :key="p.id" size="small" :severity="place === p.id ? undefined : 'secondary'" :text="place !== p.id" :aria-pressed="place === p.id"
                 :label="p.name" :data-list="p.id" @click="openList(p.id)" />
       </span>
+      <span class="oui-spacer" />
       <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
     </template>
     <template v-if="place === 'local'" #actions="{ file }">
@@ -276,7 +244,6 @@ async function onDelete(ids: string[]) {
 </template>
 
 <style>
-.fv-alert:empty { display: none; }
 .fv-q { width: 220px; max-width: 100%; }
 .fv-print { flex: 1 1 100%; display: grid; gap: var(--oui-s3); min-width: 0; }
 .fv-print > .p-button { justify-self: start; }
@@ -287,18 +254,4 @@ async function onDelete(ids: string[]) {
 .fv-mats li[data-check='differs'], .fv-mats li[data-check='missing'] { color: var(--oui-warning); }
 .fv-opts { display: grid; gap: var(--oui-s1); margin: 0; padding: 0; border: 0; }
 .fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 32px; }
-/* foundation-gap: OuiFileBrowser 5.0.0 cannot leave its folder tree, its breadcrumb or "Move to" out, and the Kobra X
-   has no folders and no message to move a file. These rules reach into it to show the browser without them: the list
-   and the detail take the whole width, and the toolbar holds the switch between the two lists and the search. Delete
-   them once the foundation can do it; the page tests fail if its class names change. */
-.kc-files .oui-files-rail, .kc-files .oui-files-path, .kc-files .oui-files-move { display: none; }
-.kc-files .oui-files-grid { grid-template-columns: minmax(0, 1fr) 300px; }
-.kc-files .oui-files-tools { flex: 1 1 auto; justify-content: space-between; }
-/* Narrow, the detail goes under the list. foundation-gap: there the browser gives the detail all the height it asks
-   for, and a tall one (the print options) squeezes the list to nothing. It gets its content's height up to 55 % of the
-   browser and scrolls inside; the list keeps the rest. */
-@container oui-files (max-width: 980px) { .kc-files .oui-files-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) fit-content(55%); } }
-/* foundation-gap: a detail pane taller than the browser squeezes the picture's row to nothing, and the picture is then
-   drawn over the name and the facts. Its rows keep their own height, and the pane scrolls. */
-.kc-files .oui-files-detail { grid-auto-rows: max-content; }
 </style>
