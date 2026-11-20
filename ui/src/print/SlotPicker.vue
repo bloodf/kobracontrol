@@ -4,8 +4,8 @@
 // Keyboard: the discs are one radio group (arrows move, Enter/Space choose, Escape closes and returns to the chip).
 import { computed, nextTick, ref } from 'vue';
 import Popover from 'primevue/popover';
-import { OuiIcon, OuiSpool } from '../../shared/src/components';
-import { check, chevronDown } from '../../shared/src/icons';
+import { OuiIcon, OuiSpool } from '@orca-plugins/ui-foundation/src/components';
+import { check, chevronDown } from '@orca-plugins/ui-foundation/src/icons';
 import { fmt, t } from '../core/i18n';
 import { sameFamily, type PdFilament, type PdSlot } from '../core/printsetup';
 import { inkOn, slotNumber, slotName } from './slots';

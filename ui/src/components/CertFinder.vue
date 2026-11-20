@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import { OuiFormRow, OuiIcon } from '../../shared/src/components';
-import { search } from '../../shared/src/icons';
+import { OuiFormRow, OuiIcon } from '@orca-plugins/ui-foundation/src/components';
+import { search } from '@orca-plugins/ui-foundation/src/icons';
 import { run, hello, tracker, noSlicer } from '../app/store';
 import { t } from '../core/i18n';
 

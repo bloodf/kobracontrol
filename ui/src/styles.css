@@ -1,4 +1,4 @@
-/* Kobra Control's own layout on top of the shared foundation (ui/shared): the page grid, rows inside a panel, plain
+/* Kobra Control's own layout on top of the shared foundation (@orca-plugins/ui-foundation): the page grid, rows inside a panel, plain
    tables and the printer drawing. Colours are the foundation's --oui-* roles only; nothing here defines a colour. */
 
 /* Chinese punctuation from the system's Chinese font. Manrope has the Latin quotes and ellipsis, so “…” and … came out

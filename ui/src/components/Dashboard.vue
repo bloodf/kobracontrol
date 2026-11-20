@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import { OuiIcon, OuiPageHeader } from '../../shared/src/components';
-import { edit } from '../../shared/src/icons';
+import { OuiIcon, OuiPageHeader } from '@orca-plugins/ui-foundation/src/components';
+import { edit } from '@orca-plugins/ui-foundation/src/icons';
 import JobCard from './JobCard.vue';
 import ControlsPanel from './ControlsPanel.vue';
 import MotionPanel from './MotionPanel.vue';

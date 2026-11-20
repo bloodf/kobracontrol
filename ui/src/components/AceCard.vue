@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiEmpty, OuiPanel, OuiStatus } from '../../shared/src/components';
-import { ace } from '../../shared/src/icons';
+import { OuiEmpty, OuiPanel, OuiStatus } from '@orca-plugins/ui-foundation/src/components';
+import { ace } from '@orca-plugins/ui-foundation/src/icons';
 import SlotTile from './SlotTile.vue';
 import AceUnitControls from './AceUnitControls.vue';
 import { s, run, tracker, controlsOff, link, stale, whyId } from '../app/store';

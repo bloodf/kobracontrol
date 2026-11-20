@@ -2,8 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import { OuiEmpty, OuiHint, OuiIcon, OuiJob, OuiPanel, OuiReadout, OuiStatus, type OuiState } from '../../shared/src/components';
-import { layers, pause as pauseIcon, play, stop as stopIcon, x } from '../../shared/src/icons';
+import { OuiEmpty, OuiHint, OuiIcon, OuiJob, OuiPanel, OuiReadout, OuiStatus, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { layers, pause as pauseIcon, play, stop as stopIcon, x } from '@orca-plugins/ui-foundation/src/icons';
 import PrinterFigure from './PrinterFigure.vue';
 import * as bridge from '../core/bridge';
 import { s, run, tracker, controlsOff, link, printing, printerName, stale, bindings, whyId } from '../app/store';

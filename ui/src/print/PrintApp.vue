@@ -7,8 +7,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
-import { OuiAppBar, OuiBanner, OuiHint, OuiIcon, OuiStatus } from '../../shared/src/components';
-import { ace as aceIcon, clock, play, plate as plateIcon, refresh, settings as settingsIcon, spool } from '../../shared/src/icons';
+import { OuiAppBar, OuiBanner, OuiHint, OuiIcon, OuiStatus } from '@orca-plugins/ui-foundation/src/components';
+import { ace as aceIcon, clock, play, plate as plateIcon, refresh, settings as settingsIcon, spool } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { boot } from '../core/boot';
 import { fmt, t, tMaybe } from '../core/i18n';

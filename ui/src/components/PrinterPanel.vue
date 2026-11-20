@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiControlRow, OuiEmpty, OuiKeyValue, OuiPanel, OuiStatus } from '../../shared/src/components';
-import { printer } from '../../shared/src/icons';
+import { OuiControlRow, OuiEmpty, OuiKeyValue, OuiPanel, OuiStatus } from '@orca-plugins/ui-foundation/src/components';
+import { printer } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, link, printerName, stale, loadDevice, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';

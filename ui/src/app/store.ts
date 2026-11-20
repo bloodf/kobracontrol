@@ -1,7 +1,7 @@
 import { computed, reactive, watch } from 'vue';
 import * as bridge from '../core/bridge';
 import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
-import { showToast } from '../../shared/src/components/toast';
+import { showToast } from '@orca-plugins/ui-foundation/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';

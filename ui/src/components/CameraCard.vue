@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiCamera, OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
-import { camera, cameraOff, settings } from '../../shared/src/icons';
+import { OuiCamera, OuiEmpty, OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import { camera, cameraOff, settings } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { s, openSettings, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
 import { t } from '../core/i18n';

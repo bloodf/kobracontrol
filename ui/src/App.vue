@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue';
-import { OuiAppBar, OuiStatus, OuiToastHost, type OuiState } from '../shared/src/components';
-import { dashboard, files, settings, spool } from '../shared/src/icons';
+import { OuiAppBar, OuiStatus, OuiToastHost, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { dashboard, files, settings, spool } from '@orca-plugins/ui-foundation/src/icons';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import PageMessages from './components/PageMessages.vue';
 import Dashboard from './components/Dashboard.vue';

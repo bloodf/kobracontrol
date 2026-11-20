@@ -2,8 +2,8 @@
 import { computed, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { OuiIcon, OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '../../shared/src/components';
-import { edit as editIcon } from '../../shared/src/icons';
+import { OuiIcon, OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
