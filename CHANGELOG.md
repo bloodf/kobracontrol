@@ -4,6 +4,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-19
+
 ### Changed
 - New look, on the shared Orca UI foundation 5.0.7: the pages use OrcaSlicer's own greys and its teal for the
   main action, and the plugin's violet is left for its mark and the line under the open tab. Colour now only says
@@ -19,6 +21,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - Why a control is off is said once, in one banner under the page header ("The printer is printing. Moves are
   available while the printer is idle or paused. ..."), instead of in a line under each module. What a module needs
   explained is behind its (i).
+- The README and Orca Cloud pictures show the new look, in English and Brazilian Portuguese. The README's Dashboard
+  picture shows the whole page.
 
 ### Added
 - **Stock** tab: Spooler's spool stock left the Dashboard for its own tab, with the spool count on it. Choose the slot
