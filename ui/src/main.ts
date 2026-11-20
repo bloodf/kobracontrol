@@ -1,9 +1,9 @@
 import { createApp, watch } from 'vue';
-import { installOrcaUI } from '../shared/src';
+import { installOrcaUI } from '@orca-plugins/ui-foundation/src';
 import { boot } from './core/boot';
 import { locale, setHostLanguage } from './core/i18n';
 import { followHostTheme } from './core/theme';
-import { primeVueOptions } from '../shared/src';
+import { primeVueOptions } from '@orca-plugins/ui-foundation/src';
 import { PRIME_LOCALE } from './core/prime-locale';
 import './styles.css';
 import App from './App.vue';

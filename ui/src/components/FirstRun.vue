@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
-import { printer, refresh, settings } from '../../shared/src/icons';
+import { OuiEmpty, OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import { printer, refresh, settings } from '@orca-plugins/ui-foundation/src/icons';
 import CertFinder from './CertFinder.vue';
 import { s, openSettings, searchAgain, choosePrinter, tracker } from '../app/store';
 import { t } from '../core/i18n';

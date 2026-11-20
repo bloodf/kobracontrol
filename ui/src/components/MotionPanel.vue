@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Button from 'primevue/button';
-import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
-import { home as homeIcon, move as moveIcon, power } from '../../shared/src/icons';
+import { OuiEmpty, OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import { home as homeIcon, move as moveIcon, power } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, link, printerName, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
