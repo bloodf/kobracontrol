@@ -1706,6 +1706,44 @@ test('files: details without the new fields still show the panel', `
   await no();
 `);
 
+test('files: fuzzy search, best match first; a grid of pictures, kept for next time; the menu only deletes', `
+  await ready(VIEW());
+  await tab('files');
+  const names = ['my_bench_2.gcode', 'xbenchx.gcode', 'benchy_PLA.gcode', 'Bench.gcode', 'clip.gcode'];
+  await reply(last('cmd', 'files'), {files: names.map((name, i) => ({name, size: 1000, timestamp: 1700000000 - i}))});
+  await type(byTest('files-q'), 'bench');
+  await until(() => fileNames().length === 4, 'filtered');
+  eq(fileNames(), ['Bench.gcode', 'benchy_PLA.gcode', 'my_bench_2.gcode', 'xbenchx.gcode'], 'exact, prefix, word start, inside a word');
+  eq(text(q('[data-view="files"] .oui-files-hit')), 'Bench', 'the match is marked');
+  await type(byTest('files-q'), 'bnch pla');
+  await until(() => fileNames().length === 1);
+  eq(fileNames(), ['benchy_PLA.gcode'], 'letters in order, separators skipped, any case');
+  await type(byTest('files-q'), '');
+  await until(() => fileNames().length === 5, 'cleared');
+  // The grid: the same files as cards, the choice kept for the plugin.
+  await click(q('[data-view="files"] [data-files-view="grid"]'));
+  eq([qa('[data-view="files"] .oui-files-card[data-file]').length, !!q('[data-view="files"] .oui-files-table')], [5, false], 'cards instead of the table');
+  eq(localStorage.getItem('oui-files-view:' + location.pathname + ':kobracontrol'), 'grid', 'kept');
+  await click(fileRow('clip.gcode'));
+  eq(fileRow('clip.gcode').getAttribute('aria-selected'), 'true', 'a card is selected like a row');
+  // The context menu: the Kobra X can only delete, so that is all it offers.
+  fileRow('clip.gcode').dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true, clientX: 10, clientY: 10}));
+  await until(() => q('.oui-files-menu'), 'a menu');
+  eq(qa('.oui-files-menu [role=menuitem]').map(text), ['Delete'], 'only Delete');
+  await click(q('.oui-files-menu [role=menuitem]'));
+  await answer('confirm');
+  eq(last('cmd', 'file_delete').args, {names: ['clip.gcode']}, 'deletes after asking');
+  await click(q('[data-view="files"] [data-files-view="list"]'));
+`);
+
+test('files: an empty list says 0 files (Portuguese puts 0 in the plural rule "one")', `
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: []});
+  await until(() => filesCount());
+  eq(filesCount(), '0 arquivos', 'not "1 arquivo"');
+`, { lang: 'pt-BR' });
+
 test('files: search and sort the list', `
   await ready(VIEW());
   await tab('files');

@@ -696,6 +696,8 @@ export const zhCN: Record<MessageKey, string> = {
   'files.places': "打印机上",
   'files.local': "打印文件",
   'files.selectAll': "全选文件",
+  'files.view.list': "列表",
+  'files.view.grid': "网格",
   'files.select': "选择 {name}",
   'files.items_one': "1 个文件",
   'files.items_other': "{n} 个文件",

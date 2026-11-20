@@ -79,4 +79,5 @@ test('Polish plurals: one, few and many forms by Intl.PluralRules(\'pl\')', () =
   // other languages keep their one/other pair
   assert.equal(pluralKey(en as Record<string, string>, 'en', 'videos.count', 5), 'videos.count_other');
   assert.equal(pluralKey(de as Record<string, string>, 'de', 'videos.count', 1), 'videos.count_one');
+  assert.equal(pluralKey(en as Record<string, string>, 'pt-BR', 'videos.count', 0), 'videos.count_other', 'Portuguese 0 is "one" by CLDR, but "_one" says 1');
 });

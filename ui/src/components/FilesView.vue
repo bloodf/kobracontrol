@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import ToggleSwitch from 'primevue/toggleswitch';
-import { OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, useFileBackend, type OuiFileBackend, type OuiFileBrowserLabels } from '@orca-plugins/ui-foundation/src/components';
+import { fuzzyFilter, OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, useFileBackend, type OuiFileBackend, type OuiFileBrowserLabels } from '@orca-plugins/ui-foundation/src/components';
 import { printer, refresh } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { s, run, tracker, targetKnown, printerName, controlsOff, busy, whyId } from '../app/store';
@@ -161,13 +161,16 @@ const kind = (name: string) => KIND[name.slice(name.lastIndexOf('.') + 1).toLowe
 const places = computed<{ id: Place; name: string }[]>(() => [{ id: 'local', name: t('files.local') }, { id: 'videos', name: t('videos.title') }]);
 const needle = computed(() => query.value.trim().toLowerCase());
 const NEWEST = { key: 'modified', down: true } as const;   // a printer's list reads newest first: the file just sent is on top
+// The search is fuzzy (case, accents and separators do not matter; the letters in order): best match first, matches marked.
+// A time-lapse is also found by the print it recorded.
+const found = <T,>(list: T[], nameOf: (x: T) => string) => (needle.value ? fuzzyFilter(list, query.value, nameOf) : list.map(item => ({ item, match: null })));
 const rows = computed(() => (place.value === 'videos'
-  ? videos.value.filter(v => !needle.value || `${v.name} ${v.filename}`.toLowerCase().includes(needle.value)).map(v => ({
+  ? found(videos.value, v => `${v.filename} ${v.name}`).map(({ item: v, match }) => ({ match: match?.hits,
     id: v.filename, name: v.filename, size: v.size, sizeText: fmt.bytes(v.size), modified: v.created || null, modifiedText: v.created ? fmt.when(v.created, s.now / 1000) : undefined,
     kind: v.empty ? t('videos.aborted') : clipLength(v.duration) || undefined,
     facts: [{ label: t('videos.col.print'), value: v.name }, { label: t('videos.col.length'), value: v.empty ? t('videos.abortedHint') : clipLength(v.duration) || '—' },
       ...(v.created ? [{ label: t('videos.col.recorded'), value: fmt.dateTime(v.created) }] : [])] }))
-  : local.value.filter(f => !needle.value || f.name.toLowerCase().includes(needle.value)).map(f => ({
+  : found(local.value, f => f.name).map(({ item: f, match }) => ({ match: match?.hits,
     id: f.name, name: f.name, size: f.size, sizeText: fmt.bytes(f.size), modified: f.timestamp ? seconds(f.timestamp) : null, modifiedText: f.timestamp ? fmt.when(seconds(f.timestamp), s.now / 1000) : undefined,
     kind: kind(f.name), thumb: thumbs.value[f.name] || thumbSrc(f.thumbnail) || null, facts: one.value === f.name ? facts.value : undefined }))));
 const total = computed(() => (place.value === 'videos' ? videos.value.length : local.value.length));
@@ -183,6 +186,7 @@ const labels = computed<OuiFileBrowserLabels>(() => {
     emptyText: needle.value ? undefined : vid ? t('videos.emptyHint') : undefined,
     loading: vid ? t('videos.loading') : t('files.loading'), loadFailed: vid ? t('videos.loadFailed') : t('files.loadFailed'), retry: t('common.retry'),
     nothingSelected: t('files.noneSelected'), nothingSelectedText: vid ? undefined : t('files.selectHint'),
+    listView: t('files.view.list'), gridView: t('files.view.grid'),
   };
 });
 </script>
@@ -204,7 +208,7 @@ const labels = computed<OuiFileBrowserLabels>(() => {
   </OuiPanel>
 
   <!-- The rows are this page's (search, language, the opened file's picture and facts); the rest is the storage's. -->
-  <OuiFileBrowser v-else v-bind="files.props" :files="rows" :labels="labels" :sort="NEWEST" :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place"
+  <OuiFileBrowser v-else v-bind="files.props" :files="rows" :ranked="!!needle" :labels="labels" :sort="NEWEST" :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place" view-key="kobracontrol"
                   v-on="files.on" @open="onOpen">
     <template #toolbar>
       <span v-if="hasVideos" class="kc-seg" role="group" :aria-label="t('files.places')" data-test="files-lists">
