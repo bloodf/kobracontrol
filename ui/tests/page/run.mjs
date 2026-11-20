@@ -1443,15 +1443,14 @@ test('files: the Kobra X has no folders, so no folder tree and no Move; a refuse
   assert(Math.abs(list.left - box.left) < 1.5, 'the list starts at the browser\u2019s edge: no empty column where the tree was (' + list.left + ' / ' + box.left + ')');
   await click(q('.oui-files-table thead input'));
   eq(filesCount(), '2 selected', 'select all');
-  eq(fileRow('a.gcode').draggable, false, 'a row cannot be dragged');
-  // and a drag forced on it finds no place to drop
-  const data = new DataTransfer();
-  fileRow('a.gcode').dispatchEvent(new DragEvent('dragstart', {dataTransfer: data, bubbles: true, cancelable: true}));
+  // A drag with the real mouse (trusted pointer events, as in OrcaSlicer's web views) does nothing: no file follows the
+  // pointer, no place takes a drop, the release leaves the selection as it was.
+  await mdown(fileRow('a.gcode')); await mmove(q('[data-list="videos"]'));
+  eq(qa('.oui-files-ghost, [data-drop], [data-refused], [data-dragged]').length, 0, 'nothing is dragged');
+  assert(!document.documentElement.dataset.ouiDrag, 'the cursor is not a drag cursor');
+  await mup(q('[data-list="videos"]'));
   await settle();
-  eq(qa('[data-target], [data-drop]', files).length, 0, 'nothing takes a drop');
-  q('[data-list="videos"]').dispatchEvent(new DragEvent('drop', {dataTransfer: data, bubbles: true, cancelable: true}));
-  fileRow('a.gcode').dispatchEvent(new DragEvent('dragend', {bubbles: true}));
-  await settle();
+  eq(qa('[data-folder], [data-files-mkdir], [data-files-newname]', files).length, 0, 'no folder can be made either');
   eq(fileNames().sort(), ['a.gcode', 'b.gcode'], 'nothing moved');
   eq(sent().filter(m => m.type === 'cmd' && /move|rename|mkdir/.test(m.cmd)), [], 'and no such command exists');
   await click(btn('Delete', filesBar())); await answer('confirm');
