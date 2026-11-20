@@ -743,7 +743,7 @@ test('camera: off by default in a box that keeps its size; frames are acknowledg
   await ready(VIEW());
   const off = q('.cam-card .oui-camera[data-state="off"]');
   assert(off && !q('.cam-view'), 'off: the picture box says so, with Turn on');
-  const was = off.getBoundingClientRect();
+  const was = off.getBoundingClientRect(), wasY = scrollY;   // page positions: focus may scroll the page to the camera
   assert(Math.abs(was.width / was.height - 16 / 9) < 0.02, 'a 16:9 box: ' + was.width + 'x' + was.height);
   assert(last('lease').camera === false, 'lease: camera off');
   await click(byTest('camera'));
@@ -752,7 +752,7 @@ test('camera: off by default in a box that keeps its size; frames are acknowledg
   await until(() => q('.cam-view img'), 'frame shown');
   await until(() => last('frame_ack'), 'frame acknowledged');
   const now = q('.cam-view').getBoundingClientRect();
-  assert(Math.abs(now.height - was.height) < 1 && Math.abs(now.top - was.top) < 1, 'turning it on does not move the page: ' + was.height + ' -> ' + now.height);
+  assert(Math.abs(now.height - was.height) < 1 && Math.abs(now.top + scrollY - was.top - wasY) < 1, 'turning it on does not move the page: ' + was.height + ' -> ' + now.height);
   assert(text(q('.cam-view .oui-camera-overlay')).includes('Live'), 'marked live');
   await tab('settings');
   await until(() => last('lease').camera === false, 'lease drops when the Dashboard is not on screen (the lease is renewed every 2 s)');
