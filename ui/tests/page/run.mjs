@@ -1728,12 +1728,38 @@ test('files: fuzzy search, best match first; a grid of pictures, kept for next t
   eq(fileRow('clip.gcode').getAttribute('aria-selected'), 'true', 'a card is selected like a row');
   // The context menu: the Kobra X can only delete, so that is all it offers.
   fileRow('clip.gcode').dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true, clientX: 10, clientY: 10}));
-  await until(() => q('.oui-files-menu'), 'a menu');
-  eq(qa('.oui-files-menu [role=menuitem]').map(text), ['Delete'], 'only Delete');
-  await click(q('.oui-files-menu [role=menuitem]'));
+  await until(() => q('.oui-menu'), 'a menu');
+  eq(qa('.oui-menu [role=menuitem]').map(text), ['Delete'], 'only Delete');
+  await click(q('.oui-menu [role=menuitem]'));
   await answer('confirm');
   eq(last('cmd', 'file_delete').args, {names: ['clip.gcode']}, 'deletes after asking');
   await click(q('[data-view="files"] [data-files-view="list"]'));
+`);
+
+test('files: right-click on the empty list and on a time-lapse: only what the Kobra X can do', `
+  await openVideos();
+  const menuAt = (el, x, y) => el.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true, clientX: x, clientY: y}));
+  const items = () => qa('.oui-menu [role=menuitem]').map(text);
+  menuAt(videoRow(CUBE), 20, 20);
+  await until(() => q('.oui-menu'), 'a time-lapse’s menu');
+  eq(items(), ['Delete'], 'a time-lapse can only be deleted (the Kobra X does not give the file)');
+  await press('Escape');
+  await click(q('[data-list="local"]'));
+  await until(() => last('cmd', 'files'));
+  await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}, {name: 'b.gcode', size: 1, timestamp: 1700000001}]});
+  await until(() => fileNames().length === 2);
+  const scroll = q('[data-view="files"] .oui-files-scroll'), r = scroll.getBoundingClientRect();
+  menuAt(scroll, r.left + r.width / 2, r.bottom - 8);
+  await until(() => q('.oui-menu'), 'a menu on the empty list');
+  eq(items(), ['Select all files', 'Grid', 'Refresh'], 'no folders, so no New folder');
+  await click(q('.oui-menu [data-menu="select-all"]'));
+  eq(filesCount(), '2 selected', 'Select all');
+  const asked = cmds('files').length;
+  menuAt(scroll, r.left + r.width / 2, r.bottom - 8);
+  await until(() => q('.oui-menu'));
+  await click(q('.oui-menu [data-menu="refresh"]'));
+  await until(() => cmds('files').length > asked, 'Refresh reads the list again');
+  await reply(last('cmd', 'files'), {files: []});
 `);
 
 test('files: an empty list says 0 files (Portuguese puts 0 in the plural rule "one")', `

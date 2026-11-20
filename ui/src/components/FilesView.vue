@@ -186,7 +186,7 @@ const labels = computed<OuiFileBrowserLabels>(() => {
     emptyText: needle.value ? undefined : vid ? t('videos.emptyHint') : undefined,
     loading: vid ? t('videos.loading') : t('files.loading'), loadFailed: vid ? t('videos.loadFailed') : t('files.loadFailed'), retry: t('common.retry'),
     nothingSelected: t('files.noneSelected'), nothingSelectedText: vid ? undefined : t('files.selectHint'),
-    listView: t('files.view.list'), gridView: t('files.view.grid'),
+    listView: t('files.view.list'), gridView: t('files.view.grid'), refresh: t('common.refresh'),
   };
 });
 </script>
