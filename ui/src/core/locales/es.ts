@@ -406,7 +406,6 @@ export const es: Record<MessageKey, string> = {
   'files.col.modified': "Añadido",
   'files.delete': "Borrar",
   'files.loading': "Cargando la lista de archivos…",
-  'files.error': "No se pudo leer la lista de archivos: {error}",
   'files.empty': "No hay archivos en la impresora.",
   'files.noTarget': "Todavía no se encontró ninguna Kobra X; el Panel indica el motivo y puede volver a buscar.",
   'files.noCertificate': "Busque el certificado de Anycubic en el Panel para ver los archivos de la impresora.",
@@ -590,7 +589,6 @@ export const es: Record<MessageKey, string> = {
   'videos.count_one': "1 vídeo",
   'videos.count_other': "{n} vídeos",
   'videos.loading': "Cargando los timelapses…",
-  'videos.error': "No se pudieron leer los timelapses: {error}",
   'videos.empty': "No hay timelapses en la impresora.",
   'videos.emptyHint': "Una impresión iniciada con Timelapse activado deja aquí su vídeo.",
   'videos.col.print': "Impresión",
@@ -734,4 +732,15 @@ export const es: Record<MessageKey, string> = {
   'files.deleteText': "Se borran de la impresora. No se puede deshacer.",
   'files.noneSelected': "Ningún archivo seleccionado",
   'ok.deleteMany': "{n} archivos borrados.",
+
+  // 5.0.7: the file browser asks, fails and hints in these words
+  'files.loadFailed': "No se pudo leer la lista de archivos",
+  'videos.loadFailed': "No se pudieron leer los timelapses",
+  'files.deleteTitle_one': "¿Borrar 1 archivo?",
+  'files.deleteTitle_other': "¿Borrar {n} archivos?",
+  'videos.deleteTitle_one': "¿Borrar 1 timelapse?",
+  'videos.deleteTitle_other': "¿Borrar {n} timelapses?",
+  'files.andMore': "y {n} más",
+  'files.selectHint': "Seleccione un archivo para ver sus detalles e imprimirlo.",
+  'files.deleteSome': "{failed} de {n} no se pudieron borrar: {error}",
 };

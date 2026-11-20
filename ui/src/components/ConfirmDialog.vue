@@ -7,7 +7,7 @@ import { t } from '../core/i18n';
 
 // Every protected decision of the page: the question with both answers named. Focus starts on the way back (or in the
 // field), never on the action; a destructive action is solid red.
-// foundation-gap: OuiConfirm (5.0.0) has two buttons and no field or choice list, so this stays a PrimeVue Dialog with
+// foundation-gap: OuiConfirm (5.0.7) has two buttons and no field or choice list, so this stays a PrimeVue Dialog with
 // the same hooks (data-dlg yes/no). The file browser's own delete question is OuiConfirm (data-dlg confirm/cancel).
 function onVisible(v: boolean) { if (!v) close(dialog.cancelValue); }
 function confirm() { close(dialog.input ? dialog.inputValue : true); }

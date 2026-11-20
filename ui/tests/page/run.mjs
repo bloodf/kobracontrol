@@ -89,7 +89,8 @@ async function openDetails(details) {
   await reply(last('cmd', 'file_details'), details);
   await until(() => q('.oui-files-preview img'), 'file details shown');
 }
-// The Files tab is the shared file browser without its folder tree (the Kobra X has no folders): rows carry data-file,
+// The Files tab is the shared file browser over a storage that only lists and deletes (the Kobra X has no folders), so
+// it has no folder tree: rows carry data-file,
 // the switch between the printer's two lists carries data-list, and the bar over the table holds
 // the count and, with a selection, Clear and Delete. Its own confirmation answers to data-dlg="confirm" / "cancel".
 const fileRow = name => q('[data-view="files"] [data-file="' + name + '"]');
@@ -104,10 +105,13 @@ const videoRow = name => fileRow(name);
 async function openVideos(videos, view) {
   await ready(view || VIEW());
   await tab('files');
+  eq(cmds('videos'), [], 'the time-lapses are not asked for until their list is opened');
+  await click(q('[data-list="videos"]'));
   await until(() => last('cmd', 'videos'), 'videos asked');
   await reply(last('cmd', 'videos'), {videos: videos || VIDEOS()});
-  await click(q('[data-list="videos"]'));
 }
+// After a delete the keyboard stays in the list (a row, or the list itself when it is empty), never on <body>.
+const focusInList = () => { const list = q('[data-view="files"] .oui-files-list'); return !!list && list.contains(document.activeElement); };
 // Shown to the user: in the page and not display: none (a hidden tab's content is neither).
 const visible = el => !!el && !!el.offsetParent;
 `;
@@ -1384,7 +1388,7 @@ test('files: select several, delete asks once with the count and the names, and 
   eq(cmds('file_details').map(m => m.args.name), ['a.gcode'], 'details were asked for the first while it was alone, not for the pair');
   assert(btn('Delete', filesBar()).classList.contains('p-button-outlined'), 'Delete is outlined red in the page');
   await click(btn('Delete', filesBar()));
-  assert(dialogOpen() && dialogText().includes('2 files') && dialogText().includes('a.gcode') && dialogText().includes('c.gcode'), 'asks, with the count and the names: ' + dialogText());
+  assert(dialogOpen() && dialogText().includes('Delete 2 files?') && dialogText().includes('a.gcode') && dialogText().includes('c.gcode'), 'asks, with the count and the names: ' + dialogText());
   assert(q('[data-dlg="confirm"]').classList.contains('p-button-danger') && !q('[data-dlg="confirm"]').classList.contains('p-button-outlined'), 'the confirm button is the solid red');
   await answer('cancel');
   eq(cmds('file_delete'), [], 'going back deletes nothing');
@@ -1397,12 +1401,11 @@ test('files: select several, delete asks once with the count and the names, and 
   assert(toasts().includes('2 files deleted.'), 'says so: ' + toasts());
   eq(fileNames(), ['b.gcode'], 'the rest stays');
   eq(filesCount(), '1 file', 'selection cleared');
-  await until(() => document.activeElement === byTest('refresh'), 'the keyboard is on Refresh, not lost');
-  // the keyboard: Delete on the selected row asks too
-  await click(fileRow('b.gcode'));
+  await until(focusInList, 'the keyboard stays in the list, not lost');
+  // the keyboard: Delete on the focused row asks at the first press, with nothing selected before
   fileRow('b.gcode').focus();
   await press('Delete');
-  assert(dialogOpen() && dialogText().includes('1 file') && dialogText().includes('b.gcode'), 'Delete key asks: ' + dialogText());
+  assert(dialogOpen() && dialogText().includes('Delete 1 file?') && dialogText().includes('b.gcode'), 'Delete key asks: ' + dialogText());
   await answer('confirm');
   eq(cmds('file_delete').map(m => m.args)[1], {names: ['b.gcode']}, 'deleted from the keyboard');
   await reply(last('cmd', 'file_delete'), true);
@@ -1416,19 +1419,18 @@ test('files: the Kobra X has no folders, so no folder tree and no Move; a refuse
   await ready(VIEW());
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}, {name: 'b.gcode', size: 1, timestamp: 1700000001}]});
-  await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  // no folder tree, no breadcrumb: the printer's two lists are a switch over the table
+  // no folder tree, no breadcrumb, no "Move to": the storage only lists and deletes, so the browser offers nothing else
   const files = q('[data-view="files"]');
-  for (const part of ['.oui-files-rail', '.oui-files-path']) assert(q(part, files) && !visible(q(part, files)), part + ' is not shown');
-  eq(qa('[data-folder], [role=treeitem]', files).length, 0, 'and has no folder in it');
+  eq(qa('.oui-files-rail, .oui-files-path, .oui-files-move, [data-folder], [role=treeitem]', files).length, 0, 'none of it is in the page');
+  assert(q('.oui-files-grid', files).hasAttribute('data-flat'), 'the browser is in its no-folder layout');
+  eq(qa('style').filter(st => /\.kc-files\s+\.oui-files-/.test(st.textContent)).length, 0, 'and the page has no style rule reaching into the browser');
   eq(qa('[data-list]', files).map(b => [b.dataset.list, text(b), b.getAttribute('aria-pressed')]), [['local', 'Print files', 'true'], ['videos', 'Time-lapses', 'false']], 'the two lists');
   const list = q('.oui-files-list', files).getBoundingClientRect(), box = q('.oui-files-grid', files).getBoundingClientRect();
   assert(Math.abs(list.left - box.left) < 1.5, 'the list starts at the browser\u2019s edge: no empty column where the tree was (' + list.left + ' / ' + box.left + ')');
   await click(q('.oui-files-table thead input'));
   eq(filesCount(), '2 selected', 'select all');
-  const move = q('[data-view="files"] .oui-files-move');
-  assert(!move || getComputedStyle(move).display === 'none', 'no "Move to": the printer cannot move a file');
-  // dragging a file lights up no place to drop it
+  eq(fileRow('a.gcode').draggable, false, 'a row cannot be dragged');
+  // and a drag forced on it finds no place to drop
   const data = new DataTransfer();
   fileRow('a.gcode').dispatchEvent(new DragEvent('dragstart', {dataTransfer: data, bubbles: true, cancelable: true}));
   await settle();
@@ -1486,16 +1488,19 @@ test('files: delete and select are off while the printer is away, pointing at th
   assert(byTest('print-start').disabled, 'and no print can start');
 `);
 
-test('files: a list error says so and can be retried', `
+test('files: a list error says so in place of the table and can be retried', `
   await ready(VIEW());
   await tab('files');
   await fail(last('cmd', 'files'), 'printer timed out');
-  assert(text(byTest('files-error')).includes('printer timed out'), 'error shown: ' + text(q('[data-view="files"]')));
-  assert(byTest('files-error').closest('[role=alert]'), 'announced');
-  await click(btn('Try again', byTest('files-error')));
+  const area = () => q('[data-view="files"] .oui-files-scroll');
+  assert(text(area()).includes('Couldn’t read the file list') && text(area()).includes('printer timed out'), 'error shown: ' + text(area()));
+  assert(q('[role=alert]', area()), 'announced');
+  eq(fileNames(), [], 'not shown as an empty list');
+  assert(!text(area()).includes('No files on the printer'), 'a failed read is not "no files"');
+  await click(btn('Try again', area()));
   eq(cmds('files').length, 2, 'retry');
-  await reply(last('cmd', 'files'), {files: []});
-  assert(!byTest('files-error'), 'gone once the list is read');
+  await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}]});
+  eq(fileNames(), ['a.gcode'], 'the list once it is read');
 `);
 
 // ------------------------------------------------------------------ time-lapses (Files tab)
@@ -1520,7 +1525,8 @@ test('time-lapses: a second list in the browser; each video shows its print, dat
   assert(btn('Delete', filesBar()) && !btn('Delete', filesBar()).disabled, 'an empty one can be deleted');
   eq(qa('[data-view="files"] .oui-files-list img, [data-view="files"] .oui-files-detail img').length, 0, 'no cover picture is fetched');
   await click(q('[data-list="local"]'));
-  eq([filesCount(), q('[data-list="local"]').getAttribute('aria-pressed')], ['0 files', 'true'], 'back to the print files, with nothing selected');
+  await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}]});
+  eq([filesCount(), q('[data-list="local"]').getAttribute('aria-pressed')], ['1 file', 'true'], 'back to the print files, read again, with nothing selected');
   assert(text(byTest('videos-note')).includes('can’t be downloaded'), 'says why there is no download: ' + text(byTest('videos-note')));
   assert(!qa('button, a', q('[data-view="files"]')).some(b => /download/i.test(text(b))), 'no download control');
 `);
@@ -1530,7 +1536,7 @@ test('time-lapses: delete asks first, sends each file name, refreshes the list a
   await click(videoRow(CUBE));
   btn('Delete', filesBar()).focus();
   await click(btn('Delete', filesBar()));
-  assert(dialogOpen() && dialogText().includes('Delete time-lapse') && dialogText().includes('1 video') && dialogText().includes(CUBE), 'asks, naming the video: ' + dialogText());
+  assert(dialogOpen() && dialogText().includes('Delete 1 time-lapse?') && dialogText().includes(CUBE), 'asks, naming the video: ' + dialogText());
   eq(text(q('[data-dlg="confirm"]')), 'Delete', 'the action is named');
   assert(q('[data-dlg="confirm"]').classList.contains('p-button-danger'), 'destructive action is red');
   await until(() => document.activeElement === q('[data-dlg="cancel"]'), 'focus starts on the way back');
@@ -1545,30 +1551,39 @@ test('time-lapses: delete asks first, sends each file name, refreshes the list a
   eq(fileNames(), ['benchy-20261116215053_8.mp4'], 'the deleted video is gone');
   eq(filesCount(), '1 video', 'count follows');
   assert(toasts().includes('Time-lapse deleted.'), 'says it is deleted: ' + toasts());
-  await until(() => document.activeElement === byTest('refresh'), 'focus moved to Refresh, not lost');
+  await until(focusInList, 'the keyboard stays in the list, not lost');
   eq(cmds('file_delete'), [], 'never the file command');
 `);
 
-test('time-lapses: several are deleted one message each, in turn; a failure is said and the rest go on', `
+test('time-lapses: several are deleted one message each, in turn, behind one question; a failure says how many are left', `
   const V = (n, t) => ({filename: n + '.mp4', name: n, created: t, duration: 60, size: 1000, empty: false});
   await openVideos([V('a', 3), V('b', 2), V('c', 1)]);
   await click(q('.oui-files-table thead input'));
   eq(filesCount(), '3 selected', 'all three');
   await click(btn('Delete', filesBar()));
-  assert(dialogText().includes('3 videos'), 'asks once for the three: ' + dialogText());
+  assert(dialogText().includes('Delete 3 time-lapses?'), 'asks once for the three: ' + dialogText());
   await answer('confirm');
   await until(() => cmds('video_delete').length === 1, 'the first is sent');
   eq(cmds('video_delete').map(m => m.args), [{name: 'a.mp4'}], 'one video per message');
+  assert(btn('Delete', filesBar()).disabled, 'no second delete while this one runs');
   await reply(last('cmd', 'video_delete'), {deleted: 'a.mp4'});
   await until(() => cmds('video_delete').length === 2, 'then the second');
   await fail(last('cmd', 'video_delete'), 'the printer refused the delete (code 10110): busy');
   await until(() => cmds('video_delete').length === 3, 'the third still goes');
+  eq(cmds('videos').length, 1, 'the list waits for the last one');
   await reply(last('cmd', 'video_delete'), {deleted: 'c.mp4'});
   await until(() => cmds('videos').length === 2, 'the list is read once, at the end');
   await reply(last('cmd', 'videos'), {videos: [V('b', 2)]});
-  assert(alerts().includes('Delete time-lapse failed') && alerts().includes('10110'), 'the failure stays on screen: ' + alerts());
-  assert(toasts().includes('2 files deleted.'), 'and the two that went are counted: ' + toasts());
+  assert(alerts().includes('Delete time-lapse failed') && alerts().includes('1 of 3 could not be deleted') && alerts().includes('10110'), 'says how many failed, and why: ' + alerts());
+  assert(!toasts().includes('deleted.'), 'a partial delete is not reported as done: ' + toasts());
   eq(fileNames(), ['b.mp4'], 'what is left on the printer');
+  eq(filesCount(), '1 selected', 'the one that could not be deleted is still selected, to try again');
+  // all of them going is one line
+  await click(btn('Delete', filesBar())); await answer('confirm');
+  await reply(last('cmd', 'video_delete'), {deleted: 'b.mp4'});
+  await until(() => cmds('videos').length === 3, 'read again');
+  await reply(last('cmd', 'videos'), {videos: []});
+  assert(toasts().includes('Time-lapse deleted.'), 'done: ' + toasts());
 `);
 
 test('time-lapses: the focus is kept when the printer answers before the dialog has closed', `
@@ -1583,23 +1598,21 @@ test('time-lapses: the focus is kept when the printer answers before the dialog 
   await until(() => cmds('videos').length === 2, 'list asked again');
   __t.handler({type: 'reply', id: last('cmd', 'videos').id, result: {videos: VIDEOS().slice(0, 1)}});
   await until(() => !videoRow(CUBE) && !dialogOpen(), 'row gone and dialog closed');
-  await until(() => document.activeElement === byTest('refresh'), 'focus on Refresh, not lost');
+  await until(focusInList, 'the keyboard is in the list, not lost');
 `);
 
 test('time-lapses: empty list, a list error with retry, and a refused delete reads the list again', `
   await openVideos([]);
-  assert(text(q('[data-view="files"] .oui-files-scroll')).includes('No time-lapses on the printer'), 'empty state: ' + text(q('[data-view="files"] .oui-files-scroll')));
+  const area = () => q('[data-view="files"] .oui-files-scroll');
+  assert(text(area()).includes('No time-lapses on the printer'), 'empty state: ' + text(area()));
   eq(filesCount(), '0 videos', 'none');
   await click(byTest('refresh'));
   eq(cmds('videos').length, 2, 'refresh asks again');
-  await reply(last('cmd', 'files'), {files: []});
+  eq(cmds('files').length, 1, 'only for the list that is open');
   await fail(last('cmd', 'videos'), 'the printer did not answer the time-lapse list');
-  assert(text(byTest('files-error')).includes('did not answer the time-lapse list'), 'error shown: ' + text(byTest('files-error')));
-  assert(byTest('files-error').closest('[role=alert]'), 'announced');
-  await click(q('[data-list="local"]'));
-  assert(!byTest('files-error'), 'the file list is not affected');
-  await click(q('[data-list="videos"]'));
-  await click(btn('Try again', byTest('files-error')));
+  assert(text(area()).includes('Couldn’t read the time-lapses') && text(area()).includes('did not answer the time-lapse list'), 'error shown: ' + text(area()));
+  assert(q('[role=alert]', area()), 'announced');
+  await click(btn('Try again', area()));
   eq(cmds('videos').length, 3, 'retry');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
   await click(videoRow(CUBE));
@@ -1616,12 +1629,13 @@ test('time-lapses: offered only for a connected printer, also while it prints', 
   await until(() => last('hello'), 'hello sent');
   await tab('files');
   assert(!q('[data-list]'), 'no list to switch to before the printer answered');
-  eq(cmds('videos'), [], 'nothing asked without a printer');
+  eq([cmds('videos'), cmds('files')], [[], []], 'nothing asked without a printer');
   await ready(PRINTING(), 4);
-  await until(() => last('cmd', 'videos'), 'asked once connected');
+  await until(() => last('cmd', 'files'), 'the open list is read once connected');
+  await click(q('[data-list="videos"]'));
+  await until(() => last('cmd', 'videos'), 'asked when its list is opened');
   eq(last('cmd', 'videos').gen, 4, 'for this printer');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  await click(q('[data-list="videos"]'));
   await click(videoRow(CUBE));
   assert(!btn('Delete', filesBar()).disabled && !byTest('refresh').disabled, 'usable during a print');
   await click(btn('Delete', filesBar())); await answer('confirm');
@@ -1642,7 +1656,7 @@ test('pt-BR: the files browser and its time-lapses are translated', `
   assert(text(q('[data-view="files"] .oui-files-detail')).includes('Nada foi gravado'), 'why it is empty: ' + text(q('[data-view="files"] .oui-files-detail')));
   eq(filesCount(), '1 selecionado', 'selection');
   await click(btn('Excluir', filesBar()));
-  assert(dialogText().includes('Excluir time-lapse') && dialogText().includes('1 vídeo') && dialogText().includes('Não dá para desfazer'), 'dialog: ' + dialogText());
+  assert(dialogText().includes('Excluir 1 time-lapse?') && dialogText().includes('Não dá para desfazer'), 'dialog: ' + dialogText());
   eq([text(q('[data-dlg="cancel"]')), text(q('[data-dlg="confirm"]'))], ['Voltar', 'Excluir'], 'both answers named');
   await answer('cancel');
   await click(btn('Limpar', filesBar()));
@@ -2028,7 +2042,9 @@ test('one main landmark holds the four tab panels, each with its page header fir
   await ready(VIEW());
   eq(qa('main').length, 1, 'one main');
   eq(qa('main [role=tabpanel]:not(.oui-settings-body)').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-stock', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
-  for (const view of ['dash', 'stock', 'files']) assert(q('[data-view="' + view + '"]').firstElementChild.classList.contains('oui-pagehead'), view + ': page header first');
+  assert(!q('[data-view="files"]').firstElementChild, 'Files is not there, and asks the printer nothing, until its tab is opened');
+  eq(cmds('files'), [], 'no file list asked on the Dashboard');
+  for (const view of ['dash', 'stock', 'files']) { await tab(view); assert(q('[data-view="' + view + '"]').firstElementChild.classList.contains('oui-pagehead'), view + ': page header first'); }
   // the page's messages sit under the header of the tab that is open
   await post({type: 'offline', error: 'mqtt lost'});
   for (const view of ['dash', 'stock', 'files', 'settings']) {

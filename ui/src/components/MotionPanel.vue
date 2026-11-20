@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Button from 'primevue/button';
-import { OuiEmpty, OuiHint, OuiIcon, OuiPanel } from '../../shared/src/components';
+import { OuiEmpty, OuiIcon, OuiPanel } from '../../shared/src/components';
 import { home as homeIcon, move as moveIcon, power } from '../../shared/src/icons';
 import { s, run, tracker, busy, controlsOff, link, printerName, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
@@ -39,9 +39,7 @@ const label = (axis: Axis, sign: 1 | -1) => t('motion.moveLabel', { axis: axis.t
 </script>
 
 <template>
-  <OuiPanel :title="t('motion.title')" :icon="moveIcon" tone="cobalt" :flush="!s.status" data-test="move">
-    <!-- opening towards the start: the module sits by the page's right edge -->
-    <template #actions><OuiHint end :label="t('motion.title')" :text="t('reason.noMove')" /></template>
+  <OuiPanel :title="t('motion.title')" :icon="moveIcon" tone="cobalt" :flush="!s.status" :hint="t('reason.noMove')" data-test="move">
     <OuiEmpty v-if="!s.status" compact :state="link === 'offline' ? 'offline' : 'loading'" :title="t('status.noStatus')" />
     <div v-else class="kc-jog">
       <div class="kc-jogpad">

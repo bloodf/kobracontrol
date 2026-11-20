@@ -5,7 +5,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 ## [Unreleased]
 
 ### Changed
-- New look, on the shared Orca UI foundation 5.0.0: the pages use OrcaSlicer's own greys and its teal for the
+- New look, on the shared Orca UI foundation 5.0.7: the pages use OrcaSlicer's own greys and its teal for the
   main action, and the plugin's violet is left for its mark and the line under the open tab. Colour now only says
   something: an icon's subject, a state, a level, a heater's phase, a filament's own colour.
 - Dashboard: the printer's name, address and firmware are the page's first line, with **Rename**. The print is one
@@ -30,12 +30,17 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
   column; the list opens newest first. One selected file shows its picture, details, the slot of each filament and the
   print options, with **Start printing**.
 - Time-lapses are a second list in the same browser (**Print files** | **Time-lapses** over the table), with the same
-  multi-select and **Delete** (the printer takes one video per message, so they go one after the other).
+  multi-select and **Delete** (the printer takes one video per message, so they go one after the other). If only
+  some could be deleted, it says how many are left, and those stay selected.
 - The Kobra X has no folders to file prints in and no way to move or rename a file over the local network, so the Files
   tab shows no folder tree and no **Move to**. A switch over the list changes between the printer's two lists, **Print
   files** and **Time-lapses**. `docs/protocol.md` lists what the printer's file messages allow.
 - In a narrow window the details of the selected file sit under the list and scroll in their own share of the height,
   so the list stays on screen.
+- A file list that could not be read says so in place of the table, with **Try again**; it is never shown as an empty
+  list. The printer is asked for its files when the Files tab is opened, and for the time-lapses when their list is.
+- Print setup window: why an option is locked, and what Auto feed does, are behind an (i) in the option's box.
+- The camera shows the whole picture, with bars at the sides when it is not 16:9, instead of cropping it.
 
 ### Removed
 - The per-row **Print** and **Delete** buttons of the Files tab (select the file instead) and its sort menu (use the

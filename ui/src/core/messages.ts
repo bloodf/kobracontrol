@@ -407,7 +407,6 @@ export const en = {
   'files.col.modified': 'Added',
   'files.delete': 'Delete',
   'files.loading': 'Loading the file list…',
-  'files.error': 'Couldn’t read the file list: {error}',
   'files.empty': 'No files on the printer.',
   'files.noTarget': 'No Kobra X found yet; the Dashboard says why and can search again.',
   'files.noCertificate': 'Find the Anycubic certificate on the Dashboard to see the printer’s files.',
@@ -591,7 +590,6 @@ export const en = {
   'videos.count_one': '1 video',
   'videos.count_other': '{n} videos',
   'videos.loading': 'Loading the time-lapses…',
-  'videos.error': 'Couldn’t read the time-lapses: {error}',
   'videos.empty': 'No time-lapses on the printer.',
   'videos.emptyHint': 'A print started with Time-lapse on leaves its video here.',
   'videos.col.print': 'Print',
@@ -736,6 +734,17 @@ export const en = {
   'files.deleteText': 'They are removed from the printer. This can’t be undone.',
   'files.noneSelected': 'No file selected',
   'ok.deleteMany': '{n} files deleted.',
+
+  // 5.0.7: the file browser asks, fails and hints in these words
+  'files.loadFailed': 'Couldn’t read the file list',
+  'videos.loadFailed': 'Couldn’t read the time-lapses',
+  'files.deleteTitle_one': 'Delete 1 file?',
+  'files.deleteTitle_other': 'Delete {n} files?',
+  'videos.deleteTitle_one': 'Delete 1 time-lapse?',
+  'videos.deleteTitle_other': 'Delete {n} time-lapses?',
+  'files.andMore': 'and {n} more',
+  'files.selectHint': 'Select a file to see its details and print it.',
+  'files.deleteSome': '{failed} of {n} could not be deleted: {error}',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1145,7 +1154,6 @@ export const ptBR: Record<MessageKey, string> = {
   'files.col.modified': 'Adicionado',
   'files.delete': 'Excluir',
   'files.loading': 'Carregando a lista de arquivos…',
-  'files.error': 'Não foi possível ler a lista de arquivos: {error}',
   'files.empty': 'Nenhum arquivo na impressora.',
   'files.noTarget': 'Nenhuma Kobra X encontrada ainda; o Painel diz o motivo e pode procurar de novo.',
   'files.noCertificate': 'Procure o certificado da Anycubic no Painel para ver os arquivos da impressora.',
@@ -1329,7 +1337,6 @@ export const ptBR: Record<MessageKey, string> = {
   'videos.count_one': '1 vídeo',
   'videos.count_other': '{n} vídeos',
   'videos.loading': 'Carregando os time-lapses…',
-  'videos.error': 'Não foi possível ler os time-lapses: {error}',
   'videos.empty': 'Nenhum time-lapse na impressora.',
   'videos.emptyHint': 'Uma impressão iniciada com Time-lapse ligado deixa o vídeo aqui.',
   'videos.col.print': 'Impressão',
@@ -1474,4 +1481,15 @@ export const ptBR: Record<MessageKey, string> = {
   'files.deleteText': 'Eles são removidos da impressora. Não dá para desfazer.',
   'files.noneSelected': 'Nenhum arquivo selecionado',
   'ok.deleteMany': '{n} arquivos excluídos.',
+
+  // 5.0.7: the file browser asks, fails and hints in these words
+  'files.loadFailed': 'Não foi possível ler a lista de arquivos',
+  'videos.loadFailed': 'Não foi possível ler os time-lapses',
+  'files.deleteTitle_one': 'Excluir 1 arquivo?',
+  'files.deleteTitle_other': 'Excluir {n} arquivos?',
+  'videos.deleteTitle_one': 'Excluir 1 time-lapse?',
+  'videos.deleteTitle_other': 'Excluir {n} time-lapses?',
+  'files.andMore': 'e mais {n}',
+  'files.selectHint': 'Selecione um arquivo para ver os detalhes e imprimir.',
+  'files.deleteSome': '{failed} de {n} não puderam ser excluídos: {error}',
 };

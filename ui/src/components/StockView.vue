@@ -102,7 +102,7 @@ async function link(r: Spool) {
     <template #meta><span data-test="spool-source" :title="source">{{ source }}</span><template v-if="stockVisible"> ·
       <OuiStatus v-if="sk?.state === 'stale'" state="stale" id="stock-meta">{{ age }}</OuiStatus><span v-else id="stock-meta">{{ age }}</span></template></template>
     <template #actions>
-      <OuiHint end :label="t('nav.stock')"><span class="sc-hint"><span v-if="usage">{{ usage }}</span>
+      <OuiHint :label="t('nav.stock')"><span class="sc-hint"><span v-if="usage">{{ usage }}</span>
         <span><strong>{{ t('stock.tabs.summary') }}</strong> {{ t('stock.tabs.body') }}</span></span></OuiHint>
       <Button severity="secondary" :label="t('common.refresh')" :aria-label="t('stock.refresh')" :disabled="!canSpools && !stockVisible" :aria-describedby="controlsOff && !stockVisible ? 'kc-why' : undefined"
               :loading="tracker.isBusy('spools') || s.stockLoading" data-focus-key="sm-refresh" data-test="stock-refresh" @click="reload"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
