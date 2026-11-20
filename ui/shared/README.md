@@ -1,4 +1,14 @@
-# Orca UI foundation 5.0.7 — Vue and PrimeVue
+# Orca UI foundation 5.0.8 — Vue and PrimeVue
+
+Version 5.0.8 updates dependencies only; no source, style or API changes:
+
+- Vue 3.5.45 → 3.5.46 (runtime dependency; consumers pin the same version in their own `ui/package.json`).
+- lucide-static 1.73.0 → 1.77.0 (build-time icon source for `src/icons.ts`).
+- PrimeVue and PrimeUIX stay as they were.
+
+To update from 5.0.7, replace `ui/shared/` with the 5.0.8 snapshot, set `vue` to 3.5.46 in the plugin's `ui/package.json`, update its lockfile and rebuild.
+
+## 5.0.7
 
 Version 5.0.7 fixes `OuiFileBrowser` in narrow windows; nothing else changes:
 
@@ -188,7 +198,7 @@ Version 2.0.2 omits the locale option for English so PrimeVue retains its built-
 
 Version 2.0.1 fixes focus-ring contrast for secondary/info/success/warn buttons and ensures reduced-motion preferences override runtime-injected component styles. Remove equivalent temporary per-app motion overrides after updating the shared snapshot.
 
-All six plugin frontends use **Vue 3.5.45 + PrimeVue 5.0.5**, with the same custom preset on `@primeuix/themes/aura-compat` from **@primeuix/themes 3.1.1**. Vue is MIT; PrimeVue and PrimeUIX are under the PrimeUI License (Community tier); all three license texts are in `licenses/`. Documentation: https://primevue.org/vite/ and the PrimeVue 5.0.5 source. Bootstrap is not part of this foundation or an accepted implementation.
+All six plugin frontends use **Vue 3.5.46 + PrimeVue 5.0.5**, with the same custom preset on `@primeuix/themes/aura-compat` from **@primeuix/themes 3.1.1**. Vue is MIT; PrimeVue and PrimeUIX are under the PrimeUI License (Community tier); all three license texts are in `licenses/`. Documentation: https://primevue.org/vite/ and the PrimeVue 5.0.5 source. Bootstrap is not part of this foundation or an accepted implementation.
 
 ## Shared source and builds
 
