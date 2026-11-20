@@ -65,10 +65,9 @@ async function ack(e: UsageEntry) {
       <template v-for="(w, i) in waiting" :key="w.printer + w.file"><template v-if="i"> · </template><strong>{{ fileName(w.file) }}</strong> ({{ grams(w.grams) }})</template>
     </OuiBanner>
 
-    <OuiPanel v-if="open && failed.length" id="usage-list" :icon="warning" tone="warn" flush aria-labelledby="usage-h">
+    <OuiPanel v-if="open && failed.length" id="usage-list" :icon="warning" tone="warn" flush aria-labelledby="usage-h" :hint="t('usage.intro')" :hint-label="t('usage.title')">
       <template #title><span id="usage-h">{{ t('usage.title') }}</span></template>
       <template #meta><span class="oui-chip" data-tone="warn">{{ tn('usage.count', failed.length) }}</span></template>
-      <p class="oui-meta kc-pad">{{ t('usage.intro') }}</p>
       <div class="oui-table-wrap">
         <table class="kc-table">
           <thead><tr><th scope="col">{{ t('usage.col.file') }}</th><th scope="col">{{ t('usage.col.slot') }}</th><th scope="col" class="oui-num">{{ t('usage.col.grams') }}</th>

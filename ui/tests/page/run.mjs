@@ -85,20 +85,31 @@ async function openDetails(details) {
   await ready(VIEW());
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]});
-  await click(q('[data-file="benchy.gcode"] [data-print]'));
+  await click(fileRow('benchy.gcode'));
   await reply(last('cmd', 'file_details'), details);
-  await until(() => q('.fv-thumb'), 'file details shown');
+  await until(() => q('.oui-files-preview img'), 'file details shown');
 }
+// The Files tab is the shared file browser without its folder tree (the Kobra X has no folders): rows carry data-file,
+// the switch between the printer's two lists carries data-list, and the bar over the table holds
+// the count and, with a selection, Clear and Delete. Its own confirmation answers to data-dlg="confirm" / "cancel".
+const fileRow = name => q('[data-view="files"] [data-file="' + name + '"]');
+const fileNames = () => qa('[data-view="files"] [data-file]').map(e => e.getAttribute('data-file'));
+const filesBar = () => q('[data-view="files"] .oui-files-bar');
+const filesCount = () => text(q('[data-view="files"] .oui-files-bar [aria-live]'));
+const check = name => click(q('.oui-files-check input', fileRow(name)));
 const CUBE = 'cube-20261107101500_1.mp4';
 const VIDEOS = () => [{filename: 'benchy-20261116215053_8.mp4', name: 'benchy', created: 1794838471, duration: 83, size: 4109048, empty: false},
   {filename: CUBE, name: 'cube', created: 1794000000, duration: 0, size: 156, empty: true}];
-const videoRow = name => q('[data-video="' + name + '"]');
+const videoRow = name => fileRow(name);
 async function openVideos(videos, view) {
   await ready(view || VIEW());
   await tab('files');
   await until(() => last('cmd', 'videos'), 'videos asked');
   await reply(last('cmd', 'videos'), {videos: videos || VIDEOS()});
+  await click(q('[data-list="videos"]'));
 }
+// Shown to the user: in the page and not display: none (a hidden tab's content is neither).
+const visible = el => !!el && !!el.offsetParent;
 `;
 
 const scenarios = [];
@@ -111,7 +122,8 @@ test('connect: hello first, the status renders, blank numbers are not zero', `
   await connect();
   await post(CONFIG());
   assert(text(byTest('link')) === 'Connected', 'connected pill');
-  assert(text(q('.kc-addr')).includes('Bench Kobra') && text(q('.kc-addr')).includes('192.168.1.50'), 'printer and address shown');
+  assert(text(byTest('printer-head')).includes('Bench Kobra') && text(byTest('printer-head')).includes('192.168.1.50'), 'printer and address in the page header: ' + text(byTest('printer-head')));
+  assert(!text(q('.oui-appbar')).includes('192.168.1.50'), 'the app bar holds the state only');
   await post({type: 'status', data: VIEW({updated_at: 0, nozzle_temp: 0, bed_temp: 0, nozzle_target: 0, bed_target: 0, fan_pct: 0})});
   assert(text(q('[data-heater-row="nozzle"] .kc-heat-read')).includes('—'), 'no report yet: nozzle is a dash, not 0: ' + text(q('[data-heater-row="nozzle"] .kc-heat-read')));
   await post({type: 'status', data: PRINTING()});
@@ -134,6 +146,8 @@ test('preparation phases read as printing with the phase named; pause says why',
   await ready(VIEW({state: 'printing', preparing: true, kobra_state: 'auto_leveling', filename: 'x.gcode', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}}));
   eq(statusText(), 'Printing · auto-leveling', 'phase named');
   assert(q('[data-test="pause"]').disabled, 'pause off while preparing');
+  eq(q('[data-test="pause"]').getAttribute('aria-describedby'), 'kc-busy', 'it points at the page banner');
+  assert(text(byTest('busy-banner')).includes('Pause: Available once the print has finished preparing'), 'which says why: ' + text(byTest('busy-banner')));
   assert(!q('[data-test="stop"]').disabled, 'stop allowed');
   await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'nozzle_heating', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
   eq(statusText(), 'Printing · heating the nozzle', 'phase follows');
@@ -146,14 +160,16 @@ test('preparation phases read as printing with the phase named; pause says why',
   eq(statusText(), 'Printing · heating the nozzle', 'no slot when the report carries none');
 `);
 
-test('buttons follow status.can and a disabled action says why', `
+test('only the print actions that apply are shown: none when idle, Pause while printing, Resume while paused', `
   await ready(VIEW());
-  for (const k of ['pause', 'resume', 'stop']) assert(q('[data-test="' + k + '"]').disabled, k + ' disabled when idle');
-  assert(text(byTest('print-why')).includes('No print is running'), 'says why: ' + text(byTest('print-why')));
+  for (const k of ['pause', 'resume', 'stop', 'skip-open']) assert(!byTest(k), k + ' is not shown with no print');
+  assert(text(byTest('job-card')).includes('No print is running'), 'the block says so: ' + text(byTest('job-card')));
+  assert(!q('[data-test="job-card"] [role=progressbar]').offsetParent, 'no progress bar without a print');
   await post({type: 'status', data: PRINTING()});
-  assert(!q('[data-test="pause"]').disabled && q('[data-test="resume"]').disabled && !q('[data-test="stop"]').disabled, 'printing: pause and stop');
+  assert(!q('[data-test="pause"]').disabled && !byTest('resume') && !q('[data-test="stop"]').disabled, 'printing: Pause and Stop, no Resume');
+  assert(q('[data-test="stop"]').classList.contains('p-button-outlined') && q('[data-test="stop"]').classList.contains('p-button-danger'), 'Stop is outlined red, not solid');
   await post({type: 'status', data: PRINTING({state: 'paused', can: {pause: false, resume: true, stop: true, move: true, heat: true, feed: true, print: false}})});
-  assert(q('[data-test="pause"]').disabled && !q('[data-test="resume"]').disabled, 'paused: resume');
+  assert(!byTest('pause') && !q('[data-test="resume"]').disabled, 'paused: Resume takes its place');
   await click(q('[data-test="resume"]'));
   eq(cmds('resume').length, 1, 'resume sent without asking');
 `);
@@ -236,8 +252,9 @@ test('heat is refused by the page when the printer does not allow it', `
   await ready(VIEW({can: {pause: false, resume: false, stop: false, move: false, heat: false, feed: false, print: false}}));
   assert(q('#temp-nozzle').disabled && q('[data-off="nozzle"]').disabled, 'heating off');
   // said once for the panel, and the disabled field points at it
-  assert(text(byTest('heat-why')).includes('doesn’t allow heating'), 'says why: ' + text(byTest('heat-why')));
-  eq(q('#temp-nozzle').getAttribute('aria-describedby'), 'heat-why', 'the field points at the reason');
+  assert(text(byTest('busy-banner')).includes('doesn’t allow heating'), 'says why: ' + text(byTest('busy-banner')));
+  eq(qa('[data-view="dash"] .oui-banner').length, 1, 'in the page’s one banner');
+  eq(q('#temp-nozzle').getAttribute('aria-describedby'), 'kc-busy', 'the field points at the reason');
 `);
 
 test('confirmed:false shows "sent, waiting"; confirmed:true shows success; a second home while one runs shows the error', `
@@ -281,7 +298,8 @@ test('motion: moves, step choice, home and motors off ask where they must', `
   eq(cmds('motors_off').length, 1, 'motors off');
   await post({type: 'status', data: PRINTING()});
   assert(q('[data-move="x+"]').disabled && q('[data-home="z"]').disabled && q('[data-test="motors-off"]').disabled, 'moves off while printing');
-  assert(text(byTest('move-why')).includes('idle or paused'), 'says why: ' + text(byTest('move-why')));
+  assert(text(byTest('busy-banner')).includes('idle or paused'), 'the page banner says why: ' + text(byTest('busy-banner')));
+  eq(q('[data-move="x+"]').getAttribute('aria-describedby'), 'kc-busy', 'and the buttons point at it');
 `);
 
 test('object skip: the objects command runs when the section opens; list, confirm, skip, error path', `
@@ -316,7 +334,7 @@ test('object skip: an error is shown with a retry; an empty list says so; the se
   assert(text(byTest('skip-body')).includes('no objects that can be skipped'), 'empty: ' + text(byTest('skip-body')));
   await post({type: 'status', data: VIEW()});
   assert(!byTest('skip-body'), 'closed when the print ends');
-  assert(byTest('skip-open').disabled, 'disabled when idle, with the reason');
+  assert(!byTest('skip-open'), 'nothing to skip with no print: the action is gone');
 `);
 
 test('fan, light and speed mode', `
@@ -452,8 +470,10 @@ test('drying: running unit shows remaining time, humidity and temperature; stop 
 test('Spoolman: bind per slot asks first; unbind too', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 3 ? {...s, spool_id: 7} : s))}));
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}, via: 'direct'});
-  assert(text(byTest('spool-source')).includes('2 spools'), 'source line: ' + text(byTest('spool-source')));
-  eq(qa('[data-pick]').length, 7, 'one picker per slot');
+  eq(qa('[data-pick]').filter(visible).length, 7, 'one picker per slot, on the Dashboard');
+  await tab('stock');
+  assert(visible(byTest('spool-source')) && text(byTest('spool-source')).includes('2 spools'), 'source line in the Stock tab\u2019s header: ' + text(byTest('spool-source')));
+  await tab('dash');
   await pick(q('[data-pick="4"]'), '#11 Acme White · PETG · 40 g');
   assert(dialogOpen() && dialogText().includes('#11'), 'bind asks: ' + dialogText()); await yes();
   eq(cmds('bind').map(m => m.args), [{slot: 4, spool_id: 11}], 'bind');
@@ -481,14 +501,19 @@ test('status: the photo spools are the print head slots, coloured like their slo
   const spool = n => q('[data-test="printer-figure"] [data-figure-slot="' + n + '"]');
   const colours = () => [1, 2, 3, 4].map(n => spool(n).getAttribute('data-colors') || '');
   assert(fig() && fig().getAttribute('role') === 'img', 'photo in the status card');
+  const box = fig().closest('.oui-job-thumb').getBoundingClientRect(), pic = fig().getBoundingClientRect();
+  eq([box.width, box.height], [72, 72], 'in the status block’s fixed 72 px picture box');
+  assert(pic.height <= 72 && pic.width <= 72, 'the photo fits it: ' + pic.width + 'x' + pic.height);
   eq(colours(), ['#fafafa', '', '#e5484d', ''], 'before Spoolman answers: the ACE colours of the print head slots');
   await reply(last('cmd', 'spools'), {spools: [...ROWS, MULTI], bindings: {}, via: 'direct'});
   eq(colours(), ['#fafafa', '', '#ff0000 #00ff00 #0000ff', ''], 'Spoolman colours, one band per colour');
   // each spool is painted like its slot card on the same page
   for (const n of [1, 2, 3]) {
-    const head = q('[data-slot="' + (n - 1) + '"] .oui-slot-sample'), card = getComputedStyle(head);
+    // the 4 px strip across the top of the slot card; an empty slot has none
+    const head = q('[data-slot="' + (n - 1) + '"] .oui-slot-strip');
     const bands = qa('[data-test="printer-figure"] [data-figure-slot="' + n + '"] .kx-band').map(r => getComputedStyle(r).fill);
-    if (head.hasAttribute('data-unknown')) { assert(spool(n).hasAttribute('data-empty') && !bands.length, 'slot ' + n + ': empty card, empty reel'); continue; }
+    if (!head) { assert(spool(n).hasAttribute('data-empty') && !bands.length, 'slot ' + n + ': empty card, empty reel'); continue; }
+    const card = getComputedStyle(head);
     if (bands.length === 1) eq(bands[0], card.backgroundColor, 'slot ' + n + ' colour matches its card');
     else assert(bands.every(c => card.backgroundImage.includes(c)), 'slot ' + n + ' bands ' + bands.join() + ' in the card ' + card.backgroundImage);
   }
@@ -511,8 +536,13 @@ test('Spoolman without an address says where to set it', `
   await post({type: 'status', data: VIEW()});
   await until(() => last('cmd', 'spools'), 'spools asked');
   await fail(last('cmd', 'spools'), 'Spoolman: no address set: enter one under Settings, or use Spooler with Spoolman');
+  eq(qa('[data-pick]').length, 0, 'no spool chooser in the slot cards without Spoolman');
+  await tab('stock');
+  assert(visible(byTest('spool-source')), 'the Stock tab says it');
   eq(text(byTest('spool-source')), 'No Spoolman address', 'one short line, not the error three times');
-  assert(text(byTest('spoolman-card')).includes('Set a Spoolman address under Settings') && btn('Open Settings', byTest('spoolman-card')), 'where to set it');
+  assert(visible(byTest('spoolman-card')) && text(byTest('spoolman-card')).includes('Set a Spoolman address under Settings'), 'where to set it: ' + text(byTest('spoolman-card')));
+  await click(btn('Open Settings', byTest('spoolman-card')));
+  assert(visible(q('#sm-s-h')), 'and its button opens Settings > Spoolman');
 `);
 
 test('Spoolman: the address Spooler uses is taken when none is set here, and Settings says so', `
@@ -521,19 +551,33 @@ test('Spoolman: the address Spooler uses is taken when none is set here, and Set
     spoolman_url: 'http://box:7912', spoolman_source: 'spooler'}}));
   await post({type: 'status', data: VIEW()});
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
-  eq(text(byTest('spool-source')), '2 spools in Spoolman', 'the slot pickers work from the Spoolman of Spooler');
-  assert(!text(byTest('spoolman-card')).includes('Set a Spoolman address'), 'no contradiction with the Stock card');
+  eq(qa('[data-pick]').filter(visible).length, 7, 'the slot pickers work from the Spoolman of Spooler');
+  await tab('stock');
+  eq(text(byTest('spool-source')), '2 spools in Spoolman', 'and the Stock tab counts its spools');
+  assert(!text(q('[data-view="stock"]')).includes('Set a Spoolman address'), 'no contradiction: nothing asks for an address');
   await tab('settings');
   assert(text(byTest('sm-from')).includes('Spooler’s Spoolman is used: http://box:7912'), 'source: ' + text(byTest('sm-from')));
 `);
 
-test('stock card: link a spool to a slot', `
+test('stock tab: choose the slot once on the left, then one Link per row; it asks first', `
   await ready(VIEW());
   await reply(last('cmd', 'stock'), STOCK());
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
-  await until(() => byTest('stock-card'), 'stock card');
+  await until(() => byTest('stock-card'), 'stock list');
+  assert(!q('[data-view="dash"] [data-stock]') && !q('[data-view="dash"] [data-test="stock-card"]'), 'the stock is not on the dashboard');
+  assert(text(q('[data-tab="stock"]')).includes('Stock') && text(q('[data-tab="stock"]')).includes('2'), 'its own tab, with the spool count: ' + text(q('[data-tab="stock"]')));
+  await tab('stock');
+  assert(byTest('stock-card').offsetParent, 'shown');
   eq(qa('[data-stock]').length, 2, 'two spools listed');
-  await pick(byTest('stock-slot'), 'ACE 1 · Slot 2');
+  const targets = qa('[data-stock-target]');
+  eq(targets.map(b => b.getAttribute('data-stock-target')), ['0', '1', '2', '3', '4', '5', '6'], 'every slot is a place a spool can go');
+  eq(q('[data-test="stock-slot"]').getAttribute('role'), 'radiogroup', 'one of them is chosen');
+  eq(targets.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.getAttribute('data-stock-target')), ['0'], 'the first one to start with');
+  assert(text(q('[data-stock-target="1"]')).includes('Empty'), 'an empty slot says so: ' + text(q('[data-stock-target="1"]')));
+  await click(q('[data-stock-target="4"]'));
+  eq(q('[data-stock-target="4"]').getAttribute('aria-checked'), 'true', 'ACE 1 · Slot 2 chosen');
+  eq(text(q('[data-stock="11"]')), 'Link to Slot 2', 'the row action names the chosen slot');
+  eq(q('[data-stock="11"]').getAttribute('aria-label'), 'Link spool #11 Acme White to ACE 1 · Slot 2', 'in full for a screen reader');
   await click(q('[data-stock="11"]'));
   assert(dialogOpen() && dialogText().includes('ACE 1 · Slot 2') && dialogText().includes('#11'), 'asks: ' + dialogText()); await no();
   eq(cmds('stock_assign'), [], 'cancel links nothing');
@@ -541,18 +585,54 @@ test('stock card: link a spool to a slot', `
   eq(cmds('stock_assign').map(m => m.args), [{slot: 4, spool_id: 11, key: 's1:3'}], 'stock_assign');
 `);
 
-test('stock card: rows say which slot holds them (bound_slot)', `
+test('stock tab: rows say which slot holds them, and the spool in the chosen slot reads Linked', `
   await ready(VIEW());
   await reply(last('cmd', 'stock'), STOCK({stock: {...STOCK().stock, rows: [{...ROWS[0], bound_slot: 3}, {...ROWS[1], bound_slot: null}]}}));
-  await until(() => byTest('stock-card'), 'stock card');
-  assert(text(q('[data-stock="7"]').closest('tr')).includes('on ACE 1 · Slot 1'), 'chip: ' + text(q('[data-stock="7"]').closest('tr')));
-  assert(!text(q('[data-stock="11"]').closest('tr')).includes(' on '), 'unbound row has no chip');
+  await until(() => byTest('stock-card'), 'stock list');
+  await tab('stock');
+  eq(text(q('[data-spool="7"] [data-test="stock-in"]')), 'ACE 1 · Slot 1', 'where it is loaded');
+  assert(!q('[data-spool="11"] [data-test="stock-in"]'), 'a spool in no slot has no chip');
+  assert(q('[data-stock="7"]') && !q('[data-linked]'), 'another slot is chosen: it can be linked there');
+  await click(q('[data-stock-target="3"]'));
+  eq(text(q('[data-linked="7"]')), 'Linked', 'already in the chosen slot');
+  assert(!q('[data-stock="7"]') && q('[data-stock="11"]'), 'no Link button for it, one for the other');
+  // level bars: green, amber when low, red when almost empty
+  eq(q('[data-spool="7"] .oui-level').getAttribute('data-tone'), 'normal', '500 of 1000 g');
+  eq(q('[data-spool="11"] .oui-level').getAttribute('data-tone'), 'critical', '40 of 1000 g is almost empty');
+  assert(text(q('[data-spool="11"]')).includes('low'), 'and said in words: ' + text(q('[data-spool="11"]')));
 `);
 
-test('stock card shows only for a usable list; the lease flag follows; Settings says what is missing', `
+test('stock tab: search, material and same-material filters; Refresh reads Spoolman and the stock again', `
   await ready(VIEW());
   await reply(last('cmd', 'stock'), STOCK());
-  await until(() => byTest('stock-card'), 'usable list: card');
+  await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
+  await until(() => byTest('stock-card'), 'stock list');
+  await tab('stock');
+  const ids = () => qa('[data-view="stock"] [data-spool]').map(r => r.dataset.spool);
+  eq(ids(), ['7', '11'], 'both spools');
+  assert(text(byTest('stock-head')).includes('2 spools in Spoolman (the same one Spooler uses)') && text(byTest('stock-head')).includes('Spooler 0.21.0'), 'source and age in the page header: ' + text(byTest('stock-head')));
+  await type(q('[data-view="stock"] input[type=search]'), 'shelf a');
+  await until(() => ids().length === 1, 'filtered');
+  eq(ids(), ['7'], 'search finds a location');
+  assert(text(q('[data-view="stock"] .oui-toolbar')).includes('1 of 2 spools'), 'count: ' + text(q('[data-view="stock"] .oui-toolbar')));
+  await type(q('[data-view="stock"] input[type=search]'), '');
+  await until(() => ids().length === 2, 'cleared');
+  await click(q('#stock-fit'));
+  eq(ids(), ['11'], 'same material as the chosen slot (Print head · Slot 1 holds PETG)');
+  await click(q('[data-stock-target="4"]'));
+  eq(ids(), ['7'], 'follows the chosen slot (ACE 1 · Slot 2 holds ABS)');
+  await click(q('[data-stock-target="1"]'));
+  eq(ids(), ['7', '11'], 'an empty slot fits any material');
+  const stock = cmds('stock').length, spools = cmds('spools').length;
+  await click(byTest('stock-refresh'));
+  await until(() => cmds('spools').length === spools + 1 && cmds('stock').length > stock, 'both asked again');
+  assert(cmds('stock').some(m => m.args.refresh === true), 'the stock with refresh: ' + JSON.stringify(cmds('stock').map(m => m.args)));
+`);
+
+test('stock tab lists only a usable list; the lease flag follows; Settings says what is missing', `
+  await ready(VIEW());
+  await reply(last('cmd', 'stock'), STOCK());
+  await until(() => byTest('stock-card'), 'usable list: shown');
   await until(() => last('lease').stock === true, 'lease: stock on', 15000);
   const states = [
     ['Spooler absent', STOCK({available: false, reason: 'absent', spooler: {state: 'absent', text: '', version: ''}})],
@@ -565,8 +645,9 @@ test('stock card shows only for a usable list; the lease flag follows; Settings 
     const n = cmds('stock').length;
     await until(() => cmds('stock').length > n, 'the page asks for the stock again', 8000);   // every 5 s
     await reply(last('cmd', 'stock'), view);
-    assert(!byTest('stock-card'), what + ': no card at all');
-    assert(!/stock/i.test(text(q('#stock-h'))), what + ': no stock heading: ' + text(q('#stock-h')));
+    assert(!byTest('stock-card') && !q('[data-stock]'), what + ': no list');
+    assert(byTest('spoolman-card'), what + ': the Stock tab keeps its place and says why');
+    assert(!/[0-9]/.test(text(q('[data-tab="stock"]'))), what + ': no count on the tab: ' + text(q('[data-tab="stock"]')));
   }
   await until(() => last('lease').stock === false, 'lease: stock off when there is no usable list (renewed every 2 s)');
   await tab('settings');
@@ -654,15 +735,21 @@ test('filament use: pt-BR', `
 `, { lang: 'pt-BR' });
 
 // ------------------------------------------------------------------ camera
-test('camera: off by default and compact; frames are acknowledged; leases follow it', `
+test('camera: off by default in a box that keeps its size; frames are acknowledged; leases follow it', `
   await ready(VIEW());
-  assert(q('.cam-card').classList.contains('compact') && !q('.cam-view'), 'compact while off');
+  const off = q('.cam-card .oui-camera[data-state="off"]');
+  assert(off && !q('.cam-view'), 'off: the picture box says so, with Turn on');
+  const was = off.getBoundingClientRect();
+  assert(Math.abs(was.width / was.height - 16 / 9) < 0.02, 'a 16:9 box: ' + was.width + 'x' + was.height);
   assert(last('lease').camera === false, 'lease: camera off');
   await click(byTest('camera'));
   assert(last('lease').camera === true, 'lease: camera on');
   await post({type: 'frame', image: PNG});
   await until(() => q('.cam-view img'), 'frame shown');
   await until(() => last('frame_ack'), 'frame acknowledged');
+  const now = q('.cam-view').getBoundingClientRect();
+  assert(Math.abs(now.height - was.height) < 1 && Math.abs(now.top - was.top) < 1, 'turning it on does not move the page: ' + was.height + ' -> ' + now.height);
+  assert(text(q('.cam-view .oui-camera-overlay')).includes('Live'), 'marked live');
   await tab('settings');
   await until(() => last('lease').camera === false, 'lease drops when the Dashboard is not on screen (the lease is renewed every 2 s)');
 `);
@@ -756,7 +843,7 @@ test('requirements: no ffmpeg keeps the built-in player; a page without it turns
   await post({type: 'status', data: VIEW({camera_url: 'rtsp://192.168.1.50/live'})});   // only ffmpeg plays RTSP
   assert(!q('.cam-view'), 'no camera picture area without ffmpeg');
   assert(text(byTest('cam-why')).includes('ffmpeg isn’t installed'), 'one-line reason: ' + text(byTest('cam-why')));
-  assert(byTest('camera').disabled, 'Turn on is off');
+  assert(!byTest('camera'), 'nothing to turn on: one row with the reason');
   await post({...REQS(), checking: true});
   assert(text(byTest('cam-why')).includes('Looking for ffmpeg'), 'a re-check says so: ' + text(byTest('cam-why')));
   await post(REQS());
@@ -839,7 +926,8 @@ test('requirements: without Spoolman, refreshing and linking spools are off', `
   await connect();
   await post(CONFIG({settings: {...SETTINGS, spoolman_url: ''}}));
   await post({type: 'status', data: VIEW()});
-  assert(q('[data-focus-key="sm-refresh"]').disabled, 'Spools refresh off on the Dashboard');
+  await tab('stock');
+  assert(visible(byTest('stock-refresh')) && byTest('stock-refresh').disabled, 'Refresh is off on the Stock tab');
   await tab('settings');
   const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
   assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
@@ -962,10 +1050,13 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   assert(text(byTest('cam-why')).includes('doesn’t answer'), 'camera gives the same reason: ' + text(byTest('cam-why')));
   assert(!text(document.body).includes('Select a printer first'), 'no "no printer" text while one is selected');
   // every printer control in the printer's panels (job, temperatures, move, camera, filament) is off
-  const live = [byTest('machine'), byTest('filament')].flatMap(root => qa('button, input, [role="checkbox"]', root)).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
+  const roots = [byTest('job-card'), byTest('machine'), byTest('filament'), byTest('printer-head')];
+  eq(roots.filter(Boolean).length, 4, 'the status block, both columns and the page header');
+  // (the (i) buttons explain; they are not printer controls)
+  const live = roots.flatMap(root => qa('button:not(.oui-hint-btn), input, [role="checkbox"]', root)).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
     && !el.closest('.p-disabled') && !el.closest('details:not([open])'));
   eq(live.map(el => (el.textContent || el.getAttribute('aria-label') || el.outerHTML).trim().slice(0, 60)), [], 'every printer control is off');
-  for (const b of [byTest('machine'), byTest('filament')].flatMap(root => qa('button.p-button', root))) {
+  for (const b of roots.flatMap(root => qa('button.p-button', root))) {
     const st = getComputedStyle(b);
     assert(parseFloat(st.opacity) <= 0.7 || st.cursor === 'not-allowed', 'looks disabled: ' + text(b) + ' opacity ' + st.opacity);
   }
@@ -1071,7 +1162,8 @@ test('stock table: thumbnails stay small and nothing overlaps, with many spools,
   const many = Array.from({length: 55}, (_, i) => ({...ROWS[i % 2], id: 100 + i, name: 'Spool ' + i}));
   await ready(VIEW());
   await reply(last('cmd', 'stock'), STOCK({stock: {...STOCK().stock, rows: many}}));
-  await until(() => byTest('stock-card'), 'stock card');
+  await until(() => byTest('stock-card'), 'stock list');
+  await tab('stock');
   // the owner's web view drew each spool as a tall narrow strip; without aspect-ratio support it must still be a square
   const style = document.createElement('style'); style.textContent = '.oui-spool { aspect-ratio: auto !important; }'; document.head.appendChild(style);
   for (const width of ['', '380px']) {
@@ -1080,14 +1172,14 @@ test('stock table: thumbnails stay small and nothing overlaps, with many spools,
     const wrap = q('[data-test="stock-card"] .sc-wrap');
     for (const fig of qa('.oui-spool', wrap).slice(0, 6)) {
       const r = fig.getBoundingClientRect();
-      assert(Math.abs(r.width - 40) < 1 && Math.abs(r.height - 40) < 1, 'thumbnail 40x40 at ' + (width || 'wide') + ', got ' + r.width + 'x' + r.height);
+      assert(Math.abs(r.width - 36) < 1 && Math.abs(r.height - 36) < 1, 'thumbnail 36x36 at ' + (width || 'wide') + ', got ' + r.width + 'x' + r.height);
     }
     const rows = qa('tbody tr', wrap).slice(0, 6).map(tr => tr.getBoundingClientRect().height);
     assert(Math.max(...rows) < 90, 'compact rows at ' + (width || 'wide') + ': ' + rows.join(','));
-    const box = wrap.getBoundingClientRect(), next = wrap.nextElementSibling || q('[data-test="stock-card"] .sc-tabs');
-    assert(box.height <= 361, 'the table scrolls in its own area: ' + box.height);
-    assert(!next || next.getBoundingClientRect().top >= box.bottom - 0.5, 'nothing runs onto what follows');
+    const panel = wrap.closest('.oui-panel').getBoundingClientRect();
+    assert(panel.height <= innerHeight - 100, 'the list is no taller than the window under the bars: ' + panel.height + ' of ' + innerHeight);
     assert(wrap.scrollHeight > wrap.clientHeight, 'many spools scroll inside');
+    assert(document.documentElement.scrollWidth <= innerWidth, 'the page does not scroll sideways at ' + (width || 'wide'));
   }
   style.remove();
 `);
@@ -1098,6 +1190,10 @@ test('stale status shows its age', `
   Date.now = () => real() + 30000;
   await until(() => text(byTest('target-banner')).includes('out of date'), 'stale banner', 15000);
   assert(text(byTest('target-banner')).includes('Last printer status'), 'says the age: ' + text(byTest('target-banner')));
+  // the reasons the disabled controls point at stay on screen beside it: an old status does not hide them
+  assert(q('[data-move="x+"]').disabled, 'moves are still off');
+  assert(q('#kc-busy') && text(q('#kc-busy')).includes('idle or paused'), 'the busy banner is still there: ' + text(byTest('target-banner')));
+  eq(q('[data-move="x+"]').getAttribute('aria-describedby'), 'kc-busy', 'and the control points at it');
   Date.now = real;
 `);
 
@@ -1117,31 +1213,37 @@ test('stale selection: selection_changed cancels a question, clears data and ask
 `);
 
 // ------------------------------------------------------------------ files
-test('files: list, details, the two print options, print and cancel', `
+test('files: list, select a file for its details, the print options, print and cancel', `
   await ready(VIEW({storage: {total: 8000, used: 2000}}));
   await tab('files');
   await until(() => last('cmd', 'files'), 'files asked');
-  await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}, {name: 'cube.gcode', size: 900000, timestamp: 1699000000}]});
-  eq(qa('[data-file]').map(e => e.getAttribute('data-file')), ['benchy.gcode', 'cube.gcode'], 'rows');
+  await reply(last('cmd', 'files'), {files: [{name: 'cube.gcode', size: 900000, timestamp: 1699000000}, {name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]});
+  eq(fileNames(), ['benchy.gcode', 'cube.gcode'], 'rows, newest first');
+  eq(filesCount(), '2 files', 'count over the table');
   assert(text(byTest('disk')).includes('2 GB') && text(byTest('disk')).includes('8 GB'), 'storage: ' + text(byTest('disk')));
-  await click(q('[data-file="benchy.gcode"] [data-print]'));
+  assert(text(fileRow('benchy.gcode')).includes('G-code') && text(fileRow('benchy.gcode')).includes('4.2 MB'), 'kind and size: ' + text(fileRow('benchy.gcode')));
+  assert(!byTest('print-panel') && cmds('file_details').length === 0, 'no details asked until a file is selected');
+  await click(fileRow('benchy.gcode'));
+  eq(fileRow('benchy.gcode').getAttribute('aria-selected'), 'true', 'selected');
   eq(cmds('file_details').map(m => m.args), [{name: 'benchy.gcode'}], 'details asked');
   await reply(last('cmd', 'file_details'), {name: 'benchy.gcode', thumbnail: PNG, objects: []});
-  await until(() => q('.fv-thumb'), 'thumbnail');
+  await until(() => q('.oui-files-preview img'), 'thumbnail');
+  assert(q('img', fileRow('benchy.gcode')), 'and in its row');
   assert(q('#opt-level input, input#opt-level').checked !== false, 'auto-leveling starts on from the setting');
   await click(q('input#opt-vib'));
   assert(q('input#opt-flow') && !q('input#opt-flow').checked && q('input#opt-tl') && !q('input#opt-tl').checked, 'flow calibration and time-lapse start off');
   await click(q('input#opt-tl'));
   await click(byTest('print-start'));
   assert(dialogOpen() && dialogText().includes('benchy.gcode') && dialogText().includes('Bench Kobra'), 'asks: ' + dialogText());
-  assert(dialogText().includes('Flow calibration: off') && dialogText().includes('Time-lapse: on'), 'the question names every option: ' + dialogText());
+  assert(dialogText().includes('Flow calibration: off') && dialogText().includes('Time-lapse: on'), 'the question names each option: ' + dialogText());
   await no();
   eq(cmds('file_print'), [], 'cancel prints nothing');
   await click(byTest('print-start')); await yes();
   eq(cmds('file_print').map(m => m.args), [{name: 'benchy.gcode', auto_leveling: true, vibration_compensation: false, flow_calibration: false, timelapse: true}],
-    'file_print with every option');
+    'file_print with each option');
   await reply(last('cmd', 'file_print'), true);
-  await until(() => !byTest('print-panel'), 'panel closes after printing');
+  await until(() => !byTest('print-panel'), 'panel closes when printing');
+  eq(qa('[data-view="files"] [aria-selected="true"][data-file]').length, 0, 'nothing selected any more');
 `);
 
 test('files: flow calibration and time-lapse follow the printer features and the saved defaults', `
@@ -1149,9 +1251,9 @@ test('files: flow calibration and time-lapse follow the printer features and the
   await post({type: 'status', data: VIEW({features: {flow_calibration_support: true, camera_timelapse_support: false}})});
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 1, timestamp: 1700000000}]});
-  await click(q('[data-file="benchy.gcode"] [data-print]'));
+  await click(fileRow('benchy.gcode'));
   await reply(last('cmd', 'file_details'), {name: 'benchy.gcode', thumbnail: PNG, objects: []});
-  await until(() => q('.fv-thumb'), 'panel');
+  await until(() => q('.oui-files-preview img'), 'panel');
   assert(q('input#opt-flow').checked, 'flow calibration on from the setting');
   assert(!q('input#opt-tl'), 'no time-lapse switch on a printer without it');
   await click(byTest('print-start')); await yes();
@@ -1188,7 +1290,7 @@ test('printer panel: details are asked on connect; only reported counters show',
   await until(() => last('cmd', 'device'), 'device asked after hello');
   eq(cmds('device').length, 1, 'once per connection');
   const panel = () => text(byTest('device'));
-  assert(panel().includes('Bench Kobra') && panel().includes('1.0'), 'name and firmware: ' + panel());
+  assert(text(byTest('printer-head')).includes('Bench Kobra') && panel().includes('1.0'), 'the name in the page header, the firmware here: ' + panel());
   assert(!panel().includes('Network address') && !panel().includes('Prints') && !panel().includes('Total print time'), 'nothing unreported: ' + panel());
   await post({type: 'status', data: VIEW({mac: 'AA:BB:CC:00:11:22', stats: {print_count: 12, filament_g: 1520}})});
   assert(panel().includes('AA:BB:CC:00:11:22') && panel().includes('Prints') && panel().includes('12') && panel().includes('1.52 kg'), 'reported ones: ' + panel());
@@ -1221,8 +1323,9 @@ test('printer panel: Print Assist switches ask first, then send; only reported o
 test('printer panel: changes are refused while printing, with the reason', `
   await ready(PRINTING({assist: ASSIST}));
   assert(q('#assist-belt').disabled && byTest('rename').disabled, 'switches and rename off');
-  assert(text(byTest('device-why')).includes('while it is idle'), 'says why: ' + text(byTest('device-why')));
-  eq(q('#assist-belt').getAttribute('aria-describedby'), 'device-why', 'the reason is announced');
+  assert(text(byTest('busy-banner')).includes('while it is idle'), 'the page banner says why: ' + text(byTest('busy-banner')));
+  eq(q('#assist-belt').getAttribute('aria-describedby'), 'kc-busy', 'the reason is announced');
+  eq(byTest('rename').getAttribute('aria-describedby'), 'kc-busy', 'for Rename too');
 `);
 
 test('printer panel: rename asks for the name and checks it', `
@@ -1249,164 +1352,307 @@ test('printer panel: rename asks for the name and checks it', `
 test('pt-BR: the printer panel is translated', `
   await ready(VIEW({assist: ASSIST, mac: 'AA:BB', stats: {print_count: 3}}));
   const panel = text(byTest('device'));
-  for (const w of ['Impressora', 'Renomear', 'Endereço de rede', 'Impressões', 'Assistente de impressão', 'Alerta de filamento rompido', 'Detecção de correia'])
+  for (const w of ['Impressora', 'Endereço de rede', 'Impressões', 'Assistente de impressão', 'Alerta de filamento rompido', 'Detecção de correia'])
     assert(panel.includes(w), w + ' in ' + panel);
+  eq(text(byTest('rename')), 'Renomear', 'Rename, in the page header');
+  // what each switch does is behind the group's (i), not under every row
+  assert(text(q('[data-test="device"] .oui-hint-bubble')).includes('Pausa a impressão quando o filamento rompe'), 'help in the hint: ' + text(q('[data-test="device"] .oui-hint-bubble')));
 `, { lang: 'pt-BR' });
 
 test('files: print is refused while the printer cannot start, with the reason', `
   await ready(PRINTING());
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}]});
-  await click(q('[data-print]'));
+  await click(fileRow('a.gcode'));
   assert(byTest('print-start').disabled, 'start disabled');
-  assert(text(byTest('print-panel')).includes('can’t start a print right now'), 'says why: ' + text(byTest('print-panel')));
+  assert(text(byTest('busy-banner')).includes('can’t start a print right now'), 'the page banner says why: ' + text(byTest('busy-banner')));
+  eq(byTest('print-start').getAttribute('aria-describedby'), 'kc-busy', 'and the button points at it');
+  assert(!text(byTest('busy-banner')).includes('Moves'), 'only what this tab is about');
 `);
 
-test('files: delete asks first and refreshes the list', `
+test('files: select several, delete asks once with the count and the names, and sends one batch', `
+  await ready(VIEW());
+  await tab('files');
+  const F = n => ({name: n + '.gcode', size: 1000, timestamp: 1700000000 + n.charCodeAt(0)});
+  await reply(last('cmd', 'files'), {files: ['a', 'b', 'c'].map(F)});
+  eq(fileNames(), ['c.gcode', 'b.gcode', 'a.gcode'], 'listed');
+  assert(!btn('Delete', filesBar()), 'no Delete with nothing selected');
+  await check('a.gcode'); await check('c.gcode');
+  eq(filesCount(), '2 selected', 'the bar counts the selection');
+  eq(qa('[data-view="files"] [data-file][aria-selected="true"]').length, 2, 'both rows marked');
+  assert(text(q('[data-view="files"] .oui-files-detail')).includes('2 selected') && !byTest('print-panel'), 'the detail lists them; nothing to print');
+  eq(cmds('file_details').map(m => m.args.name), ['a.gcode'], 'details were asked for the first while it was alone, not for the pair');
+  assert(btn('Delete', filesBar()).classList.contains('p-button-outlined'), 'Delete is outlined red in the page');
+  await click(btn('Delete', filesBar()));
+  assert(dialogOpen() && dialogText().includes('2 files') && dialogText().includes('a.gcode') && dialogText().includes('c.gcode'), 'asks, with the count and the names: ' + dialogText());
+  assert(q('[data-dlg="confirm"]').classList.contains('p-button-danger') && !q('[data-dlg="confirm"]').classList.contains('p-button-outlined'), 'the confirm button is the solid red');
+  await answer('cancel');
+  eq(cmds('file_delete'), [], 'going back deletes nothing');
+  eq(filesCount(), '2 selected', 'and keeps the selection');
+  await click(btn('Delete', filesBar())); await answer('confirm');
+  eq(cmds('file_delete').map(m => m.args), [{names: ['a.gcode', 'c.gcode']}], 'one file_delete with both names');
+  await reply(last('cmd', 'file_delete'), true);
+  await until(() => cmds('files').length === 2, 'list refreshed');
+  await reply(last('cmd', 'files'), {files: [F('b')]});
+  assert(toasts().includes('2 files deleted.'), 'says so: ' + toasts());
+  eq(fileNames(), ['b.gcode'], 'the rest stays');
+  eq(filesCount(), '1 file', 'selection cleared');
+  await until(() => document.activeElement === byTest('refresh'), 'the keyboard is on Refresh, not lost');
+  // the keyboard: Delete on the selected row asks too
+  await click(fileRow('b.gcode'));
+  fileRow('b.gcode').focus();
+  await press('Delete');
+  assert(dialogOpen() && dialogText().includes('1 file') && dialogText().includes('b.gcode'), 'Delete key asks: ' + dialogText());
+  await answer('confirm');
+  eq(cmds('file_delete').map(m => m.args)[1], {names: ['b.gcode']}, 'deleted from the keyboard');
+  await reply(last('cmd', 'file_delete'), true);
+  await until(() => cmds('files').length === 3, 'list refreshed');
+  await reply(last('cmd', 'files'), {files: []});
+  assert(text(q('[data-view="files"] .oui-files-scroll')).includes('No files on the printer'), 'empty state');
+  assert(toasts().includes('File deleted.'), 'one file: ' + toasts());
+`);
+
+test('files: the Kobra X has no folders, so no folder tree and no Move; a refused delete reads the list again', `
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}, {name: 'b.gcode', size: 1, timestamp: 1700000001}]});
+  await reply(last('cmd', 'videos'), {videos: VIDEOS()});
+  // no folder tree, no breadcrumb: the printer's two lists are a switch over the table
+  const files = q('[data-view="files"]');
+  for (const part of ['.oui-files-rail', '.oui-files-path']) assert(q(part, files) && !visible(q(part, files)), part + ' is not shown');
+  eq(qa('[data-folder], [role=treeitem]', files).length, 0, 'and has no folder in it');
+  eq(qa('[data-list]', files).map(b => [b.dataset.list, text(b), b.getAttribute('aria-pressed')]), [['local', 'Print files', 'true'], ['videos', 'Time-lapses', 'false']], 'the two lists');
+  const list = q('.oui-files-list', files).getBoundingClientRect(), box = q('.oui-files-grid', files).getBoundingClientRect();
+  assert(Math.abs(list.left - box.left) < 1.5, 'the list starts at the browser\u2019s edge: no empty column where the tree was (' + list.left + ' / ' + box.left + ')');
+  await click(q('.oui-files-table thead input'));
+  eq(filesCount(), '2 selected', 'select all');
+  const move = q('[data-view="files"] .oui-files-move');
+  assert(!move || getComputedStyle(move).display === 'none', 'no "Move to": the printer cannot move a file');
+  // dragging a file lights up no place to drop it
+  const data = new DataTransfer();
+  fileRow('a.gcode').dispatchEvent(new DragEvent('dragstart', {dataTransfer: data, bubbles: true, cancelable: true}));
+  await settle();
+  eq(qa('[data-target], [data-drop]', files).length, 0, 'nothing takes a drop');
+  q('[data-list="videos"]').dispatchEvent(new DragEvent('drop', {dataTransfer: data, bubbles: true, cancelable: true}));
+  fileRow('a.gcode').dispatchEvent(new DragEvent('dragend', {bubbles: true}));
+  await settle();
+  eq(fileNames().sort(), ['a.gcode', 'b.gcode'], 'nothing moved');
+  eq(sent().filter(m => m.type === 'cmd' && /move|rename|mkdir/.test(m.cmd)), [], 'and no such command exists');
+  await click(btn('Delete', filesBar())); await answer('confirm');
+  await fail(last('cmd', 'file_delete'), 'the printer refused the delete (code 10112): busy');
+  assert(alerts().includes('Delete failed') && alerts().includes('10112'), 'the reason stays on screen: ' + alerts());
+  await until(() => cmds('files').length === 2, 'the list is read again: it shows what is on the printer');
+  await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}, {name: 'b.gcode', size: 1, timestamp: 1700000001}]});
+  eq(fileNames().length, 2, 'both still there');
+  assert(!toasts().includes('files deleted'), 'not reported as deleted');
+`);
+
+for (const [width, height] of [[420, 900], [720, 560]]) {
+  test(`files (${width} x ${height}): the details go under the list and never squeeze it away`, `
+  await ready(VIEW());
+  await tab('files');
+  await reply(last('cmd', 'files'), {files: ['a', 'b', 'c', 'd', 'e', 'f'].map((n, i) => ({name: n + '.gcode', size: 1000, timestamp: 1700000000 + i}))});
+  await click(fileRow('f.gcode'));
+  await reply(last('cmd', 'file_details'), DETAILS({name: 'f.gcode'}));
+  await until(() => byTest('mat-warn'), 'details shown');
+  const files = q('[data-view="files"]'), box = q('.oui-files-grid', files).getBoundingClientRect();
+  const scroll = q('.oui-files-scroll', files).getBoundingClientRect(), detail = q('.oui-files-detail', files), d = detail.getBoundingClientRect();
+  assert(d.top >= scroll.bottom - 0.5, 'the details are under the list: ' + d.top + ' / ' + scroll.bottom);
+  const row = fileRow('f.gcode').getBoundingClientRect();
+  assert(scroll.height >= 44 && row.top >= scroll.top - 0.5 && row.bottom <= scroll.bottom + 0.5, 'the selected file is still on screen in the list: list ' + scroll.height + ' px, row ' + row.top + '-' + row.bottom + ' in ' + scroll.top + '-' + scroll.bottom);
+  assert(d.bottom <= box.bottom + 0.5 && d.height <= box.height * 0.6, 'the details keep to their share of the browser: ' + d.height + ' of ' + box.height);
+  assert(detail.scrollHeight > detail.clientHeight, 'and scroll inside it');
+  const q0 = byTest('files-q').getBoundingClientRect();
+  assert(q0.height > 20 && q0.bottom <= scroll.top + 0.5, 'the search field is whole, above the table: ' + q0.bottom + ' / ' + scroll.top);
+  byTest('print-start').scrollIntoView({block: 'nearest'}); await settle();
+  const start = byTest('print-start').getBoundingClientRect(), now = detail.getBoundingClientRect();
+  assert(start.top >= now.top - 0.5 && start.bottom <= now.bottom + 0.5, 'Start printing can be reached by scrolling the details');
+`, { size: [width, height] });
+}
+
+test('files: delete and select are off while the printer is away, pointing at the page banner', `
   await ready(VIEW());
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'a.gcode', size: 1, timestamp: 1700000000}]});
-  await click(q('[data-delete]'));
-  assert(dialogOpen() && dialogText().includes('a.gcode'), 'asks: ' + dialogText()); await no();
-  eq(cmds('file_delete'), [], 'cancel deletes nothing');
-  await click(q('[data-delete]')); await yes();
-  eq(cmds('file_delete').map(m => m.args), [{names: ['a.gcode']}], 'file_delete');
-  await reply(last('cmd', 'file_delete'), true);
-  await until(() => cmds('files').length === 2, 'list refreshed');
-  await reply(last('cmd', 'files'), {files: []});
-  assert(text(q('.fv-empty')).includes('No files on the printer'), 'empty state');
+  await check('a.gcode');
+  await post({type: 'offline', error: 'mqtt lost'});
+  const del = btn('Delete', filesBar());
+  assert(del.disabled, 'Delete off');
+  eq(del.getAttribute('aria-describedby'), 'kc-why', 'for the page’s one reason');
+  assert(text(q('#kc-why')).includes('doesn’t answer'), 'which is on this tab too: ' + text(q('#kc-why')));
+  fileRow('a.gcode').focus();
+  await press('Delete');
+  assert(!dialogOpen(), 'the Delete key asks nothing either');
+  assert(byTest('print-start').disabled, 'and no print can start');
 `);
 
 test('files: a list error says so and can be retried', `
   await ready(VIEW());
   await tab('files');
   await fail(last('cmd', 'files'), 'printer timed out');
-  assert(text(q('.fv-error')).includes('printer timed out'), 'error shown');
-  await click(btn('Try again', q('.fv-error')));
+  assert(text(byTest('files-error')).includes('printer timed out'), 'error shown: ' + text(q('[data-view="files"]')));
+  assert(byTest('files-error').closest('[role=alert]'), 'announced');
+  await click(btn('Try again', byTest('files-error')));
   eq(cmds('files').length, 2, 'retry');
+  await reply(last('cmd', 'files'), {files: []});
+  assert(!byTest('files-error'), 'gone once the list is read');
 `);
 
 // ------------------------------------------------------------------ time-lapses (Files tab)
-test('time-lapses: each video shows its print, date, length and size; an empty one is marked; no download', `
+test('time-lapses: a second list in the browser; each video shows its print, date, length and size; an empty one is marked; no download', `
   await openVideos();
-  const panel = byTest('videos');
-  eq(text(q('#videos-h')), 'Time-lapses', 'its own section');
-  eq(panel.getAttribute('aria-labelledby'), 'videos-h', 'named by its heading');
-  assert(q('#files-h').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING, 'after the file list');
-  eq(text(byTest('videos-count')), '2 videos', 'count');
-  eq(qa('[data-video]').map(r => r.dataset.video), ['benchy-20261116215053_8.mp4', CUBE], 'newest first, as the plugin gives them');
+  eq(qa('[data-list]').map(b => b.dataset.list), ['local', 'videos'], 'a second list beside the print files');
+  eq([text(q('[data-list="videos"]')), q('[data-list="videos"]').getAttribute('aria-pressed'), q('[data-list="local"]').getAttribute('aria-pressed')], ['Time-lapses', 'true', 'false'], 'named, and open');
+  eq(q('[data-test="files-lists"]').getAttribute('role'), 'group', 'the switch is one group');
+  eq(filesCount(), '2 videos', 'count');
+  eq(fileNames(), ['benchy-20261116215053_8.mp4', CUBE], 'newest first');
   const cells = qa('td', videoRow('benchy-20261116215053_8.mp4')).map(text);
-  assert(cells[0].includes('benchy') && cells[0].includes('benchy-20261116215053_8.mp4'), 'print and file name: ' + cells[0]);
-  assert(/\\d/.test(cells[1]), 'date: ' + cells[1]);
-  eq(cells.slice(2, 4), ['1:23', '4.1 MB'], 'length and size');
+  assert(cells[1].includes('benchy-20261116215053_8.mp4') && cells[1].includes('1:23'), 'file name and length: ' + cells[1]);
+  eq(cells[2], '4.1 MB', 'size');
+  assert(/\\d/.test(cells[3]), 'date: ' + cells[3]);
+  eq(qa('[data-view="files"] thead th').map(text).slice(1), ['Name', 'Size', 'Recorded'], 'columns');
   const empty = videoRow(CUBE);
-  assert(empty.hasAttribute('data-empty') && !videoRow('benchy-20261116215053_8.mp4').hasAttribute('data-empty'), 'only the empty one is marked');
-  assert(text(empty).includes('Empty') && text(empty).includes('Nothing was recorded'), 'says it is empty and why: ' + text(empty));
-  assert(q('[data-video-delete]', empty) && !q('[data-video-delete]', empty).disabled, 'an empty one can be deleted');
-  eq(qa('.oui-thumb', panel).length, 2, 'a cover placeholder each');
-  eq(qa('img', panel).length, 0, 'no cover picture is fetched');
+  assert(text(empty).includes('Empty') && !text(videoRow('benchy-20261116215053_8.mp4')).includes('Empty'), 'only the empty one is marked');
+  await click(empty);
+  const detail = text(q('[data-view="files"] .oui-files-detail'));
+  assert(detail.includes('cube') && detail.includes('Nothing was recorded'), 'its print, and why it is empty: ' + detail);
+  assert(!byTest('print-panel'), 'a video is not printed');
+  assert(btn('Delete', filesBar()) && !btn('Delete', filesBar()).disabled, 'an empty one can be deleted');
+  eq(qa('[data-view="files"] .oui-files-list img, [data-view="files"] .oui-files-detail img').length, 0, 'no cover picture is fetched');
+  await click(q('[data-list="local"]'));
+  eq([filesCount(), q('[data-list="local"]').getAttribute('aria-pressed')], ['0 files', 'true'], 'back to the print files, with nothing selected');
   assert(text(byTest('videos-note')).includes('can’t be downloaded'), 'says why there is no download: ' + text(byTest('videos-note')));
-  assert(!qa('button, a', panel).some(b => /download/i.test(text(b) + (b.getAttribute('aria-label') || ''))), 'no download control');
-  eq(qa('thead th', panel).map(th => th.getAttribute('scope')), ['col', 'col', 'col', 'col', 'col'], 'column headers');
-  eq(q('[data-video-delete]', empty).getAttribute('aria-label').startsWith('Delete the time-lapse of cube from '), true, 'the button names its video');
+  assert(!qa('button, a', q('[data-view="files"]')).some(b => /download/i.test(text(b))), 'no download control');
 `);
 
-test('time-lapses: delete asks first, sends the file name, refreshes the list and keeps the focus in the section', `
+test('time-lapses: delete asks first, sends each file name, refreshes the list and keeps the focus', `
   await openVideos();
-  const del = () => q('[data-video-delete]', videoRow(CUBE));
-  del().focus();
-  await click(del());
-  assert(dialogOpen() && dialogText().includes('time-lapse of cube'), 'asks, naming the video: ' + dialogText());
-  eq(text(q('[data-dlg="yes"]')), 'Delete video', 'the action is named');
-  assert(q('[data-dlg="yes"]').classList.contains('p-button-danger'), 'destructive action is red');
-  assert(document.activeElement === q('[data-dlg="no"]'), 'focus starts on the way back');
-  await no();
+  await click(videoRow(CUBE));
+  btn('Delete', filesBar()).focus();
+  await click(btn('Delete', filesBar()));
+  assert(dialogOpen() && dialogText().includes('Delete time-lapse') && dialogText().includes('1 video') && dialogText().includes(CUBE), 'asks, naming the video: ' + dialogText());
+  eq(text(q('[data-dlg="confirm"]')), 'Delete', 'the action is named');
+  assert(q('[data-dlg="confirm"]').classList.contains('p-button-danger'), 'destructive action is red');
+  await until(() => document.activeElement === q('[data-dlg="cancel"]'), 'focus starts on the way back');
+  await answer('cancel');
   eq(cmds('video_delete'), [], 'going back deletes nothing');
-  await until(() => document.activeElement === del(), 'focus is back on the Delete button');
-  await click(del()); await yes();
+  await click(btn('Delete', filesBar())); await answer('confirm');
   eq(cmds('video_delete').map(m => m.args), [{name: CUBE}], 'video_delete with the file name');
-  assert(del().disabled && !q('[data-video-delete]', videoRow('benchy-20261116215053_8.mp4')).disabled, 'only that row is busy');
   eq(cmds('videos').length, 1, 'the list waits for the delete');
   await reply(last('cmd', 'video_delete'), {deleted: CUBE});
   await until(() => cmds('videos').length === 2, 'list asked again');
-  assert(byTest('videos-refresh').disabled && videoRow(CUBE), 'refreshing: the rows stay until the new list is here');
   await reply(last('cmd', 'videos'), {videos: VIDEOS().slice(0, 1)});
-  eq(qa('[data-video]').length, 1, 'the deleted video is gone');
-  eq(text(byTest('videos-count')), '1 video', 'count follows');
+  eq(fileNames(), ['benchy-20261116215053_8.mp4'], 'the deleted video is gone');
+  eq(filesCount(), '1 video', 'count follows');
   assert(toasts().includes('Time-lapse deleted.'), 'says it is deleted: ' + toasts());
-  await until(() => document.activeElement === byTest('videos-refresh'), 'focus moved to Refresh, not lost');
+  await until(() => document.activeElement === byTest('refresh'), 'focus moved to Refresh, not lost');
   eq(cmds('file_delete'), [], 'never the file command');
+`);
+
+test('time-lapses: several are deleted one message each, in turn; a failure is said and the rest go on', `
+  const V = (n, t) => ({filename: n + '.mp4', name: n, created: t, duration: 60, size: 1000, empty: false});
+  await openVideos([V('a', 3), V('b', 2), V('c', 1)]);
+  await click(q('.oui-files-table thead input'));
+  eq(filesCount(), '3 selected', 'all three');
+  await click(btn('Delete', filesBar()));
+  assert(dialogText().includes('3 videos'), 'asks once for the three: ' + dialogText());
+  await answer('confirm');
+  await until(() => cmds('video_delete').length === 1, 'the first is sent');
+  eq(cmds('video_delete').map(m => m.args), [{name: 'a.mp4'}], 'one video per message');
+  await reply(last('cmd', 'video_delete'), {deleted: 'a.mp4'});
+  await until(() => cmds('video_delete').length === 2, 'then the second');
+  await fail(last('cmd', 'video_delete'), 'the printer refused the delete (code 10110): busy');
+  await until(() => cmds('video_delete').length === 3, 'the third still goes');
+  await reply(last('cmd', 'video_delete'), {deleted: 'c.mp4'});
+  await until(() => cmds('videos').length === 2, 'the list is read once, at the end');
+  await reply(last('cmd', 'videos'), {videos: [V('b', 2)]});
+  assert(alerts().includes('Delete time-lapse failed') && alerts().includes('10110'), 'the failure stays on screen: ' + alerts());
+  assert(toasts().includes('2 files deleted.'), 'and the two that went are counted: ' + toasts());
+  eq(fileNames(), ['b.mp4'], 'what is left on the printer');
 `);
 
 test('time-lapses: the focus is kept when the printer answers before the dialog has closed', `
   await openVideos();
-  q('[data-video-delete]', videoRow(CUBE)).focus();
-  await click(q('[data-video-delete]', videoRow(CUBE)));
+  await click(videoRow(CUBE));
+  btn('Delete', filesBar()).focus();
+  await click(btn('Delete', filesBar()));
   await until(dialogOpen, 'dialog');
-  q('[data-dlg="yes"]').click();   // no waiting for the dialog to leave: both answers arrive while it closes
+  q('[data-dlg="confirm"]').click();   // no waiting for the dialog to leave: both answers arrive while it closes
   await until(() => last('cmd', 'video_delete'), 'delete sent');
   __t.handler({type: 'reply', id: last('cmd', 'video_delete').id, result: {deleted: CUBE}});
   await until(() => cmds('videos').length === 2, 'list asked again');
   __t.handler({type: 'reply', id: last('cmd', 'videos').id, result: {videos: VIDEOS().slice(0, 1)}});
   await until(() => !videoRow(CUBE) && !dialogOpen(), 'row gone and dialog closed');
-  await until(() => document.activeElement === byTest('videos-refresh'), 'focus on Refresh, not lost');
+  await until(() => document.activeElement === byTest('refresh'), 'focus on Refresh, not lost');
 `);
 
 test('time-lapses: empty list, a list error with retry, and a refused delete reads the list again', `
   await openVideos([]);
-  assert(text(q('.tl-empty')).includes('No time-lapses on the printer'), 'empty state: ' + text(byTest('videos')));
-  assert(!byTest('videos-note') && !byTest('videos-count'), 'nothing about downloads or a count without a video');
-  await click(byTest('videos-refresh'));
+  assert(text(q('[data-view="files"] .oui-files-scroll')).includes('No time-lapses on the printer'), 'empty state: ' + text(q('[data-view="files"] .oui-files-scroll')));
+  eq(filesCount(), '0 videos', 'none');
+  await click(byTest('refresh'));
   eq(cmds('videos').length, 2, 'refresh asks again');
+  await reply(last('cmd', 'files'), {files: []});
   await fail(last('cmd', 'videos'), 'the printer did not answer the time-lapse list');
-  assert(text(q('.tl-error')).includes('did not answer the time-lapse list'), 'error shown: ' + text(byTest('videos')));
-  eq(q('.tl-error').getAttribute('role'), 'alert', 'announced');
-  assert(q('#files-h') && !q('.fv-error'), 'the file list is not affected');
-  await click(btn('Try again', q('.tl-error')));
+  assert(text(byTest('files-error')).includes('did not answer the time-lapse list'), 'error shown: ' + text(byTest('files-error')));
+  assert(byTest('files-error').closest('[role=alert]'), 'announced');
+  await click(q('[data-list="local"]'));
+  assert(!byTest('files-error'), 'the file list is not affected');
+  await click(q('[data-list="videos"]'));
+  await click(btn('Try again', byTest('files-error')));
   eq(cmds('videos').length, 3, 'retry');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  await click(q('[data-video-delete]', videoRow(CUBE))); await yes();
+  await click(videoRow(CUBE));
+  await click(btn('Delete', filesBar())); await answer('confirm');
   await fail(last('cmd', 'video_delete'), 'the printer refused the delete (code 10110): busy');
   assert(alerts().includes('Delete time-lapse failed') && alerts().includes('10110'), 'the reason stays on screen: ' + alerts());
   await until(() => cmds('videos').length === 4, 'the list is read again: it shows what is on the printer');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  assert(videoRow(CUBE) && !q('[data-video-delete]', videoRow(CUBE)).disabled, 'the video stays and can be tried again');
+  assert(videoRow(CUBE), 'the video stays and can be tried again');
   assert(!toasts().includes('Time-lapse deleted.'), 'not reported as deleted');
 `);
 
 test('time-lapses: offered only for a connected printer, also while it prints', `
   await until(() => last('hello'), 'hello sent');
   await tab('files');
-  assert(!byTest('videos') && !q('#videos-h'), 'no section before the printer answered');
+  assert(!q('[data-list]'), 'no list to switch to before the printer answered');
   eq(cmds('videos'), [], 'nothing asked without a printer');
   await ready(PRINTING(), 4);
   await until(() => last('cmd', 'videos'), 'asked once connected');
   eq(last('cmd', 'videos').gen, 4, 'for this printer');
   await reply(last('cmd', 'videos'), {videos: VIDEOS()});
-  assert(!q('[data-video-delete]').disabled && !byTest('videos-refresh').disabled, 'usable during a print');
-  await click(q('[data-video-delete]', videoRow(CUBE))); await yes();
+  await click(q('[data-list="videos"]'));
+  await click(videoRow(CUBE));
+  assert(!btn('Delete', filesBar()).disabled && !byTest('refresh').disabled, 'usable during a print');
+  await click(btn('Delete', filesBar())); await answer('confirm');
   eq(cmds('video_delete').map(m => [m.args, m.gen]), [[{name: CUBE}, 4]], 'delete during a print, for this printer');
   await post({type: 'selection_changed'});
-  assert(!byTest('videos'), 'gone with the printer');
+  assert(!q('[data-list="videos"]'), 'gone with the printer');
 `);
 
-test('pt-BR: the time-lapses section is translated', `
+test('pt-BR: the files browser and its time-lapses are translated', `
   await openVideos();
-  eq(text(byTest('videos-count')), '2 vídeos', 'count');
-  eq(qa('thead th', byTest('videos')).map(text), ['Impressão', 'Gravado', 'Duração', 'Tamanho', 'Ações'], 'columns');
-  assert(text(videoRow(CUBE)).includes('Vazio') && text(videoRow(CUBE)).includes('Nada foi gravado'), 'empty: ' + text(videoRow(CUBE)));
+  eq(filesCount(), '2 vídeos', 'count');
+  eq(qa('[data-view="files"] thead th').map(text).slice(1), ['Nome', 'Tamanho', 'Gravado'], 'columns');
+  eq(qa('[data-list]').map(text), ['Arquivos de impressão', 'Time-lapses'], 'the two lists');
+  eq(q('[data-test="files-lists"]').getAttribute('aria-label'), 'Na impressora', 'the switch is named');
+  assert(text(videoRow(CUBE)).includes('Vazio'), 'empty: ' + text(videoRow(CUBE)));
   assert(text(byTest('videos-note')).includes('Ainda não é possível baixar'), 'note: ' + text(byTest('videos-note')));
-  eq(byTest('videos-refresh').getAttribute('aria-label'), 'Atualizar time-lapses', 'refresh');
-  await click(q('[data-video-delete]', videoRow(CUBE)));
-  assert(dialogText().includes('Excluir o time-lapse de cube') && text(q('[data-dlg="yes"]')) === 'Excluir vídeo', 'dialog: ' + dialogText());
-  await no();
-  await reply(last('cmd', 'videos'), {videos: []});
+  await click(videoRow(CUBE));
+  assert(text(q('[data-view="files"] .oui-files-detail')).includes('Nada foi gravado'), 'why it is empty: ' + text(q('[data-view="files"] .oui-files-detail')));
+  eq(filesCount(), '1 selecionado', 'selection');
+  await click(btn('Excluir', filesBar()));
+  assert(dialogText().includes('Excluir time-lapse') && dialogText().includes('1 vídeo') && dialogText().includes('Não dá para desfazer'), 'dialog: ' + dialogText());
+  eq([text(q('[data-dlg="cancel"]')), text(q('[data-dlg="confirm"]'))], ['Voltar', 'Excluir'], 'both answers named');
+  await answer('cancel');
+  await click(btn('Limpar', filesBar()));
+  eq(text(q('[data-view="files"] .oui-files-detail')), 'Nenhum arquivo selecionado', 'nothing selected');
 `, { lang: 'pt-BR' });
 
 test('files: the print panel shows what the file needs and which slot prints each filament', `
   await openDetails(DETAILS());
-  const info = text(byTest('file-info'));
-  for (const want of ['7 h 10 min', '1,875', '103 g', '0.16 mm', '205 / 60 °C']) assert(info.includes(want), want + ' in ' + info);
+  const info = text(q('[data-view="files"] .oui-files-detail'));
+  for (const want of ['benchy.gcode', '4.2 MB', '7 h 10 min', '1,875', '103 g', '0.16 mm', '205 / 60 °C']) assert(info.includes(want), want + ' in ' + info);
   eq(qa('[data-mat]').length, 2, 'one row per filament');
   assert(text(q('[data-mat="0"]')).includes('Print head · Slot 1') && text(q('[data-mat="0"]')).includes('PETG'), 'slot of filament 1: ' + text(q('[data-mat="0"]')));
   assert(text(byTest('mat-warn')).includes('ACE 1 · Slot 2') && text(byTest('mat-warn')).includes('ABS'), 'mismatch named: ' + text(byTest('mat-warn')));
@@ -1438,22 +1684,25 @@ test('files: search and sort the list', `
   await tab('files');
   await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}, {name: 'cube.gcode', size: 900000, timestamp: 1699000000},
     {name: 'Arch.gcode', size: 9000000, timestamp: 1698000000}]});
-  const names = () => qa('[data-file]').map(e => e.getAttribute('data-file'));
+  const names = fileNames;
   eq(names(), ['benchy.gcode', 'cube.gcode', 'Arch.gcode'], 'newest first by default');
   await type(byTest('files-q'), 'CU');
   await until(() => names().length === 1, 'filtered');
   eq(names(), ['cube.gcode'], 'search ignores case');
-  eq(text(byTest('files-count')), 'Showing 1 of 3 files', 'count');
+  eq(filesCount(), 'Showing 1 of 3 files', 'count');
   await type(byTest('files-q'), 'zzz');
-  await until(() => byTest('files-nomatch'), 'no match');
-  assert(text(byTest('files-nomatch')).includes('zzz'), 'says what found nothing');
+  await until(() => !names().length, 'no match');
+  assert(text(q('[data-view="files"] .oui-files-scroll')).includes('No file matches “zzz”'), 'says what found nothing: ' + text(q('[data-view="files"] .oui-files-scroll')));
   await type(byTest('files-q'), '');
   await until(() => names().length === 3, 'cleared');
-  await pick(byTest('files-sort'), 'Name');
+  const head = label => btn(label, q('[data-view="files"] thead'));
+  await click(head('Name'));
   eq(names(), ['Arch.gcode', 'benchy.gcode', 'cube.gcode'], 'by name');
-  await pick(byTest('files-sort'), 'Largest first');
-  eq(names(), ['Arch.gcode', 'benchy.gcode', 'cube.gcode'], 'by size');
-  await pick(byTest('files-sort'), 'Oldest first');
+  await click(head('Size'));
+  eq(names(), ['Arch.gcode', 'benchy.gcode', 'cube.gcode'], 'largest first');
+  await click(head('Added'));
+  eq(names(), ['benchy.gcode', 'cube.gcode', 'Arch.gcode'], 'newest first');
+  await click(head('Added'));
   eq(names(), ['Arch.gcode', 'cube.gcode', 'benchy.gcode'], 'oldest first');
 `);
 
@@ -1480,7 +1729,7 @@ test('tls: a changed printer certificate is shown, the fingerprint is in Setting
   assert(byTest('tls-changed'), 'the warning stays on every tab');
 `);
 
-// ------------------------------------------------------------------ notices (foundation 4.2.0)
+// ------------------------------------------------------------------ notices
 test('toasts: a command result appears bottom-left with a Close button and goes away when closed', `
   await ready(PRINTING());
   await click(q('[data-test="pause"]'));
@@ -1557,11 +1806,11 @@ test('pt-BR: the new file, finish-time and certificate texts are translated', `
   await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 1, timestamp: 1700000000}, {name: 'cube.gcode', size: 1, timestamp: 1}]});
   await type(byTest('files-q'), 'cube');
   await until(() => qa('[data-file]').length === 1, 'filtered');
-  eq(text(byTest('files-count')), 'Mostrando 1 de 2 arquivos', 'count');
-  await click(q('[data-file="cube.gcode"] [data-print]'));
+  eq(filesCount(), 'Mostrando 1 de 2 arquivos', 'count');
+  await click(fileRow('cube.gcode'));
   await reply(last('cmd', 'file_details'), DETAILS({name: 'cube.gcode'}));
-  await until(() => byTest('file-info'), 'details');
-  assert(text(byTest('file-info')).includes('Tempo estimado'), 'info: ' + text(byTest('file-info')));
+  await until(() => byTest('mat-warn'), 'details');
+  assert(text(q('[data-view="files"] .oui-files-detail')).includes('Tempo estimado'), 'info: ' + text(q('[data-view="files"] .oui-files-detail')));
   assert(text(byTest('mat-warn')).includes('ABS'), 'mismatch: ' + text(byTest('mat-warn')));
 `, { lang: 'pt-BR' });
 
@@ -1689,13 +1938,14 @@ test('settings: the language choice is posted; the version shows; the Spooler hi
 // ------------------------------------------------------------------ language, theme, general
 test('pt-BR: the page follows the host language and has no leftover English in the main surfaces', `
   await ready(VIEW());
-  eq(qa('[data-tab]').map(text), ['Painel', 'Arquivos', 'Ajustes'], 'tabs');
+  eq(qa('[data-tab]').map(text), ['Painel', 'Estoque', 'Arquivos', 'Ajustes'], 'tabs');
   eq(statusText(), 'Pronta', 'state');
   assert(text(byTest('link')) === 'Conectada', 'pill');
   eq(qa('.ace-g').map(text), ['Cabeça de impressão', 'ACE 1'], 'groups');
   assert(text(q('[data-slot="3"]')).includes('Carregado na cabeça de impressão'), 'slot state: ' + text(q('[data-slot="3"]')));
-  assert(text(q('[data-test="pause"]')) === 'Pausar', 'buttons');
   await post({type: 'status', data: PRINTING()});
+  assert(text(q('[data-test="pause"]')) === 'Pausar', 'buttons');
+  eq(text(q('[data-test="busy-banner"] strong')), 'A impressora está imprimindo.', 'the busy banner: ' + text(byTest('busy-banner')));
   await click(q('[data-test="stop"]'));
   assert(dialogText().includes('Parar a impressão'), 'dialog in Portuguese: ' + dialogText()); await no();
 `, { lang: 'pt-BR' });
@@ -1709,7 +1959,7 @@ test('pt-BR: the first-run states are translated', `
 test('the page never shows U1 wording', `
   await ready(PRINTING());
   const bad = /\\bU1\\b|toolhead|Snapmaker|Moonraker|Klipper|extended firmware|purifier|console/i;
-  for (const name of ['dash', 'files', 'settings']) {
+  for (const name of ['dash', 'stock', 'files', 'settings']) {
     await tab(name);
     const shown = qa('[role=tabpanel]').filter(m => m.offsetParent).map(text).join(' ');
     assert(!bad.test(shown), name + ': ' + (shown.match(bad) || [''])[0]);
@@ -1731,7 +1981,10 @@ test('theme follows the host colour while the page runs', `
   await until(() => !root.classList.contains('orca-dark'), 'light', 15000);
   root.style.setProperty('--orca-bg', '#151515');
   await until(() => root.classList.contains('orca-dark'), 'dark after the host changed', 15000);
-  eq(getComputedStyle(document.body).backgroundColor, 'rgb(24, 21, 43)', 'dark violet palette background');
+  eq(getComputedStyle(document.body).backgroundColor, 'rgb(36, 36, 40)', 'OrcaSlicer’s own dark grey: the page is not tinted with the plugin colour');
+  root.style.setProperty('--orca-bg', '#f4f4f4');
+  await until(() => !root.classList.contains('orca-dark'), 'light again', 15000);
+  eq(getComputedStyle(document.body).backgroundColor, 'rgb(240, 240, 240)', 'and its light grey');
 `);
 
 test('keyboard focus and typed values survive status refreshes', `
@@ -1748,25 +2001,48 @@ test('keyboard focus and typed values survive status refreshes', `
 
 test('the tabs switch panels and the lease follows the visible tab', `
   await ready(VIEW());
-  await tab('files'); assert(q('#files-h'), 'files panel');
+  await tab('stock'); assert(byTest('stock-head').offsetParent && !byTest('job-card').offsetParent, 'stock panel');
+  await until(() => last('lease').stock !== undefined && last('lease').camera === false, 'no camera lease off the dashboard');
+  await tab('files'); assert(byTest('files-head').offsetParent, 'files panel');
   await tab('settings'); assert(q('#conn-h'), 'settings panel');
   await tab('dash'); assert(byTest('job-card') && byTest('job-card').offsetParent, 'dashboard panel');
   assert(last('lease').stock !== undefined, 'lease has the stock flag');
 `);
 
-test('one main landmark holds the three tab panels', `
+for (const width of [1040, 720, 420]) {
+  test(`no tab scrolls sideways at ${width} px, the hidden (i) bubbles included`, `
+  await ready(PRINTING({assist: ASSIST, storage: {total: 8000, used: 2000}}));
+  await reply(last('cmd', 'stock'), STOCK());
+  await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}});
+  for (const view of ['dash', 'stock', 'files', 'settings']) {
+    await tab(view);
+    if (view === 'files') { await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]}); await click(fileRow('benchy.gcode')); }
+    const wide = qa('body *').filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed' && !e.closest('.sc-wrap, .oui-files-scroll, .oui-table-wrap, .oui-truncate'); })   // not what scrolls or is cut with an ellipsis inside its own box
+      .slice(0, 4).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+    eq([document.documentElement.scrollWidth <= innerWidth, wide], [true, []], view + ' at ' + innerWidth + ' px');
+  }
+`, { size: [width, 900] });
+}
+
+test('one main landmark holds the four tab panels, each with its page header first', `
   await ready(VIEW());
   eq(qa('main').length, 1, 'one main');
-  eq(qa('main [role=tabpanel]:not(.oui-settings-body)').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
+  eq(qa('main [role=tabpanel]:not(.oui-settings-body)').map(p => p.getAttribute('aria-labelledby')), ['oui-tab-dash', 'oui-tab-stock', 'oui-tab-files', 'oui-tab-settings'], 'the tab panels are inside it');
+  for (const view of ['dash', 'stock', 'files']) assert(q('[data-view="' + view + '"]').firstElementChild.classList.contains('oui-pagehead'), view + ': page header first');
+  // the page's messages sit under the header of the tab that is open
+  await post({type: 'offline', error: 'mqtt lost'});
+  for (const view of ['dash', 'stock', 'files', 'settings']) {
+    await tab(view);
+    assert(q('#kc-why').offsetParent && q('[data-view="' + view + '"]').contains(q('#kc-why')), view + ': the banner is on this tab');
+    eq(qa('#kc-why').length, 1, view + ': once');
+  }
 `);
 
-test('skip objects says why it is off when Stop still works', `
+test('Stop is offered whenever the printer allows it; Choose objects only for a running print', `
   await ready(VIEW({can: {pause: false, resume: false, stop: true, move: true, heat: true, feed: true, print: false}}));
-  assert(!q('[data-test="stop"]').disabled && byTest('skip-open').disabled, 'stop on, skip off');
-  assert(text(byTest('skip-why')).includes('No print is running'), 'its own reason: ' + text(byTest('skip-why')));
-  eq(byTest('skip-open').getAttribute('aria-describedby'), 'skip-why', 'the button points at it');
+  assert(!q('[data-test="stop"]').disabled && !byTest('skip-open') && !byTest('pause'), 'stop on, nothing to skip or pause');
   await post({type: 'status', data: PRINTING()});
-  assert(!byTest('skip-why') && !byTest('skip-open').disabled, 'gone while printing');
+  assert(!byTest('skip-open').disabled, 'there while printing');
 `);
 
 test('filament use: recently checked entries show without opening Review, and with no failed entry left', `
@@ -1788,7 +2064,7 @@ for (const [lang, host, D] of [['es', 'es_ES', es], ['de', 'de_DE', de], ['zh-CN
 const D = ${T};
 await ready(VIEW());
 eq(document.documentElement.lang, '${lang}', 'html lang');
-eq(qa('[data-tab]').map(text), [D['nav.dash'], D['nav.files'], D['nav.settings']], 'tabs');
+eq(qa('[data-tab]').map(text), [D['nav.dash'], D['nav.stock'], D['nav.files'], D['nav.settings']], 'tabs');
 eq(statusText(), D['status.state.idle'], 'state');
 eq(text(byTest('link')), D['link.connected'], 'pill');
 eq(qa('.ace-g').map(text), [D['ace.head'], 'ACE 1'], 'groups');
@@ -1817,16 +2093,23 @@ assert(text(byTest('first-run-cert')).includes(D.fr) && text(byTest('find-cert')
 `, { lang: 'en', pref: lang });
 }
 for (const lang of ['en', 'pt-BR', 'es', 'de', 'zh_CN', 'pl_PL']) {
-  test(`files (${lang}): Print and Delete fit inside the actions column`, `
+  test(`files (${lang}): the selection bar and the print options fit inside the browser`, `
 await ready(VIEW());
 await tab('files');
 await reply(last('cmd', 'files'), {files: [{name: 'benchy.gcode', size: 4200000, timestamp: 1700000000}]});
-await until(() => q('[data-delete]'), 'listed');
-const cell = q('[data-delete]').closest('td').getBoundingClientRect();
-for (const b of [q('[data-print]'), q('[data-delete]')]) {
-  const r = b.getBoundingClientRect();
-  assert(r.left >= cell.left - 0.5 && r.right <= cell.right + 0.5, 'clipped: ' + JSON.stringify([r.left, r.right, cell.left, cell.right]));
-}
+await until(() => fileRow('benchy.gcode'), 'listed');
+await click(fileRow('benchy.gcode'));
+await reply(last('cmd', 'file_details'), DETAILS());
+await until(() => byTest('mat-warn'), 'details');
+const inside = (el, box, what) => { const r = el.getBoundingClientRect(), c = box.getBoundingClientRect();
+  assert(r.width > 0 && r.left >= c.left - 0.5 && r.right <= c.right + 0.5, what + ' clipped: ' + JSON.stringify([r.left, r.right, c.left, c.right])); };
+for (const b of qa('button', filesBar())) inside(b, filesBar(), 'bar button ' + text(b));
+const detail = q('[data-view="files"] .oui-files-detail');
+for (const el of [byTest('print-start'), ...qa('.fv-opt', detail), ...qa('[data-mat]', detail)]) inside(el, detail, text(el).slice(0, 30));
+// the picture is above the name and the facts, never over them (the detail scrolls when it is taller than the browser)
+const pic = q('.oui-files-preview', detail).getBoundingClientRect(), name = q('.oui-files-detailname', detail).getBoundingClientRect();
+assert(pic.bottom <= name.top + 0.5, 'the picture ends before the name: ' + pic.bottom + ' / ' + name.top);
+assert(document.documentElement.scrollWidth <= innerWidth, 'no sideways scroll');
 `, { lang });
 }
 // PrimeVue 5.0.5's InputNumber reads only the locale's decimal sign: in de/es/pt-BR a typed or pasted "100.4" became
@@ -2002,6 +2285,8 @@ test('settings pages: Open Settings links open the page they are about', PAGES_J
   await post({type: 'status', data: VIEW()});
   await until(() => last('cmd', 'spools'), 'spools asked');
   await fail(last('cmd', 'spools'), 'Spoolman: no address set');
+  await tab('stock');
+  assert(visible(btn('Open Settings', byTest('spoolman-card'))), 'the link is on the Stock tab');
   await click(btn('Open Settings', byTest('spoolman-card')));
   eq(shown(), ['sm-s-h'], 'Spoolman page');
   assert(onHeading('sm-s-h'), 'heading focused');

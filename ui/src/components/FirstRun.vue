@@ -36,9 +36,9 @@ const title = computed(() => (different.value ? t('fr.pick.different') : s.candi
     <!-- Several Kobra X answered, or a different one: pick one once; the plugin remembers it for this printer preset. -->
     <ul v-if="s.candidates.length" class="kc-pick" data-test="fr-candidates">
       <li v-for="c in s.candidates" :key="c.ip">
-        <OuiIcon :icon="printer" :size="16" tile tone="accent" />
+        <OuiIcon :icon="printer" :size="16" tile tone="cobalt" />
         <span class="kc-pick-id"><span class="oui-strong">{{ c.name || t('app.printer') }}</span><span class="oui-meta oui-mono">{{ [c.model, c.ip].filter(Boolean).join(' · ') }}</span></span>
-        <Button size="small" :label="c.needs_allow ? t('fr.pick.allow') : t('fr.pick.use')" :loading="tracker.isBusy('choose')" :data-pick-ip="c.ip" @click="choosePrinter(c)" />
+        <Button size="small" severity="secondary" :label="c.needs_allow ? t('fr.pick.allow') : t('fr.pick.use')" :loading="tracker.isBusy('choose')" :data-pick-ip="c.ip" @click="choosePrinter(c)" />
       </li>
     </ul>
   </OuiPanel>

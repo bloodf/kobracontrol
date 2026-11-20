@@ -3,12 +3,13 @@ import { computed } from 'vue';
 import Button from 'primevue/button';
 import { OuiBanner, OuiIcon } from '../../shared/src/components';
 import { dashboard, refresh, settings, play, shieldCheck, upload } from '../../shared/src/icons';
-import { s, openSettings, tracker, hello, link, printerName, run, statusAge, STALE_STATUS_S } from '../app/store';
+import { s, openSettings, tracker, hello, link, printerName, run, statusAge, busy, STALE_STATUS_S } from '../app/store';
 import { t, fmt } from '../core/i18n';
 
-// What the whole page has to say, once, under the app bar on every tab: why the printer's controls are off and which
-// commands are still waiting for the printer (what they answered is a toast). Controls that are off for one of these
-// reasons point at it (#kc-why) instead of repeating it. No certificate / no printer: the Dashboard shows the one task
+// What the whole page has to say, once, under the page header of the open tab: why the printer's controls are off and
+// which commands are still waiting for the printer (what they answered is a toast). Controls that are off for one of
+// these reasons point at it (#kc-why, or #kc-busy for what a connected printer refuses while it works) instead of
+// repeating it. No certificate / no printer: the Dashboard shows the one task
 // itself; the other tabs say what is missing here. Every banner can be closed; its key names the condition, so it
 // stays closed while that lasts and comes back when it changes (another address, another error, another command).
 const retryIn = computed(() => (s.retryAt ? Math.max(0, Math.ceil(s.retryAt - s.now / 1000)) : 0));
@@ -25,6 +26,17 @@ function cancelWaiting(): void {
   const id = waitingPrint.value?.id;
   if (id) void run({ key: 'bridge-cancel', label: t('act.bridgeCancel'), cmd: 'bridge_cancel', args: { id }, okText: t('ok.bridgeCancel') });
 }
+// What a connected printer refuses while it works, for the tab that is open: the dashboard's controls, or starting a
+// print on Files. One sentence each, in one banner. It is not one of the chained link banners below: its reasons are
+// empty whenever one of those says more (offline, connecting, no status), and an old status must not hide it, as the
+// controls it turns off point at it.
+const busyWhy = computed(() => {
+  const b = busy.value, st = s.status;
+  const list = s.tab === 'dash' ? [b.feed && t('reason.noFeed'), b.move && t('reason.noMove'), b.heat && t('reason.noHeat'), b.print && t('reason.noDeviceChange'),
+    st?.state === 'printing' && st.preparing && !st.can.pause && fmt.pair(t('act.pause'), t('reason.preparing'))]
+    : s.tab === 'files' ? [b.print && t('reason.noPrintNow')] : [];
+  return list.filter((x): x is string => !!x);
+});
 /** Which of the chained link banners applies (one at a time). Each banner is bound to its own case with `show`, so closing
  * one holds while that case lasts and is forgotten when it clears: the same problem coming back later shows again. */
 const top = computed(() => (link.value === 'noCertificate' ? 'cert' : link.value === 'noTarget' ? 'target' : link.value === 'offline' ? 'offline'
@@ -36,6 +48,11 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
 <template>
   <div class="kc-top">
     <div class="kc-live" role="status" aria-live="polite" data-test="target-banner">
+
+      <OuiBanner :show="busyWhy.length > 0" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
+                 dismissible :dismiss-key="`busy:${where}:${s.tab}:${busyWhy.join('|')}`" :close-label="t('common.close')">
+        {{ busyWhy.map(text => t('fmt.sentence', { text })).join(' ') }}
+      </OuiBanner>
 
       <!-- The Dashboard shows these tasks itself; hidden there, not cleared, so a closed one stays closed. -->
       <div v-show="s.tab !== 'dash'" style="display: contents">

@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import InputNumber from 'primevue/inputnumber';
 import { OuiIcon, OuiStatus } from '../../shared/src/components';
 import { drop, flame } from '../../shared/src/icons';
-import { s, run, tracker, controlsOff, printerName, stale } from '../app/store';
+import { run, tracker, busy, controlsOff, printerName, stale, whyId } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt, locale } from '../core/i18n';
 import { acceptDot } from '../core/decimal-input';
@@ -29,12 +29,12 @@ const minutes = ref<number | null>(null);
 const asNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const tempValue = computed(() => parseWhole(temp.value, TEMP.min, TEMP.max));
 const minutesValue = computed(() => parseWhole(minutes.value, MINUTES.min, MINUTES.max));
-const heatNo = computed(() => !controlsOff.value && !!s.status && !s.status.can.heat);
-const startWhy = computed(() => controlsOff.value || (heatNo.value ? t('reason.noHeat') : '') || (tempValue.value == null ? t('dry.tempInvalid', TEMP) : minutesValue.value == null ? t('dry.timeInvalid', MINUTES)
-  : tracker.isBusy(`dry:${props.unit.id}`) ? t('reason.pending') : ''));
-const hint = computed(() => (heatNo.value ? t('reason.noHeat') : (temp.value != null && tempValue.value == null) ? t('dry.tempInvalid', TEMP)
+// Off for the page's reason (#kc-why) or because the printer does not allow heating now (#kc-busy); a value outside
+// the printer's limits is refused here, with the limits.
+const startOff = computed(() => !!controlsOff.value || busy.value.heat || tempValue.value == null || minutesValue.value == null || tracker.isBusy(`dry:${props.unit.id}`));
+const invalid = computed(() => ((temp.value != null && tempValue.value == null) ? t('dry.tempInvalid', TEMP)
   : (minutes.value != null && minutesValue.value == null) ? t('dry.timeInvalid', MINUTES) : ''));
-const offId = computed(() => (controlsOff.value ? 'kc-why' : undefined));
+const offId = computed(() => whyId(busy.value.heat));
 
 async function start() {
   const tp = tempValue.value, mn = minutesValue.value;
@@ -48,45 +48,38 @@ const stop = () => run({ key: `dry:${props.unit.id}`, label: t('act.dryStop', { 
 </script>
 
 <template>
-  <div class="kc-unit" :data-unit="unit.id">
-    <div v-if="drying" class="kc-dry" :data-stale="stale || undefined" role="status" data-test="drying">
+  <div class="kc-dry" :data-unit="unit.id" :data-stale="stale || undefined" :role="drying ? 'status' : undefined" :data-test="drying ? 'drying' : undefined">
+    <template v-if="drying">
       <OuiStatus :state="stale ? 'stale' : 'busy'">{{ t('dry.running', { temp: fmt.number(d.target_temp) }) }}</OuiStatus>
       <span v-if="inside != null" class="oui-num"><strong>{{ t('dry.now', { temp: fmt.number(inside, 1) }) }}</strong></span>
       <span class="oui-num oui-muted">{{ d.remain_time ? t('dry.left', { time: fmt.duration(d.remain_time * 60) }) : '—' }}</span>
       <span v-if="humidity != null" class="oui-num oui-muted"><OuiIcon :icon="drop" :size="13" tone="sky" class="kc-drop" />{{ t('dry.humidity', { value: fmt.number(humidity) }) }}</span>
-      <Button severity="secondary" text size="small" class="kc-dry-end" :label="t('dry.stop')" :aria-label="t('dry.stopLabel', { ace: label })" :disabled="!!controlsOff" :aria-describedby="offId"
+      <span class="oui-spacer" />
+      <Button severity="secondary" size="small" :label="t('dry.stop')" :aria-label="t('dry.stopLabel', { ace: label })" :disabled="!!controlsOff" :aria-describedby="whyId(false)"
               :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-stop:${unit.id}`" :data-dry-stop="unit.id" @click="stop" />
-    </div>
-    <div v-else class="kc-dry" data-idle>
-      <span class="kc-dry-title"><OuiIcon :icon="flame" :size="14" tone="orange" />{{ t('dry.title') }}</span>
+    </template>
+    <template v-else>
+      <OuiIcon :icon="flame" :size="14" tile tone="orange" /><span class="oui-strong">{{ t('dry.title') }}</span>
       <span v-if="humidity != null" class="oui-num oui-muted" data-test="unit-humidity"><OuiIcon :icon="drop" :size="13" tone="sky" class="kc-drop" />{{ t('dry.humidity', { value: fmt.number(humidity) }) }}</span>
-      <span class="kc-dry-end kc-dry-form">
-        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true" size="small"
-                     :placeholder="`${TEMP.min}–${TEMP.max} °C`" :input-style="{ width: '84px' }" :aria-label="t('dry.temp')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
-                     @input="e => (temp = asNumber(e.value))" @update:model-value="v => (temp = v)" />
-        <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" :suffix="' ' + t('unit.min')" :allow-empty="true" size="small"
-                     :placeholder="`${MINUTES.min}–${MINUTES.max} ${t('unit.min')}`" :input-style="{ width: '96px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
-                     @input="e => (minutes = asNumber(e.value))" @update:model-value="v => (minutes = v)" />
-        <Button severity="secondary" size="small" :label="t('dry.start')" :aria-label="t('dry.startLabel', { ace: label })" :disabled="!!startWhy" :aria-describedby="offId ?? `dry-why-${unit.id}`"
-                :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-start:${unit.id}`" :data-dry-start="unit.id" @click="start">
-          <template #icon><OuiIcon :icon="flame" :size="14" /></template></Button>
-      </span>
-      <span :id="`dry-why-${unit.id}`" class="kc-why" role="status">{{ hint }}</span>
-    </div>
+      <span :id="`dry-why-${unit.id}`" class="kc-err" role="status">{{ invalid }}</span>
+      <span class="oui-spacer" />
+      <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="temp" :input-id="`dry-t-${unit.id}`" :min="TEMP.min" :max="TEMP.max" :use-grouping="false" suffix=" °C" :allow-empty="true" size="small"
+                   :placeholder="`${TEMP.min}–${TEMP.max} °C`" :input-style="{ width: '92px' }" :aria-label="t('dry.temp')" :disabled="!!controlsOff || busy.heat" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
+                   @input="e => (temp = asNumber(e.value))" @update:model-value="v => (temp = v)" />
+      <InputNumber v-bind="dot" :locale="locale" :max-fraction-digits="1" :model-value="minutes" :input-id="`dry-m-${unit.id}`" :min="MINUTES.min" :max="MINUTES.max" :use-grouping="false" :suffix="' ' + t('unit.min')" :allow-empty="true" size="small"
+                   :placeholder="`${MINUTES.min}–${MINUTES.max} ${t('unit.min')}`" :input-style="{ width: '112px' }" :aria-label="t('dry.time')" :disabled="!!controlsOff || busy.heat" :pt="{ pcInputText: { root: { 'aria-describedby': offId ?? `dry-why-${unit.id}` } } }"
+                   @input="e => (minutes = asNumber(e.value))" @update:model-value="v => (minutes = v)" />
+      <Button severity="secondary" size="small" :label="t('dry.start')" :aria-label="t('dry.startLabel', { ace: label })" :disabled="startOff" :aria-describedby="offId ?? `dry-why-${unit.id}`"
+              :loading="tracker.isBusy(`dry:${unit.id}`)" :data-focus-key="`dry-start:${unit.id}`" :data-dry-start="unit.id" @click="start" />
+    </template>
   </div>
 </template>
 
 <style>
-.kc-unit { display: grid; gap: var(--oui-s2); }
-.kc-dry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s1) var(--oui-s4); min-height: 38px; padding: var(--oui-s1) var(--oui-s1) var(--oui-s1) var(--oui-s2);
-  border-radius: var(--oui-radius); background: var(--oui-orange-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oui-orange) 30%, transparent); }
+/* One ACE's drying, as a strip over its slots: neutral, with the state as a chip. Heat is the only colour in it. */
+.kc-dry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s2) var(--oui-s3); min-height: 40px; padding: 4px var(--oui-s2); border-radius: var(--oui-radius);
+  background: var(--oui-raised); box-shadow: inset 0 0 0 1px var(--oui-border); }
 .kc-dry strong { color: var(--oui-orange); }
-.kc-dry[data-idle] { background: var(--oui-raised); box-shadow: inset 0 0 0 1px var(--oui-border); }
-.kc-dry[data-stale] { background: var(--oui-raised); box-shadow: inset 0 0 0 1px var(--oui-border); }
 .kc-dry[data-stale] strong { color: var(--oui-muted); }
-.kc-dry-title { display: inline-flex; align-items: center; gap: var(--oui-s2); font-weight: 600; }
-.kc-dry-end { margin-inline-start: auto; }
-.kc-dry-form { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s1); }
-.kc-dry .kc-why { padding-inline-end: var(--oui-s2); }
-.kc-drop { display: inline-block; vertical-align: -1px; margin-inline-end: 3px; }
+.kc-drop { display: inline-block; vertical-align: -2px; margin-inline-end: 3px; }
 </style>

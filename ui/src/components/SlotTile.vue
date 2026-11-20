@@ -2,17 +2,18 @@
 import { computed, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '../../shared/src/components';
-import { s, run, tracker, controlsOff, printerName, loadSpools, stale } from '../app/store';
+import { OuiIcon, OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '../../shared/src/components';
+import { edit as editIcon } from '../../shared/src/icons';
+import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy } from '../app/store';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
 import { family, hexOf } from '../core/logic';
-import { slotFraction } from '../core/spool-level';
+import { levelTone, slotFraction } from '../core/spool-level';
 import type { Slot, Spool } from '../app/types';
 
-// One slot as an object card: its filament colour across the top, the drawn spool, the amount left, the Spoolman spool
-// it books on (the per-slot picker, folded in here), then Edit, Feed and Retract. Feed and retract ask first; linking
-// and unlinking a spool ask first; an edit doesn't.
+// One slot as a neutral card: a strip of its filament colour across the top, the drawn spool, the amount left with its
+// level (green, amber when low, red when almost empty), the Spoolman spool it books on (the per-slot picker), then
+// Feed, Retract and Edit. Feed and retract ask first; linking and unlinking a spool ask first; an edit doesn't.
 const props = defineProps<{ slot: Slot; label: string }>();
 const TYPES = ['PLA', 'PLA+', 'PLA-CF', 'PETG', 'PETG-CF', 'ABS', 'ASA', 'TPU', 'PA', 'PA-CF', 'PC', 'PVA', 'HIPS'];
 const key = computed(() => props.slot.global_index);
@@ -37,11 +38,10 @@ const state = computed<{ state: OuiState; text: string } | null>(() => {
   return null;
 });
 
-const editWhy = computed(() => controlsOff.value || (s.status && !s.status.can.feed ? t('reason.noFeed') : ''));
-const feedWhy = computed(() => controlsOff.value || (s.status && !s.status.can.feed ? t('reason.noFeed')
-  : !ready.value ? t('reason.slotEmpty') : tracker.isBusy(`feed:${key.value}`) ? t('reason.pending') : ''));
-// Disabled controls point at the reason: the page's (#kc-why), the panel's (#feed-why), or this slot's line.
-const whyId = (why: string) => (!why ? undefined : controlsOff.value ? 'kc-why' : s.status && !s.status.can.feed ? 'feed-why' : !ready.value ? `slot-why-${key.value}` : undefined);
+const editOff = computed(() => !!controlsOff.value || busy.value.feed);
+const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
+// Disabled controls point at the reason: the page's (#kc-why), the printer's (#kc-busy), or this slot's own (it is empty).
+const whyId = computed(() => pageWhy(busy.value.feed) ?? (!ready.value ? `slot-why-${key.value}` : undefined));
 async function feed() {
   const n = props.label;
   if (!await ask({ title: t('confirm.feed.title', { slot: n }), text: t('confirm.feed.text', { slot: n, printer: printerName.value }),
@@ -113,12 +113,12 @@ async function choose(id: number | null) {
           v-if="typeof linked.initial === 'number'" class="oui-muted"> / {{ fmt.grams(linked.initial) }}</span></p>
         <p v-else-if="reportedPct !== null" class="oui-num"><strong>{{ reportedPct }}%</strong><span v-if="typeof slot.weight === 'number'" class="oui-muted"> · {{ fmt.grams(slot.weight) }}</span></p>
         <p v-else class="oui-muted">{{ t('slot.weightUnknown') }}</p>
-        <OuiLevel :fraction="level" :tone="linked?.low ? 'low' : 'normal'" />
+        <OuiLevel :fraction="level" :tone="levelTone(level, linked?.low)" />
       </div>
     </template>
 
     <span class="oui-sr">{{ t('slot.name', { n: slot.index + 1 }) }}</span>
-    <p v-if="!ready && !controlsOff" :id="`slot-why-${key}`" class="oui-meta">{{ t('reason.slotEmpty') }}</p>
+    <span v-if="!ready" :id="`slot-why-${key}`" class="oui-sr">{{ t('reason.slotEmpty') }}</span>
 
     <form v-if="editing" class="sl-form" @submit.prevent="saveEdit">
       <p class="oui-label">{{ t('slot.editTitle', { slot: label }) }}</p>
@@ -129,14 +129,14 @@ async function choose(id: number | null) {
         <span class="sl-colour-field"><input :id="`e${key}-c`" v-model="form.colour" type="color" class="sl-colour"><OuiSwatch :color="form.colour" /></span>
       </div>
       <div class="oui-row">
-        <Button type="submit" size="small" :label="t('common.save')" :loading="tracker.isBusy(`edit:${key}`)" :disabled="!!editWhy" />
+        <Button type="submit" severity="secondary" size="small" :label="t('common.save')" :loading="tracker.isBusy(`edit:${key}`)" :disabled="editOff" />
         <Button severity="secondary" text size="small" :label="t('common.cancel')" @click="editing = false" />
       </div>
     </form>
 
     <Select v-else-if="s.spools.length" :model-value="slot.spool_id ?? 0" :options="pickGroups" option-group-label="label" option-group-children="items"
             option-label="label" option-value="value" filter :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
-            :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="controlsOff ? 'kc-why' : undefined" class="sl-pick"
+            :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="pageWhy(false)" class="sl-pick"
             :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)">
       <template #value="{ value }">
         <span class="sl-opt"><OuiSwatch v-if="find(value)" :color="find(value)!.colour ?? null" :colors="find(value)!.colours ?? null" />
@@ -149,12 +149,13 @@ async function choose(id: number | null) {
     </Select>
 
     <template #actions>
-      <Button size="small" severity="secondary" text :label="t('slot.edit')" :aria-label="t('slot.editLabel', { slot: label })" :disabled="!!editWhy || editing"
-              :aria-describedby="whyId(editWhy)" :data-focus-key="`edit:${key}`" :data-edit="key" @click="startEdit" />
-      <Button size="small" severity="secondary" text :label="t('slot.feed')" :aria-label="t('slot.feedLabel', { slot: label })" :disabled="!!feedWhy" :aria-describedby="whyId(feedWhy)"
+      <Button size="small" severity="secondary" :label="t('slot.feed')" :aria-label="t('slot.feedLabel', { slot: label })" :disabled="feedOff" :aria-describedby="whyId"
               :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`feed:${key}`" :data-feed="key" @click="feed" />
-      <Button size="small" severity="secondary" text :label="t('slot.retract')" :aria-label="t('slot.retractLabel', { slot: label })" :disabled="!!feedWhy" :aria-describedby="whyId(feedWhy)"
+      <Button size="small" severity="secondary" :label="t('slot.retract')" :aria-label="t('slot.retractLabel', { slot: label })" :disabled="feedOff" :aria-describedby="whyId"
               :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`retract:${key}`" :data-retract="key" @click="retract" />
+      <span class="oui-spacer" />
+      <Button size="small" severity="secondary" text :aria-label="t('slot.editLabel', { slot: label })" :title="t('slot.edit')" :disabled="editOff || editing"
+              :aria-describedby="pageWhy(busy.feed)" :data-focus-key="`edit:${key}`" :data-edit="key" @click="startEdit"><template #icon><OuiIcon :icon="editIcon" :size="14" /></template></Button>
     </template>
   </OuiSlot>
 </template>

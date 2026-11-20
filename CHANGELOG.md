@@ -4,6 +4,43 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Changed
+- New look, on the shared Orca UI foundation 5.0.0: the pages use OrcaSlicer's own greys and its teal for the
+  main action, and the plugin's violet is left for its mark and the line under the open tab. Colour now only says
+  something: an icon's subject, a state, a level, a heater's phase, a filament's own colour.
+- Dashboard: the printer's name, address and firmware are the page's first line, with **Rename**. The print is one
+  compact block across the top with the small printer picture, the percentage, the times and its actions. Only the
+  actions that apply are shown: **Pause** while it prints, **Resume** while it is paused, none with no print; **Stop
+  print** is outlined red and still asks first. Under it, the filament slots and one **Controls** module (Temperature:
+  nozzle and bed; Machine: fan, speed mode, light); beside them the camera, **Move** and the **Printer** panel.
+- A slot card is neutral, with a thin strip of the filament's colour across its top. Level bars are green, amber when
+  low and red when almost empty.
+- The camera keeps a 16:9 box whether it is off, starting, failed or live, so turning it on no longer moves the page.
+- Why a control is off is said once, in one banner under the page header ("The printer is printing. Moves are
+  available while the printer is idle or paused. ..."), instead of in a line under each module. What a module needs
+  explained is behind its (i).
+
+### Added
+- **Stock** tab: Spooler's spool stock left the Dashboard for its own tab, with the spool count on it. Choose the slot
+  once on the left (every slot, with the spool that is in it), then **Link to Slot N** on a spool's row; a spool already
+  in that slot reads **Linked**. Every link still checks the spool in Spoolman and asks first. The spool chooser in each
+  slot card stays on the Dashboard.
+- **Files** is a file browser: select one file or several (click, the checkboxes, Shift and Ctrl/Cmd, Ctrl/Cmd+A, the
+  keyboard), and **Delete** removes the selection in one go after one question that lists the names. Sort by any
+  column; the list opens newest first. One selected file shows its picture, details, the slot of each filament and the
+  print options, with **Start printing**.
+- Time-lapses are a second list in the same browser (**Print files** | **Time-lapses** over the table), with the same
+  multi-select and **Delete** (the printer takes one video per message, so they go one after the other).
+- The Kobra X has no folders to file prints in and no way to move or rename a file over the local network, so the Files
+  tab shows no folder tree and no **Move to**. A switch over the list changes between the printer's two lists, **Print
+  files** and **Time-lapses**. `docs/protocol.md` lists what the printer's file messages allow.
+- In a narrow window the details of the selected file sit under the list and scroll in their own share of the height,
+  so the list stays on screen.
+
+### Removed
+- The per-row **Print** and **Delete** buttons of the Files tab (select the file instead) and its sort menu (use the
+  column headers).
+
 ### Fixed
 - A spool assigned to an ACE slot in Spooler now shows in Kobra Control without reconnecting: the tab re-reads
   Spoolman every 30 s while it is visible (Settings > Spoolman > **Refresh Spoolman every**: 10 to 300 s, or off),

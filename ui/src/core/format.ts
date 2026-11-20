@@ -21,6 +21,9 @@ export function makeFmt(locale: () => string, t: Text) {
       return h ? t('fmt.hm', { h, m }) : t('fmt.m', { m });
     },
     dateTime: (unix: number) => new Intl.DateTimeFormat(locale(), { dateStyle: 'short', timeStyle: 'short' }).format(new Date(unix * 1000)),
+    date: (unix: number) => new Intl.DateTimeFormat(locale(), { dateStyle: 'short' }).format(new Date(unix * 1000)),
+    /** For a narrow column: the time for today, the date for any other day. */
+    when: (unix: number, now = Date.now() / 1000) => (new Date(unix * 1000).toDateString() === new Date(now * 1000).toDateString() ? fmt.time(unix) : fmt.date(unix)),
     time: (unix: number) => new Intl.DateTimeFormat(locale(), { timeStyle: 'short' }).format(new Date(unix * 1000)),
     ago(unix: number | null | undefined, now = Date.now() / 1000): string {
       if (unix == null) return '';

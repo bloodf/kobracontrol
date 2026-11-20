@@ -45,6 +45,10 @@ test('dates follow the language order', () => {
   assert.match(fmtFor('es').dateTime(at), /16\/11\/26/);
   assert.match(fmtFor('zh-CN').dateTime(at), /2026\/11\/16/);
   assert.match(fmtFor('en').dateTime(at), /11\/16\/26/);
+  // a narrow column: the time for today, the date alone for any other day
+  assert.equal(fmtFor('en').when(at, at + 60), fmtFor('en').time(at));
+  assert.equal(fmtFor('en').when(at, at + 3 * 86400), fmtFor('en').date(at));
+  assert.match(fmtFor('de').date(at), /^16\.11\.26$/);
 });
 
 test('plural keys have both forms and pick by the language’s rule', () => {
