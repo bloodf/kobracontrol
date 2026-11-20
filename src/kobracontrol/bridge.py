@@ -72,8 +72,10 @@ def write_key(folder, key):
     """The key in its own file, readable by the user only (0600; created that way, never widened)."""
     fd, tmp = tempfile.mkstemp(prefix="bridge_key-", dir=folder)   # created 0600
     try:
-        with os.fdopen(fd, "w", encoding="ascii") as f:
-            f.write(key)
+        try:   # os.write, not os.fdopen: a file object on a descriptor is an audited "open" without a path
+            os.write(fd, key.encode("ascii"))
+        finally:
+            os.close(fd)
         os.replace(tmp, os.path.join(folder, KEY_FILE))   # a reader sees the old key or the new one, never an empty file
     except BaseException:
         os.remove(tmp)
@@ -372,9 +374,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not m:
             raise Refused(415, tr("expected multipart/form-data"))
         fd, path = tempfile.mkstemp(prefix="bridge-", suffix=".part", dir=owner.work_dir)
+        os.close(fd)   # reopened by path: os.fdopen would be an audited "open" without a path OrcaSlicer can show
         self._reading = True   # the body is being read: a refusal from here on can't drain what is left
         try:
-            with os.fdopen(fd, "wb") as out:
+            with open(path, "wb") as out:
                 fields, filename = parse_upload(self.rfile, length, m.group(1).encode(), lambda: out)
             if not filename:
                 raise Refused(400, tr("the upload has no file"))

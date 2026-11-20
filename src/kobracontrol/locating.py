@@ -4,8 +4,10 @@ Mixed into Service, which provides lock, target, generation, connections, connec
 log, closed, probe, search, granted, http_port and the per-printer state reset.
 
 Rules: a remembered printer (locate.Addresses: address, /info identity, TLS fingerprint) is used again only
-where /info gives its identity and the session presents its certificate; any other Kobra X is offered to the
-user, never adopted by itself. Relocation runs at most every RELOCATE_EVERY seconds, never while a print is
+where /info gives its identity and the session presents its certificate; any other Kobra X, even the only one
+on the network, is offered to the user, never adopted or remembered by itself, and OrcaSlicer is asked about a
+found address only on the user's click. An address is remembered only for a printer preset whose printer agent
+is kobracontrol, never under another agent's preset. Relocation runs at most every RELOCATE_EVERY seconds, never while a print is
 tracked on the printer or it was last seen printing or paused. Any change of the address in use is a printer
 switch: new generation, per-printer state reset, the old connection released.
 """
@@ -34,6 +36,12 @@ def _background(fn, name, track=None):
     return t
 
 
+def _own_preset(target):
+    """Kobra Control may remember an address for this preset: a named preset whose printer agent is kobracontrol.
+    Another agent's preset (a Snapmaker, a Bambu...) never gets a Kobra X address, nor is one read for it."""
+    return bool(target.preset_key) and target.preset_agent == "kobracontrol"
+
+
 class LocatingMixin:
     def _init_locating(self, addresses_path, search, probe, granted):
         self.addresses = locate.Addresses(addresses_path) if addresses_path else None
@@ -47,7 +55,6 @@ class LocatingMixin:
         self.locate_error, self.located_at, self.locate_note = None, 0.0, ""
         self._rejected = set()                    # not a Kobra X: not probed again until Search again
         self._last_state, self._recorded = {}, set()
-        self._auto_dialogs = 0                    # OrcaSlicer dialogs raised without a click: at most one per session
 
     def _start_locate(self, gen, **kw):
         with self.lock:
@@ -56,10 +63,9 @@ class LocatingMixin:
             self._locators = [t for t in self._locators if t.is_alive()]
             _background(lambda: self._locate(gen, **kw), "locate", self._locators)
 
-    def _locate(self, gen, search_only=False, only=None, automatic=False):
+    def _locate(self, gen, search_only=False):
         """Find the printer for the target of generation gen (locate.locate), then use it. One at a time.
-        only: probe these addresses instead of searching (the ones the user just allowed). automatic: a search the
-        plugin started by itself (relocation), whose finds are always offered, never asked about by themselves."""
+        A printer the search finds is only offered (locate.locate)."""
         with self._locating:
             with self.lock:
                 target = self.target if gen == self.generation and not self.closed else None
@@ -67,16 +73,13 @@ class LocatingMixin:
             if target is None or target.override:
                 return
             record = None
-            if self.addresses is not None and not search_only:
-                record = self.addresses.get(target.preset_key or "*")
-            search = self.search if only is None else (lambda: [(h, {}) for h in only])
+            if self.addresses is not None and not search_only and _own_preset(target):
+                record = self.addresses.get(target.preset_key)
             try:
                 found = locate.locate("", "" if search_only else target.preset_host, record, probe=self.probe,
-                                      search=search, own_agent=target.preset_agent == "kobracontrol", skip=skip,
+                                      search=self.search, own_agent=target.preset_agent == "kobracontrol", skip=skip,
                                       allowed=None if self.granted is None else self.granted.__contains__)
             except locate.NotFound as e:
-                if e.pending and (record or automatic or self._auto_dialogs):
-                    e.pending = []   # offered in the page; only the user's click asks OrcaSlicer
                 with self.lock:
                     self._rejected.update(e.rejected)
                     if gen == self.generation:
@@ -119,22 +122,16 @@ class LocatingMixin:
             self.publish({"type": "selection_changed"})   # the page says hello again for the new address
 
     def allow(self, hosts, user=False):
-        """UI thread (the page's allow_hosts): let OrcaSlicer ask about printer addresses the search found but may
-        not reach yet. On the UI thread its dialog is shown at once and a Yes is saved; on a worker thread the
-        attempt would only be refused and a dialog queued per attempt. getaddrinfo of a numeric address is the
-        audited event and does no network I/O. user: the user clicked this address; otherwise (the page asking by
-        itself) only the one pending address, and only once per plugin session: dialogs are counted, not
-        addresses, so new spoofed addresses on every search do not each bring a dialog."""
+        """UI thread (the page's allow_hosts): the user clicked "Allow and use" on a printer the search found but
+        OrcaSlicer does not let the plugin reach yet. On the UI thread its dialog is shown at once and a Yes is saved;
+        on a worker thread the attempt would only be refused and a dialog queued per attempt. getaddrinfo of a
+        numeric address is the audited event and does no network I/O. Only a click (user) asks: the page never has
+        OrcaSlicer ask, nor connects to a found printer, by itself."""
         with self.lock:
             gen, error = self.generation, self.locate_error
-            offered = {c["ip"] for c in getattr(error, "candidates", [])} if user else set(getattr(error, "pending", []))
-            if not user:
-                if self._auto_dialogs:
-                    offered = set()
-                elif offered:
-                    self._auto_dialogs += 1
+            offered = {c["ip"] for c in getattr(error, "candidates", [])} if user else set()
         allowed, refused = [], []
-        for host in (hosts if isinstance(hosts, list) else [])[:1 if not user else 4]:
+        for host in (hosts if isinstance(hosts, list) else [])[:4]:
             if host not in offered or not locate.lan_address(host):
                 continue
             try:
@@ -152,10 +149,7 @@ class LocatingMixin:
             if allowed and gen == self.generation:
                 self.locate_error = None   # the page's next hello waits for the result instead of the old error
         if allowed:
-            if user:
-                _background(lambda: self._adopt(gen, allowed[0]), "adopt", self._locators)
-            else:
-                self._start_locate(gen, only=allowed)
+            _background(lambda: self._adopt(gen, allowed[0]), "adopt", self._locators)
         return {"allowed": allowed, "refused": refused}
 
     def _ask_orcaslicer(self, host):
@@ -192,7 +186,7 @@ class LocatingMixin:
             with self.lock:
                 target = self.target
                 key = (target.preset_key or "*", conn.host) if target is not None else None
-                due = (target is not None and not target.override and target.host == conn.host
+                due = (target is not None and not target.override and target.host == conn.host and _own_preset(target)
                        and self.addresses is not None and key not in self._recorded)
                 if due:
                     self._recorded.add(key)
@@ -245,7 +239,7 @@ class LocatingMixin:
             self._notice(tr("The Kobra X at %s was printing when it stopped answering. Kobra Control keeps trying that "
                          "address and does not look for the printer elsewhere until it answers.") % conn.host, gen)
             return
-        self._start_locate(gen, automatic=True)
+        self._start_locate(gen)
 
     def _tracking(self, host):
         ident = usage.printer_ident(host)
@@ -288,7 +282,8 @@ class LocatingMixin:
         return {"address": current, "source": target.source}
 
     def cmd_choose_printer(self, host):
-        """The user picked one of the printers offered: remember it for this preset and use it."""
+        """The user picked one of the printers offered: use it, and remember it for this preset when the preset's
+        printer agent is kobracontrol."""
         with self.lock:
             gen, target, error = self.generation, self.target, self.locate_error
         offered = {c["ip"] for c in getattr(error, "candidates", [])}

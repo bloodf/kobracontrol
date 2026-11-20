@@ -2,7 +2,8 @@
 
 Order: the address set in Kobra Control's settings (used as given); else the address remembered for this
 printer preset and then the preset's own address, each only if a Kobra X answers there; else a search of
-the local network. A search that finds exactly one Kobra X uses it; several are offered to the user.
+the local network. A printer the search finds is only offered: it is used (and remembered) once the user
+chooses it, even when it is the only one.
 
 Search: SSDP, as Anycubic Slicer Next does it (its libssdplib: "M-SEARCH * HTTP/1.1", "Host:
 239.255.255.250:1900", "ST: ac:3dprinter:{}", "Man: \"ssdp:discover\"", "MX: 5"). Measured on a Kobra X
@@ -226,8 +227,8 @@ class Found:
 
 class NotFound(kobra.KobraError):
     """No Kobra X to use by itself: the page shows the message and `candidates` ({ip, name, model, needs_allow,
-    different}) to choose from, and Search again. pending: the one address the page may have OrcaSlicer allow
-    without asking first; rejected: addresses that are not a Kobra X, not asked about again this session."""
+    different}) to choose from, and Search again. pending: kept for the reply's shape, always empty: OrcaSlicer is
+    asked about an address only when the user clicks it; rejected: addresses that are not a Kobra X, not asked about again this session."""
     no_target = True
 
     def __init__(self, message, candidates=(), pending=(), rejected=()):
@@ -235,20 +236,20 @@ class NotFound(kobra.KobraError):
         self.candidates, self.pending, self.rejected = list(candidates), list(pending), list(rejected)
 
 
-def _found_note(found, preset_host):
+def _found_offer(found, preset_host):
     where = tr("%s%s at %s") % (found["name"] or tr("a Kobra X"), " (%s)" % found["model"] if found["model"] else "", found["ip"])
-    note = tr("Connected to %s, found on the network.") % where
+    text = tr("Found %s on the network. Use it? Kobra Control connects only to a printer you choose.") % where
     if preset_host and preset_host != found["ip"]:
-        note = tr("The printer preset points to %s, which is not a Kobra X in LAN mode. %s") % (preset_host, note)
-    return note
+        text = tr("The printer preset points to %s, which is not a Kobra X in LAN mode. %s") % (preset_host, text)
+    return text
 
 
 def locate(override, preset_host, record=None, probe=probe, search=search, own_agent=False, allowed=None, skip=()):
     """Found, or raises NotFound. override: the Settings address, used as given. record: {"ip", "id", "fp"}
     remembered for this preset. A remembered printer is only ever used again at an address whose /info gives
     its identity (and the connection then checks its certificate fingerprint); any other Kobra X is offered,
-    never adopted by itself. With nothing remembered, the preset's address is used if a Kobra X answers there,
-    else the one Kobra X the search finds. allowed(ip): False for an address OrcaSlicer has not granted yet: it
+    never adopted by itself. With nothing remembered, the preset's address is used if a Kobra X answers there;
+    a Kobra X the search finds is only offered, never used before the user chooses it. allowed(ip): False for an address OrcaSlicer has not granted yet: it
     is not probed (from this worker thread each refused attempt queues another OrcaSlicer dialog) but offered;
     skip: addresses already found not to be a Kobra X this session."""
     if override:
@@ -295,10 +296,6 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
     offered = [{**c, "needs_allow": False, "different": bool(record)} for c in different + printers]
     offered += [{"ip": ip, "name": "", "model": "", "id": "", "needs_allow": True, "different": bool(record)}
                 for ip in ungranted]
-    if len(printers) == 1 and not different and not ungranted:
-        found = printers[0]
-        return Found(found["ip"], "discovered", _found_note(found, preset_host), found["name"], found.get("id", ""),
-                     model=found.get("model", ""))
     if record and record.get("ip") and not offered:
         # The remembered printer does not answer and nothing else does: keep its address (the connection retries
         # it with its growing delay), never another printer.
@@ -309,9 +306,11 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
     if len(offered) > 1:
         raise NotFound(tr("%d possible Kobra X printers answer on this network: choose one.") % len(offered), offered,
                        rejected=rejected)
-    if ungranted:   # exactly one: the page has OrcaSlicer ask about it once
-        raise NotFound(tr("Found a printer at %s. Allow Kobra Control to reach it in OrcaSlicer's dialog; it connects "
-                       "by itself afterwards.") % ungranted[0], offered, pending=ungranted, rejected=rejected)
+    if printers:   # exactly one, already reachable: offered, used only once the user chooses it
+        raise NotFound(_found_offer(printers[0], preset_host), offered, rejected=rejected)
+    if ungranted:   # exactly one OrcaSlicer may not reach yet: "Allow and use" asks OrcaSlicer, on the user's click
+        raise NotFound(tr("Found a printer at %s. Choose “Allow and use” to let Kobra Control reach it.") % ungranted[0],
+                       offered, rejected=rejected)
     raise NotFound(_nothing(preset_host, own_agent, errors), rejected=rejected)
 
 

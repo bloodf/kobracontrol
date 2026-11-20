@@ -450,6 +450,7 @@ export const de: Record<MessageKey, string> = {
   'act.search': "Nach dem Drucker suchen",
   'act.choose': "Drucker wählen",
   'fr.pick.title': "Mehrere Kobra X gefunden",
+  'fr.pick.one': "Kobra X gefunden",
   'fr.pick.use': "Diesen verwenden",
   'settings.searchAgain': "Erneut suchen",
   'conn.inUse': "Verwendet: {address} ({how}).",
@@ -701,7 +702,7 @@ export const de: Record<MessageKey, string> = {
   'files.selected_one': "1 ausgewählt",
   'files.selected_other': "{n} ausgewählt",
   'common.clear': "Auswahl aufheben",
-  'files.deleteText': "Sie werden vom Drucker gelöscht. Das lässt sich nicht rückgängig machen.",
+  'files.deleteText': "Das Löschen vom Drucker lässt sich nicht rückgängig machen.",
   'files.noneSelected': "Keine Datei ausgewählt",
   'ok.deleteMany': "{n} Dateien gelöscht.",
 

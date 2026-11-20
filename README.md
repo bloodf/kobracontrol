@@ -125,7 +125,7 @@ Not supported: Anycubic Cloud and access from outside your local network, a G-co
 
 Steps 5 and 6 are optional. Without them the tab works on its own, for example next to Kobralink or another Moonraker bridge that your printer preset already uses, and OrcaSlicer's Print, Send and Device tab keep using the preset's own agent.
 
-The tab looks for the printer in this order: the address in **Settings** if you set one, the address it found before for the selected printer preset, the preset's own address if a Kobra X answers there, then a search of the local network (SSDP, the way Anycubic Slicer Next finds printers).
+The tab looks for the printer in this order: the address in **Settings** if you set one, the address it found before for the selected printer preset, the preset's own address if a Kobra X answers there, then a search of the local network (SSDP, the way Anycubic Slicer Next finds printers). A printer the search finds is used only after you choose it.
 
 After a print starts, the printer can spend many minutes in preparation (heating, levelling, and cycling through the ACE slots) before the first layer. In one test that took about 11 minutes for a 5 minute print. The printer is not hung; the job is reported as printing meanwhile.
 

@@ -1066,27 +1066,41 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   }
 `);
 
-test('a found printer OrcaSlicer must allow first: the page asks once, then connects', `
+test('a found printer is never used or allowed without a click (GUI test 2026-11-20)', `
   await until(() => last('hello'));
-  await fail(last('hello'), 'Found a printer at 10.25.7.41. Allow Kobra Control to reach it in OrcaSlicer’s dialog; it connects by itself afterwards.',
-    {no_target: true, candidates: [], pending: ['10.25.7.41']});
-  await until(() => last('allow_hosts'), 'asks the plugin to show the dialog');
-  eq(last('allow_hosts').hosts, ['10.25.7.41'], 'that address');
-  eq(last('allow_hosts').user, false, 'asked by the page itself');
-  assert(text(byTest('first-run-target')).includes('connects by itself'), 'says what to do: ' + text(byTest('first-run-target')));
-  await reply(last('allow_hosts'), {allowed: ['10.25.7.41'], refused: []});
-  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'connects without another click');
-  await fail(last('hello'), 'Found a printer at 10.25.7.99.', {no_target: true, pending: ['10.25.7.99']});
+  await fail(last('hello'), 'Found Workshop KX (Anycubic Kobra X) at 10.0.0.41 on the network. Use it? Kobra Control connects only to a printer you choose.',
+    {no_target: true, candidates: [{ip: '10.0.0.41', name: 'Workshop KX', model: 'Anycubic Kobra X', needs_allow: false, different: false}], pending: []});
+  const box = byTest('first-run-target');
+  await until(() => text(box).includes('Kobra X found'), 'one printer: the title says one');
+  assert(!text(box).includes('Several'), 'not "several" for one: ' + text(box));
   await settle();
-  eq(sent().filter(m => m.type === 'allow_hosts').length, 1, 'one dialog by itself, whatever new address comes next');
+  eq(sent().filter(m => m.type === 'allow_hosts').length, 0, 'no OrcaSlicer dialog by itself');
+  eq(cmds('choose_printer').length, 0, 'not used by itself');
+  await click(q('[data-pick-ip="10.0.0.41"]'));
+  eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.41'}], 'used on the click');
+`);
+
+test('a found printer OrcaSlicer must allow first: the dialog comes only from Allow and use', `
+  await until(() => last('hello'));
+  await fail(last('hello'), 'Found a printer at 10.0.0.41. Choose “Allow and use” to let Kobra Control reach it.',
+    {no_target: true, candidates: [{ip: '10.0.0.41', name: '', model: '', needs_allow: true, different: false}], pending: ['10.0.0.41']});
+  await settle();
+  eq(sent().filter(m => m.type === 'allow_hosts').length, 0, 'no dialog by itself, even with an old plugin naming it pending');
+  await click(q('[data-pick-ip="10.0.0.41"]'));
+  await until(() => last('allow_hosts'), 'asks the plugin to show the dialog');
+  eq(last('allow_hosts').hosts, ['10.0.0.41'], 'that address');
+  eq(last('allow_hosts').user, true, 'the user clicked');
+  await reply(last('allow_hosts'), {allowed: ['10.0.0.41'], refused: []});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'hello again after the Yes');
 `);
 
 test('a dialog that does not allow the printer leaves a clear next step, not a wait', `
   await until(() => last('hello'));
-  await fail(last('hello'), 'Found a printer at 10.25.7.41.', {no_target: true, candidates: [], pending: ['10.25.7.41']});
+  await fail(last('hello'), 'Found a printer at 10.0.0.41.', {no_target: true, candidates: [{ip: '10.0.0.41', name: '', model: '', needs_allow: true}], pending: []});
+  await click(q('[data-pick-ip="10.0.0.41"]'));
   await until(() => last('allow_hosts'));
-  await reply(last('allow_hosts'), {allowed: [], refused: ['10.25.7.41']});
-  await until(() => text(byTest('first-run-target')).includes('may not reach 10.25.7.41 yet'), 'what to do');
+  await reply(last('allow_hosts'), {allowed: [], refused: ['10.0.0.41']});
+  await until(() => text(byTest('first-run-target')).includes('may not reach 10.0.0.41 yet'), 'what to do');
   assert(text(byTest('first-run-target')).includes('Search again'), 'with Search again');
 `);
 
@@ -1656,7 +1670,7 @@ test('pt-BR: the files browser and its time-lapses are translated', `
   assert(text(q('[data-view="files"] .oui-files-detail')).includes('Nada foi gravado'), 'why it is empty: ' + text(q('[data-view="files"] .oui-files-detail')));
   eq(filesCount(), '1 selecionado', 'selection');
   await click(btn('Excluir', filesBar()));
-  assert(dialogText().includes('Excluir 1 time-lapse?') && dialogText().includes('Não dá para desfazer'), 'dialog: ' + dialogText());
+  assert(dialogText().includes('Excluir 1 time-lapse?') && dialogText().includes('não pode ser desfeita') && !dialogText().includes('Eles'), 'dialog: ' + dialogText());
   eq([text(q('[data-dlg="cancel"]')), text(q('[data-dlg="confirm"]'))], ['Voltar', 'Excluir'], 'both answers named');
   await answer('cancel');
   await click(btn('Limpar', filesBar()));

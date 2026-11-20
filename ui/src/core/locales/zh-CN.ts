@@ -450,6 +450,7 @@ export const zhCN: Record<MessageKey, string> = {
   'act.search': "搜索打印机",
   'act.choose': "选择打印机",
   'fr.pick.title': "找到多台 Kobra X",
+  'fr.pick.one': "找到一台 Kobra X",
   'fr.pick.use': "使用这台",
   'settings.searchAgain': "重新搜索",
   'conn.inUse': "正在使用：{address}（{how}）。",
@@ -701,7 +702,7 @@ export const zhCN: Record<MessageKey, string> = {
   'files.selected_one': "已选 1 项",
   'files.selected_other': "已选 {n} 项",
   'common.clear': "清除",
-  'files.deleteText': "它们将从打印机中删除，无法撤销。",
+  'files.deleteText': "从打印机删除后无法撤销。",
   'files.noneSelected': "未选择文件",
   'ok.deleteMany': "已删除 {n} 个文件。",
 

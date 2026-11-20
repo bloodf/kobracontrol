@@ -846,7 +846,7 @@ class PrinterCertificate(unittest.TestCase):
                               probe=lambda ip: {"ip": ip, "name": "KX", "model": "", "id": "SERIAL-A"})
         self.addCleanup(svc.close)
         conn = svc.ready(self.fake.host, timeout=15)   # the agent's Print/Send path
-        svc.set_target(service.Target("", preset_key="P"))
+        svc.set_target(service.Target("", preset_key="P", preset_agent="kobracontrol"))
         svc._join_locators(30)
         return svc, conn, published
 

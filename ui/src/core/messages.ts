@@ -474,6 +474,7 @@ export const en = {
   'act.search': 'Search for the printer',
   'act.choose': 'Choose the printer',
   'fr.pick.title': 'Several Kobra X found',
+  'fr.pick.one': 'Kobra X found',
   'fr.pick.use': 'Use this one',
   'settings.searchAgain': 'Search again',
   'conn.inUse': 'In use: {address} ({how}).',
@@ -731,7 +732,7 @@ export const en = {
   'files.selected_one': '1 selected',
   'files.selected_other': '{n} selected',
   'common.clear': 'Clear',
-  'files.deleteText': 'They are removed from the printer. This can’t be undone.',
+  'files.deleteText': 'Deleting from the printer can’t be undone.',
   'files.noneSelected': 'No file selected',
   'ok.deleteMany': '{n} files deleted.',
 
@@ -1221,6 +1222,7 @@ export const ptBR: Record<MessageKey, string> = {
   'act.search': 'Procurar a impressora',
   'act.choose': 'Escolher a impressora',
   'fr.pick.title': 'Várias Kobra X encontradas',
+  'fr.pick.one': 'Kobra X encontrada',
   'fr.pick.use': 'Usar esta',
   'settings.searchAgain': 'Procurar de novo',
   'conn.inUse': 'Em uso: {address} ({how}).',
@@ -1478,7 +1480,7 @@ export const ptBR: Record<MessageKey, string> = {
   'files.selected_one': '1 selecionado',
   'files.selected_other': '{n} selecionados',
   'common.clear': 'Limpar',
-  'files.deleteText': 'Eles são removidos da impressora. Não dá para desfazer.',
+  'files.deleteText': 'A exclusão da impressora não pode ser desfeita.',
   'files.noneSelected': 'Nenhum arquivo selecionado',
   'ok.deleteMany': '{n} arquivos excluídos.',
 

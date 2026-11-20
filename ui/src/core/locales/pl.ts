@@ -481,6 +481,7 @@ export const pl: Record<PolishKey, string> = {
   'act.search': 'Wyszukaj drukarkę',
   'act.choose': 'Wybierz drukarkę',
   'fr.pick.title': 'Znaleziono kilka drukarek Kobra X',
+  'fr.pick.one': 'Znaleziono drukarkę Kobra X',
   'fr.pick.use': 'Użyj tej',
   'settings.searchAgain': 'Wyszukaj ponownie',
   'conn.inUse': 'Używany: {address} ({how}).',
@@ -746,7 +747,7 @@ export const pl: Record<PolishKey, string> = {
   'files.selected_many': 'Zaznaczono {n}',
   'files.selected_other': 'Zaznaczono {n}',
   'common.clear': 'Wyczyść',
-  'files.deleteText': 'Zostaną usunięte z drukarki. Tego nie da się cofnąć.',
+  'files.deleteText': 'Usunięcia z drukarki nie da się cofnąć.',
   'files.noneSelected': 'Nie wybrano pliku',
   'ok.deleteMany': 'Usunięto pliki: {n}.',
 

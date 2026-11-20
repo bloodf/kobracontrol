@@ -35,16 +35,18 @@ The tab finds the printer by itself, in this order:
 1. the address under Settings > Printer address, if you typed one (used as given);
 2. the address it found before for the selected printer preset;
 3. the printer preset's own address, if a Kobra X in LAN mode answers there;
-4. a search of the local network (SSDP). One Kobra X found: it is used and remembered for the preset.
-   Several: the Dashboard lists them once and remembers your choice.
+4. a search of the local network (SSDP). A Kobra X it finds is only listed: choose **Use this one** (or
+   **Allow and use**) once. The choice is remembered when the preset's Printer Agent is kobracontrol;
+   under another agent's preset it is used for that session only.
 
 If a found address stops answering (a new DHCP address, say), it searches again by itself, at most once
 a minute. Settings shows the address in use and how it was found, with **Search again**. When the
 preset's address is not a Kobra X (a Moonraker bridge such as Kobralink at port 7125, say), the tab says
-so in one line and uses the printer it found.
+so in one line and lists the printer it found.
 
-The first time the tab finds a printer on the network, OrcaSlicer asks once whether kobracontrol may
-connect to that address. Allow it; the tab connects by itself.
+When the tab finds a printer OrcaSlicer does not let it reach yet, the printer is listed with **Allow and
+use**. Clicking it shows OrcaSlicer's network dialog; allow it and the tab connects. Nothing is asked
+or connected without that click.
 
 ## 3. Certificate (built in)
 
