@@ -473,6 +473,7 @@ export const es: Record<MessageKey, string> = {
   'act.search': "Buscar la impresora",
   'act.choose': "Elegir la impresora",
   'fr.pick.title': "Se encontraron varias Kobra X",
+  'fr.pick.one': "Se encontró una Kobra X",
   'fr.pick.use': "Usar esta",
   'settings.searchAgain': "Volver a buscar",
   'conn.inUse': "En uso: {address} ({how}).",
@@ -729,7 +730,7 @@ export const es: Record<MessageKey, string> = {
   'files.selected_one': "1 seleccionado",
   'files.selected_other': "{n} seleccionados",
   'common.clear': "Limpiar",
-  'files.deleteText': "Se borran de la impresora. No se puede deshacer.",
+  'files.deleteText': "Borrar de la impresora no se puede deshacer.",
   'files.noneSelected': "Ningún archivo seleccionado",
   'ok.deleteMany': "{n} archivos borrados.",
 

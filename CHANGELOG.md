@@ -4,6 +4,15 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-11-20
+
+### Fixed
+- A Kobra X found on the network is no longer connected to or remembered until you choose it. Before, opening a Kobra Control tab could connect by itself to the only Kobra X on the network, even with another printer's preset selected, and save its address and certificate. Now the tab lists the printer with **Use this one** (or **Allow and use** when OrcaSlicer must allow the address first), and OrcaSlicer's network dialog appears only after that click.
+- A printer's address is remembered only for a printer preset whose Printer Agent is kobracontrol. Under another agent's preset (a Snapmaker U1, for example) the printer you choose is used for that session, and an address saved there by an earlier version is no longer used.
+- Deleting one file or time-lapse no longer says "They are removed from the printer". The confirmation now reads "Deleting from the printer can't be undone." in every language.
+- Activating the plugin no longer makes OrcaSlicer ask for the Python audit event "open" with no file named. The tab icon module is now loaded with the plugin, so OrcaSlicer no longer sees a write to its Python cache without a path, which it can only show as a permission prompt with no target.
+- The upload bridge saves its key and the uploads it receives through file paths, so OrcaSlicer can show which file a prompt is about.
+
 ## [0.9.1] - 2026-11-20
 
 ### Changed

@@ -162,7 +162,6 @@ export async function hello(retry = false): Promise<void> {
       : e instanceof bridge.ReplyError && e.noTarget ? 'noTarget' : 'unreachable';
     s.error = message(e);
     s.candidates = e instanceof bridge.ReplyError ? e.candidates : [];
-    if (e instanceof bridge.ReplyError && e.pending.length) void allowFound(e.pending);
     s.offline = '';   // the answer is newer than any 'offline' message that came while it was awaited
   } finally {
     helloInFlight = false;
@@ -183,17 +182,14 @@ export async function loadDevice(): Promise<void> {
   if (epoch === s.epoch) s.device = ok ? 'done' : '';
 }
 
-/** The search found a printer OrcaSlicer does not let the plugin reach yet: ask the plugin to have OrcaSlicer show
- *  its dialog now (on its UI thread, so a Yes is saved at once), then connect. Clicking Allow is the only action;
- *  each address is asked about once per page load, so a No is not asked again in a loop. */
-let autoAsked = false;   // dialogs are counted, not addresses: one without a click per page load (the plugin: per session)
-async function allowFound(hosts: string[], user = false): Promise<void> {
-  if (!user && autoAsked) return;
-  const fresh = user ? hosts : hosts.slice(0, 1);
+/** The user clicked "Allow and use" on a printer the search found that OrcaSlicer does not let the plugin reach yet:
+ *  the plugin has OrcaSlicer show its dialog now (on its UI thread, so a Yes is saved at once), then connects. Never
+ *  asked without that click: a printer found on the network is not used until the user chooses it. */
+async function allowFound(hosts: string[]): Promise<void> {
+  const fresh = hosts.slice(0, 1);
   if (!fresh.length) return;
-  if (!user) autoAsked = true;
   try {
-    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh, user });
+    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh, user: true });
     if (r?.allowed?.length) { void hello(); return; }
     // Not allowed (refused, or no dialog came): say what to do instead of waiting for ever.
     s.error = t('fr.allow.fallback', { ip: fresh[0] });
@@ -210,7 +206,7 @@ export async function searchAgain(): Promise<void> {
 
 /** The user picked one of the printers offered: one OrcaSlicer may not reach yet is allowed first (its dialog). */
 export async function choosePrinter(c: bridge.Candidate): Promise<void> {
-  if (c.needs_allow) { await allowFound([c.ip], true); return; }
+  if (c.needs_allow) { await allowFound([c.ip]); return; }
   const r = await run({ key: 'choose', label: t('act.choose'), cmd: 'choose_printer', args: { host: c.ip } });
   if (r.ok) { s.candidates = []; void hello(); }   // chosen: the offer is answered
 }

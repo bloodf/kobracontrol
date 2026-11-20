@@ -153,12 +153,18 @@ def _cap_config(cap):
     return data if isinstance(data, dict) else {}
 
 
+if __package__:   # the built wheel
+    # Imported with the package, not on first use: OrcaSlicer imports the package outside the plugin's audit scope,
+    # but a module first imported later (from get_icon) writes its bytecode cache inside it, and that write is an
+    # audited "open" on a descriptor, with no path, shown to the user as a permission prompt without a target.
+    from . import _assets  # noqa: E402
+
+
 def _asset(name):
     """Packaged: the icon from _assets, the page from app.html next to the modules (pkgutil reads it from a folder
     or a zip alike). During development: from src/kobracontrol/ui."""
     if __package__:
         if name == "icon.png":
-            from . import _assets
             return _assets.ICON_PNG
         data = pkgutil.get_data(__package__, name)
         if data is None:

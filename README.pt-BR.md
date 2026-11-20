@@ -125,7 +125,7 @@ Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de
 
 Os passos 5 e 6 são opcionais. Sem eles a aba funciona sozinha, por exemplo ao lado do Kobralink ou de outra ponte Moonraker que o seu perfil de impressora já usa, e Print, Send e a aba Device do OrcaSlicer continuam usando o agente do próprio perfil.
 
-A aba procura a impressora nesta ordem: o endereço em **Ajustes**, se você definiu um; o endereço que ela encontrou antes para o perfil de impressora selecionado; o endereço do próprio perfil, se uma Kobra X responder ali; e por fim uma busca na rede local (SSDP, do jeito que o Anycubic Slicer Next encontra impressoras).
+A aba procura a impressora nesta ordem: o endereço em **Ajustes**, se você definiu um; o endereço que ela encontrou antes para o perfil de impressora selecionado; o endereço do próprio perfil, se uma Kobra X responder ali; e por fim uma busca na rede local (SSDP, do jeito que o Anycubic Slicer Next encontra impressoras). Uma impressora encontrada pela busca só é usada depois que você a escolhe.
 
 Depois que a impressão começa, a impressora pode passar muitos minutos em preparação (aquecendo, nivelando e passando pelos slots do ACE) antes da primeira camada. Em um teste isso levou cerca de 11 minutos para uma impressão de 5 minutos. A impressora não travou; enquanto isso o trabalho aparece como imprimindo.
 

@@ -8,10 +8,10 @@ import { s, openSettings, searchAgain, choosePrinter, tracker } from '../app/sto
 import { t } from '../core/i18n';
 import art from '../assets/kobra-connect.webp';
 
-// First-run states: each is one clear task with its recovery. A printer other than the remembered one that answered
-// is offered, never used by itself; several that answered are listed to pick one once.
+// First-run states: each is one clear task with its recovery. A printer found on the network is offered, never used by
+// itself, even when it is the only one; the user picks it once.
 const different = computed(() => s.candidates.some(c => c.different));
-const title = computed(() => (different.value ? t('fr.pick.different') : s.candidates.length ? t('fr.pick.title') : t('fr.target.title')));
+const title = computed(() => (different.value ? t('fr.pick.different') : s.candidates.length > 1 ? t('fr.pick.title') : s.candidates.length ? t('fr.pick.one') : t('fr.target.title')));
 </script>
 
 <template>
@@ -33,7 +33,7 @@ const title = computed(() => (different.value ? t('fr.pick.different') : s.candi
         <Button severity="secondary" :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" data-test="search-again" @click="searchAgain()"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
       </template>
     </OuiEmpty></div>
-    <!-- Several Kobra X answered, or a different one: pick one once; the plugin remembers it for this printer preset. -->
+    <!-- Kobra X printers that answered: pick one once; the plugin remembers it for a kobracontrol printer preset. -->
     <ul v-if="s.candidates.length" class="kc-pick" data-test="fr-candidates">
       <li v-for="c in s.candidates" :key="c.ip">
         <OuiIcon :icon="printer" :size="16" tile tone="cobalt" />
