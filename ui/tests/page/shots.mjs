@@ -124,9 +124,41 @@ if (SCENE === 'store-dash') {
   document.querySelectorAll('#app *').forEach(e => { const r = e.getBoundingClientRect();
     if (!e.children.length && r.height && r.top < innerHeight && r.bottom > innerHeight) e.style.visibility = 'hidden'; });
 }
+// store-status in a listing panel (one column): the camera right under the print, across the page, so the picture is
+// whole. The README screenshot is wide enough for the page's own two columns and keeps them.
+if (SCENE === 'store-status' && innerWidth < 1000) {
+  const cam = document.querySelector('[data-test="camera"]').closest('.oui-panel');
+  document.querySelector('.oui-dash-main').before(cam);
+  cam.style.gridColumn = '1 / -1';
+  // the print's times stay, its buttons go (they wrap in Portuguese), and nothing follows the camera
+  const css = document.createElement('style');
+  css.textContent = '[data-test="job-card"] .oui-job-actions, .oui-dash-main, .oui-dash-side { display: none !important; }';
+  document.head.append(css);
+}
+if (STORE) { const css = document.createElement('style'); css.textContent = '::-webkit-scrollbar { display: none; }'; document.head.append(css); }
 await sleep(400);
+// A clean bottom edge for the listing pictures. In one column, a panel the edge would cut goes when a whole one is above
+// it. Then no row, line, chip or button is cut in half by the page's edge or by that of a scrolling box.
+const cleanEnd = () => {
+  const panels = [...document.querySelectorAll('.oui-panel')].filter(p => p.offsetHeight && !p.parentElement.closest('.oui-panel'));
+  const whole = panels.some(p => p.getBoundingClientRect().bottom <= innerHeight - 8);
+  if (innerWidth < 1000 && whole) panels.forEach(p => { const r = p.getBoundingClientRect();
+    if (r.bottom > innerHeight - 8 && r.top > 80) p.style.setProperty('display', 'none', 'important'); });
+  document.querySelectorAll('#app *').forEach(e => {
+    const r = e.getBoundingClientRect(); let edge = innerHeight - 8;
+    for (let p = e.parentElement; p && p !== document.body; p = p.parentElement)
+      if (p.scrollHeight > p.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(p).overflowY)) edge = Math.min(edge, p.getBoundingClientRect().bottom - 2);
+    if (r.height && r.height < 64 && r.top < edge && r.bottom > edge) e.style.visibility = 'hidden';
+  });
+};
 // once the page has settled: the Filament panel just under the app bar
-if (SCENE === 'store-ace') { scrollTo({top: document.querySelector('[data-test="ace-card"]').getBoundingClientRect().top + scrollY - 64, behavior: 'instant'}); await sleep(200); }
+// (room under the page first, so the panel can reach the top whatever follows it)
+if (SCENE === 'store-ace') { const room = document.createElement('div'); room.style.height = '100vh'; document.body.append(room);
+  scrollTo({top: document.querySelector('[data-test="ace-card"]').getBoundingClientRect().top + scrollY
+  - document.querySelector('.oui-appbar').getBoundingClientRect().bottom - 12, behavior: 'instant'}); await sleep(200); }
+// the camera's button took the focus and the page went down with it: back to the top
+if (SCENE === 'store-status') { document.activeElement?.blur(); scrollTo({top: 0, behavior: 'instant'}); await sleep(200); }
+if (STORE) { cleanEnd(); await sleep(100); }
 `;
 // store-*: the same states under their own names. THUMB stands in for the plate picture a sliced file carries.
 const STORE_AS = { 'store-dash': 'dash', 'store-status': 'dash', 'store-lan': 'settings', 'store-ace': 'idle', 'store-files': 'files' };
