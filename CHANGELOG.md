@@ -4,6 +4,11 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-20
+
+### Changed
+- The page ships in the plugin as a plain `kobracontrol/app.html` file next to the code, instead of a compressed, base64-encoded block inside a Python file. Nothing changes in OrcaSlicer.
+
 ## [0.9.0] - 2026-11-19
 
 ### Changed

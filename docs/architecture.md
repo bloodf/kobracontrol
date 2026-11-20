@@ -1,7 +1,9 @@
 # Architecture
 
 kobracontrol ships as a pure-Python wheel, `kobracontrol_any.whl`, which OrcaSlicer loads as a
-plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs them.
+plugin. The sources live in `src/kobracontrol/`, and `scripts/build.py` packs them: one module per source file,
+`_assets.py` with the PNG tab icon, and the compiled page as a plain file, `kobracontrol/app.html`, which
+`plugin._asset` reads with `pkgutil.get_data` (from an unpacked folder or a zip alike).
 
 ## How it works
 
