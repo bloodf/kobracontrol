@@ -32,9 +32,45 @@ DEFAULTS = {
     "print_memory": {},                  # printer -> {option: bool}, the last options chosen (printsetup.remember)
     "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
     "bridge_port": 8765,
+    "dashboard": {},   # the Dashboard's layouts (clean_dashboard); {} = the page's default
 }
 PORT_RANGE = (1024, 65535)
 REFRESH_RANGE = (10, 300)
+
+
+DASHBOARD_MAX_BYTES = 32_000   # the page's dashboard layouts (settings "dashboard"), serialized
+
+
+def clean_dashboard(value):
+    """The page's dashboard layouts as stored: {"v": 1, "active": n, "layouts": [{"name", "items": [{"id", "x", "y",
+    "w", "h", "cfg"}]}]}. The shape and the size only: the page itself drops widgets it does not know and brings sizes
+    within each widget's limits. None when the value is not a dashboard (the stored one is kept)."""
+    if not isinstance(value, dict) or value.get("v") != 1:
+        return None
+    layouts = value.get("layouts")
+    if not isinstance(layouts, list) or not 1 <= len(layouts) <= 12:
+        return None
+    out = []
+    for layout in layouts:
+        if not isinstance(layout, dict) or not isinstance(layout.get("name"), str) or not isinstance(layout.get("items"), list) \
+                or len(layout["items"]) > 40:
+            return None
+        items = []
+        for it in layout["items"]:
+            if not isinstance(it, dict) or not isinstance(it.get("id"), str) or not 0 < len(it["id"]) <= 40 \
+                    or not all(type(it.get(k)) is int and 0 <= it[k] <= 200 for k in ("x", "y", "w", "h")):
+                return None
+            item = {k: it[k] for k in ("id", "x", "y", "w", "h")}
+            cfg = it.get("cfg")
+            if cfg is not None:
+                if not isinstance(cfg, dict) or not all(isinstance(k, str) and type(v) in (str, int, float, bool) for k, v in cfg.items()):
+                    return None
+                item["cfg"] = dict(cfg)
+            items.append(item)
+        out.append({"name": layout["name"][:40], "items": items})
+    active = value.get("active")
+    clean = {"v": 1, "active": active if type(active) is int and 0 <= active < len(out) else 0, "layouts": out}
+    return clean if len(json.dumps(clean)) <= DASHBOARD_MAX_BYTES else None
 
 
 def printer_label(name):
@@ -59,6 +95,8 @@ def _clean(key, value):
         return printer_label(value)
     if key == "print_memory":
         return printsetup.clean_memory(value)
+    if key == "dashboard":
+        return clean_dashboard(value)
     return value.strip() if isinstance(value, str) else value
 
 

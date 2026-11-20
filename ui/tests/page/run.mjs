@@ -1054,13 +1054,15 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   assert(text(byTest('cam-why')).includes('doesn’t answer'), 'camera gives the same reason: ' + text(byTest('cam-why')));
   assert(!text(document.body).includes('Select a printer first'), 'no "no printer" text while one is selected');
   // every printer control in the printer's panels (job, temperatures, move, camera, filament) is off
-  const roots = [byTest('job-card'), byTest('machine'), byTest('filament'), byTest('printer-head')];
-  eq(roots.filter(Boolean).length, 4, 'the status block, both columns and the page header');
+  const roots = [byTest('dash-grid'), byTest('printer-head')];
+  eq(roots.filter(Boolean).length, 2, 'the dashboard and the page header');
+  assert(byTest('job-card') && byTest('ace-card') && byTest('temps') && byTest('move'), 'the printer widgets are on it');
   // (the (i) buttons explain; they are not printer controls)
-  const live = roots.flatMap(root => qa('button:not(.oui-hint-btn), input, [role="checkbox"]', root)).filter(el => !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
+  // (the console and Maximise are the page's own, not the printer's)
+  const live = roots.flatMap(root => qa('button:not(.oui-hint-btn), input, [role="checkbox"]', root)).filter(el => !el.closest('[data-widget="console"]') && el.dataset.test !== 'widget-max' && !el.disabled && !el.closest('[data-p-disabled="true"]') && el.getAttribute('aria-disabled') !== 'true'
     && !el.closest('.p-disabled') && !el.closest('details:not([open])'));
   eq(live.map(el => (el.textContent || el.getAttribute('aria-label') || el.outerHTML).trim().slice(0, 60)), [], 'every printer control is off');
-  for (const b of roots.flatMap(root => qa('button.p-button', root))) {
+  for (const b of roots.flatMap(root => qa('button.p-button', root)).filter(el => !el.closest('[data-widget="console"]') && el.dataset.test !== 'widget-max')) {
     const st = getComputedStyle(b);
     assert(parseFloat(st.opacity) <= 0.7 || st.cursor === 'not-allowed', 'looks disabled: ' + text(b) + ' opacity ' + st.opacity);
   }
@@ -2023,7 +2025,7 @@ test('pt-BR: the first-run states are translated', `
 
 test('the page never shows U1 wording', `
   await ready(PRINTING());
-  const bad = /\\bU1\\b|toolhead|Snapmaker|Moonraker|Klipper|extended firmware|purifier|console/i;
+  const bad = /\\bU1\\b|toolhead|Snapmaker|Moonraker|Klipper|extended firmware|purifier|g-code console/i;   // the Console widget is the page log, not a G-code console
   for (const name of ['dash', 'stock', 'files', 'settings']) {
     await tab(name);
     const shown = qa('[role=tabpanel]').filter(m => m.offsetParent).map(text).join(' ');
@@ -2367,6 +2369,244 @@ test('settings pages: a page that needs attention is marked in the list', PAGES_
   eq(link('cert-h').dataset.state, 'warn', 'certificate page flagged');
   assert(link('cert-h').querySelector('.oui-settings-flag'), 'with the flag icon');
 `);
+// Kobra: what the shared dashboard scenarios need to know about this page.
+const DASH_PLUGIN = `
+const STORE = dash => post(CONFIG({settings: {...SETTINGS, dashboard: dash}}));
+async function READY(dash) { await connect(); await (dash === undefined ? post(CONFIG()) : STORE(dash)); await post({type: 'status', data: VIEW()}); }
+const DEFAULT_IDS = ['job', 'ace', 'camera', 'motion', 'controls', 'printer', 'console'];
+const DEFAULT_ORDER = DEFAULT_IDS;
+const ALL_IDS = ['job', 'ace', 'controls', 'temps', 'camera', 'motion', 'printer', 'console', 'files'];
+const MOVER = 'camera', MOVER_FROM = '9 / span 4 | 4 / span 6', MOVE_COLS = 8, MOVER_TO = '1 / span 4 | 4 / span 6';
+const CAM_W = 4, CAM_H = 6, TEMPS = 'temps';
+const TEMPS_COMPACT = () => { const subs = qa('.oui-readout-sub', cell('temps')); return subs.length > 0 && subs.every(e => getComputedStyle(e).display === 'none'); };
+`;
+const CONSOLE_CHECK = `
+  await click(q('input#light'));
+  await until(() => text(byTest('console-log')).includes('> set_light on=true'), 'the command is in the console: ' + text(byTest('console-log')));
+  await fail(last('cmd', 'set_light'), 'printer said no');
+  await until(() => text(byTest('console-log')).includes('printer said no'), 'and its answer');
+  assert(q('.kc-log-line.err', byTest('console-log')), 'a failure is marked');
+  await post({type: 'status', data: VIEW({state: 'printing'})});
+  assert(text(byTest('console-log')).includes('Printer: '), 'what the printer does is logged: ' + text(byTest('console-log')));
+`;
+const SETTINGS_CHECK = `
+  await click(byTest('dash-add'));
+  await click(q('[data-add="temps"]'));
+  await click(q('[data-settings="temps"]'));
+  await click(q('input', q('[data-setting="bed"]', byTest('dash-settings'))));
+`;
+const SETTINGS_AFTER = `
+  assert(q('[data-temp="nozzle"]', cell('temps')) && !q('[data-temp="bed"]', cell('temps')), 'the temperatures widget leaves the bed out');
+  eq(itemOf(saved(), 'temps').cfg, {bed: false}, 'its setting is saved');
+`;
+// ------------------------------------------------------------------ the dashboard as a layout the user arranges (OuiDashboard)
+// Real pointer input (Input.dispatchMouseEvent): HTML5 drag and drop never reaches a page in OrcaSlicer on macOS.
+const DASH_JS = DASH_PLUGIN + `
+const cell = id => q('.oui-dash-cell[data-widget="' + id + '"]');
+const frame = id => q('[data-frame="' + id + '"]');
+const handle = (id, h) => q('[data-frame="' + id + '"] [data-handle="' + h + '"]');
+const place = id => { const c = cell(id); return c ? c.style.gridColumn + ' | ' + c.style.gridRow : null; };
+const step = () => (q('.oui-dash-grid').getBoundingClientRect().width + 12) / 12;
+const ROW = 44;
+const mouseAt = (type, x, y) => cdp({op: 'mouse', type, x, y});
+async function grab(el, at) { el.scrollIntoView({block: 'center'}); await settle(); const r = el.getBoundingClientRect(); const p = at ? at(r) : [r.left + r.width / 2, r.top + r.height / 2]; await mouseAt('mousePressed', ...p); return p; }
+async function dragBy(el, dx, dy, opts = {}) {
+  const [x, y] = await grab(el, opts.at);
+  for (let i = 1; i <= 5; i++) await mouseAt('mouseMoved', x + dx * i / 5, y + dy * i / 5);
+  if (opts.during) await opts.during();
+  await mouseAt('mouseReleased', x + dx, y + dy);
+}
+const saved = () => last('dashboard') && last('dashboard').value;
+const itemOf = (st, id) => st.layouts[st.active].items.find(i => i.id === id);
+const shown = () => qa('.oui-dash-cell').filter(c => c.getClientRects().length).map(c => c.dataset.widget);
+async function edit() { await click(byTest('dash-edit')); assert(q('.oui-dash-board[data-editing]'), 'edit mode on'); }
+`;
+
+test('dashboard: the console is a widget of the default layout and there is no Console tab', DASH_JS + `
+  await READY();
+  assert(!q('[data-tab="console"]'), 'no Console tab');
+  assert(cell('console') && cell('console').contains(byTest('console')), 'the console sits in a dashboard cell');
+  eq(shown(), DEFAULT_IDS, 'the default layout');
+  assert(!q('.oui-dash-frame') && !q('.oui-dash-handle'), 'no frames or handles outside edit mode');
+` + CONSOLE_CHECK);
+
+test('dashboard: drag a widget with the pointer; the others make room; Escape puts it back', DASH_JS + `
+  await READY();
+  await edit();
+  eq(place(MOVER), MOVER_FROM, 'starts at its default place');
+  const before = JSON.stringify(qa('.oui-dash-cell').map(c => [c.dataset.widget, c.style.gridColumn, c.style.gridRow]));
+  await dragBy(frame(MOVER), -MOVE_COLS * step(), 0, { during: async () => { await settle();
+    assert(q('.oui-dash-slot'), 'the place it would land is marked');
+    assert(cell(MOVER).dataset.dragged !== undefined && cell(MOVER).style.transform.includes('translate'), 'the widget follows the pointer'); } });
+  await settle();
+  eq(place(MOVER), MOVER_TO, 'dropped where the pointer left it');
+  assert(!q('.oui-dash-slot'), 'no marker after the release');
+  const cells = qa('.oui-dash-cell').map(c => c.getBoundingClientRect());
+  assert(cells.every((a, i) => cells.every((b, j) => i === j || a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1)), 'no widgets overlap');
+  // a drag cancelled with Escape changes nothing
+  const now = place(MOVER);
+  const [x, y] = await grab(frame(MOVER));
+  for (let i = 1; i <= 4; i++) await mouseAt('mouseMoved', x + i * step(), y + i * ROW);
+  await cdp({op: 'key', key: 'Escape'});
+  await mouseAt('mouseReleased', x + 4 * step(), y + 4 * ROW);
+  eq(place(MOVER), now, 'Escape cancels the drag');
+  eq(last('dashboard'), undefined, 'nothing stored before Save');
+  await click(byTest('dash-cancel'));
+  eq(JSON.stringify(qa('.oui-dash-cell').map(c => [c.dataset.widget, c.style.gridColumn, c.style.gridRow])), before, 'Cancel drops the edit');
+`);
+
+test('dashboard: resize from a corner and from an edge snaps to the grid, keeps a least size and is saved', DASH_JS + `
+  await READY();
+  await edit();
+  await dragBy(handle('camera', 'se'), 2 * step(), 2 * ROW);
+  eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span ' + (CAM_W + 2) + ' | span ' + (CAM_H + 2), 'the corner grows width and height by whole cells');
+  await dragBy(handle('camera', 's'), 0, -1 * ROW);
+  eq(place('camera').split(' | ')[1].replace(/\\d+ \\/ /, ''), 'span ' + (CAM_H + 1), 'the bottom edge changes the height only');
+  await dragBy(handle('camera', 'w'), 2 * step(), 0);
+  eq(place('camera').split(' | ')[0].replace(/\\d+ \\/ /, ''), 'span ' + CAM_W, 'the left edge changes the width and the column');
+  await dragBy(handle('camera', 'se'), -12 * step(), -12 * ROW);
+  eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span 3 | span 4', 'not smaller than the least size of the camera');
+  await click(byTest('dash-save'));
+  const cam = itemOf(saved(), 'camera');
+  eq([cam.w, cam.h], [3, 4], 'the size is saved');
+  assert(!q('.oui-dash-board[data-editing]'), 'Save ends edit mode');
+  eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span 3 | span 4', 'and stays after it');
+`);
+
+test('dashboard: widget content follows its size: the camera keeps its shape, the console shows more lines, temperatures go compact', DASH_JS + `
+  await READY();
+  const ratio = () => { const r = q('.oui-camera', cell('camera')).getBoundingClientRect(); return r.width / r.height; };
+  assert(Math.abs(ratio() - 16 / 9) < 0.05, 'camera 16:9: ' + ratio());
+  const logH = () => byTest('console-log').getBoundingClientRect().height;
+  const small = logH();
+  await edit();
+  await dragBy(handle('camera', 'e'), 3 * step(), 0);
+  await dragBy(handle('console', 's'), 0, 4 * ROW);
+  if (!cell(TEMPS)) { await click(byTest('dash-add')); await click(q('[data-add="' + TEMPS + '"]')); }
+  await dragBy(handle(TEMPS, 'e'), -12 * step(), 0);
+  await dragBy(handle(TEMPS, 's'), 0, -12 * ROW);
+  await click(byTest('dash-save'));
+  assert(Math.abs(ratio() - 16 / 9) < 0.05, 'camera still 16:9 when wider: ' + ratio());
+  assert(logH() > small + 3 * ROW, 'a taller console has a taller log: ' + small + ' -> ' + logH());
+  assert(TEMPS_COMPACT(), 'a small temperatures widget is compact');
+  await edit();
+  await click(q('[data-settings="camera"]'));
+  await pick(q('[data-setting="aspect"]', byTest('dash-settings')), '4:3');
+  await click(byTest('dash-save'));
+  eq(itemOf(saved(), 'camera').cfg, {aspect: '4/3'}, 'the setting is saved');
+  assert(Math.abs(ratio() - 4 / 3) < 0.05, 'camera 4:3: ' + ratio());
+`);
+
+test('dashboard: keyboard moves, resizes and removes; the catalogue adds; settings apply', DASH_JS + `
+  await READY();
+  await edit();
+  await click(byTest('dash-add'));
+  const cat = byTest('dash-catalogue');
+  eq(qa('[data-widget]', cat).map(e => e.dataset.widget), ALL_IDS, 'every widget is in the catalogue');
+  assert(!q('[data-add="console"]', cat) && q('[data-add="files"]', cat), 'widgets on the layout are marked, the others can be added');
+  await click(q('[data-add="files"]', cat));
+  assert(cell('files') && frame('files'), 'added');
+  frame('files').focus();
+  const at = () => cell('files').style.gridColumn;
+  const was = at();
+  await cdp({op: 'key', key: 'ArrowRight'}); await cdp({op: 'key', key: 'ArrowRight'});
+  assert(at() !== was, 'arrows move it: ' + was + ' -> ' + at());
+  eq(document.activeElement, frame('files'), 'focus stays on the widget');
+  const w = () => Number(/span (\\d+)/.exec(cell('files').style.gridColumn)[1]);
+  const w0 = w();
+  await cdp({op: 'key', key: 'ArrowLeft', shift: true});
+  eq(w(), w0 - 1, 'Shift and an arrow resize');
+  assert(text(q('.oui-dash-board > .oui-sr')).includes('column'), 'the new place is said');
+  await cdp({op: 'key', key: 'Delete'});
+  assert(!cell('files'), 'Delete removes it');
+  await click(q('[data-remove="console"]'));
+  assert(!cell('console'), 'Remove takes a widget off');
+  assert(byTest('dash-catalogue'), 'the catalogue stays open');
+  await click(q('[data-add="console"]'));
+  await click(q('[data-settings="console"]'));
+  await pick(q('[data-setting="lines"]', byTest('dash-settings')), '100');
+` + SETTINGS_CHECK + `
+  await click(byTest('dash-save'));
+  eq(itemOf(saved(), 'console').cfg.lines, 100, 'console keeps 100 lines');
+  assert(!itemOf(saved(), 'files'), 'the removed widget is not saved');
+` + SETTINGS_AFTER);
+
+test('dashboard: named layouts are created, switched, renamed, reset and deleted, and come back after a reload', DASH_JS + `
+  await READY();
+  await edit();
+  await click(byTest('dash-new'));
+  await type(q('#oui-dash-name'), 'default');
+  await click(byTest('dash-name-ok'));
+  assert(text(byTest('dash-strip')).includes('Another layout has this name'), 'a name in use is refused');
+  await type(q('#oui-dash-name'), 'Watch');
+  await click(byTest('dash-name-ok'));
+  eq(saved().layouts.map(l => l.name), ['Default', 'Watch'], 'created');
+  eq(saved().active, 1, 'and opened');
+  await click(q('[data-remove="console"]'));
+  await click(q('[data-remove="' + MOVER + '"]'));
+  await click(byTest('dash-save'));
+  eq(shown().includes('console'), false, 'Watch has no console');
+  await pick(byTest('dash-layout'), 'Default');
+  eq(saved().active, 0, 'switching is stored');
+  assert(cell('console'), 'Default still has its console');
+  await pick(byTest('dash-layout'), 'Watch');
+  await edit();
+  await click(byTest('dash-rename'));
+  await type(q('#oui-dash-name'), 'Camera view');
+  await press('Enter');
+  eq(saved().layouts.map(l => l.name), ['Default', 'Camera view'], 'renamed');
+  await click(byTest('dash-reset'));
+  eq(shown(), DEFAULT_IDS, 'reset brings the default widgets back');
+  await click(byTest('dash-cancel'));
+  eq(shown().includes('console'), false, 'a reset is kept only by Save');
+  await edit();
+  await click(byTest('dash-delete'));
+  await click(byTest('dash-delete-ok'));
+  eq(saved().layouts.map(l => l.name), ['Default'], 'deleted');
+  assert(!byTest('dash-delete') || byTest('dash-delete').disabled, 'the last layout cannot be deleted');
+  await click(byTest('dash-cancel'));
+  // a second layout to bring back after the reload
+  await edit();
+  await click(byTest('dash-new'));
+  await type(q('#oui-dash-name'), 'Night');
+  await press('Enter');
+  await click(q('[data-remove="camera"]'));
+  await click(byTest('dash-save'));
+  return { carry: saved() };
+`, { after: DASH_JS + `
+  await READY(CARRY);
+  eq(q('.oui-dash-pick .p-select-label') && text(q('.oui-dash-pick .p-select-label')), 'Night', 'the open layout is the one saved');
+  assert(!cell('camera') && cell('console'), 'its widgets as saved');
+  await pick(byTest('dash-layout'), 'Default');
+  assert(cell('camera'), 'the other layout is there too');
+` });
+
+test('dashboard: a stored layout is checked: unknown widgets dropped, sizes brought within limits, broken data gives the default', DASH_JS + `
+  await READY({v: 1, active: 0, layouts: [{name: 'Mine', items: [{id: 'ghost', x: 0, y: 0, w: 4, h: 4}, {id: 'camera', x: 9, y: 3, w: 99, h: 1}, {id: 'console', x: 0, y: 0, w: 2, h: 2, cfg: {lines: 7}}]}]});
+  eq(shown().sort(), ['camera', 'console'], 'the unknown widget is dropped');
+  eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span 12 | span 4', 'too wide and too short: brought within limits');
+  eq(place('console').replace(/\\d+ \\/ /g, ''), 'span 3 | span 4', 'the least size of the console');
+  await STORE('not a dashboard');
+  eq(shown(), DEFAULT_IDS, 'broken data: the default layout');
+`);
+
+test('dashboard: a widget is maximised and restored', DASH_JS + `
+  await READY();
+  await click(q('[data-test="widget-max"]', cell('console')));
+  eq(shown(), ['console'], 'only the console');
+  assert(cell('console').getBoundingClientRect().height > 400, 'as tall as the window allows');
+  await cdp({op: 'key', key: 'Escape'});
+  eq(shown(), DEFAULT_IDS, 'Escape restores the dashboard');
+`);
+
+test('dashboard: a narrow window shows one column in reading order and is not edited', DASH_JS + `
+  await READY();
+  assert(q('.oui-dash-grid[data-narrow]'), 'one column');
+  const tops = DEFAULT_ORDER.map(id => cell(id).getBoundingClientRect().top);
+  assert(tops.every((t, i) => !i || t > tops[i - 1]), 'in reading order: ' + tops.join());
+  assert(byTest('dash-edit').disabled, 'Edit layout is off');
+`, { size: [480, 900] });
+
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error('WORKERS must be a positive integer');
@@ -2392,14 +2632,21 @@ try {
         const seed = sc.lastPage ? `localStorage.setItem('oui-settings:' + location.pathname + ':' + ${JSON.stringify(PAGES.join(','))}, ${JSON.stringify(sc.lastPage)});` : '';
         await p.init(MOCK_HOST + `try { localStorage.clear(); ${seed} } catch {}`);
         await p.goto(pathToFileURL(file).href);
-        const body = `(async () => { ${HELPERS} ${PRELUDE}
+        // A scenario may return { carry }; its `after` runs on the same page loaded again (what the plugin stored, CARRY).
+        const body = (code, carry) => `(async () => { ${HELPERS} ${PRELUDE}
+          const CARRY = ${JSON.stringify(carry ?? null)};
           await until(() => document.querySelector('#app > *'), 'app mounted');
-          ${sc.body}
+          const __r = await (async () => { ${code} })();
           await settle();
-          return { violations: __t.violations, rejections: __t.rejections, errors: __t.errors };
+          return { carry: __r && __r.carry, violations: __t.violations, rejections: __t.rejections, errors: __t.errors };
         })()`;
-        const probe = await p.evaluate(body);
+        let probe = await p.evaluate(body(sc.body));
         if (probe.violations.length || probe.rejections.length || probe.errors.length) throw new Error('page problems: ' + JSON.stringify(probe));
+        if (sc.after) {
+          await p.goto(pathToFileURL(file).href);
+          probe = await p.evaluate(body(sc.after, probe.carry));
+          if (probe.violations.length || probe.rejections.length || probe.errors.length) throw new Error('page problems after reload: ' + JSON.stringify(probe));
+        }
         results.push({ name: sc.name, ok: true, ms: Date.now() - started });
         console.log(`ok   ${sc.name}`);
       } catch (e) {
