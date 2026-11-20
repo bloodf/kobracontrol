@@ -1,13 +1,20 @@
-import { computed, reactive } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import * as bridge from '../core/bridge';
-import { Tracker, message, type RunOptions } from '../core/tracker';
+import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
+import { showToast } from '../../shared/src/components/toast';
 import { t } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
-import type { Config, Info, Spool, Status, StockView, UsageView } from './types';
+import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';
+import { boundSlots } from '../core/logic';
+import { playable } from '../core/player';
+import type { Certificate, Config, Info, Limits, Located, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
 
-export type Phase = 'connecting' | 'connected' | 'noTarget' | 'unreachable';
-export const LIMITS = { hotend: 320, bed: 110 };
+export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 'unreachable';
+export const LIMITS: Limits = { nozzle_max: 300, bed_max: 100 };
 export const STALE_STATUS_S = 10;
+
+/** Open Settings at one page (conn-h, print-h, ...): a "Settings" link elsewhere on the page. */
+export function openSettings(page: string): void { s.settingsPage = page; s.tab = 'settings'; }
 
 export const s = reactive({
   phase: 'connecting' as Phase,
@@ -19,95 +26,206 @@ export const s = reactive({
   statusAt: 0,
   now: Date.now(),
   limits: { ...LIMITS },
+  certificate: null as Certificate | null,
   spools: [] as Spool[],
-  bindings: {} as Record<string, number>,
-  spoolsVia: '',
+  /** Seconds between Spoolman re-reads (settings spoolman_refresh_s; 0 = off), and whether the last ones failed. */
+  refreshS: REFRESH_DEFAULT_S,
+  spoolsRetrying: false,
   spoolsError: '',
   spoolsLoaded: false,
   config: null as Config | null,
   tab: 'dash',
+  settingsPage: '',                 // the settings page a link asked for, opened once Settings shows
   hidden: document.hidden,
   camOn: false,
   frame: '',
+  video: false,                      // the page's own player shows the stream (no ffmpeg)
   camError: '',
-  scrOn: false,
-  screen: '',
-  screenError: '',
+  camReason: '',
   stock: null as StockView | null,
   stockError: '',
   stockLoading: false,
   usage: null as UsageView | null,
   usageError: '',
+  retryAt: 0,                        // unix s of the plugin's next automatic attempt, 0 = none planned
+  candidates: [] as bridge.Candidate[],   // printers found when there was more than one
+  located: null as Located | null,   // the address in use and where it came from (config)
+  history: {} as Record<string, (number | null)[]>,   // recent nozzle/bed readings, oldest first (drawn, not used)
+  historyAt: 0,
+  /** The printer's details and Print Assist were asked for (cmd device): '' not yet, 'asking', 'done'. */
+  device: '' as '' | 'asking' | 'done',
+  /** Settings > Requirements, as the plugin last checked them; `checking` while its file checks run. */
+  requirements: [] as Requirement[],
+  checking: false,
 });
 
+// What commands answered goes to the page's toasts (bottom-left): "Pause failed: timeout" is a title and its detail.
+// An unknown outcome stays until closed, like an error: the user has to look at the printer.
+const TOAST_TONE = { error: 'error', unknown: 'warn', success: 'success', info: 'info' } as const;
+export function toast(kind: NoticeKind, text: string, key?: string): void {
+  const i = text.indexOf(': ');
+  showToast({ tone: TOAST_TONE[kind], title: i < 0 ? text : text.slice(0, i + 1), body: i < 0 ? undefined : text.slice(i + 2), key,
+    ...(kind === 'unknown' ? { timeout: 0 } : {}) });
+}
 export const tracker = new Tracker(
   (cmd, args) => bridge.command(cmd, args, s.info?.generation),
   (key, params) => t(key, params),
+  toast,
 );
 export const run = (o: RunOptions) => tracker.run(o);
+export const requirement = (id: RequirementId) => s.requirements.find(r => r.id === id);
+/** ffmpeg was looked for and is not there: the camera is off (the plugin does not start it either). */
+// ffmpeg only matters when this page can't play the camera itself: no H.264 here, or an RTSP stream.
+export const pagePlays = computed(() => playable() && !String(s.status?.camera_url ?? '').toLowerCase().startsWith('rtsp://'));
+export const noFfmpeg = computed(() => requirement('ffmpeg')?.state === 'missing' && !pagePlays.value);
+/** Anycubic Slicer Next is not in its usual folder: Find certificate searches only a path typed in. */
+export const noSlicer = computed(() => requirement('anycubic_slicer')?.state === 'missing');
+/** Settings > Requirements > Check again: the plugin looks for ffmpeg and Anycubic Slicer Next again. */
+export function checkRequirements(): void {
+  s.checking = true;
+  bridge.post({ type: 'check_requirements' });
+}
 bridge.setErrorSink(e => tracker.notify('error', t('msg.plugin', { error: message(e) })));
 
-export const printerName = computed(() => s.info?.printer || 'U1');
+export const printerName = computed(() => s.info?.printer || t('app.printer'));
 export const targetKnown = computed(() => s.phase === 'connected' || s.phase === 'unreachable');
+/** The one connection state every part of the page shows (badge, banner, Status card, camera, controls). */
+export type Link = 'connecting' | 'connected' | 'offline' | 'noCertificate' | 'noTarget';
+/** The selected preset uses another printer agent (Kobralink's "moonraker", say): its name, else ''. */
+export const otherAgent = computed(() => {
+  const agent = s.located?.preset_agent ?? '';
+  return agent && agent !== 'kobracontrol' ? agent : '';
+});
+let agentNoted = false;
+export const link = computed<Link>(() => {
+  if (s.phase === 'connected') return s.offline ? 'offline' : 'connected';
+  return s.phase === 'unreachable' ? 'offline' : s.phase;
+});
 export const statusAge = computed(() => (s.statusAt ? (s.now - s.statusAt) / 1000 : Infinity));
+/** The values on screen are the last known ones, not live: drawn grey with their age. */
+export const stale = computed(() => !!s.status && (link.value === 'offline' || statusAge.value > STALE_STATUS_S));
 export const printing = computed(() => s.status?.state === 'printing' || s.status?.state === 'paused');
-/** Why printer commands are off, or '' when they can be used. Emergency stop has its own rule (estopReason). */
+/** Why printer commands are off, or '' when they can be used. */
 export const controlsOff = computed(() => {
-  if (s.phase === 'noTarget') return t('reason.noTarget');
-  if (s.phase === 'unreachable' || s.offline) return t('reason.offline');
-  if (s.phase === 'connecting' || !s.status) return t('reason.waiting');
+  if (link.value === 'noCertificate') return t('reason.noCertificate');
+  if (link.value === 'noTarget') return t('reason.noTarget');
+  if (link.value === 'offline') return t('reason.offline');
+  if (link.value === 'connecting') return t('reason.connecting');
+  if (!s.status?.connected) return t('reason.waiting');
   return '';
 });
-/** E-stop stays usable for a known printer even when its status is offline or late (urgent path, no queue). */
-export const estopReason = computed(() => (targetKnown.value ? '' : s.phase === 'noTarget' ? t('reason.noTarget') : t('reason.waiting')));
-export const busy = computed(() => !!s.status?.busy);
+/** What a connected printer refuses right now (it prints, prepares, dries...). The page says it once, in the banner
+ *  under the page header (#kc-busy); the controls it turns off point there. All false while `controlsOff` says more. */
+export const busy = computed(() => {
+  const can = controlsOff.value ? null : s.status?.can;
+  return { feed: !!can && !can.feed, move: !!can && !can.move, heat: !!can && !can.heat, print: !!can && !can.print };
+});
+/** The id of the banner that says why a control is off: the page's (#kc-why), the busy one (#kc-busy), or none. */
+export const whyId = (off: boolean) => (controlsOff.value ? 'kc-why' : off ? 'kc-busy' : undefined);
+/** Numbers in the status are real only after the printer has reported once (blank is never 0). */
+export const reported = computed(() => !!s.status?.updated_at);
+/** Spool id bound to each slot (global index). */
+export const bindings = computed(() => boundSlots(
+  Object.fromEntries((s.status?.slots ?? []).map(sl => [sl.global_index, sl.spool_id])), s.stock?.bindings ?? {}));
 
 function reset(): void {
   s.epoch++;
-  Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], bindings: {}, spoolsVia: '',
-    spoolsError: '', spoolsLoaded: false, frame: '', camError: '', screen: '', screenError: '', usageError: '' });
+  Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
+    frame: '', video: false, camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0, device: '' });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
 
 let helloInFlight = false;
-export async function hello(): Promise<void> {
+let lastNote = '';
+/** Ask the plugin for the printer. `retry`: the user pressed Retry, so a failed connection tries again now
+ *  instead of after its growing delay; otherwise its last error comes back at once. */
+export async function hello(retry = false): Promise<void> {
+  const offered = s.phase === 'noTarget' && s.candidates.length > 0;
   reset();
-  s.phase = 'connecting';
+  // A printer offered for a choice stays on screen while the plugin is asked again: no flicker to "Connecting".
+  if (!offered) s.phase = 'connecting';
   const epoch = s.epoch;
   helloInFlight = true;
   try {
-    const r: Info = await bridge.request({ type: 'hello' });
+    const r: Info = await bridge.request({ type: 'hello', retry });
     if (epoch !== s.epoch) return;
     s.info = r;
-    s.limits = { ...LIMITS, ...(r.limits ?? {}) };
     s.phase = 'connected';
+    s.candidates = [];
+    if (r.note && r.note !== lastNote) { lastNote = r.note; tracker.notify('info', r.note); }   // once: how it was found
+    if (otherAgent.value && !agentNoted) { agentNoted = true; tracker.notify('info', t('agent.other', { agent: otherAgent.value })); }
     void loadSpools(true);
   } catch (e) {
     if (epoch !== s.epoch) return;
-    s.phase = e instanceof bridge.ReplyError && e.noTarget ? 'noTarget' : 'unreachable';
+    s.phase = e instanceof bridge.ReplyError && e.noCertificate ? 'noCertificate'
+      : e instanceof bridge.ReplyError && e.noTarget ? 'noTarget' : 'unreachable';
     s.error = message(e);
+    s.candidates = e instanceof bridge.ReplyError ? e.candidates : [];
+    s.offline = '';   // the answer is newer than any 'offline' message that came while it was awaited
   } finally {
     helloInFlight = false;
     if (epoch === s.epoch) { void loadStock(false); void loadUsage(); }
   }
 }
 
-export async function loadSpools(quiet: boolean): Promise<void> {
-  if (!targetKnown.value) return;
+/** Ask the printer for its network address, counters and Print Assist switches (read only; the answers come in the
+ *  status). Once per connection, and only while the printer is idle (the Printer panel calls it): these messages are
+ *  not tried on a Kobra X yet, so none is sent during a print. A firmware that does not answer just leaves them out. */
+export async function loadDevice(): Promise<void> {
+  const epoch = s.epoch;
+  s.device = 'asking';
+  let ok = true;
+  try { await bridge.command('device', {}, s.info?.generation); } catch { ok = false; }
+  // A refused or failed ask (the printer started a print meanwhile, the connection dropped) is asked again the next
+  // time the printer is idle; the panel shows only what was reported.
+  if (epoch === s.epoch) s.device = ok ? 'done' : '';
+}
+
+/** The user clicked "Allow and use" on a printer the search found that OrcaSlicer does not let the plugin reach yet:
+ *  the plugin has OrcaSlicer show its dialog now (on its UI thread, so a Yes is saved at once), then connects. Never
+ *  asked without that click: a printer found on the network is not used until the user chooses it. */
+async function allowFound(hosts: string[]): Promise<void> {
+  const fresh = hosts.slice(0, 1);
+  if (!fresh.length) return;
+  try {
+    const r = await bridge.request({ type: 'allow_hosts', hosts: fresh, user: true });
+    if (r?.allowed?.length) { void hello(); return; }
+    // Not allowed (refused, or no dialog came): say what to do instead of waiting for ever.
+    s.error = t('fr.allow.fallback', { ip: fresh[0] });
+  } catch (e) {
+    tracker.notify('error', t('msg.plugin', { error: message(e) }));
+  }
+}
+
+/** Settings > Search again, and the first-run card: look for the printer on the network again. */
+export async function searchAgain(): Promise<void> {
+  const r = await run({ key: 'search', label: t('act.search'), cmd: 'search_printer', timeoutMs: 30000, quiet: true });
+  if (r.ok || s.phase !== 'connected') void hello();   // a failed search: hello shows its message
+}
+
+/** The user picked one of the printers offered: one OrcaSlicer may not reach yet is allowed first (its dialog). */
+export async function choosePrinter(c: bridge.Candidate): Promise<void> {
+  if (c.needs_allow) { await allowFound([c.ip]); return; }
+  const r = await run({ key: 'choose', label: t('act.choose'), cmd: 'choose_printer', args: { host: c.ip } });
+  if (r.ok) { s.candidates = []; void hello(); }   // chosen: the offer is answered
+}
+
+/** Spools and slot links from Spoolman; false when the read failed. */
+export async function loadSpools(quiet: boolean): Promise<boolean> {
+  if (!targetKnown.value) return true;
   const epoch = s.epoch;
   const r = await run({ key: 'spools', label: t('act.spools'), cmd: 'spools', quiet: true });
-  if (epoch !== s.epoch) return;
+  if (epoch !== s.epoch) return true;
   if (r.ok) {
     s.spools = r.result.spools ?? [];
-    s.bindings = r.result.bindings ?? {};
-    s.spoolsVia = r.result.via ?? '';
     s.spoolsError = '';
     s.spoolsLoaded = true;
   } else if (r.reason !== 'busy') {
     s.spoolsError = r.error ?? t('common.unknown');
     if (!quiet) tracker.notify('error', t('msg.failed', { action: t('act.spools'), error: s.spoolsError }));
   }
+  return r.ok || r.reason === 'busy';
 }
 
 let stockSeq = 0;
@@ -134,39 +252,45 @@ export async function loadUsage(): Promise<void> {
   }
 }
 
-export const stockVisible = computed(() => {
-  const st = s.stock;
-  if (s.stockError) return true;
-  return !!st && st.spooler.state !== 'absent';
-});
+/** The Stock tab lists spools only when the plugin says the list is usable (`available`); otherwise it says why not. */
+export const stockVisible = computed(() => !s.stockError && s.stock?.available === true);
 
 function onMessage(m: any): void {
   switch (m.type) {
     case 'status':
-      s.status = m.data; s.statusAt = Date.now(); s.offline = '';
-      if (m.data?.bindings) s.bindings = m.data.bindings;
-      if (s.phase === 'unreachable' && !helloInFlight) void hello();   // it answers again: fetch its generation
+      s.status = m.data; s.statusAt = Date.now();
+      if (m.data?.connected === true) keepHistory(m.data);
+      if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message
+      // Statuses come every second, connected or not: only one that says connected means it answers again.
+      if (m.data?.connected === true && (s.phase === 'unreachable' || s.phase === 'noCertificate') && !helloInFlight) void hello();
       break;
-    case 'offline': s.offline = String(m.error ?? ''); break;
-    case 'frame': s.frame = m.image; s.camError = ''; break;
-    case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.frame = ''; } break;
-    case 'screen': s.screen = m.image; s.screenError = ''; break;
-    case 'screen_error': if (s.scrOn) { s.screen = ''; s.screenError = String(m.error ?? ''); } break;
+    // s.now too: the countdown is retry_at minus now, and the 1 s clock can lag behind in a throttled tab.
+    case 'offline': s.offline = String(m.error ?? ''); s.retryAt = Number(m.retry_at) || 0; s.now = Date.now(); break;
+    case 'frame': s.frame = m.image; s.video = false; s.camError = ''; s.camReason = ''; break;
+    case 'camera_error': if (s.camOn) { s.camError = String(m.error ?? ''); s.camReason = String(m.reason ?? 'failed'); s.frame = ''; s.video = false; } break;
+    case 'requirements': s.requirements = Array.isArray(m.items) ? m.items : []; s.checking = m.checking === true; break;
     case 'notice': tracker.notify('info', String(m.text ?? '')); break;
-    case 'config': configHandlers.forEach(h => h(m)); break;
-    case 'rfid': rfidHandlers.forEach(h => h(m)); break;
+    case 'config': s.certificate = m.certificate ?? null; s.located = m.located ?? null; s.limits = { ...LIMITS, ...(m.limits ?? {}) }; configHandlers.forEach(h => h(m)); break;
     case 'selection_changed': void hello(); break;
+    case 'show_tab': if (m.tab === 'settings') openSettings('print-h'); else if (['dash', 'stock', 'files'].includes(m.tab)) s.tab = m.tab; break;   // the print setup's "Plugin settings"
     case 'reply': if (m.error) tracker.notify('error', t('msg.plugin', { error: String(m.error) })); break;
   }
 }
+const HISTORY_EVERY_MS = 30000, HISTORY_MAX = 20;   // ten minutes of readings, one every 30 s
+function keepHistory(d: Status): void {
+  if (!d.updated_at || s.statusAt - s.historyAt < HISTORY_EVERY_MS) return;
+  const add = (key: string, v: number | undefined) => [key, [...(s.history[key] ?? []), v ?? null].slice(-HISTORY_MAX)] as const;
+  s.history = Object.fromEntries([add('nozzle', d.nozzle_temp), add('bed', d.bed_temp)]);
+  s.historyAt = s.statusAt;
+}
 const configHandlers = new Set<(m: Config) => void>();
-const rfidHandlers = new Set<(m: any) => void>();
 export const onConfig = (h: (m: Config) => void) => { configHandlers.add(h); return () => configHandlers.delete(h); };
-export const onRfid = (h: (m: any) => void) => { rfidHandlers.add(h); return () => rfidHandlers.delete(h); };
 
+const stockTab = () => s.tab === 'dash' || s.tab === 'stock';
 export function lease(): void {
   const vis = !s.hidden && s.tab === 'dash';
-  bridge.post({ type: 'lease', camera: s.camOn && vis, screen: s.scrOn && vis, stock: vis && stockVisible.value });
+  // The stock is read for its own tab and for the dashboard, whose slot cards and drawing show the linked spools.
+  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: !s.hidden && stockTab() && stockVisible.value, mse: playable() });
 }
 
 export function start(): () => void {
@@ -177,9 +301,14 @@ export function start(): () => void {
   const timers = [
     window.setInterval(lease, 2000),
     window.setInterval(() => { s.now = Date.now(); }, 1000),
-    window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadStock(false); }, 5000),
+    window.setInterval(() => { if (stockTab() && !s.hidden) void loadStock(false); }, 5000),
     window.setInterval(() => { if (s.tab === 'dash' && !s.hidden) void loadUsage(); }, 10000),
   ];
+  // Spoolman can change from elsewhere (Spooler, Spoolman's own page): re-read the links while the page shows.
+  const auto = autoRefresh({ load: () => loadSpools(true), every: () => s.refreshS, held: userBusy, onFailing: f => { s.spoolsRetrying = f; } });
+  const offCfg = onConfig(m => { const v = cleanEvery(m.settings?.spoolman_refresh_s); if (v !== s.refreshS) { s.refreshS = v; auto.restart(); } });
+  // Spooler says right away when it linked or unlinked a spool (its presence's "links"): re-read without waiting.
+  const offLinks = watch(() => s.stock?.spooler?.links, (now, was) => { if (was !== undefined && now !== was) void loadSpools(true); });
   void hello();
-  return () => { off(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
+  return () => { off(); offCfg(); offLinks(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
 }

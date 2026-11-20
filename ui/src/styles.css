@@ -1,0 +1,51 @@
+/* Kobra Control's own layout on top of the shared foundation (ui/shared): the page grid, rows inside a panel, plain
+   tables and the printer drawing. Colours are the foundation's --oui-* roles only; nothing here defines a colour. */
+
+/* Chinese punctuation from the system's Chinese font. Manrope has the Latin quotes and ellipsis, so “…” and … came out
+   as narrow Latin marks in Chinese text; letters and figures stay Manrope's. */
+@font-face {
+  font-family: 'OuiCJKPunct';
+  src: local('PingFang SC'), local('PingFangSC-Regular'), local('Hiragino Sans GB'), local('HiraginoSansGB-W3'),
+    local('Microsoft YaHei'), local('Noto Sans CJK SC'), local('NotoSansCJKsc-Regular'), local('Noto Sans SC');
+  unicode-range: U+2018-201F, U+2026, U+3000-303F, U+FF00-FFEF;
+}
+:root:lang(zh) { --oui-font: 'OuiCJKPunct', 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* Page-level messages: under the page header of the open tab (App.vue moves them into its .kc-msgs). The live regions
+   stay in the DOM while empty (what is added later is then announced); only filled ones take space. An empty holder
+   leaves the page's grid (out of flow, not display: none), so it costs no row gap. */
+.kc-msgs { display: grid; min-width: 0; }
+.kc-msgs .oui-banner { margin-bottom: var(--oui-s2); }
+.kc-msgs:has(.oui-banner) { margin-bottom: calc(-1 * var(--oui-s2)); }
+.kc-msgs:not(:has(.oui-banner)) { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+.kc-msgs-settings:has(.oui-banner) { margin: 0; padding: var(--oui-s3) var(--oui-s4) 0; }
+.kc-live { display: grid; gap: var(--oui-s2); min-width: 0; }
+.kc-msgs .kc-live { gap: 0; }
+
+/* Files: the browser is as tall as the window under the bars above it (app bar, page header, paddings). */
+.kc-files { --oui-files-height: calc(100vh - 124px); }
+@supports (height: 100dvh) { .kc-files { --oui-files-height: calc(100dvh - 124px); } }
+
+/* First run: one panel, one task. */
+.kc-first { justify-self: center; width: min(100%, 600px); margin-top: var(--oui-s8); }
+.kc-first .oui-empty { padding-block: var(--oui-s8) var(--oui-s5); }
+.kc-first .oui-empty-image { width: 176px; height: 176px; }
+
+.kc-inline { display: inline-flex; align-items: center; gap: var(--oui-s2); font-size: var(--oui-text-sm); color: var(--oui-muted); white-space: nowrap; }
+/* A value the field refused (out of range), beside its control. Empty unless there is one. */
+.kc-err { font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-danger); }
+.kc-err:empty { display: none; }
+.kc-pad { padding: var(--oui-s3); }
+.kc-low { color: var(--oui-warning); font-weight: 600; }
+
+/* Plain tables (stock, filament use): the same measures as the foundation's small data table. */
+.kc-table { width: 100%; border-collapse: collapse; }
+.kc-table th { position: sticky; top: 0; z-index: 1; padding: 6px 12px; text-align: start; white-space: nowrap; font-size: var(--oui-text-xs); font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--oui-muted); background: var(--oui-raised); box-shadow: inset 0 -1px 0 var(--oui-border); }
+.kc-table td { padding: 5px 12px; vertical-align: middle; border-bottom: 1px solid var(--oui-border); }
+.kc-table tbody tr:last-child > td { border-bottom-width: 0; }
+.kc-table tbody tr:hover > td { background: var(--oui-raised); }
+.kc-table :is(th, td).oui-num, .kc-table :is(th, td).oui-end { text-align: end; }
+.kc-disclose summary { cursor: pointer; font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-primary-text); }
+.kc-disclose > :not(summary) { margin-top: var(--oui-s2); }
+

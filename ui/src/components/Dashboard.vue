@@ -1,61 +1,76 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import Icon from './Icon.vue';
-import StatusCard from './StatusCard.vue';
+import { OuiIcon, OuiPageHeader } from '../../shared/src/components';
+import { edit } from '../../shared/src/icons';
+import JobCard from './JobCard.vue';
+import ControlsPanel from './ControlsPanel.vue';
+import MotionPanel from './MotionPanel.vue';
+import PrinterPanel from './PrinterPanel.vue';
 import CameraCard from './CameraCard.vue';
-import ScreenCard from './ScreenCard.vue';
-import ToolheadsCard from './ToolheadsCard.vue';
-import StockCard from './StockCard.vue';
-import UsageCard from './UsageCard.vue';
+import AceCard from './AceCard.vue';
 import SpoolerHint from './SpoolerHint.vue';
-import { s, run, controlsOff } from '../app/store';
-import { ask } from '../core/dialog';
+import UsageCard from './UsageCard.vue';
+import FirstRun from './FirstRun.vue';
+import { s, run, tracker, busy, controlsOff, printerName, whyId } from '../app/store';
+import { prompt } from '../core/dialog';
 import { t } from '../core/i18n';
 
+// The dashboard standard (DESIGN.md): the printer in the page header, the print across the top, what you work on
+// (filament, controls) in the main column and what you watch (camera, moves, the printer's facts) beside it.
+// Without a certificate or a printer the modules would only be empty: the one task and its recovery come instead.
+const firstRun = computed(() => s.phase === 'noCertificate' || s.phase === 'noTarget');
 const st = computed(() => s.status);
-const exceptions = computed(() => (st.value?.exceptions ?? []).map(x => JSON.stringify(x)).join('\n'));
-async function powerResume() {
-  if (!await ask({ title: t('act.powerResume'), text: t('confirm.powerResume.text'), yes: t('confirm.powerResume.yes'), no: t('common.goBack') })) return;
-  await run({ key: 'power', label: t('act.powerResume'), cmd: 'power_loss', args: { action: 'resume' }, okText: t('ok.powerResume'), timeoutMs: 60000 });
-}
-async function powerDiscard() {
-  if (!await ask({ title: t('act.powerDiscard'), text: t('confirm.powerDiscard.text'), yes: t('confirm.powerDiscard.yes'), no: t('common.goBack'), danger: true })) return;
-  await run({ key: 'power', label: t('act.powerDiscard'), cmd: 'power_loss', args: { action: 'discard' }, okText: t('ok.powerDiscard') });
+const name = computed(() => st.value?.printer_name || printerName.value);
+const meta = computed(() => [s.info?.address, st.value?.model, st.value?.firmware ? t('status.firmware', { version: st.value.firmware }) : ''].filter(Boolean).join(' · '));
+
+// Rename asks for the name first and needs an idle printer (status.can.print), like every change to the printer itself.
+// service.cmd_rename's rule: 1-32 UTF-8 bytes, no control characters, quotes, backslashes or angle brackets.
+const NAME_MAX = 32;
+const validName = (v: string) => { const n = v.trim().replace(/\s+/g, ' ');
+  return n && new TextEncoder().encode(n).length <= NAME_MAX && !/["<>\\\u0000-\u001f]/.test(n) ? n : ''; };
+const renameOff = computed(() => !!controlsOff.value || busy.value.print || !st.value?.printer_name);
+async function rename() {
+  const typed = await prompt({ title: t('confirm.rename.title'), text: t('confirm.rename.text', { max: NAME_MAX }),
+    input: { label: t('device.name'), value: st.value?.printer_name ?? '' }, yes: t('confirm.rename.yes'), no: t('common.goBack') });
+  if (typed == null) return;
+  const next = validName(typed);
+  if (!next) { tracker.notify('error', t('device.nameInvalid', { max: NAME_MAX })); return; }
+  if (next === st.value?.printer_name) return;
+  await run({ key: 'rename', label: t('act.rename'), cmd: 'rename', args: { name: next }, okText: t('ok.rename', { name: next }),
+    sentText: t('sent.rename'), timeoutMs: 20000 });
 }
 </script>
+
 <template>
-  <div class="db">
-    <section v-if="st?.power_loss" class="u1-card db-warn" aria-labelledby="pl-h">
-      <h2 id="pl-h"><Icon name="icon/power-loss-resume" /> {{ t('power.title') }}</h2>
-      <p v-if="st.reprint" class="oui-meta">{{ t('power.options', { options: JSON.stringify(st.reprint) }) }}</p>
-      <div class="u1-row">
-        <Button :disabled="!!controlsOff" data-focus-key="pl-resume" @click="powerResume"><Icon name="icon/resume" /><span>{{ t('power.resume') }}</span></Button>
-        <Button severity="danger" outlined :disabled="!!controlsOff" data-focus-key="pl-discard" @click="powerDiscard"><Icon name="icon/delete" /><span>{{ t('power.discard') }}</span></Button>
-      </div>
-    </section>
-    <section v-if="exceptions" class="u1-card db-err" aria-labelledby="ex-h" role="alert">
-      <h2 id="ex-h" class="u1-err"><Icon name="icon/error" /> {{ t('exceptions.title') }}</h2>
-      <pre class="oui-error-detail">{{ exceptions }}</pre>
-    </section>
+  <OuiPageHeader v-if="!firstRun" :title="name" :meta="meta" data-test="printer-head">
+    <template #actions>
+      <Button severity="secondary" text :label="t('device.rename')" :disabled="renameOff" :aria-describedby="whyId(busy.print)"
+              :loading="tracker.isBusy('rename')" data-focus-key="rename" data-test="rename" @click="rename">
+        <template #icon><OuiIcon :icon="edit" :size="14" /></template></Button>
+    </template>
+  </OuiPageHeader>
+
+  <!-- Always here, also on the first run: the page's messages are moved into it (App.vue). -->
+  <div class="kc-msgs" data-msgs="dash" />
+
+  <FirstRun v-if="firstRun" />
+
+  <template v-else>
     <UsageCard />
-    <div class="db-grid">
-      <StatusCard />
-      <div class="db-side">
+    <SpoolerHint />
+
+    <div class="oui-dash">
+      <JobCard class="oui-dash-top" />
+      <div class="oui-dash-main" data-test="filament">
+        <AceCard />
+        <ControlsPanel />
+      </div>
+      <div class="oui-dash-side" data-test="machine">
         <CameraCard />
-        <ScreenCard v-if="s.info?.firmware.kind === 'extended'" />
+        <MotionPanel />
+        <PrinterPanel />
       </div>
     </div>
-    <SpoolerHint where="dash" />
-    <ToolheadsCard />
-    <StockCard />
-  </div>
+  </template>
 </template>
-<style scoped>
-.db { display: grid; gap: 16px; }
-.db-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
-.db-side { display: grid; gap: 16px; min-width: 0; }
-.db-warn { border-color: var(--oui-warning); }
-.db-err { border-color: var(--oui-danger); }
-@media (max-width: 900px) { .db-grid { grid-template-columns: minmax(0, 1fr); } }
-</style>

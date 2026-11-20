@@ -1,7 +1,7 @@
-// Pure rules shared by the pages and their unit tests (no DOM, no Vue).
+// Pure rules shared by the page and its unit tests (no DOM, no Vue).
 export type TargetInput = { kind: 'empty' } | { kind: 'invalid' } | { kind: 'off' } | { kind: 'heat'; value: number };
 
-/** A blank field is never 0 (U02); 0 typed explicitly means off; anything outside 0..max is refused (B-09). */
+/** A blank field is never 0; 0 typed explicitly means off; anything outside 0..max is refused. */
 export function parseTarget(raw: unknown, max: number): TargetInput {
   if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return { kind: 'empty' };
   const v = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
@@ -10,42 +10,93 @@ export function parseTarget(raw: unknown, max: number): TargetInput {
   return value === 0 ? { kind: 'off' } : { kind: 'heat', value };
 }
 
-export function parseSpeed(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === '') return null;
-  const v = Number(raw);
-  return Number.isFinite(v) && v >= 10 && v <= 300 ? Math.round(v) : null;
+/** A whole number inside min..max, or null (blank, text, out of range). */
+export function parseWhole(raw: unknown, min: number, max: number): number | null {
+  if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return null;
+  const v = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
+  return Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : null;
 }
 
 export const family = (t: unknown): string => ((String(t ?? '').match(/[A-Za-z]+/) || [''])[0]).toUpperCase();
 
-export interface SetupFilament { index: number; type: string; colour?: string; weight?: number }
-export interface SetupHead { index: number; loaded: boolean; type: string; vendor?: string; sub_type?: string; colour?: string }
-export type SetupWarning =
-  | { id: string; kind: 'empty'; f: number; h: number }
-  | { id: string; kind: 'material'; f: number; h: number; a: string; b: string };
+/** "#RRGGBB" for a slot colour [r, g, b]; '' when the colour is missing or malformed. */
+export function hexOf(color: unknown): string {
+  if (!Array.isArray(color) || color.length < 3) return '';
+  const parts = color.slice(0, 3).map(c => Math.max(0, Math.min(255, Math.round(Number(c)))));
+  return parts.some(Number.isNaN) ? '' : '#' + parts.map(c => c.toString(16).padStart(2, '0')).join('');
+}
 
-/** Same rules and ids as u1.warning_ids in the plugin, which refuses a send whose warnings weren't acknowledged. */
-export function setupWarnings(filaments: SetupFilament[], heads: SetupHead[], map: Record<string, number>): SetupWarning[] {
-  const out: SetupWarning[] = [];
-  for (const f of [...filaments].sort((a, b) => a.index - b.index)) {
-    const h = heads[map[String(f.index)]];
-    if (!h) continue;
-    if (!h.loaded) out.push({ id: `empty:${f.index}:${h.index}`, kind: 'empty', f: f.index, h: h.index });
-    else if (family(h.type) !== family(f.type)) out.push({ id: `material:${f.index}:${h.index}`, kind: 'material', f: f.index, h: h.index, a: f.type, b: h.type });
-  }
+export interface SlotLike { global_index: number; box_id: number; index: number }
+export interface SlotGroup<T extends SlotLike> { boxId: number; slots: T[] }
+
+/** Slots grouped by the box that holds them: the print head (box -1) first, then ACE units by id. */
+export function groupSlots<T extends SlotLike>(slots: readonly T[]): SlotGroup<T>[] {
+  const groups = new Map<number, T[]>();
+  for (const sl of slots) groups.set(sl.box_id, [...(groups.get(sl.box_id) ?? []), sl]);
+  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([boxId, list]) => ({ boxId, slots: [...list].sort((a, b) => a.index - b.index) }));
+}
+
+/** Object names a print can skip: the printer's objects minus those already skipped (anything but strings is dropped). */
+export function skippable(objects: unknown, skipped: unknown): string[] {
+  const names = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
+  const done = names(skipped);
+  return [...new Set(names(objects))].filter(n => !done.includes(n));
+}
+
+/** A thumbnail as an image source: a data URL as is, bare base64 as PNG, anything else nothing. */
+export function thumbSrc(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '';
+  if (raw.startsWith('data:image/')) return raw;
+  return /^[A-Za-z0-9+/=\s]+$/.test(raw) ? `data:image/png;base64,${raw.replace(/\s+/g, '')}` : '';
+}
+
+/** Spool id bound to each slot, preferring the live status over the stock view. */
+export function boundSlots(live: Record<number, number | null>, fromStock: Record<string, number>): Record<number, number> {
+  const out: Record<number, number> = Object.fromEntries(Object.entries(fromStock).map(([k, v]) => [Number(k), v]));
+  for (const [k, v] of Object.entries(live)) { if (v != null) out[Number(k)] = v; else delete out[Number(k)]; }
   return out;
 }
 
-export const warningKey = (w: SetupWarning[]): string => w.map(x => x.id).join(',');
-
-/** Folder choices for "Move": every folder but the current one, the item itself and its subfolders. */
-export function moveTargets(folders: string[], path: string, name: string): string[] {
-  const src = `${path}/${name}`;
-  return folders.filter(f => f !== path && f !== src && !f.startsWith(src + '/'));
+export type FileSort = 'newest' | 'oldest' | 'name' | 'largest';
+/** The printer's files matching `q` (name, case-insensitive), in the chosen order; the input is not changed. */
+export function listFiles<T extends { name: string; size: number; timestamp: number }>(files: readonly T[], q: string, sort: FileSort): T[] {
+  const needle = q.trim().toLowerCase();
+  const out = files.filter(f => !needle || f.name.toLowerCase().includes(needle));
+  const by: Record<FileSort, (a: T, b: T) => number> = {
+    newest: (a, b) => b.timestamp - a.timestamp,
+    oldest: (a, b) => a.timestamp - b.timestamp,
+    name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+    largest: (a, b) => b.size - a.size,
+  };
+  return out.sort(by[sort]);
 }
 
-/** Map each bound spool id to its toolhead label ("T2"), preferring the live bindings. */
-export function boundHeads(live: Record<string, number>, fromStock: Record<string, number>): Record<number, string> {
-  const src = Object.keys(live).length ? live : fromStock;
-  return Object.fromEntries(Object.entries(src).map(([h, sid]) => [sid, `T${Number(h) + 1}`]));
+/** A video's length as m:ss (h:mm:ss from an hour on); '' when it has none. */
+export function clipLength(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+  const s = Math.max(1, Math.round(seconds)), h = Math.floor(s / 3600), two = (n: number) => String(n).padStart(2, '0');
+  return (h ? `${h}:${two(Math.floor((s % 3600) / 60))}` : `${Math.floor(s / 60)}`) + `:${two(s % 60)}`;
+}
+
+/** A SHA-256 hex fingerprint as AB:CD:...; anything else unchanged. */
+export function fingerprintText(hex: string): string {
+  return /^(?:[0-9a-f]{2})+$/i.test(hex) ? hex.toUpperCase().match(/../g)!.join(':') : hex;
+}
+
+/** Unix time a running print should end: the printer's remaining time from its last report; null when unknown
+ * (not printing, still preparing, no remaining time). */
+export function finishAt(st: { state: string; preparing: boolean; remaining_s: number; updated_at: number } | null | undefined,
+  now: number): number | null {
+  if (!st || st.state !== 'printing' || st.preparing || !(st.remaining_s > 0)) return null;
+  return (st.updated_at > 0 ? st.updated_at : now) + st.remaining_s;
+}
+
+/** What a heater is doing, from its reading and target: null when it can't be told (no target or no reading). */
+export type HeaterPhase = 'heating' | 'target' | 'cooling' | 'off';
+export function heaterPhase(temp: number | null | undefined, target: number | null | undefined): HeaterPhase | null {
+  if (typeof target !== 'number' || !Number.isFinite(target)) return null;
+  if (target <= 0) return 'off';
+  if (typeof temp !== 'number' || !Number.isFinite(temp)) return null;
+  const d = temp - target;
+  return Math.abs(d) <= 2 ? 'target' : d < 0 ? 'heating' : 'cooling';
 }

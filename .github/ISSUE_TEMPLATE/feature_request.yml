@@ -9,16 +9,8 @@ body:
       description: The problem or workflow, not only the solution.
     validations:
       required: true
-  - type: dropdown
-    id: firmware
-    attributes:
-      label: Which firmware does it need?
-      options:
-        - Any
-        - Stock Snapmaker firmware
-        - U1 Extended Firmware
   - type: textarea
     id: idea
     attributes:
       label: Idea
-      description: How it could work. Links to the firmware command or API help a lot.
+      description: How it could work. Links to how Kobralink or KX-Bridge do it help a lot.

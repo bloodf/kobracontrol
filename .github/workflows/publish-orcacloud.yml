@@ -4,7 +4,7 @@ name: Publish to Orca Cloud
 #
 # Flow: bump pyproject.toml (and ui/package.json) and CHANGELOG.md on main, push the tag vX.Y.Z at that commit,
 # then publish a GitHub release for the tag (gh release create vX.Y.Z --verify-tag ...). That event runs this
-# workflow. docs/release.md has the exact steps and what to verify afterwards.
+# workflow.
 #
 # One-time setup: connect this repository on Orca Cloud (Edit plugin > GitHub publishing).
 # No secrets: the run proves its origin with a short-lived GitHub OIDC token (audience orcacloud).
@@ -36,15 +36,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ github.event.release.tag_name }}
-      # Spooler (the other OrcaSlicer plugin) for tests/test_spooler_joint.py and tests/test_unified.py: the release
-      # this version is tested against (the joint tests need its presence/stock-list API, first released in v0.21.0).
-      - uses: actions/checkout@v7
-        with:
-          repository: bloodf/spooler
-          ref: v0.21.0
-          path: spooler
-      - name: Spooler ref under test
-        run: git -C spooler log -1 --format='Spooler %H %s'
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -78,7 +69,6 @@ jobs:
         run: git diff --exit-code -- src/kobracontrol/ui/app.html ui/build.json
       - name: Unit tests
         env:
-          SPOOLER_SRC: ${{ github.workspace }}/spooler
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
         run: python -m unittest discover -s tests
       - name: Build (tag must match pyproject version)

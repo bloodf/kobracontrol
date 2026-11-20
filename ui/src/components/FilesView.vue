@@ -1,149 +1,257 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import Select from 'primevue/select';
-import Message from 'primevue/message';
-import Icon from './Icon.vue';
-import Thumb from './Thumb.vue';
+import InputText from 'primevue/inputtext';
+import ToggleSwitch from 'primevue/toggleswitch';
+import { OuiEmpty, OuiFileBrowser, OuiHint, OuiIcon, OuiPageHeader, OuiPanel, OuiSwatch, useFileBackend, type OuiFileBackend, type OuiFileBrowserLabels } from '../../shared/src/components';
+import { printer, refresh } from '../../shared/src/icons';
 import * as bridge from '../core/bridge';
-import { s, run, tracker, targetKnown, printerName } from '../app/store';
-import { newFolder } from '../app/thumbs';
-import { ask, choose, prompt } from '../core/dialog';
-import { t, fmt } from '../core/i18n';
+import { s, run, tracker, targetKnown, printerName, controlsOff, busy, whyId } from '../app/store';
+import { config } from '../app/settings';
+import { ask } from '../core/dialog';
+import { t, tn, fmt } from '../core/i18n';
 import { message } from '../core/tracker';
-import { moveTargets } from '../core/logic';
+import { clipLength, thumbSrc } from '../core/logic';
+import type { FileDetails, FileEntry, FileMaterial, FilesResult, VideoEntry, VideosResult } from '../app/types';
 
-interface Entry { name: string; size?: number; modified?: number; time?: number; thumb?: string }
-const path = ref('gcodes');
-const state = ref<'idle' | 'loading' | 'ok' | 'error'>('idle');
-const error = ref('');
-const dirs = ref<Entry[]>([]);
-const files = ref<Entry[]>([]);
-const disk = ref('');
-const gen = ref(0);
-const root = computed(() => path.value.split('/')[0]);
-const roots = computed(() => [{ value: 'gcodes', label: t('files.root.gcodes') }, { value: 'camera', label: t('files.root.camera') }]);
-const rootLabel = (r: string) => (r === 'gcodes' ? t('files.root.gcodes') : t('files.root.camera'));
+// The Files tab, on the shared file browser: what is on the printer, with multi-select and delete, and one file's
+// details and print options beside the list. It is mounted while its tab is open, so the printer is asked for its
+// files when the tab is opened, not before.
+// What the Kobra X's LAN protocol offers (docs/protocol.md): file/listLocal of the storage's root, file/fileDetails,
+// file/deleteBatch (several files in one message), file/listVideo and file/deleteVideo (one video per message). It has
+// no folders to work with and no message to move, rename or create one, and no download. So the storage behind the
+// browser lists and deletes, and nothing else: the browser then has no folder tree, no "Move to" and no dragging. The
+// printer's two lists (print files, time-lapses) are a switch over the table.
+type Place = 'local' | 'videos';
+const place = ref<Place>('local');
+// Time-lapses are listed for a connected printer (idle or printing).
+const hasVideos = computed(() => s.phase === 'connected');
+// What the printer last listed. The rows are drawn from these (below), so they follow the page's language and clock.
+const local = ref<FileEntry[]>([]);
+const videos = ref<VideoEntry[]>([]);
 
-async function load() {
-  if (!targetKnown.value || !s.info) { state.value = 'idle'; dirs.value = []; files.value = []; return; }
-  const mine = newFolder(), folder = path.value;
-  gen.value = mine;
-  state.value = 'loading';
+/** The tracker has already told the user (no answer in time, or the same command still running): no second toast. */
+class Said extends Error {}
+const failed = (r: { reason: string; error?: string }) => (r.reason === 'error' ? new Error(r.error || t('common.unknown')) : new Said());
+let deleting: Place = 'local';
+const backend: OuiFileBackend = {
+  async list() {
+    const generation = s.info?.generation;
+    if (generation == null) throw new Error(t('files.waiting'));
+    if (place.value === 'videos') {
+      videos.value = ((await bridge.command('videos', {}, generation)) as VideosResult).videos ?? [];
+      return videos.value.map(v => ({ id: v.filename, name: v.filename }));
+    }
+    local.value = ((await bridge.command('files', {}, generation)) as FilesResult).files ?? [];
+    return local.value.map(f => ({ id: f.name, name: f.name }));
+  },
+  // The browser has already asked. A delete that removed only some rejects with how many are left.
+  async remove(ids) {
+    deleting = place.value;
+    if (deleting === 'local') {
+      const r = await run({ key: 'files-delete', label: t('act.delete'), cmd: 'file_delete', args: { names: ids }, quiet: true });
+      if (!r.ok) throw failed(r);
+      // The plugin answers with the list as it is now: a name still in it was not deleted.
+      const now: FileEntry[] = (r.result as Partial<FilesResult> | null)?.files ?? [];
+      const left = ids.filter(id => now.some(f => f.name === id)).length;
+      if (left) throw new Error(t('files.deleteSome', { failed: left, n: ids.length, error: t('common.unknown') }));
+      return;
+    }
+    // The printer deletes one video per message: one after the other, behind the one question.
+    let last: { reason: string; error?: string } | null = null, count = 0;
+    for (const name of ids) {
+      const r = await run({ key: `vdel:${name}`, label: t('act.videoDelete'), cmd: 'video_delete', args: { name }, quiet: true });
+      if (!r.ok) { count++; last = r; }
+    }
+    if (last) throw ids.length === 1 ? failed(last) : new Error(t('files.deleteSome', { failed: count, n: ids.length, error: last.error || t('common.unknown') }));
+  },
+};
+const files = useFileBackend(backend, {
+  onDone: (_action, ids) => tracker.notify('success', ids.length === 1 ? t(deleting === 'videos' ? 'ok.videoDelete' : 'ok.delete') : t('ok.deleteMany', { n: ids.length })),
+  onError: (_action, e) => { if (!(e instanceof Said)) tracker.notify('error', t('msg.failed', { action: t(deleting === 'videos' ? 'act.videoDelete' : 'act.delete'), error: message(e) })); },
+});
+// Another printer, or the same one answering again: read its list.
+watch(() => [s.epoch, s.phase], () => { if (!hasVideos.value) place.value = 'local'; void files.reload(); });
+/** The other list: nothing stays selected across the two. */
+function openList(to: Place) { if (to !== place.value) { files.selected = []; place.value = to; void files.reload(); } }
+
+// Storage comes with the status, in MB.
+const disk = computed(() => { const st = s.status?.storage; return st?.total ? t('files.used', { used: fmt.bytes((st.used ?? 0) * 1e6), total: fmt.bytes(st.total * 1e6) }) : ''; });
+const seconds = (ts: number) => (ts > 1e12 ? ts / 1000 : ts);
+
+// ---------------------------------------------------------------- one file selected: its details and the print options
+const one = computed(() => (place.value === 'local' && files.selected.length === 1 ? files.selected[0] : null));
+const details = ref<FileDetails | null>(null);
+const detailsError = ref('');
+const thumbs = ref<Record<string, string>>({});
+const options = ref({ leveling: true, vibration: true, flow: false, timelapse: false });
+// Flow calibration and time-lapse only where the printer says it has them (info/report features; unknown = offered).
+const canFlow = computed(() => s.status?.features?.flow_calibration_support !== false);
+const canTimelapse = computed(() => s.status?.features?.camera_timelapse_support !== false);
+let detailSeq = 0;
+watch(one, async name => {
+  details.value = null; detailsError.value = '';
+  const mine = ++detailSeq;
+  if (!name) return;
+  const st = config.value?.settings;
+  options.value = { leveling: st?.auto_leveling !== false, vibration: st?.vibration_compensation !== false, flow: st?.flow_calibration === true,
+    timelapse: st?.timelapse === true };
   try {
-    const r = await bridge.command('files', { path: folder }, s.info.generation);
-    if (mine !== gen.value) return;
-    dirs.value = r.dirs ?? []; files.value = r.files ?? [];
-    disk.value = r.disk ? t('files.free', { size: fmt.bytes(r.disk.free) }) : '';
-    state.value = 'ok';
+    const r: FileDetails = (await bridge.command('file_details', { name }, s.info?.generation)) ?? {};
+    if (mine !== detailSeq) return;
+    details.value = r;
+    const src = thumbSrc(r.thumbnail);
+    if (src) thumbs.value = { ...thumbs.value, [name]: src };
   } catch (e) {
-    if (mine !== gen.value) return;
-    error.value = message(e); state.value = 'error';
+    if (mine === detailSeq) detailsError.value = message(e);
   }
+});
+const info = computed(() => details.value?.info ?? null);
+const materials = computed(() => details.value?.materials ?? []);
+function slotLabel(g: number | null): string {
+  const sl = g == null ? null : s.status?.slots.find(x => x.global_index === g);
+  if (!sl) return t('files.mat.none');
+  return `${sl.box_id < 0 ? t('ace.head') : t('ace.unit', { n: sl.box_id + 1 })} · ${t('slot.name', { n: sl.index + 1 })}`;
 }
-watch(() => [s.tab, s.epoch, s.phase], () => { if (s.tab === 'files') void load(); }, { immediate: true });
-function open(name: string) { path.value = `${path.value}/${name}`; void load(); }
-function up() { if (path.value.includes('/')) { path.value = path.value.split('/').slice(0, -1).join('/'); void load(); } }
-function setRoot(r: string) { path.value = r; void load(); }
+const problem = (m: FileMaterial) => (m.check === 'differs'
+  ? t('files.mat.differs', { n: m.paint_index + 1, material: m.material, slot: slotLabel(m.slot), type: m.slot_type || t('slot.noType') })
+  : m.check === 'missing' ? t('files.mat.missing', { n: m.paint_index + 1, material: m.material || t('slot.noType') }) : '');
+// Read-only check of what the file needs against the slots the print would use (file_details, plugin side).
+const mismatch = computed(() => materials.value.map(problem).filter(Boolean).join('; '));
+const n0 = (v: number | null | undefined, d = 0) => (v == null ? '—' : fmt.number(v, d));
+const facts = computed(() => {
+  const i = info.value;
+  if (!i) return [];
+  return [
+    { label: t('files.info.time'), value: i.estimated_s != null ? fmt.duration(i.estimated_s) : '—' },
+    { label: t('files.info.layers'), value: n0(i.layers) },
+    { label: t('files.info.filament'), value: i.filament_g != null ? fmt.grams(i.filament_g) : '—' },
+    { label: t('files.info.layer'), value: i.layer_height != null ? `${n0(i.layer_height, 2)} mm` : '—' },
+    { label: t('files.info.temps'), value: t('files.info.tempsValue', { nozzle: n0(i.nozzle_temp), bed: n0(i.bed_temp) }) },
+    { label: t('files.info.nozzle'), value: i.nozzle != null ? `${n0(i.nozzle, 1)} mm` : '—' },
+  ];
+});
+const printOff = computed(() => !!controlsOff.value || busy.value.print || tracker.isBusy('print'));
+async function print() {
+  const name = one.value;
+  if (!name || printOff.value) return;
+  const flow = canFlow.value && options.value.flow, timelapse = canTimelapse.value && options.value.timelapse;
+  const warn = [mismatch.value ? t('files.mat.warn', { list: mismatch.value }) : '',
+    info.value && !info.value.model_ok ? t('files.modelOther', { model: info.value.printer_model }) : ''].filter(Boolean).join('\n');
+  if (!await ask({ title: t('act.print'), text: t('confirm.print.text', { name, printer: printerName.value, leveling: t(options.value.leveling ? 'common.on' : 'common.off'),
+    vibration: t(options.value.vibration ? 'common.on' : 'common.off'), flow: t(flow ? 'common.on' : 'common.off'), timelapse: t(timelapse ? 'common.on' : 'common.off') })
+    + (warn ? '\n' + warn : ''), yes: t('confirm.print.yes'), no: t('common.goBack'), danger: !!warn })) return;
+  const r = await run({ key: 'print', label: t('act.print'), cmd: 'file_print', args: { name, auto_leveling: options.value.leveling, vibration_compensation: options.value.vibration,
+    flow_calibration: flow, timelapse },
+    okText: t('ok.print'), timeoutMs: 60000 });
+  if (r.ok) files.selected = [];
+}
+// Enter or a double click on a file: it becomes the one selected, with the keyboard on Start printing.
+async function onOpen(id: string) {
+  if (place.value !== 'local') return;
+  files.selected = [id];
+  await nextTick();
+  document.querySelector<HTMLElement>('[data-focus-key="print-start"]')?.focus();
+}
 
-async function del(name: string, dir: boolean) {
-  if (!await ask({ title: t('files.delete'), text: t(dir ? 'confirm.deleteDir.text' : 'confirm.delete.text', { name }), yes: t('confirm.delete.yes'), no: t('common.goBack'), danger: true })) return;
-  const r = await run({ key: `del:${name}`, label: t('act.delete'), cmd: 'delete', args: { path: `${path.value}/${name}`, ...(dir ? { is_dir: true } : {}) }, okText: t('ok.delete') });
-  if (r.ok) void load();
-}
-async function print(name: string) {
-  if (!await ask({ title: t('act.print'), text: t('confirm.print.text', { name, printer: printerName.value }), yes: t('confirm.print.yes'), no: t('common.goBack') })) return;
-  await run({ key: 'print', label: t('act.print'), cmd: 'print_file', args: { path: `${path.value}/${name}` }, okText: t('ok.print'), timeoutMs: 60000 });
-}
-async function download(name: string) {
-  const r = await run({ key: `dl:${name}`, label: t('act.download'), cmd: 'download', args: { path: `${path.value}/${name}` }, timeoutMs: 120000 });
-  if (r.ok) tracker.notify('success', t('ok.saved', { path: r.result }));
-}
-async function move(name: string) {
-  let folders: string[];
-  try { folders = await bridge.command('folders', { root: root.value }, s.info?.generation); }
-  catch (e) { tracker.notify('error', t('msg.failed', { action: t('act.move'), error: message(e) })); return; }
-  const items = moveTargets(folders, path.value, name).map(f => ({ value: f, label: f === root.value ? t('files.top', { root: rootLabel(root.value) }) : f.slice(root.value.length + 1) }));
-  if (!items.length) { tracker.notify('error', t('files.noFolder')); return; }
-  const dest = await choose({ title: t('files.move'), text: t('files.moveTo', { name }), choices: items, no: t('common.goBack') });
-  if (dest) await moveTo(name, dest);
-}
-async function moveTo(name: string, folder: string) {
-  const r = await run({ key: `mv:${name}`, label: t('act.move'), cmd: 'move', args: { path: `${path.value}/${name}`, folder }, okText: t('ok.move') });
-  if (r.ok) void load();
-}
-async function mkdir() {
-  const n = ((await prompt({ title: t('files.newFolder'), text: t('files.newFolderIn', { path: path.value }), yes: t('files.create'), no: t('common.goBack'),
-    input: { label: t('files.folderName'), value: '' } })) || '').trim();
-  if (!n) return;
-  const r = await run({ key: 'mkdir', label: t('act.mkdir'), cmd: 'mkdir', args: { path: `${path.value}/${n}` }, okText: t('ok.mkdir') });
-  if (r.ok) void load();
-}
-// Drag a row onto a folder row (or onto Up) to move it there.
-const dragName = ref<string | null>(null);
-const dropOn = ref<string | null>(null);
-function drop(dir: string | null) {
-  const name = dragName.value; dragName.value = null; dropOn.value = null;
-  if (!name || name === dir) return;
-  void moveTo(name, dir === null ? path.value.split('/').slice(0, -1).join('/') : `${path.value}/${dir}`);
-}
+// ---------------------------------------------------------------- what the browser shows
+const query = ref('');
+const KIND: Record<string, string> = { gcode: 'G-code', gco: 'G-code', '3mf': '3MF' };
+const kind = (name: string) => KIND[name.slice(name.lastIndexOf('.') + 1).toLowerCase()];
+const places = computed<{ id: Place; name: string }[]>(() => [{ id: 'local', name: t('files.local') }, { id: 'videos', name: t('videos.title') }]);
+const needle = computed(() => query.value.trim().toLowerCase());
+const NEWEST = { key: 'modified', down: true } as const;   // a printer's list reads newest first: the file just sent is on top
+const rows = computed(() => (place.value === 'videos'
+  ? videos.value.filter(v => !needle.value || `${v.name} ${v.filename}`.toLowerCase().includes(needle.value)).map(v => ({
+    id: v.filename, name: v.filename, size: v.size, sizeText: fmt.bytes(v.size), modified: v.created || null, modifiedText: v.created ? fmt.when(v.created, s.now / 1000) : undefined,
+    kind: v.empty ? t('videos.aborted') : clipLength(v.duration) || undefined,
+    facts: [{ label: t('videos.col.print'), value: v.name }, { label: t('videos.col.length'), value: v.empty ? t('videos.abortedHint') : clipLength(v.duration) || '—' },
+      ...(v.created ? [{ label: t('videos.col.recorded'), value: fmt.dateTime(v.created) }] : [])] }))
+  : local.value.filter(f => !needle.value || f.name.toLowerCase().includes(needle.value)).map(f => ({
+    id: f.name, name: f.name, size: f.size, sizeText: fmt.bytes(f.size), modified: f.timestamp ? seconds(f.timestamp) : null, modifiedText: f.timestamp ? fmt.when(seconds(f.timestamp), s.now / 1000) : undefined,
+    kind: kind(f.name), thumb: thumbs.value[f.name] || thumbSrc(f.thumbnail) || null, facts: one.value === f.name ? facts.value : undefined }))));
+const total = computed(() => (place.value === 'videos' ? videos.value.length : local.value.length));
+const labels = computed<OuiFileBrowserLabels>(() => {
+  const vid = place.value === 'videos';
+  return {
+    folders: t('files.places'), files: vid ? t('videos.title') : t('files.title'), name: t('files.col.name'), size: t('files.col.size'),
+    modified: vid ? t('videos.col.recorded') : t('files.col.modified'), selectAll: t('files.selectAll'), select: name => t('files.select', { name }),
+    items: n => (needle.value ? t('files.count', { shown: n, total: total.value }) : tn(vid ? 'videos.count' : 'files.items', n)), selected: n => tn('files.selected', n),
+    clear: t('common.clear'), moveTo: '', remove: t('files.delete'),
+    removeTitle: n => tn(vid ? 'videos.deleteTitle' : 'files.deleteTitle', n), removeText: t('files.deleteText'), andMore: n => t('files.andMore', { n }), cancel: t('common.goBack'),
+    empty: needle.value ? t('files.noMatch', { q: query.value.trim() }) : vid ? t('videos.empty') : t('files.empty'),
+    emptyText: needle.value ? undefined : vid ? t('videos.emptyHint') : undefined,
+    loading: vid ? t('videos.loading') : t('files.loading'), loadFailed: vid ? t('videos.loadFailed') : t('files.loadFailed'), retry: t('common.retry'),
+    nothingSelected: t('files.noneSelected'), nothingSelectedText: vid ? undefined : t('files.selectHint'),
+  };
+});
 </script>
+
 <template>
-  <section class="u1-card" aria-labelledby="files-h">
-    <h2 id="files-h" class="fv-sr"><Icon name="icon/files" /> {{ t('nav.files') }}</h2>
-    <div class="u1-row fv-bar">
-      <label id="fv-root-l" class="fv-sr-only">{{ t('files.root') }}</label>
-      <Select :model-value="root" :options="roots" option-label="label" option-value="value" aria-labelledby="fv-root-l" @update:model-value="setRoot" />
-      <strong class="fv-path">{{ path }}</strong><span class="u1-spacer" /><span class="oui-meta">{{ disk }}</span>
-      <Button severity="secondary" outlined :disabled="state !== 'ok'" @click="mkdir"><Icon name="icon/folder" /><span>{{ t('files.newFolder') }}</span></Button>
-      <Button severity="secondary" outlined :disabled="!path.includes('/')" data-test="up" @click="up"
-              @dragover="e => { if (dragName && path.includes('/')) e.preventDefault(); }" @drop.prevent="drop(null)">
-        <Icon name="icon/folder" /><span>{{ t('files.up') }}</span></Button>
-      <Button severity="secondary" outlined :label="t('common.refresh')" :loading="state === 'loading'" :disabled="!targetKnown" @click="load" />
-    </div>
-    <p v-if="!targetKnown" class="oui-muted">{{ t('files.noTarget') }}</p>
-    <p v-else-if="state === 'loading' && !dirs.length && !files.length" class="oui-muted" role="status">{{ t('files.loading') }}</p>
-    <Message v-else-if="state === 'error'" severity="error">{{ t('files.error', { error }) }}
-      <div><Button size="small" severity="secondary" outlined :label="t('common.retry')" @click="load" /></div></Message>
-    <div v-else-if="state === 'ok'" class="oui-table-wrap">
-      <table class="u1-table">
-        <thead><tr><th scope="col"><span class="fv-sr-only">{{ t('files.col.thumb') }}</span></th><th scope="col">{{ t('files.col.name') }}</th>
-          <th scope="col">{{ t('files.col.size') }}</th><th scope="col">{{ t('files.col.modified') }}</th><th scope="col">{{ t('files.col.time') }}</th>
-          <th scope="col">{{ t('files.col.actions') }}</th></tr></thead>
-        <tbody>
-          <tr v-for="d in dirs" :key="'d:' + d.name" draggable="true" :class="{ drop: dropOn === d.name }"
-              @dragstart="dragName = d.name" @dragover="e => { if (dragName && dragName !== d.name) { e.preventDefault(); dropOn = d.name; } }"
-              @dragleave="dropOn = null" @drop.prevent="drop(d.name)">
-            <td><Icon name="icon/folder" :size="24" /></td>
-            <td><Button text :label="d.name" :aria-label="t('files.open', { name: d.name })" class="fv-open" @click="open(d.name)" /></td>
-            <td /><td /><td />
-            <td class="fv-acts"><Button size="small" severity="secondary" outlined @click="move(d.name)"><Icon name="icon/folder" /><span>{{ t('files.move') }}</span></Button>
-              <Button size="small" severity="danger" outlined @click="del(d.name, true)"><Icon name="icon/delete" /><span>{{ t('files.delete') }}</span></Button></td>
-          </tr>
-          <tr v-for="f in files" :key="'f:' + f.name" draggable="true" @dragstart="dragName = f.name">
-            <td><Thumb v-if="root === 'gcodes'" :gen="gen" :path="`${path}/${f.name}`" :rel="f.thumb" /></td>
-            <td class="fv-name">{{ f.name }}</td><td class="u1-num">{{ fmt.bytes(f.size) }}</td>
-            <td>{{ f.modified ? fmt.dateTime(f.modified) : '' }}</td><td class="u1-num">{{ f.time ? fmt.duration(f.time) : '' }}</td>
-            <td class="fv-acts">
-              <Button v-if="root === 'gcodes'" size="small" :disabled="!!s.status?.busy" @click="print(f.name)"><Icon name="icon/print-setup" /><span>{{ t('files.print') }}</span></Button>
-              <Button v-else size="small" severity="secondary" outlined :loading="tracker.isBusy(`dl:${f.name}`)" @click="download(f.name)"><Icon name="icon/download" /><span>{{ t('files.save') }}</span></Button>
-              <Button size="small" severity="secondary" outlined @click="move(f.name)"><Icon name="icon/folder" /><span>{{ t('files.move') }}</span></Button>
-              <Button size="small" severity="danger" outlined @click="del(f.name, false)"><Icon name="icon/delete" /><span>{{ t('files.delete') }}</span></Button></td>
-          </tr>
-          <tr v-if="!dirs.length && !files.length"><td colspan="6"><div class="fv-empty"><Icon name="spot/no-files" :size="96" /><span>{{ t('files.empty') }}</span></div></td></tr>
-        </tbody>
-      </table>
-      <p class="oui-meta">{{ t('files.dragHint') }}</p>
-    </div>
-  </section>
+  <OuiPageHeader :title="t('nav.files')" data-test="files-head">
+    <template #meta><span data-test="disk">{{ disk }}</span></template>
+    <template #actions>
+      <OuiHint v-if="hasVideos" :label="t('videos.title')" :text="t('videos.noDownload')" data-test="videos-note" />
+      <Button severity="secondary" :label="t('common.refresh')" :loading="files.loading" :disabled="!targetKnown" data-test="refresh" @click="files.reload()">
+        <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+    </template>
+  </OuiPageHeader>
+
+  <div class="kc-msgs" data-msgs="files" />
+
+  <OuiPanel v-if="!targetKnown" flush>
+    <OuiEmpty state="offline" :title="t(s.phase === 'noCertificate' ? 'files.noCertificate' : s.phase === 'noTarget' ? 'files.noTarget' : 'files.waiting')" data-test="files-why" />
+  </OuiPanel>
+
+  <!-- The rows are this page's (search, language, the opened file's picture and facts); the rest is the storage's. -->
+  <OuiFileBrowser v-else v-bind="files.props" :files="rows" :labels="labels" :sort="NEWEST" :readonly="!!controlsOff" :describedby="whyId(false)" :data-place="place"
+                  v-on="files.on" @open="onOpen">
+    <template #toolbar>
+      <span v-if="hasVideos" class="kc-seg" role="group" :aria-label="t('files.places')" data-test="files-lists">
+        <Button v-for="p in places" :key="p.id" size="small" :severity="place === p.id ? undefined : 'secondary'" :text="place !== p.id" :aria-pressed="place === p.id"
+                :label="p.name" :data-list="p.id" @click="openList(p.id)" />
+      </span>
+      <span class="oui-spacer" />
+      <InputText v-model="query" type="search" size="small" :placeholder="t('files.searchPh')" :aria-label="t('files.search')" class="fv-q" data-test="files-q" />
+    </template>
+    <template v-if="place === 'local'" #actions="{ file }">
+      <div class="fv-print" role="region" :aria-label="t('files.panel', { name: file.name })" data-test="print-panel">
+        <p v-if="detailsError" class="kc-err" role="alert">{{ t('files.detailsError', { error: detailsError }) }}</p>
+        <OuiEmpty v-else-if="!details" compact state="loading" :title="t('files.detailsLoading')" role="status" />
+        <p v-if="info && !info.model_ok" class="fv-warn" role="alert" data-test="model-warn">{{ t('files.modelOther', { model: info.printer_model }) }}</p>
+        <div v-if="materials.length" class="fv-mats">
+          <p class="oui-label">{{ t('files.mat.title') }}</p>
+          <ul>
+            <li v-for="m in materials" :key="m.paint_index" :data-mat="m.paint_index" :data-check="m.check">
+              <span class="fv-mat"><OuiSwatch :color="m.colour || null" /><span>{{ fmt.pair(t('files.mat.name', { n: m.paint_index + 1 }), m.material || t('slot.noType')) }} · {{ fmt.grams(m.grams) }}</span></span>
+              <span class="fv-mat"><span class="oui-muted" aria-hidden="true">→</span><OuiSwatch :color="m.slot_colour || null" /><span>{{ slotLabel(m.slot) }}<template v-if="m.slot_type"> ({{ m.slot_type }})</template></span></span>
+            </li>
+          </ul>
+          <p v-if="mismatch" class="fv-warn" role="alert" data-test="mat-warn">{{ t('files.mat.warn', { list: mismatch }) }}</p>
+        </div>
+        <fieldset class="fv-opts">
+          <legend class="oui-label">{{ t('files.options') }}</legend>
+          <label class="fv-opt" for="opt-level"><span>{{ t('files.autoLeveling') }}</span><ToggleSwitch v-model="options.leveling" input-id="opt-level" data-opt="auto_leveling" /></label>
+          <label class="fv-opt" for="opt-vib"><span>{{ t('files.vibration') }}</span><ToggleSwitch v-model="options.vibration" input-id="opt-vib" data-opt="vibration_compensation" /></label>
+          <label v-if="canFlow" class="fv-opt" for="opt-flow"><span>{{ t('files.flow') }}</span><ToggleSwitch v-model="options.flow" input-id="opt-flow" data-opt="flow_calibration" /></label>
+          <label v-if="canTimelapse" class="fv-opt" for="opt-tl"><span>{{ t('files.timelapse') }}</span><ToggleSwitch v-model="options.timelapse" input-id="opt-tl" data-opt="timelapse" /></label>
+        </fieldset>
+        <Button :label="t('files.startPrint')" :disabled="printOff" :aria-describedby="whyId(busy.print)" :loading="tracker.isBusy('print')" data-test="print-start" data-focus-key="print-start" @click="print">
+          <template #icon><OuiIcon :icon="printer" :size="14" /></template></Button>
+      </div>
+    </template>
+  </OuiFileBrowser>
 </template>
-<style scoped>
-.fv-sr { margin: 0 0 12px; }
-.fv-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.fv-bar { margin-bottom: 12px; }
-.fv-path, .fv-name { overflow-wrap: anywhere; }
-.fv-open { padding: 0; }
-.fv-acts { display: flex; flex-wrap: wrap; gap: 6px; }
-.fv-empty { display: grid; justify-items: center; gap: 8px; padding: 16px; color: var(--oui-muted); }
-tr.drop td { background: var(--oui-success-bg, rgba(0, 103, 91, .12)); }
+
+<style>
+.fv-q { width: 220px; max-width: 100%; }
+.fv-print { flex: 1 1 100%; display: grid; gap: var(--oui-s3); min-width: 0; }
+.fv-print > .p-button { justify-self: start; }
+.fv-warn { font-size: var(--oui-text-sm); font-weight: 600; color: var(--oui-warning); }
+.fv-mats ul { list-style: none; margin: var(--oui-s1) 0 0; padding: 0; display: grid; gap: var(--oui-s1); }
+.fv-mats li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--oui-s2); }
+.fv-mat { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.fv-mats li[data-check='differs'], .fv-mats li[data-check='missing'] { color: var(--oui-warning); }
+.fv-opts { display: grid; gap: var(--oui-s1); margin: 0; padding: 0; border: 0; }
+.fv-opt { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s3); min-height: 32px; }
 </style>

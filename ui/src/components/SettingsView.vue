@@ -1,144 +1,227 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
-import Checkbox from 'primevue/checkbox';
-import Icon from './Icon.vue';
-import FirmwareCard from './FirmwareCard.vue';
-import SpoolerHint from './SpoolerHint.vue';
-import { s, run, tracker, controlsOff, busy, loadSpools, printerName } from '../app/store';
-import { config, form, dirty, saving, save, valueOf } from '../app/settings';
-import { ask } from '../core/dialog';
-import { t, tMaybe, langPref, setLangPref, autoLocale, fmt } from '../core/i18n';
-import type { Automation } from '../app/types';
+import ToggleSwitch from 'primevue/toggleswitch';
+import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirement, OuiStatus, type OuiSettingsSection } from '../../shared/src/components';
+import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, upload, wrench } from '../../shared/src/icons';
+import { UI_VERSION } from '../../shared/src';
+import BridgeSettings from './BridgeSettings.vue';
+import SettingsPages from './SettingsPages.vue';
+import CertFinder from './CertFinder.vue';
+import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, pagePlays, requirement, checkRequirements } from '../app/store';
+import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
+import type { Requirement, RequirementId } from '../app/types';
+import type { MessageKey } from '../core/messages';
+import { t, fmt, langPref, setLangPref, autoLocale } from '../core/i18n';
+import { LOCALES } from '../core/i18n-core';
 import type { LangPref } from '../core/i18n-core';
 import { boot } from '../core/boot';
+import { fingerprintText } from '../core/logic';
+import * as bridge from '../core/bridge';
 
-const autos = computed(() => config.value?.automations ?? []);
-const autoLabel = (a: Automation) => tMaybe(`auto.${a.key}`, a.label);
-const choiceLabel = (v: unknown) => (typeof v === 'boolean' ? t(v ? 'mode.on' : 'mode.off') : tMaybe(`choice.${v}`, String(v)));
-const setDraft = (k: string, v: unknown) => { form.draft = { ...form.draft, [k]: v }; };
-const showKey = ref(false);
+// How often the page re-reads Spoolman (stored by the plugin as spoolman_refresh_s; 0 = off).
+const EVERY = computed(() => [0, 10, 15, 30, 60, 120, 300].map(n => ({ value: n, label: n ? t('sm.everyOption', { n }) : t('sm.everyOff') })));
 
-const smInfo = computed(() => s.spoolsError || (s.spoolsLoaded
-  ? (s.spoolsVia === 'moonraker' ? t('heads.source.printer', { n: s.spools.length }) : t('heads.source.direct', { n: s.spools.length })) : t('sm.notLoaded')));
-
-const PREFS = ['bed_level', 'flow_calibrate', 'time_lapse_camera', 'auto_refill', 'refill_any_colour', 'tangle_detect', 'unload_when_done', 'light_off_when_done'];
-const prefs = computed(() => Object.entries(s.status?.options ?? {}));
-const prefLabel = (k: string) => (PREFS.includes(k) ? t(`pref.${k}` as any) : k);
-async function setPref(k: string, v: boolean) {
-  await run({ key: `pref:${k}`, label: t('act.prefs'), cmd: 'preferences', args: { prefs: { [k]: v } }, okText: t('ok.prefs') });
+const cert = computed(() => s.certificate ?? config.value?.certificate ?? null);
+const certText = computed(() => (!cert.value ? t('cert.unknown') : !cert.value.found ? t('cert.missing')
+  : cert.value.source === 'saved' ? t('cert.saved') : t('cert.builtIn')));
+// The address in use and how it was found; a blank "Printer address" means "find it by itself".
+const inUse = computed(() => (s.info?.address ? t('conn.inUse', { address: s.info.address, how: t(`conn.source.${s.info.source || 'override'}`) }) : ''));
+const smFrom = computed(() => (s.located?.spoolman_source === 'spooler' && !form.spoolman ? t('conn.smFromSpooler', { url: s.located.spoolman_url }) : ''));
+const smInfo = computed(() => (!spoolmanSet.value ? t('sm.notConfigured') : s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : t('sm.notLoaded'))));
+const smWhy = computed(() => controlsOff.value || (spoolmanSet.value ? '' : t('sm.notConfigured')));
+// Settings > Requirements: one row per item of the plugin's `requirements` message (src/kobracontrol/requirements.py).
+// "Check again" asks the plugin to look at all of them again; for Spoolman it also loads the spools again.
+type Need = 'found' | 'missing' | 'checking' | 'unknown';
+interface Row { name: string | MessageKey; why: MessageKey; ok: MessageKey; missing: MessageKey; how: MessageKey[]; url?: string; label?: string; fileCheck?: boolean }
+const ROWS: Record<RequirementId, Row> = {
+  certificate: { name: 'req.cert.name', why: 'req.cert.why', ok: 'req.found', missing: 'req.missing', how: ['req.cert.install'] },
+  ffmpeg: { name: 'ffmpeg', why: 'req.ffmpeg.why', ok: 'req.found', missing: 'req.missing', fileCheck: true,
+    how: ['req.ffmpeg.mac', 'req.ffmpeg.win', 'req.ffmpeg.linux', 'req.ffmpeg.path'], url: 'https://ffmpeg.org/download.html', label: 'ffmpeg.org' },
+  anycubic_slicer: { name: 'Anycubic Slicer Next', why: 'req.slicer.why', ok: 'req.slicer.ok', missing: 'req.slicer.missing', fileCheck: true,
+    how: ['req.slicer.mac', 'req.slicer.win', 'req.slicer.linux'], url: 'https://www.anycubic.com/pages/anycubic-slicer', label: 'anycubic.com' },
+  printer_agents: { name: 'req.agents.name', why: 'req.agents.why', ok: 'req.agents.ok', missing: 'req.agents.unknown', how: ['req.agents.step1', 'req.agents.step2', 'req.agents.note'] },
+  spoolman: { name: 'Spoolman', why: 'req.spoolman.why', ok: 'req.spoolman.ok', missing: 'req.spoolman.missing', how: ['req.spoolman.how'],
+    url: 'https://github.com/Donkie/Spoolman', label: 'Spoolman' },
+  spooler: { name: 'spooler.title', why: 'req.spooler.why', ok: 'req.found', missing: 'req.missing', how: ['spooler.suggest'] },
+};
+const ORDER: RequirementId[] = ['certificate', 'ffmpeg', 'anycubic_slicer', 'printer_agents', 'spoolman', 'spooler'];
+const items = computed(() => ORDER.map(id => requirement(id)).filter((r): r is Requirement => !!r));
+const isKey = (k: string): k is MessageKey => k.includes('.');   // else a product name, the same in every language
+// "unknown" is "not checked yet" (no warning); a re-check shows "Checking…" on the rows it looks at again.
+const need = (r: Requirement): Need => (s.checking && ROWS[r.id].fileCheck ? 'checking' : r.state === 'ok' ? 'found' : r.state);
+const needLabel = (r: Requirement) => {
+  const n = need(r), row = ROWS[r.id];
+  // ffmpeg is optional only where the page plays the camera itself ('Not installed (optional)')
+  const missing = r.id === 'ffmpeg' && pagePlays.value ? 'req.slicer.missing' : row.missing;
+  return t(n === 'checking' ? 'req.checking' : n === 'unknown' ? 'req.unknown' : n === 'found' ? row.ok : missing);
+};
+const smDetail = computed(() => [requirement('spoolman')?.details, s.spoolsError || (s.spoolsLoaded ? t('sm.count', { n: s.spools.length }) : '')].filter(Boolean).join(' · '));
+const detail = (r: Requirement) => (r.state !== 'ok' ? undefined : r.id === 'certificate' ? certText.value : r.id === 'spooler' ? t('spooler.installed')
+  : r.id === 'spoolman' ? smDetail.value || undefined : r.details || undefined);
+const spooler = computed(() => config.value?.spooler ?? null);
+const rowUrl = (r: Requirement) => (r.id === 'spooler' ? spooler.value?.url : ROWS[r.id].url);
+function checkAgain(r: Requirement) {
+  checkRequirements();
+  if (r.id === 'spoolman' && spoolmanSet.value && !controlsOff.value) void loadSpools(false);
 }
-
-const CAL = [{ kind: 'bed_mesh', label: 'cal.bed_mesh' }, { kind: 'input_shaper', label: 'cal.input_shaper' }, { kind: 'flow', label: 'cal.flow' }] as const;
-const calWhy = computed(() => controlsOff.value || (busy.value ? t('cal.busy') : ''));
-async function calibrate(kind: string, name: string) {
-  if (!await ask({ title: t('cal.title'), text: t('confirm.cal.text', { name, printer: printerName.value }), yes: t('confirm.cal.yes'), no: t('common.goBack') })) return;
-  await run({ key: `cal:${kind}`, label: t('act.calibrate'), cmd: 'calibrate', args: { kind }, okText: t('ok.calibrate'), timeoutMs: 60000 });
-}
+// What the camera, the connection or OrcaSlicer's own Print/Device tab need is missing (optional ones never warn).
+const reqWarn = computed(() => !s.checking && (noFfmpeg.value || ['certificate', 'printer_agents'].some(id => requirement(id as RequirementId)?.state === 'missing')));
 const langOptions = computed(() => [
   { value: 'auto', label: t('lang.auto', { current: t(`lang.${autoLocale.value}`) }) },
-  { value: 'en', label: t('lang.en') }, { value: 'pt-BR', label: t('lang.pt-BR') }]);
+  ...LOCALES.map(value => ({ value, label: t(`lang.${value}`) }))]);
+const sections = computed<OuiSettingsSection[]>(() => [
+  { id: 'conn-h', label: t('conn.title'), icon: linkIcon },
+  { id: 'cert-h', label: t('cert.section'), icon: shieldCheck, ...(cert.value && !cert.value.found ? { state: 'warn' as const } : {}) },
+  { id: 'print-h', label: t('printdef.title'), icon: printer },
+  { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' || noFfmpeg.value ? { state: 'warn' as const } : {}) },
+  { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
+  { id: 'bridge-h', label: t('bridge.title'), icon: upload, ...(config.value?.bridge?.enabled && !config.value.bridge.running ? { state: 'warn' as const } : {}) },
+  { id: 'needs-h', label: t('req.tab'), icon: wrench, ...(reqWarn.value ? { state: 'warn' as const } : {}) },
+  { id: 'lang-h', label: t('lang.title'), icon: languages },
+  { id: 'about-h', label: t('about.title'), icon: info },
+]);
+// A "Settings" link elsewhere (openSettings(page)) opens its page once Settings shows and the page is on it (some
+// wait for the plugin's config).
+const pages = ref<InstanceType<typeof SettingsPages>>();
+watch(() => [s.settingsPage, s.tab, !!config.value], () => {
+  const id = s.settingsPage;
+  if (!id || s.tab !== 'settings' || !document.getElementById(id)) return;
+  s.settingsPage = '';
+  pages.value?.select(id);
+}, { immediate: true, flush: 'post' });
+// The save bar names what is not saved yet.
+const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
+  auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', print_dialog: 'printdef.dialog', remember_print_options: 'pd.remember', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
+  bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port' };
+const changedText = computed(() => fmt.list(changed.value.map(k => t(FIELD[k] as 'conn.host'))));
+const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
+// Enter in a text field saves, as the form's own button did.
+function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') { e.preventDefault(); void save(); } }
 </script>
 
 <template>
   <div class="sv">
-    <section class="u1-card" aria-labelledby="mode-h">
-      <div class="u1-row">
-        <h2 id="mode-h" class="sv-h">{{ t('mode.title') }}</h2><span class="u1-spacer" />
-        <span v-if="dirty" class="u1-warn" role="status">{{ t('mode.unsaved') }}</span>
-        <Button :label="saving ? t('mode.saving') : t('common.save')" :loading="saving" :disabled="!config" data-test="save-top" @click="save" />
+    <SettingsPages ref="pages" :sections="sections" :nav-label="t('settings.nav')" :back-label="t('settings.back')" :error-label="t('settings.hasError')">
+      <div class="oui-stack">
+        <OuiFormSection id="conn-h" :icon="linkIcon" tone="cobalt" :title="t('conn.title')" :description="t('conn.help')">
+          <template v-if="link === 'connected'" #status><OuiStatus state="ok">{{ t('conn.answering') }}</OuiStatus></template>
+          <OuiEmpty v-if="!config" compact state="loading" :title="t('settings.notLoaded')" />
+          <form class="oui-formsection-rows" @submit.prevent="save" @keydown.enter="onEnter">
+            <OuiFormRow :label="t('conn.name')" for="c-name" :hint="t('conn.nameHelp')"><InputText id="c-name" v-model="form.name" /></OuiFormRow>
+            <OuiFormRow :label="t('conn.host')" for="c-host" :hint="t('conn.hostHelp')">
+              <InputText id="c-host" v-model="form.host" class="oui-mono" :placeholder="t('conn.hostPh')" />
+            </OuiFormRow>
+            <OuiFormRow :label="t('conn.inUseLabel')">
+              <span v-if="inUse" class="oui-meta sv-inuse" data-test="in-use" role="status">{{ inUse }}</span><span v-else class="oui-muted">—</span>
+              <Button size="small" severity="secondary" :label="t('settings.searchAgain')" :loading="tracker.isBusy('search')" :disabled="!!form.host"
+                      data-test="search-again-settings" @click="searchAgain()"><template #icon><OuiIcon :icon="search" :size="14" /></template></Button>
+            </OuiFormRow>
+          </form>
+          <div v-if="otherAgent || s.status?.tls" class="oui-stack sv-notes">
+            <p v-if="otherAgent" class="oui-meta" data-test="other-agent">{{ t('agent.other', { agent: otherAgent }) }}</p>
+            <template v-if="s.status?.tls">
+              <p class="oui-meta oui-mono sv-fp" data-test="tls-fp">{{ t('tls.fingerprint', { fp: fingerprintText(s.status.tls.fingerprint) }) }}
+                <template v-if="s.status.tls.changed_from"><br>{{ t('tls.previous', { fp: fingerprintText(s.status.tls.changed_from) }) }}</template></p>
+              <p class="oui-meta">{{ t('tls.help') }}</p>
+            </template>
+          </div>
+        </OuiFormSection>
+
+        <OuiFormSection id="cert-h" :icon="shieldCheck" tone="teal" :title="t('cert.section')" :description="t('cert.why')">
+          <template #status><OuiStatus :state="!cert ? 'pending' : cert.found ? 'ok' : 'warn'">{{ !cert ? t('cert.chip.unknown') : cert.found ? t('cert.chip.ok') : t('cert.chip.missing') }}</OuiStatus></template>
+          <OuiFormRow :label="t('cert.source')"><span data-test="cert-status" role="status">{{ certText }}</span></OuiFormRow>
+          <!-- Only for a firmware that stops taking the built-in copy: the one action that reads Anycubic Slicer Next. -->
+          <details class="kc-disclose sv-adv" data-test="cert-advanced">
+            <summary>{{ t('cert.advanced') }}</summary>
+            <p class="oui-meta">{{ t('cert.advancedHelp') }}</p>
+            <CertFinder id-prefix="set" />
+          </details>
+        </OuiFormSection>
+
+        <OuiFormSection id="print-h" :icon="printer" :title="t('printdef.title')" :description="t('printdef.help')">
+          <OuiFormRow :label="t('files.autoLeveling')" for="c-level" :hint="t('printdef.levelingHint')"><ToggleSwitch v-model="form.leveling" input-id="c-level" data-test="def-leveling" /></OuiFormRow>
+          <OuiFormRow :label="t('files.vibration')" for="c-vib" :hint="t('printdef.vibrationHint')"><ToggleSwitch v-model="form.vibration" input-id="c-vib" data-test="def-vibration" /></OuiFormRow>
+          <OuiFormRow :label="t('files.flow')" for="c-flow" :hint="t('printdef.untestedHint')"><ToggleSwitch v-model="form.flow" input-id="c-flow" data-test="def-flow" /></OuiFormRow>
+          <OuiFormRow :label="t('files.timelapse')" for="c-tl" :hint="t('printdef.untestedHint')"><ToggleSwitch v-model="form.timelapse" input-id="c-tl" data-test="def-timelapse" /></OuiFormRow>
+          <OuiFormRow :label="t('printdef.dialog')" for="c-pd" :hint="t('printdef.dialogHint')"><ToggleSwitch v-model="form.printDialog" input-id="c-pd" data-test="def-dialog" /></OuiFormRow>
+          <OuiFormRow :label="t('pd.remember')" for="c-pdr"><ToggleSwitch v-model="form.rememberOptions" input-id="c-pdr" data-test="def-remember" /></OuiFormRow>
+        </OuiFormSection>
       </div>
-      <p v-if="!config" class="oui-muted">{{ t('mode.notLoaded') }}</p>
-      <template v-else>
-        <div class="u1-row" role="group" :aria-label="t('mode.title')">
-          <Button :severity="form.mode === 'automagic' ? undefined : 'secondary'" :outlined="form.mode !== 'automagic'" :aria-pressed="form.mode === 'automagic'"
-                  data-mode="automagic" @click="form.mode = 'automagic'"><Icon name="icon/automagic" /><span>{{ t('mode.automagic') }}</span></Button>
-          <Button :severity="form.mode === 'expert' ? undefined : 'secondary'" :outlined="form.mode !== 'expert'" :aria-pressed="form.mode === 'expert'"
-                  data-mode="expert" @click="form.mode = 'expert'"><Icon name="icon/expert" /><span>{{ t('mode.expert') }}</span></Button>
-        </div>
-        <p class="oui-meta">{{ form.mode === 'expert' ? t('mode.help.expert') : t('mode.help.automagic') }}</p>
-        <table v-if="form.mode === 'automagic'" class="u1-table">
-          <tbody><tr v-for="a in autos" :key="a.key"><td>{{ autoLabel(a) }}</td><td class="oui-muted">{{ choiceLabel(a.automagic) }}</td></tr></tbody>
-        </table>
-        <div v-else class="sv-autos">
-          <template v-for="a in autos" :key="a.key">
-            <label :for="`auto-${a.key}`">{{ autoLabel(a) }}<span class="oui-meta sv-help">{{ tMaybe(`autohelp.${a.key}`, a.help) }}</span></label>
-            <Select v-if="a.choices" :input-id="`auto-${a.key}`" :model-value="valueOf(a.key)" :options="a.choices.map(c => ({ value: c, label: choiceLabel(c) }))"
-                    option-label="label" option-value="value" :aria-label="autoLabel(a)" :data-auto="a.key" @update:model-value="setDraft(a.key, $event)" />
-            <Checkbox v-else :input-id="`auto-${a.key}`" binary :model-value="!!valueOf(a.key)" :data-auto="a.key" @update:model-value="setDraft(a.key, $event)" />
-          </template>
-        </div>
+
+      <div class="oui-stack">
+        <OuiFormSection id="cam-s-h" :icon="camera" tone="sky" :title="t('camset.title')">
+          <template v-if="s.camReason === 'no_ffmpeg' || noFfmpeg" #status><OuiStatus state="warn">{{ t('camset.noFfmpeg') }}</OuiStatus></template>
+          <OuiFormRow :label="t('camset.default')" for="c-cam"><ToggleSwitch v-model="form.camera" input-id="c-cam" data-test="cam-default" /></OuiFormRow>
+          <OuiFormRow :label="t('camset.ffmpeg')" for="c-ffmpeg" :hint="t('camset.ffmpegHelp')">
+            <InputText id="c-ffmpeg" v-model="form.ffmpeg" class="oui-mono" :placeholder="t('camset.ffmpegPh')" @keydown.enter="onEnter" />
+          </OuiFormRow>
+        </OuiFormSection>
+
+        <OuiFormSection id="sm-s-h" :icon="spoolman" tone="magenta" :title="t('sm.title')" :description="t('sm.sectionHelp')">
+          <OuiFormRow :label="t('conn.sm')" for="c-sm">
+            <InputText id="c-sm" v-model="form.spoolman" class="oui-mono" :placeholder="t('conn.smPh')" aria-describedby="c-sm-help" @keydown.enter="onEnter" />
+            <p id="c-sm-help" class="oui-meta sv-hint" data-test="sm-from">{{ smFrom || t('conn.smHelp') }}</p>
+          </OuiFormRow>
+          <OuiFormRow :label="t('sm.auto')" for="c-sm-auto"><ToggleSwitch v-model="form.spoolmanAuto" input-id="c-sm-auto" /></OuiFormRow>
+          <OuiFormRow :label="t('sm.usage')" for="c-sm-usage"><ToggleSwitch v-model="form.usage" input-id="c-sm-usage" /></OuiFormRow>
+          <OuiFormRow :label="t('sm.every')" :hint="t('sm.everyHelp')">
+            <Select :model-value="s.refreshS" :options="EVERY" option-label="label" option-value="value" :aria-label="t('sm.every')" data-test="sm-every"
+                    @update:model-value="bridge.post({ type: 'spoolman_refresh', value: $event })" />
+          </OuiFormRow>
+          <OuiFormRow :label="t('sm.spools')">
+            <span class="oui-muted" role="status">{{ smInfo }}</span>
+            <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!smWhy" :title="smWhy || undefined" :aria-describedby="controlsOff ? 'kc-why' : undefined"
+                    :loading="tracker.isBusy('spools')" @click="loadSpools(false)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
+          </OuiFormRow>
+        </OuiFormSection>
+
+        <OuiFormSection id="needs-h" :icon="wrench" tone="sky" :title="t('req.title')" :description="t('req.help')">
+          <div class="sv-needs" data-test="requirements" aria-live="polite">
+            <OuiRequirement v-for="r in items" :key="r.id" :name="isKey(ROWS[r.id].name) ? t(ROWS[r.id].name as MessageKey) : ROWS[r.id].name" :why="t(ROWS[r.id].why)"
+                            :status="need(r)" :status-label="needLabel(r)" :detail="detail(r)" :install-text="ROWS[r.id].how.map(k => t(k)).join(' · ')"
+                            :install-url="rowUrl(r)" :install-label="ROWS[r.id].label" :check-label="t('req.check')"
+                            :checking="s.checking || (r.id === 'spoolman' && tracker.isBusy('spools'))" :data-need="r.id" @check="checkAgain(r)" />
+            <p v-if="!items.length" class="oui-meta kc-pad">{{ t('req.checking') }}</p>
+          </div>
+          <p v-if="spooler?.installed && !stockVisible" class="oui-meta kc-pad" data-test="spooler-no-stock">{{ t('spooler.noStock') }}</p>
+        </OuiFormSection>
+
+        <BridgeSettings />
+
+        <OuiFormSection id="lang-h" :icon="languages" tone="neutral" :title="t('lang.title')">
+          <OuiFormRow :label="t('lang.label')" :hint="t('lang.help')">
+            <Select :model-value="langPref" :options="langOptions" option-label="label" option-value="value" :aria-label="t('lang.label')" data-test="lang"
+                    @update:model-value="setLangPref($event as LangPref)" />
+          </OuiFormRow>
+        </OuiFormSection>
+
+        <OuiFormSection id="about-h" :icon="info" tone="neutral" :title="t('about.title')">
+          <div class="kc-pad oui-stack">
+            <OuiKeyValue :items="about" />
+            <p class="oui-meta" data-test="version">{{ t('about.text', { version: config?.version || boot.version }) }}</p>
+          </div>
+        </OuiFormSection>
+      </div>
+
+      <template #footer>
+        <template v-if="dirty"><OuiStatus state="pending" role="status">{{ t('settings.unsaved') }}</OuiStatus><span class="oui-meta oui-truncate">{{ changedText }}</span></template>
+        <span class="oui-spacer" />
+        <Button severity="secondary" text :label="t('settings.discard')" :disabled="!dirty || saving" data-test="discard" @click="discard" />
+        <Button :label="saving ? t('settings.saving') : t('settings.save')" :loading="saving" :disabled="!config" data-test="save-top" @click="save">
+          <template #icon><OuiIcon :icon="saveIcon" :size="14" /></template></Button>
       </template>
-    </section>
-
-    <section class="u1-card" aria-labelledby="sm-h">
-      <h2 id="sm-h"><Icon name="icon/spoolman" /> {{ t('sm.title') }}</h2>
-      <div class="u1-row"><span class="oui-muted" role="status">{{ smInfo }}</span><span class="u1-spacer" />
-        <Button severity="secondary" outlined :disabled="!!controlsOff" :loading="tracker.isBusy('spools')" @click="loadSpools(false)">
-          <Icon name="icon/spoolman" /><span>{{ t('sm.refresh') }}</span></Button></div>
-    </section>
-
-    <section class="u1-card" aria-labelledby="pref-h">
-      <h2 id="pref-h">{{ t('prefs.title') }}</h2>
-      <p class="oui-meta">{{ t('prefs.help') }}</p>
-      <div v-if="prefs.length" class="sv-prefs">
-        <span v-for="[k, v] in prefs" :key="k" class="u1-row">
-          <Checkbox :input-id="`pref-${k}`" binary :model-value="!!v" :disabled="k === 'unload_when_done' || !!controlsOff || busy || tracker.isBusy(`pref:${k}`)"
-                    :data-pref="k" @update:model-value="setPref(k, $event)" />
-          <label :for="`pref-${k}`">{{ prefLabel(k) }} <span v-if="k === 'unload_when_done'" class="oui-muted">{{ t('prefs.inSetup') }}</span></label>
-        </span>
-      </div>
-      <p v-else class="oui-muted">{{ t('prefs.none') }}</p>
-      <p v-if="prefs.length && (controlsOff || busy)" class="u1-why">{{ controlsOff || t('reason.busy') }}</p>
-    </section>
-
-    <section class="u1-card" aria-labelledby="cal-h">
-      <h2 id="cal-h"><Icon name="icon/calibration" /> {{ t('cal.title') }}</h2>
-      <div class="u1-row">
-        <Button v-for="c in CAL" :key="c.kind" severity="secondary" outlined :disabled="!!calWhy" :loading="tracker.isBusy(`cal:${c.kind}`)"
-                :data-cal="c.kind" :data-focus-key="`cal:${c.kind}`" @click="calibrate(c.kind, t(c.label))"><Icon name="icon/calibration" /><span>{{ t(c.label) }}</span></Button>
-      </div>
-      <div v-if="busy && !controlsOff" class="sv-busy" role="status"><Icon name="spot/printer-busy" :size="96" /><span>{{ t('cal.busy') }}</span></div>
-      <p class="u1-why">{{ controlsOff || t('cal.help') }}</p>
-    </section>
-
-    <FirmwareCard />
-    <SpoolerHint where="settings" />
-
-    <section class="u1-card" aria-labelledby="conn-h">
-      <h2 id="conn-h">{{ t('conn.title') }}</h2>
-      <form class="sv-conn" @submit.prevent="save">
-        <label for="c-host">{{ t('conn.host') }}</label><InputText id="c-host" v-model="form.host" :placeholder="t('conn.hostPh')" />
-        <label for="c-key">{{ t('conn.key') }}</label>
-        <span class="u1-row"><InputText id="c-key" v-model="form.apiKey" :type="showKey ? 'text' : 'password'" autocomplete="off" :placeholder="t('conn.keyPh')" class="sv-grow" />
-          <Checkbox v-model="showKey" input-id="c-key-show" binary /><label for="c-key-show">{{ t('conn.showKey') }}</label></span>
-        <label for="c-name">{{ t('conn.name') }}</label><InputText id="c-name" v-model="form.name" />
-        <label for="c-sm">{{ t('conn.sm') }}</label><InputText id="c-sm" v-model="form.spoolman" :placeholder="t('conn.smPh')" />
-        <span /><div class="u1-row"><span v-if="dirty" class="u1-warn">{{ t('mode.unsaved') }}</span>
-          <Button type="submit" :label="saving ? t('mode.saving') : t('common.save')" :loading="saving" :disabled="!config" data-test="save" /></div>
-      </form>
-    </section>
-
-    <section class="u1-card" aria-labelledby="lang-h">
-      <h2 id="lang-h">{{ t('lang.title') }}</h2>
-      <div class="u1-row"><label id="lang-l">{{ t('lang.label') }}</label>
-        <Select :model-value="langPref" :options="langOptions" option-label="label" option-value="value" aria-labelledby="lang-l" data-test="lang"
-                @update:model-value="setLangPref($event as LangPref)" /></div>
-      <p class="oui-meta">{{ t('lang.help') }}</p>
-      <p class="oui-meta">{{ t('about.text', { version: config?.version || boot.version }) }}</p>
-    </section>
+    </SettingsPages>
   </div>
 </template>
-<style scoped>
-.sv { display: grid; gap: 16px; max-width: 1000px; }
-.sv-h { margin: 0; }
-.sv-autos { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: center; }
-.sv-help { display: block; }
-.sv-prefs { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-.sv-conn { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 12px; align-items: center; }
-.sv-grow { flex: 1; min-width: 0; }
-.sv-busy { display: flex; align-items: center; gap: 12px; color: var(--oui-muted); }
-@media (max-width: 640px) { .sv-conn { grid-template-columns: minmax(0, 1fr); } }
+
+<style>
+.sv-hint { flex: 1 0 100%; text-align: end; }
+.sv-inuse { margin-inline-end: auto; }
+.sv-notes { padding: 0 var(--oui-s4) var(--oui-s3); }
+.sv-fp { overflow-wrap: anywhere; }
+.sv-needs > * + * { border-top: 1px solid var(--oui-border); }
+.sv-adv { padding: var(--oui-s3) var(--oui-s4); border-top: 1px solid var(--oui-border); }
 </style>

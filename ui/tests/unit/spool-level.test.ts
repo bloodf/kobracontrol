@@ -1,24 +1,37 @@
-// The spool picture's level and paint (same rule as Spooler's).
+// The spool's level: the fraction of filament left, drawn by OuiSpool and OuiLevel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spoolLevel, spoolFraction, spoolPaint, paintTone } from '../../src/core/spool-level.ts';
+import { levelTone, slotFraction, spoolFraction } from '../../src/core/spool-level.ts';
 
-test('nearest render; any filament left is never the bare reel', () => {
-  assert.deepEqual([1, 0.9, 0.6, 0.36, 0.2, 0.05, 0.001, 0, -1, null, 2, NaN].map(spoolLevel), [1, 2, 4, 5, 6, 7, 7, 8, 8, 8, 1, 8]);
-});
 test('fraction needs both weights', () => {
   assert.equal(spoolFraction(250, 1000), 0.25);
   assert.equal(spoolFraction(1200, 1000), 1);
+  assert.equal(spoolFraction(-5, 1000), 0);
   assert.equal(spoolFraction(250, null), null);
   assert.equal(spoolFraction(null, 1000), null);
   assert.equal(spoolFraction(250, 0), null);
 });
-test('paint: one colour, or every colour side by side', () => {
-  assert.equal(spoolPaint('#C8501E'), '#C8501E');
-  assert.equal(spoolPaint('#FF0000', ['#FF0000', '#00FF00']), 'linear-gradient(90deg, #FF0000 0% 50%, #00FF00 50% 100%)');
-  assert.equal(spoolPaint(null), '');
+
+test('a slot is drawn from Spoolman, else the ACE percentage, else unknown', () => {
+  assert.equal(slotFraction({ remaining: 250, initial: 1000 }, 80), 0.25);
+  assert.equal(slotFraction({ remaining: 250, initial: null }, 80), 0.8);
+  assert.equal(slotFraction(null, 30), 0.3);
+  assert.equal(slotFraction(undefined, 140), 1);
+  assert.equal(slotFraction(null, -3), 0);
+  assert.equal(slotFraction(null, 0), 0);
+  assert.equal(slotFraction(null, null), null);
+  assert.equal(slotFraction({ remaining: null, initial: 1000 }, undefined), null);
+  assert.equal(slotFraction(null, Number.NaN), null);
 });
-test('paint tone flags near-black and near-white bars', () => {
-  assert.deepEqual(['#080a0d', '#000', '#ffffff', '#E2DEDB', '#c8501e', '#888', 'linear-gradient(90deg, #000000 0% 50%, #ffffff 50% 100%)', 'red'].map(paintTone),
-    ['dark', 'dark', 'light', 'light', '', '', '', '']);
+
+test('the level bar is green, amber when low, red when almost empty', () => {
+  assert.equal(levelTone(0.8), 'normal');
+  assert.equal(levelTone(0.8, true), 'low');        // Spoolman's own low mark
+  assert.equal(levelTone(0.15), 'low');
+  assert.equal(levelTone(0.16), 'normal');
+  assert.equal(levelTone(0.05), 'critical');
+  assert.equal(levelTone(0, true), 'critical');
+  assert.equal(levelTone(null), 'normal');          // unknown is never low
+  assert.equal(levelTone(null, true), 'low');
+  assert.equal(levelTone(Number.NaN), 'normal');
 });
