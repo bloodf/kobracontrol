@@ -30,7 +30,9 @@ LANDSCAPE, SQUARE, SOCIAL = (0.74, 0.47), (0.74, 0.56), (0.77, 0.47)   # a point
 
 # The picture inside each panel: (scene of shots.mjs, page width in CSS px). The page is rendered at the panel's own
 # aspect ratio, so nothing is cropped away.
-DASH, LAN, STATUS, ACE, FILES = ("store-dash", 845), ("store-lan", 800), ("store-status", 940), ("store-ace", 800), ("store-files", 800)
+# store-status is one column at this width, with the camera moved up under the print (shots.mjs): the print and the whole
+# camera picture fill the panel.
+DASH, LAN, STATUS, ACE, FILES = ("store-dash", 845), ("store-lan", 800), ("store-status", 860), ("store-ace", 800), ("store-files", 800)
 
 # (source in assets/marketing/source, point in panel, (scene, width), theme, language, export, size)
 JOBS = [
@@ -54,7 +56,8 @@ JOBS = [
     ("hero-light-pt-BR", LANDSCAPE, DASH, "light", "pt_BR", "readme/kobracontrol-hero-light-pt-BR.png", (1600, 900)),
 ]
 # Plain screenshots for the README body: (scene, export stem), each in light and dark, English and Portuguese.
-PLAIN = [("store-status", "readme/kobracontrol-dashboard", (1280, 800)), ("store-files", "readme/kobracontrol-files", (1280, 620))]
+# Tall enough for the whole page: every slot, the controls and the printer panel; the file's details down to its print options.
+PLAIN = [("store-status", "readme/kobracontrol-dashboard", (1280, 1600)), ("store-files", "readme/kobracontrol-files", (1280, 940))]
 TILE = ("tile", "orca-cloud/kobracontrol-tile.png", 512)
 CAMERA_CROP = (120, 378, 880, 805)   # the printer in cover-en, 16:9: the frame the mock camera shows in store-status
 

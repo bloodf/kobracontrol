@@ -74,7 +74,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
       <p><b>Send prints over your local network</b><br>Print and Send work from OrcaSlicer's own dialogs. The tab finds the printer by itself and the client certificate is built in.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="The Dashboard with progress, temperatures and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
+      <img alt="The Dashboard with the print's progress and times and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
       <p><b>Keep an eye on your print</b><br>Progress, layer, time left and the clock time the print should finish, next to temperatures, fan, speed, light and the camera.</p>
     </td>
   </tr>
@@ -84,7 +84,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
       <p><b>Manage the filament in each slot</b><br>Every print head and ACE slot shows its colour and material, with feed, retract, auto-feed, drying and the Spoolman spool linked to it.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="The printer's file list and the print panel with time, layers, filament and slot mapping" src="assets/orca-cloud/kobracontrol-feature-04-files-en.png" width="100%">
+      <img alt="The printer's file list and the selected file's details: size, time, layers and filament" src="assets/orca-cloud/kobracontrol-feature-04-files-en.png" width="100%">
       <p><b>Choose files before you print</b><br>Browse the printer's files and see time, layers, filament and which ACE slot prints each colour before you press <b>Start printing</b>.</p>
     </td>
   </tr>
@@ -119,7 +119,7 @@ Not supported: Anycubic Cloud and access from outside your local network, a G-co
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/kobracontrol-files-dark-en.png">
-    <img alt="The Files tab: three files on the printer, four time-lapse videos, and the print panel for desk_organiser_plate_1.gcode with a warning that slot 2 holds ABS instead of PETG" src="assets/readme/kobracontrol-files-light-en.png" width="100%">
+    <img alt="The Files tab: three files on the printer and the print panel for desk_organiser_plate_1.gcode with a warning that slot 2 holds ABS instead of PETG" src="assets/readme/kobracontrol-files-light-en.png" width="100%">
   </picture>
 </p>
 

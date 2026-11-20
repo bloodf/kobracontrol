@@ -74,7 +74,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
       <p><b>Envie impressões pela rede local</b><br>Print e Send funcionam pelos diálogos do próprio OrcaSlicer. A aba encontra a impressora sozinha e o certificado de cliente já vem no plugin.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="O Painel com progresso, temperaturas e a imagem da câmera" src="assets/orca-cloud/kobracontrol-feature-02-status-pt-BR.png" width="100%">
+      <img alt="O Painel com o progresso e os tempos da impressão e a imagem da câmera" src="assets/orca-cloud/kobracontrol-feature-02-status-pt-BR.png" width="100%">
       <p><b>Acompanhe sua impressão</b><br>Progresso, camada, tempo restante e a hora em que a impressão deve terminar, ao lado de temperaturas, ventoinha, velocidade, luz e câmera.</p>
     </td>
   </tr>
@@ -84,7 +84,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
       <p><b>Gerencie o filamento de cada slot</b><br>Cada slot da cabeça de impressão e do ACE mostra cor e material, com alimentar, recolher, alimentação automática, secagem e a bobina do Spoolman vinculada.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="A lista de arquivos da impressora e o painel com tempo, camadas, filamento e os slots de cada cor" src="assets/orca-cloud/kobracontrol-feature-04-files-pt-BR.png" width="100%">
+      <img alt="A lista de arquivos da impressora e os detalhes do arquivo selecionado: tamanho, tempo, camadas e filamento" src="assets/orca-cloud/kobracontrol-feature-04-files-pt-BR.png" width="100%">
       <p><b>Escolha os arquivos antes de imprimir</b><br>Veja os arquivos da impressora e confira tempo, camadas, filamento e qual slot do ACE imprime cada cor antes de pressionar <b>Iniciar impressão</b>.</p>
     </td>
   </tr>
@@ -119,7 +119,7 @@ Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/kobracontrol-files-dark-pt-BR.png">
-    <img alt="A aba Arquivos: três arquivos na impressora, quatro vídeos de time-lapse e o painel de impressão de desk_organiser_plate_1.gcode, com o aviso de que o slot 2 está com ABS em vez de PETG" src="assets/readme/kobracontrol-files-light-pt-BR.png" width="100%">
+    <img alt="A aba Arquivos: três arquivos na impressora e o painel de impressão de desk_organiser_plate_1.gcode, com o aviso de que o slot 2 está com ABS em vez de PETG" src="assets/readme/kobracontrol-files-light-pt-BR.png" width="100%">
   </picture>
 </p>
 
