@@ -27,6 +27,8 @@ import json
 import re
 import time
 
+from i18n import tr
+
 UNSUPPORTED = -7010            # IPrinterAgent: "command not supported"
 HAS_SDCARD_NORMAL = 1          # DevStorage.h SdcardState
 FLOW_CALI_BIT = 1 << 16        # home_flag: the printer can run flow (PA) calibration before a print
@@ -84,17 +86,27 @@ def _hex(color):
     return "%02X%02X%02XFF" % (r, g, b)   # RRGGBBAA, as MRA normalize_color_value
 
 
+def _empty_tray(index):
+    """MRA:681-686: an empty slot."""
+    return {"id": str(index), "tag_uid": "0000000000000000", "tray_info_idx": "", "tray_type": "",
+            "tray_color": "00000000", "tray_slot_placeholder": "1"}
+
+
 def ams_block(slots, preferred=None):
     """The `ams` object DevFilaSystemParser::ParseV1_0 reads (MRA:608-701 build_ams_payload): one unit per
     `box_pos` ("info" 0002 = AMS lite, as MRA), trays by slot `index`; bits as upper-case hex strings.
     tray_info_idx is what OrcaSlicer's AMS sync matches presets on (filament_id): preferred(slot) first (the
-    Spooler preset of the slot's Spoolman spool, or ""), else the Generic preset of the slot's material."""
-    units, ams_bits, tray_bits, remain = {}, 0, 0, False
+    Spooler preset of the slot's Spoolman spool, or ""), else the Generic preset of the slot's material.
+    Each unit has 4 trays: the Device tab draws no unit of another size (AMSControl::CreateAmsSingleNozzle), so
+    the spool holder's 3 positions get an empty fourth. "display_name" (DevAms::GetDisplayName) names the unit
+    "ACE <n>" or "Spool holder" where OrcaSlicer would say "AMS Lite-<n>"."""
+    units, names, ams_bits, tray_bits, remain = {}, {}, 0, 0, False
     for slot in sorted(slots, key=lambda s: (s["box_pos"], s["index"])):
         pos, index = slot["box_pos"], slot["index"]
         if index > 3:
             continue
         ams_bits |= 1 << pos
+        names[pos] = tr("Spool holder") if slot["box_id"] < 0 else "ACE %d" % (slot["box_id"] + 1)
         tray = {"id": str(index), "tag_uid": "0000000000000000"}
         if slot["status"] == 5:
             tray_bits |= 1 << (pos * 4 + index)
@@ -106,10 +118,11 @@ def ams_block(slots, preferred=None):
             percent = slot.get("percent")
             tray["remain"] = int(max(0, min(100, percent))) if isinstance(percent, (int, float)) else -1
             remain = remain or tray["remain"] >= 0
-        else:   # MRA:681-686: an empty slot
-            tray.update(tray_info_idx="", tray_type="", tray_color="00000000", tray_slot_placeholder="1")
-        units.setdefault(pos, []).append(tray)
-    return {"ams": [{"id": str(pos), "info": "0002", "tray": trays} for pos, trays in sorted(units.items())],
+        else:
+            tray = _empty_tray(index)
+        units.setdefault(pos, {})[index] = tray
+    return {"ams": [{"id": str(pos), "info": "0002", "display_name": names[pos],
+                     "tray": [trays.get(i) or _empty_tray(i) for i in range(4)]} for pos, trays in sorted(units.items())],
             "ams_exist_bits": "%X" % ams_bits, "tray_exist_bits": "%X" % tray_bits,
             "calibrate_remain_flag": remain}   # DevFilaSystem.cpp:450: the Device tab shows "remain" only when set
 

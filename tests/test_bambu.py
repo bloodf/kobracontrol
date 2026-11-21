@@ -125,7 +125,7 @@ class PushStatus(unittest.TestCase):
         own = {0: "SPLA1B2C3D4E5"}   # slot 0 is linked to a spool whose Spooler preset carries this id
         p = self.push(boxes=[ACE0, ACE1], preferred=lambda s: own.get(s["global_index"], ""))
         trays = [t for unit in p["ams"]["ams"] for t in unit["tray"]]
-        self.assertEqual([t["tray_info_idx"] for t in trays], ["SPLA1B2C3D4E5", "OFYPdQJh", "", "", "OFY9muEs"])
+        self.assertEqual([t["tray_info_idx"] for t in trays], ["SPLA1B2C3D4E5", "OFYPdQJh", "", "", "OFY9muEs", "", "", ""])
 
     def test_generic_ids_match_orcas_library(self):
         """GENERIC_IDS against OrcaFilamentLibrary at the commit in tests/fixtures/orca_generic_ids.json (made by
@@ -149,7 +149,7 @@ class PushStatus(unittest.TestCase):
         box = {"id": 0, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 2, 3], "consumables_percent": 37},
                                   {"index": 1, "status": 5, "type": "PLA", "color": [1, 2, 3]}]}
         ams = self.push(boxes=[box])["ams"]
-        self.assertEqual([t.get("remain") for t in ams["ams"][0]["tray"]], [37, -1])
+        self.assertEqual([t.get("remain") for t in ams["ams"][0]["tray"]], [37, -1, None, None])
         self.assertIs(ams["calibrate_remain_flag"], True)
         self.assertIs(self.push(boxes=[ACE1])["ams"]["calibrate_remain_flag"], False)
 
@@ -177,11 +177,26 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(self.push()["ams"], {"ams": [], "ams_exist_bits": "0", "tray_exist_bits": "0",
                                               "calibrate_remain_flag": False})
 
-    def test_hub_mode_head_is_ams_zero(self):
-        head = {"id": -1, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 1, 1]}]}
+    def test_hub_mode_ace_then_spool_holder(self):
+        """The 3 spool-holder positions (box -1) and the 4 ACE slots: 7 sources in two 4-tray units, the ACE first."""
+        head = {"id": -1, "slots": [{"index": 0, "status": 5, "type": "PLA", "color": [1, 1, 1]},
+                                    {"index": 1, "status": 0, "type": "", "color": [0, 0, 0]},
+                                    {"index": 2, "status": 5, "type": "PETG", "color": [20, 40, 60]}]}
         ams = self.push(boxes=[head, ACE0])["ams"]
-        self.assertEqual([u["id"] for u in ams["ams"]], ["0", "1"])
-        self.assertEqual(ams["ams"][1]["tray"][1]["tray_type"], "PETG")
+        self.assertEqual([(u["id"], u["display_name"]) for u in ams["ams"]], [("0", "ACE 1"), ("1", "Spool holder")])
+        self.assertEqual(ams["ams"][0]["tray"][1]["tray_type"], "PETG")
+        holder = ams["ams"][1]["tray"]
+        self.assertEqual([t["id"] for t in holder], ["0", "1", "2", "3"])   # the Device tab draws 4-tray units only
+        self.assertEqual([t["tray_type"] for t in holder], ["PLA", "", "PETG", ""])
+        self.assertEqual(holder[2]["tray_color"], "14283CFF")
+        self.assertEqual([t.get("tray_slot_placeholder") for t in holder], [None, "1", None, "1"])
+        self.assertEqual(ams["ams_exist_bits"], "3")
+        self.assertEqual(ams["tray_exist_bits"], "5B")   # ACE 0, 1, 3; holder 1 and 3 (trays 4, 6)
+
+    def test_unit_names(self):
+        ams = self.push(boxes=[ACE0, ACE1])["ams"]["ams"]
+        self.assertEqual([u["display_name"] for u in ams], ["ACE 1", "ACE 2"])
+        self.assertEqual(len(ams[1]["tray"]), 4)
 
 
 class Replies(unittest.TestCase):

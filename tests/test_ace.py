@@ -74,14 +74,23 @@ class AggregateSlots(unittest.TestCase):
         self.assertEqual(loaded, -1)
 
     def test_hub(self):
+        # The ACE units keep their ace_direct numbers; the head (the spool holder) is the unit after the last ACE
         slots, loaded = ace.aggregate_slots([HEAD, ACE0, ACE1], "ace_hub")
-        self.assertEqual([s["global_index"] for s in slots], [0, 1, 2] + list(range(3, 11)))
-        self.assertEqual([s["box_pos"] for s in slots], [0] * 3 + [1] * 4 + [2] * 4)
-        self.assertEqual(loaded, 3 + 2)  # ace0 slot 2 overrides head loaded=1
+        self.assertEqual([s["global_index"] for s in slots], list(range(11)))
+        self.assertEqual([s["box_id"] for s in slots], [0] * 4 + [1] * 4 + [-1] * 3)
+        self.assertEqual([s["box_pos"] for s in slots], [0] * 4 + [1] * 4 + [2] * 3)
+        self.assertEqual(loaded, 2)  # ace0 slot 2 overrides head loaded=1
+
+    def test_hub_seven_sources(self):
+        slots, _ = ace.aggregate_slots([HEAD, ACE0], "ace_hub")
+        self.assertEqual([(s["box_id"], s["index"], s["global_index"]) for s in slots],
+                         [(0, 0, 0), (0, 1, 1), (0, 2, 2), (0, 3, 3), (-1, 0, 4), (-1, 1, 5), (-1, 2, 6)])
+        self.assertEqual([ace.slot_to_print_ams_index(s, "ace_hub") for s in slots], [4, 5, 6, 7, 0, 1, 2])
+        self.assertEqual([ace.tray_id(s) for s in slots], list(range(7)))
 
     def test_hub_head_loaded_kept_when_ace_not_loaded(self):
         _, loaded = ace.aggregate_slots([HEAD, ACE1], "ace_hub")
-        self.assertEqual(loaded, 1)
+        self.assertEqual(loaded, 2 * 4 + 1)  # ACE 1 is unit 1, the head unit 2
 
     def test_hub_head_truncated_to_three(self):
         h = box(-1, [slot(i) for i in range(4)])
@@ -169,13 +178,14 @@ class Activity(unittest.TestCase):
     def test_hub_and_toolhead_globals(self):
         h = box(-1, [slot(i) for i in range(3)], feed_status=fs(5, 2, 1))
         a = box(0, four(), feed_status=fs(5, 1, 2))
-        self.assertEqual(ace.slot_activity_map([h, a], -1, "ace_hub"), {2: "loading", 4: "unloading"})
+        self.assertEqual(ace.slot_activity_map([h, a], -1, "ace_hub"), {6: "loading", 1: "unloading"})
         self.assertEqual(ace.slot_activity_map([h], -1, "toolhead"), {2: "loading"})
 
     def test_box_local_to_global(self):
-        self.assertEqual(ace.box_local_to_global(-1, 2, "ace_hub"), 2)
+        self.assertEqual(ace.box_local_to_global(-1, 2, "ace_hub", head_pos=1), 6)
+        self.assertEqual(ace.box_local_to_global(-1, 2, "toolhead", head_pos=1), 2)
         self.assertEqual(ace.box_local_to_global(1, 2, "ace_direct"), 6)
-        self.assertEqual(ace.box_local_to_global(1, 2, "ace_hub"), 9)
+        self.assertEqual(ace.box_local_to_global(1, 2, "ace_hub"), 6)
 
 
 class PrintIndex(unittest.TestCase):
@@ -183,8 +193,9 @@ class PrintIndex(unittest.TestCase):
         s = {"box_id": 1, "index": 2, "global_index": 9}
         self.assertEqual(ace.slot_to_print_ams_index(s, "ace_hub"), 4 + 4 + 2)
         self.assertEqual(ace.slot_to_print_ams_index(s, "ace_direct"), 9)
-        h = {"box_id": -1, "index": 1, "global_index": 1}
+        h = {"box_id": -1, "index": 1, "global_index": 5}
         self.assertEqual(ace.slot_to_print_ams_index(h, "ace_hub"), 1)
+        self.assertEqual(ace.slot_to_print_ams_index(dict(h, global_index=1), "toolhead"), 1)
 
 
 class AutoMapping(unittest.TestCase):
@@ -218,11 +229,11 @@ class AssignedMapping(unittest.TestCase):
 
     def test_assigned(self):
         a = [
-            {"paint_index": 0, "slot_index": 3, "is_used": True},
+            {"paint_index": 0, "slot_index": 0, "is_used": True},
             {"paint_index": 1, "slot_index": -1},
-            {"paint_index": 2, "slot_index": 4},
+            {"paint_index": 2, "slot_index": 1},
             {"paint_index": 3, "slot_index": 99},
-            {"paint_index": 4, "slot_index": 0, "is_used": False},
+            {"paint_index": 4, "slot_index": 4, "is_used": False},
         ]
         r = ace.build_assigned_ams_box_mapping(a, self.fil, self.slots, "ace_hub")
         self.assertEqual((r["unused"], r["invalid"]), (2, 2))
@@ -232,10 +243,11 @@ class AssignedMapping(unittest.TestCase):
         self.assertEqual(e["material_type"], "PETG")
 
     def test_fallbacks(self):
-        a = [{"paint_index": 1, "slot_index": 2}, {"paint_index": 7, "slot_index": 2}]
+        a = [{"paint_index": 1, "slot_index": 6}, {"paint_index": 7, "slot_index": 6}]
         s = [dict(x, type="") for x in self.slots]
         r = ace.build_assigned_ams_box_mapping(a, self.fil, s, "ace_hub")
         self.assertEqual(r["mapping"][0]["paint_color"], [255, 255, 255, 255])
+        self.assertEqual(r["mapping"][0]["ams_index"], 2)  # holder position 3
         self.assertEqual(r["mapping"][0]["material_type"], "PLA")
         self.assertEqual(r["mapping"][1]["material_type"], "PLA")
 
@@ -243,15 +255,15 @@ class AssignedMapping(unittest.TestCase):
 class GlobalToBoxSlot(unittest.TestCase):
     def test_found(self):
         slots, _ = ace.aggregate_slots([HEAD, ACE0], "ace_hub")
-        self.assertEqual(ace.global_to_box_slot(slots, 5, "ace_hub"), (0, 2))
-        self.assertEqual(ace.global_to_box_slot(slots, 1, "ace_hub"), (-1, 1))
+        self.assertEqual(ace.global_to_box_slot(slots, 2, "ace_hub"), (0, 2))
+        self.assertEqual(ace.global_to_box_slot(slots, 5, "ace_hub"), (-1, 1))
 
     def test_fallbacks(self):
         ace_slots, _ = ace.aggregate_slots([ACE0], "ace_direct")
         self.assertEqual(ace.global_to_box_slot(ace_slots, 9, "ace_direct"), (2, 1))
         self.assertEqual(ace.global_to_box_slot([], 2, "toolhead"), (-1, 2))
-        self.assertEqual(ace.global_to_box_slot(ace_slots[3:], 2, "ace_hub"), (-1, 2))
-        self.assertEqual(ace.global_to_box_slot(ace_slots, 9, "ace_hub"), (1, 2))
+        self.assertEqual(ace.global_to_box_slot(ace_slots, 6, "ace_hub"), (-1, 2))   # the unit after ACE 0
+        self.assertEqual(ace.global_to_box_slot(ace_slots, 2, "ace_hub"), (0, 2))
 
 
 class AceUnits(unittest.TestCase):
@@ -298,12 +310,11 @@ class AceUnits(unittest.TestCase):
 class Trays(unittest.TestCase):
     def test_tray_id_matches_rule(self):
         slots, _ = ace.aggregate_slots([HEAD, ACE0, ACE1], "ace_hub")
-        by_global = {s["global_index"]: s for s in slots}
-        self.assertEqual(ace.tray_id(by_global[1]), 1)
-        self.assertEqual(ace.tray_id(by_global[3]), 4)
-        self.assertEqual(ace.tray_id(by_global[10]), 11)
-        for s in slots:  # hub: tray id == print ams_index
-            self.assertEqual(ace.tray_id(s), ace.slot_to_print_ams_index(s, "ace_hub"))
+        for s in slots:  # a slot's number is its tray id (Spooler's "S<n>" location), in every mode
+            self.assertEqual(ace.tray_id(s), s["global_index"])
+        head = [s for s in slots if s["box_id"] == -1]
+        self.assertEqual([ace.tray_id(s) for s in head], [8, 9, 10])
+        self.assertEqual([ace.slot_to_print_ams_index(s, "ace_hub") for s in head], [0, 1, 2])
 
     def test_direct_tray(self):
         slots, _ = ace.aggregate_slots([ACE0, ACE1], "ace_direct")
@@ -314,13 +325,15 @@ class Trays(unittest.TestCase):
         self.assertEqual([ace.tray_id(s) for s in slots], [4, 5, 6, 7])
         self.assertEqual(ace.slot_for_tray(5, slots)["global_index"], 5)
         slots, _ = ace.aggregate_slots([HEAD, box(2, four())], "ace_hub")
-        self.assertEqual(ace.tray_id(slots[3]), 12)
-        self.assertEqual(ace.tray_id(slots[3]), ace.slot_to_print_ams_index(slots[3], "ace_hub"))
+        self.assertEqual(ace.tray_id(slots[0]), 8)
+        self.assertEqual(ace.slot_to_print_ams_index(slots[0], "ace_hub"), 12)
+        self.assertEqual([ace.tray_id(s) for s in slots[4:]], [12, 13, 14])
 
     def test_slot_for_tray(self):
         slots, _ = ace.aggregate_slots([HEAD, ACE0], "ace_hub")
-        self.assertEqual(ace.slot_for_tray(5, slots)["global_index"], 4)
-        self.assertIsNone(ace.slot_for_tray(3, slots))
+        self.assertEqual(ace.slot_for_tray(5, slots)["global_index"], 5)
+        self.assertEqual(ace.slot_for_tray(5, slots)["box_id"], -1)
+        self.assertIsNone(ace.slot_for_tray(7, slots))  # the holder has 3 positions
         self.assertIsNone(ace.slot_for_tray(-1, slots))
         self.assertIsNone(ace.slot_for_tray(99, slots))
 
@@ -335,7 +348,7 @@ class MappingFromTrays(unittest.TestCase):
 
     def test_ok(self):
         fils = [{"colour": "#FF0000", "type": "PLA"}, {"colour": "00FF0080", "type": "PETG"}, {"colour": "#000000", "type": "ABS"}]
-        mapping, problems = self.run_([-1, 4, 1], fils)
+        mapping, problems = self.run_([-1, 0, 5], fils)
         self.assertEqual(problems, [])
         self.assertEqual([m["paint_index"] for m in mapping], [1, 2])
         self.assertEqual(mapping[0]["ams_index"], 4)
@@ -347,15 +360,15 @@ class MappingFromTrays(unittest.TestCase):
 
     def test_problems_reported(self):
         fils = [{"colour": "#FF0000", "type": "PLA"}] * 4
-        mapping, problems = self.run_([99, 5, 3, -2], fils)
+        mapping, problems = self.run_([99, 1, 7, -2], fils)
         self.assertEqual(mapping, [])
         self.assertEqual(len(problems), 4)
         self.assertIn("99", problems[0])
-        self.assertIn("5", problems[1])
-        self.assertIn("3", problems[2])
+        self.assertIn("1", problems[1])
+        self.assertIn("7", problems[2])
 
     def test_slot_not_usable_in_mode(self):
-        mapping, problems = ace.mapping_from_trays([4], [{"colour": "#FFFFFF", "type": "PLA"}], self.slots, "toolhead")
+        mapping, problems = ace.mapping_from_trays([0], [{"colour": "#FFFFFF", "type": "PLA"}], self.slots, "toolhead")
         self.assertEqual(mapping, [])
         self.assertEqual(len(problems), 1)
 
@@ -371,7 +384,7 @@ class MappingFromTrays(unittest.TestCase):
         self.assertEqual(mapping[0]["material_type"], "TPU")
 
     def test_length_mismatch(self):
-        mapping, problems = self.run_([0, 1], [{"colour": "#FFFFFF", "type": "PLA"}])
+        mapping, problems = self.run_([0, 4], [{"colour": "#FFFFFF", "type": "PLA"}])
         self.assertEqual([m["paint_index"] for m in mapping], [0, 1])
         self.assertEqual(len(problems), 1)
 
@@ -412,7 +425,7 @@ class MultiAce(unittest.TestCase):  # test_multi_ace_slots.py
         self.assertEqual(ace.detect_filament_mode(boxes, 1), "ace_hub")
         slots, _ = ace.aggregate_slots(boxes, "ace_hub")
         self.assertEqual([s["global_index"] for s in slots], list(range(11)))
-        self.assertEqual([s["box_id"] for s in slots][:3], [-1, -1, -1])
+        self.assertEqual([s["box_id"] for s in slots][-3:], [-1, -1, -1])
 
     def test_round_trip(self):
         slots, _ = ace.aggregate_slots([kx_ace(0), kx_ace(1)], "ace_direct")

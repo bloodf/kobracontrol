@@ -19,7 +19,7 @@ sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "t
 
 import audit_guard  # noqa: E402
 import fake_orca  # noqa: E402
-from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
+from fake_kobra import HOLDER_BOX, FakeKobra, make_tls_files  # noqa: E402
 import test_service  # noqa: E402
 from test_service import ACE0, FakeCamera, make_3mf, wait  # noqa: E402
 
@@ -762,6 +762,32 @@ class Agent(Base):
         started = time.monotonic()
         self.assertEqual(self.agent.disconnect_printer(), 0)
         self.assertLess(time.monotonic() - started, 0.5)
+
+
+class SevenSources(Base):
+    """The spool holder's 3 positions (box -1) and the ACE's 4 slots reach OrcaSlicer as 7 trays in two 4-tray units,
+    and a print maps each chosen tray to its own print slot: holder position n -> n, ACE slot n -> 4 + n."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake.reply("multiColorBox", "getInfo", {"head_tools_model": 1, "multi_color_box": [HOLDER_BOX, ACE0]})
+
+    def test_trays_reported(self):
+        ams = self.connect()["print"]["ams"]
+        self.assertEqual([(u["id"], u["display_name"], len(u["tray"])) for u in ams["ams"]],
+                         [("0", "ACE 1", 4), ("1", "Spool holder", 4)])
+        self.assertEqual([t["tray_type"] for t in ams["ams"][1]["tray"]], ["PLA", "", "PETG", ""])
+        self.assertEqual(ams["tray_exist_bits"], "5B")   # 7 sources: ACE slots 1, 2, 4 and holder 1, 3 hold filament
+
+    def test_print_maps_holder_and_ace(self):
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), plate_index=1, ams_mapping="[6, 1]",
+                                ams_mapping_info=json.dumps([{"ams": 6, "sourceColor": "#262626", "filamentType": "PETG"},
+                                                             {"ams": 1, "sourceColor": "#0000FF", "filamentType": "PETG"}]))
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
+        start = wait(lambda: self.sent("print", "start"))[0]["data"]
+        self.assertEqual([(m["paint_index"], m["ams_index"]) for m in start["ams_settings"]["ams_box_mapping"]],
+                         [(0, 2), (1, 5)])
 
 
 class AgentWhilePrinting(Base):

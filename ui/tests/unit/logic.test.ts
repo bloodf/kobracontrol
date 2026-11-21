@@ -39,10 +39,10 @@ test('slot colour [r,g,b] becomes #rrggbb; malformed is blank', () => {
   assert.equal(hexOf(['a', 0, 0]), '');
 });
 
-test('slots group by box, print head first, ACE units by id, slots by index', () => {
+test('slots group by box, ACE units by id, then the spool holder, slots by index', () => {
   const sl = (g: number, box: number, i: number) => ({ global_index: g, box_id: box, index: i });
   const groups = groupSlots([sl(7, 1, 0), sl(1, -1, 1), sl(0, -1, 0), sl(3, 0, 0)]);
-  assert.deepEqual(groups.map(g => [g.boxId, g.slots.map(s => s.global_index)]), [[-1, [0, 1]], [0, [3]], [1, [7]]]);
+  assert.deepEqual(groups.map(g => [g.boxId, g.slots.map(s => s.global_index)]), [[0, [3]], [1, [7]], [-1, [0, 1]]]);
   assert.deepEqual(groupSlots([]), []);
 });
 

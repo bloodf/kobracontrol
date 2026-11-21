@@ -10,14 +10,14 @@ export function inkOn(hex: string): string {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? '#111' : '#fff';
 }
 
-/** The short number on a slot: "1".."4" with one ACE, "2-3" (ACE 2, slot 3) with several, "H1" for the print head. */
+/** The short number on a slot: "1".."4" with one ACE, "2-3" (ACE 2, slot 3) with several, "H1" for the spool holder. */
 export function slotNumber(s: PdSlot, all: readonly PdSlot[]): string {
   if (s.box_id < 0) return t('pd.headSlot', { n: s.index + 1 });
   const aces = new Set(all.filter(x => x.box_id >= 0).map(x => x.box_id));
   return aces.size > 1 ? `${s.box_id + 1}-${s.index + 1}` : String(s.index + 1);
 }
 
-/** "ACE 1 · Slot 2" / "Print head · Slot 1". */
+/** "ACE 1 · Slot 2" / "Spool holder · Slot 1". */
 export function slotName(s: PdSlot | undefined, _all?: readonly PdSlot[]): string {
   if (!s) return '?';
   return `${s.box_id < 0 ? t('ace.head') : t('ace.unit', { n: s.box_id + 1 })} · ${t('slot.name', { n: s.index + 1 })}`;

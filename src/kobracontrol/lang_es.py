@@ -291,4 +291,5 @@ TEXT = {
     'Skip G-code config block is on in this printer preset. The Kobra X screen probably reads the filament and print details from that block. Turn it off in Printer settings > Basic information > Advanced.': 'Omitir el bloque de configuración del G-code está activado en este perfil de impresora. La pantalla de la Kobra X probablemente lee de ese bloque los filamentos y los detalles de la impresión. Desactívelo en Ajustes de la impresora > Información básica > Avanzado.',
     'This printer preset writes no PNG preview picture (G-code thumbnails: %s). The Kobra X screen probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG.': 'Este perfil de impresora no escribe una imagen de vista previa PNG (Miniaturas de G-Code: %s). La pantalla de la Kobra X probablemente solo muestra imágenes PNG. Ajuste Miniaturas de G-Code en Ajustes de la impresora > Información básica > Avanzado, por ejemplo a 300x300/PNG.',
     'waiting for the previous bridge to close': 'esperando a que se cierre el puente anterior',
+    'Spool holder': 'Portabobinas',
 }
