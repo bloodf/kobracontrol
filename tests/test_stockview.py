@@ -63,6 +63,27 @@ class StockViewTests(unittest.TestCase):
             host.cmd_stock_assign(1, 7, "s1:3")
         self.assertEqual(self.host.bound, [])
 
+    def test_own_spoolman_list_when_spooler_shares_none(self):
+        """No Spooler list (absent, or a Spooler that publishes only for u1control): the Stock tab lists Kobra
+        Control's own Spoolman read instead of waiting for ever, and links from it without Spooler."""
+        self.host.bindings = {4: 11}
+        own = self.host.own_stock(self.target)
+        self.assertEqual(self.host.reads, 1)   # nothing read yet: Spoolman is read once here
+        self.assertEqual((own["state"], own["source"], own["key"]), ("ok", "spoolman", "spoolman:" + URL))
+        self.assertEqual([(r["id"], r["bound_slot"]) for r in own["rows"]], [(7, None), (11, 4)])
+        self.host.own_stock(self.target)
+        self.assertEqual(self.host.reads, 1)   # the spools already read are used
+        self.assertEqual(self.host.cmd_stock_assign(2, 7, own["key"])["bindings"], {"2": 7, "4": 11})
+        with self.assertRaises(ValueError):   # another Spoolman address than the list's
+            self.host.cmd_stock_assign(2, 7, "spoolman:http://other:7912")
+        self.assertIsNone(self.host.own_stock(SimpleNamespace(spoolman_url="")))
+
+    def test_own_list_none_when_spoolman_fails(self):
+        def fail():
+            raise OSError("refused")
+        self.host.cmd_spools = fail
+        self.assertIsNone(self.host.own_stock(self.target))
+
     def test_view_lists_stock_origin_check_and_usage_owner(self):
         self.publish()
         self.host.bindings = {0: 7}

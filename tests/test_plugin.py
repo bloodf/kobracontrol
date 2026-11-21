@@ -663,6 +663,29 @@ class Agent(Base):
         self.assertEqual(self.agent.bind_detect("127.0.0.1", "", detect), 0)
         self.assertEqual((detect.dev_id, detect.dev_name, detect.version), ("127.0.0.1", "KX", "2.1.0"))
 
+    def test_discovery_before_connect_announces_the_presets_printer_at_once(self):
+        """OrcaSlicer 2.5's select_machine() runs right after start_discovery() and looks only among this agent's
+        machines: the preset's printer is announced first, synchronously, under the dev_id select_machine() uses
+        (host:printhost_port), so an entry another agent saved for that address (an OctoPrint physical printer)
+        moves to kobracontrol, and Print finds the printer."""
+        bundle = orca.host.preset_bundle()
+        preset = bundle.current_printer_preset()
+        old, old_full = type(preset).config_value, bundle.full_config_value
+        values = {"printer_agent": "kobracontrol", "print_host": "http://192.0.2.88/", "printhost_port": "8080"}
+        type(preset).config_value = lambda self, key: values.get(key)
+        bundle.full_config_value = lambda key: values.get(key)
+        try:
+            self.assertTrue(self.agent.start_discovery(True, False))
+            values.update(printhost_port="", print_host="")   # no print host: the printer the tab found
+            plugin._service.set_target(service.Target("192.0.2.7"))
+            self.agent.start_discovery(True, False)
+        finally:
+            type(preset).config_value, bundle.full_config_value = old, old_full
+        self.assertEqual([(m["dev_id"], m["dev_ip"]) for m in self.events["ssdp"]],
+                         [("192.0.2.88:8080", "192.0.2.88"), ("192.0.2.7", "192.0.2.7")])
+        self.assertEqual(self.events["queued"], 0)   # not queued: select_machine() must already see it
+        self.assertEqual(plugin.dev_id_from_address("https://192.0.2.88:7125/x", ""), "192.0.2.88:7125")
+
     def test_replies_and_codes(self):
         self.connect()
         send = self.agent.send_message_to_printer
@@ -1113,6 +1136,20 @@ class Page(Base):
             self.assertEqual((target.host, target.preset_host, target.preset_agent), ("", "10.25.16.41", "moonraker"))
         finally:
             type(preset).config_value = old
+
+    def test_octoprint_physical_printer_reaches_the_page(self):
+        """A Kobra X preset set up as an OctoPrint physical printer (a Kobra X has no OctoPrint server): the page's
+        config says so, so the Dashboard can explain how to print through the kobracontrol agent instead."""
+        preset = orca.host.preset_bundle().current_printer_preset()
+        old = type(preset).config_value
+        values = {"printer_model": "Anycubic Kobra X", "host_type": "octoprint", "print_host": "192.0.2.88"}
+        type(preset).config_value = lambda self, key: values.get(key)
+        try:
+            plugin._target()   # the tab reads the preset on the UI thread
+            config = self.page()._config_message()
+        finally:
+            type(preset).config_value = old
+        self.assertEqual(config["setup"], {"kobra": True, "agent": "", "host_type": "octoprint", "host": "192.0.2.88"})
 
     def test_only_retry_hello_asks_for_a_retry(self):
         """The page says hello on open and on selection changes; only its Retry button may cut the backoff short."""

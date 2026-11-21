@@ -11,6 +11,17 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - **The default dashboard in two halves**, as on U1 Control: the print over the filament on the left; the controls over the temperatures and the printer's facts beside the camera and the moves, on the right; the console across the bottom. Denser slot cards (a smaller spool beside the name, tighter spacing), the print head's three slots and an ACE's four on one row where there is room. Rows now grow to fit their content, so nothing is cut off at any window width and both halves always end level. A Default never arranged gets this layout; arranged layouts stay exactly as saved. Shared UI 5.6.0.
 - **Console** widget, in the default layout: what the page sent to the printer, what came back (errors marked) and the printer's state changes, newest last. The Kobra X takes no typed G-code, so there is nothing to type.
 
+### Fixed
+
+- **The Stock tab no longer waits for ever on "Waiting for Spooler's stock list…".** Released Spooler versions share their stock list only with U1 Control, so the tab never got one. When Spooler shares no list (not installed, stopped, or such a version), the tab now lists the spools straight from Kobra Control's Spoolman (the one set in Settings, or the one Spooler uses) and says so; linking a spool to a slot works the same. Without any Spoolman address it says what to set instead of waiting.
+- **Spools no longer vanish a few seconds after opening the tab.** When OrcaSlicer selected the printer (a device or preset event), the page asked the plugin again and cleared the Spoolman spools; the new read was refused while the first one was still out, and the first one's answer was dropped, so the list stayed empty until the next refresh. The spools now stay for the same printer and are cleared only for another one.
+- **Print and Send find the printer on OrcaSlicer 2.5.x.** The printer agent now announces the selected preset's printer as soon as OrcaSlicer starts it, under the id OrcaSlicer looks for (`host:port`), and at once rather than queued. Before, a Kobra X preset with no printer address had no printer in the Device tab, and an address once saved under another printer agent (an OctoPrint physical printer, a Moonraker preset) stayed hidden from kobracontrol, so Print could not find the printer although the tab and the camera worked.
+
+### Added
+
+- **Setup hints on the Dashboard.** A Kobra X preset that does not use the kobracontrol printer agent yet gets the two steps to print from OrcaSlicer's own Print and Send (with **Don't show again**). A Kobra X preset set up as an OctoPrint physical printer is called out: the Kobra X has no OctoPrint server, so OrcaSlicer only says "Could not connect to OctoPrint".
+- The README says where **Activate** is after subscribing on Orca Cloud, and answers the OctoPrint and Stock tab questions.
+
 ### Changed
 
 - Shared UI 5.4.0 (the dashboard grid).

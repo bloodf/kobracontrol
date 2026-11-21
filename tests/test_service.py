@@ -697,6 +697,7 @@ class Stock(Base):
         return self.run_cmd("stock")["result"]
 
     def test_reasons(self):
+        self.svc.own_stock = lambda target: None   # no Spoolman of Kobra Control's own to list instead
         self.assertEqual((self.stock()["available"], self.stock()["reason"]), (False, "absent"))   # no Spooler link
         self.svc.peers = FakePeers("active", "missing")
         self.assertEqual(self.stock()["reason"], "waiting")
@@ -706,6 +707,21 @@ class Stock(Base):
         self.assertEqual(self.stock()["reason"], "stale")
         self.svc.peers = FakePeers("active", "ok")
         self.assertEqual((self.stock()["available"], self.stock()["reason"]), (True, None))
+
+
+class StockWithoutSpooler(Base):
+    """Spooler runs but shares no list (it publishes only for u1control), or isn't there: with a Spoolman address the
+    Stock tab gets Kobra Control's own Spoolman list at once."""
+
+    def test_own_list_instead_of_waiting(self):
+        self.svc.own_stock = lambda target: {"state": "ok", "code": "own", "rows": [{"id": 3}], "key": "spoolman:x",
+                                             "source": "spoolman"}
+        self.svc.peers = FakePeers("active", "missing")
+        out = self.run_cmd("stock")["result"]
+        self.assertEqual((out["available"], out["reason"], out["spooler_reason"]), (True, None, "waiting"))
+        self.assertEqual((out["stock"]["source"], out["same_spoolman"]), ("spoolman", None))
+        self.svc.peers = FakePeers("active", "ok")   # Spooler's own list wins when it has one
+        self.assertNotIn("spooler_reason", self.run_cmd("stock")["result"])
 
 
 class LoopSurvives(unittest.TestCase):

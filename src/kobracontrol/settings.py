@@ -27,6 +27,7 @@ DEFAULTS = {
     "spoolman_report_usage": True,       # deduct each slot's grams when a print finishes
     "spoolman_refresh_s": 30,            # the page re-reads Spoolman this often while it shows (0 = off; 10-300)
     "spooler_hint_dismissed": False,
+    "setup_hint_dismissed": False,       # the Dashboard's "Print from OrcaSlicer" steps: "Don't show again"
     "print_dialog": True,                # "Show print setup before sending": Kobra Control's window after OrcaSlicer's Print
     "remember_print_options": True,      # its options start from the last ones chosen for that printer
     "print_memory": {},                  # printer -> {option: bool}, the last options chosen (printsetup.remember)

@@ -73,9 +73,14 @@ const note = computed(() => (!stockVisible.value ? '' : s.stock!.same_spoolman =
 const slotOf = (r: Spool) => { const sl = r.bound_slot == null ? null : slotList.value.find(x => x.global_index === r.bound_slot); return sl ? slotName(sl) : ''; };
 function clear() { q.value = ''; mat.value = null; fit.value = false; }
 const usage = computed(() => (s.stock?.usage && s.stock.usage !== 'unknown' ? tMaybe(`stock.usage.${s.stock.usage}`, '') : ''));
-const age = computed(() => t('stock.meta', { version: sp.value?.version, n: rows.value.length, age: fmt.ago(sk.value?.ts, s.now / 1000) }));
-/** Why there is no list: the plugin's own words for Spooler's state, else that this tab needs Spooler. */
-const none = computed(() => s.stockError || (sk.value?.state !== 'ok' && sk.value?.text) || sp.value?.text || t('spooler.noStock'));
+/** Spooler shares no list, so the plugin lists Kobra Control's own Spoolman read. */
+const own = computed(() => sk.value?.source === 'spoolman' && sk.value?.code === 'own');
+const age = computed(() => (own.value ? t('stock.ownMeta', { n: rows.value.length })
+  : t('stock.meta', { version: sp.value?.version, n: rows.value.length, age: fmt.ago(sk.value?.ts, s.now / 1000) })));
+/** Why there is no list: the plugin's own words for Spooler's state, else that this tab needs Spooler. A Spooler that
+ *  never publishes a list for Kobra Control ("unsupported") is said so, with the way out: a Spoolman address. */
+const none = computed(() => s.stockError || (s.stock?.reason === 'unsupported' ? t('stock.unsupported') : '')
+  || (sk.value?.state !== 'ok' && sk.value?.text) || sp.value?.text || t('spooler.noStock'));
 
 // Refresh reads Spoolman again (the slots' links) and Spooler's stock.
 const canSpools = computed(() => !controlsOff.value && configured.value);
@@ -115,6 +120,7 @@ async function link(r: Spool) {
     <OuiBanner :show="note === 'other'" id="stock-why" tone="error" :title="t('stock.otherSpoolman')" data-test="stock-why" dismissible :dismiss-key="`stock-other-spoolman:${smUrl}`" :close-label="t('common.close')" />
     <OuiBanner :show="note === 'blocked'" id="stock-why" tone="warn" :title="t('stock.blocked', { reason: why })" data-test="stock-why" dismissible :dismiss-key="`stock-why:${why}`" :close-label="t('common.close')" />
     <OuiBanner :show="note === 'fallback'" tone="info" :title="t('stock.fallback')" dismissible :dismiss-key="`stock-fallback:${smUrl}`" :close-label="t('common.close')" />
+    <OuiBanner :show="stockVisible && own" tone="info" :title="t('stock.own')" data-test="stock-own" dismissible :dismiss-key="`stock-own:${smUrl}`" :close-label="t('common.close')" />
   </div>
 
   <div v-if="stockVisible" class="oui-split" data-rail data-test="stock-card">
@@ -172,7 +178,7 @@ async function link(r: Spool) {
   <!-- No usable list: the page keeps its shape and says why, with the way to a Spoolman address when none is set. -->
   <OuiPanel v-else flush data-test="spoolman-card">
     <OuiEmpty :icon="boxes" :state="s.stockLoading && !s.stock ? 'loading' : 'empty'" :title="none" :text="!configured && !s.spoolsLoaded ? t('sm.help') : sp?.detail || undefined">
-      <template v-if="!configured && !s.spoolsLoaded" #actions>
+      <template v-if="(!configured && !s.spoolsLoaded) || s.stock?.reason === 'unsupported'" #actions>
         <Button severity="secondary" size="small" :label="t('common.openSettings')" @click="openSettings('sm-s-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
       </template>
     </OuiEmpty>

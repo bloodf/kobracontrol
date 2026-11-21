@@ -37,10 +37,11 @@ export interface Spool { id: number; name: string; vendor: string; material: str
   remaining?: number | null; initial?: number | null; location?: string; filament_id?: number; low?: boolean; use_first?: boolean; bound_slot?: number | null }
 export interface StockView {
   spooler: { state: string; text: string; detail?: string; version?: string; links?: number };
-  stock: { state: string; code?: string; text: string; detail?: string; rows: Spool[]; key: string; ts?: number };
+  /** source 'spoolman' with code 'own': Kobra Control's own Spoolman list, as Spooler shares none (`spooler_reason` says why). */
+  stock: { state: string; code?: string; text: string; detail?: string; rows: Spool[]; key: string; ts?: number; source?: string };
   same_spoolman: boolean | 'fallback' | null; usage: string; bindings: Record<string, number>;
   /** true when the list is usable; otherwise `reason` says why (absent, stale, waiting, unsupported, or a stock state code). */
-  available: boolean; reason: string | null;
+  available: boolean; reason: string | null; spooler_reason?: string;
 }
 export interface FileEntry { name: string; size: number; timestamp: number; thumbnail?: string | null }
 export interface FilesResult { files: FileEntry[] }
@@ -61,6 +62,8 @@ export interface Limits { nozzle_max: number; bed_max: number }
 export interface Config {
   settings: Record<string, any>; certificate: Certificate; spooler: { installed?: boolean; url?: string; dismissed?: boolean };
   version: string; limits: Limits; located?: Located | null; agent_id?: string; bridge?: BridgeState;
+  /** How the selected printer preset reaches the printer (plugin.preset_setup): the Dashboard's setup hints. */
+  setup?: { kobra?: boolean; agent?: string; host_type?: string; host?: string };
   /** Where the plugin found ffmpeg ('' = not found); absent from a plugin that does not look. */ ffmpeg?: string;
 }
 /** The upload bridge: on in Settings, listening, where, its API key and why it is not running. */
