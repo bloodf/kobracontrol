@@ -17,19 +17,22 @@ const state = computed(() => config.value?.bridge ?? null);
 const address = computed(() => `${state.value?.host || '127.0.0.1'}:${form.bridgePort}`);
 const chip = computed(() => (!state.value?.enabled ? 'off' : state.value.running ? 'on' : 'error'));
 const keyInput = ref<{ $el: HTMLInputElement } | null>(null);
+const addressInput = ref<{ $el: HTMLInputElement } | null>(null);
 const renewing = ref(false);
 
-async function copyKey(): Promise<void> {
-  const key = state.value?.key || '';
+/** Copies text; OrcaSlicer's web view may refuse the clipboard API, then the selected field still copies. */
+async function copyField(text: string, field: { $el: HTMLInputElement } | null, done: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(key);
-  } catch {   // OrcaSlicer's web view may refuse the clipboard API: the selected field still copies
-    const input = keyInput.value?.$el;
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const input = field?.$el;
     input?.select();
     if (!input || !document.execCommand('copy')) { tracker.notify('error', t('bridge.copyFailed')); return; }
   }
-  tracker.notify('success', t('bridge.copied'));
+  tracker.notify('success', done);
 }
+const copyKey = () => copyField(state.value?.key || '', keyInput.value, t('bridge.copied'));
+const copyAddress = () => copyField(address.value, addressInput.value, t('bridge.addressCopied'));
 
 async function newKey(): Promise<void> {
   renewing.value = true;
@@ -59,6 +62,13 @@ async function newKey(): Promise<void> {
     <OuiFormRow :label="t('bridge.state')">
       <span role="status" data-test="bridge-state">{{ !state?.enabled ? t('bridge.off') : state.running ? t('bridge.running', { address: `${state.host}:${state.port}` })
         : t('bridge.error', { error: state.error }) }}</span>
+    </OuiFormRow>
+    <OuiFormRow :label="t('bridge.address')" for="c-bridge-address" stacked>
+      <div class="bs-key">
+        <InputText id="c-bridge-address" ref="addressInput" :model-value="address" readonly class="oui-mono" data-test="bridge-address" />
+        <Button size="small" severity="secondary" :label="t('bridge.copy')" :aria-label="`${t('bridge.copy')}: ${t('bridge.address')}`" data-test="bridge-copy-address" @click="copyAddress">
+          <template #icon><OuiIcon :icon="copy" :size="14" /></template></Button>
+      </div>
     </OuiFormRow>
     <OuiFormRow :label="t('bridge.key')" for="c-bridge-key" stacked>
       <div class="bs-key">

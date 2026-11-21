@@ -32,13 +32,19 @@ Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for the Anycubic Kobr
 
 ## 📦 Install
 
-Kobra Control is listed on Orca Cloud: open [its page](https://cloud.orcaslicer.com/p/59c786285255) and subscribe. Subscribing downloads it but does not turn it on: in OrcaSlicer open **File > Plugins**, find **Kobra Control** in the list and tick **Activate**, then allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
+Kobra Control is listed on Orca Cloud: open [its page](https://cloud.orcaslicer.com/p/59c786285255) and subscribe. Subscribing downloads it but does not turn it on. Then, in OrcaSlicer:
+
+1. Open the plugin list. On macOS: **File > Plugins** in the menu bar at the top of the screen. On Windows and Linux: click the small **▾** arrow next to **File** at the top left of the OrcaSlicer window, then **Plugins** (it is not inside the File menu there).
+2. The first column of the list is headed **Activate**. Tick the box in that column on the **Kobra Control** row.
+3. Allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
+
+To turn it off again, untick the same box. To remove it, select **Kobra Control** in the same list and uninstall it there, or unsubscribe on Orca Cloud.
 
 From a file:
 
 1. Download `kobracontrol_any.whl` from the [latest release](https://github.com/bloodf/kobracontrol/releases/latest).
-2. In OrcaSlicer open **File > Plugins > Install local plugin** and pick the wheel.
-3. Tick **Activate** and allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
+2. In OrcaSlicer open the plugin list (macOS: **File > Plugins**; Windows and Linux: the **▾** arrow next to **File** > **Plugins**), choose **Install local plugin** and pick the wheel.
+3. Tick its box in the **Activate** column and allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
 
 | Requirement | Detail |
 |---|---|
@@ -204,7 +210,12 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 <details>
 <summary>"Could not connect to OctoPrint" when I print to the Kobra X.</summary>
 
-The Kobra X has no OctoPrint server, so a physical printer of the type OctoPrint (or any other print host type) can't reach it. Remove that physical printer and print through Kobra Control's printer agent: tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. The printer's address is optional there: Kobra Control finds the printer on the network. The Dashboard says so when the selected Kobra X preset sends to OctoPrint.
+The Kobra X has no OctoPrint server, so a physical printer of the type OctoPrint pointed at the printer's own address can't reach it. Two ways out:
+
+- **Print through Kobra Control's printer agent** (recommended). Remove that physical printer, tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. The printer's address is optional there: Kobra Control finds the printer on the network.
+- **Keep the OctoPrint physical printer, but point it at Kobra Control.** In the Kobra Control tab open **Settings > Upload bridge**, turn it on, and copy the two values it shows (each has a **Copy** button) into the physical printer: **Hostname, IP or URL** `127.0.0.1:8765` (not the printer's IP) and **API Key / Password** the bridge's key. Press **Test**. Upload and Print then waits in the Kobra Control tab for you to press **Start print**.
+
+The Dashboard says so, with a button to the upload bridge, when the selected Kobra X preset sends to OctoPrint.
 </details>
 
 <details>

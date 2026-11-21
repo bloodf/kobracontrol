@@ -851,6 +851,31 @@ def _box(raw):
     return box
 
 
+def _merge_slots(old, new):
+    """A box's slots after a report: a list at least as long as the known one replaces it; a shorter one (one
+    edited slot, say) replaces only the slots it names by `index`; none or an empty list keeps them."""
+    if not isinstance(new, list) or not new:
+        return old
+    if len(new) >= len(old) or not all(isinstance(s.get("index"), int) and 0 <= s["index"] < len(old) for s in new):
+        return new
+    out = list(old)
+    for s in new:
+        out[s["index"]] = s
+    return out
+
+
+def _merge_boxes(old, new):
+    """The known boxes updated with a report's boxes, by id: fields it carries replace the old ones, boxes it
+    leaves out stay. ponytail: an unplugged ACE shows until the printer reconnects (a fresh State); a report
+    that omits a box is not proof the box is gone."""
+    out = {b.get("id"): b for b in old}
+    for b in new:
+        prev = out.get(b.get("id"))
+        out[b.get("id")] = {**prev, **b, "slots": _merge_slots(prev.get("slots") or [], b.get("slots"))} \
+            if prev is not None else b
+    return list(out.values())
+
+
 # Anycubic Slicer Next 2.0.0.3 (Workbench lanTopic_v3 mergeLanStatistics): grams in material_used_gram_value, else
 # material_used_value. UNTESTED on our printer.
 _STATS = (("print_total_minutes", "print_minutes"), ("print_count", "print_count"))
@@ -1075,12 +1100,16 @@ class State:
 
     def _on_box(self, p, d):
         # A refused setInfo answers state "failed" with data as a list (KX-Bridge issue #100): keep the
-        # slots, raise the flag. Unlike both references, an empty list is kept: it is what the printer says.
+        # slots, raise the flag. An empty list changes nothing, as in both references: firmware 1.1.5.1
+        # answered some getInfo polls without its ACE, which wiped the slots every 5 s. A report naming
+        # some boxes updates those (_merge_boxes), so one box's or one slot's news never drops the rest.
         self._v["box_set_failed"] = p.get("state") == "failed"
         if self._v["box_set_failed"]:
             return
         if isinstance(d.get("multi_color_box"), list):
-            self._v["multi_color_box"] = [_box(b) for b in d["multi_color_box"] if isinstance(b, dict)]
+            boxes = [_box(b) for b in d["multi_color_box"] if isinstance(b, dict)]
+            if boxes:
+                self._v["multi_color_box"] = _merge_boxes(self._v["multi_color_box"], boxes)
         if "head_tools_model" in d:
             self._v["head_tools_model"] = d["head_tools_model"]
 

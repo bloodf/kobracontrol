@@ -20,6 +20,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol"), os.path.join(ROOT, "tests"), os.path.join(ROOT, "scripts")]
 
+import ace  # noqa: E402
 import aes  # noqa: E402
 import bambu  # noqa: E402
 import certs  # noqa: E402
@@ -1308,7 +1309,25 @@ class StateTests(unittest.TestCase):
         self.assertEqual((v["multi_color_box"], v["head_tools_model"]), (boxes, 1))
         v = self.apply("multiColorBox/report", {"multi_color_box": []}, state="failed")
         self.assertEqual(v["multi_color_box"], boxes)
-        self.assertEqual(self.apply("multiColorBox/report", {"multi_color_box": []})["multi_color_box"], [])
+        # an empty answer (firmware 1.1.5.1 sent some without its ACE) keeps the slots, as both references do
+        self.assertEqual(self.apply("multiColorBox/report", {"multi_color_box": []})["multi_color_box"], boxes)
+
+    def test_multi_color_box_partial_reports(self):
+        """A report naming one box, or one slot of a box, updates that much and keeps the rest."""
+        slot = lambda i, t: {"index": i, "status": 5, "type": t, "color": [i, i, i]}   # noqa: E731
+        head = {"id": -1, "loaded_slot": -1, "slots": [slot(0, "PLA"), slot(1, "PLA"), slot(2, "PLA")]}
+        ace_box = {"id": 0, "loaded_slot": 1, "slots": [slot(i, "PETG") for i in range(4)]}
+        self.apply("multiColorBox/report", {"multi_color_box": [head, ace_box]})
+        v = self.apply("multiColorBox/report", {"multi_color_box": [{"id": 0, "feed_status": {"current_status": 1}}]})
+        self.assertEqual([b["id"] for b in v["multi_color_box"]], [-1, 0])
+        self.assertEqual(v["multi_color_box"][1]["slots"], ace_box["slots"])
+        self.assertEqual(v["multi_color_box"][1]["feed_status"], {"current_status": 1})
+        v = self.apply("multiColorBox/report", {"multi_color_box": [{"id": 0, "slots": [slot(2, "TPU")]}]})
+        self.assertEqual([s["type"] for s in v["multi_color_box"][1]["slots"]], ["PETG", "PETG", "TPU", "PETG"])
+        slots, _ = ace.aggregate_slots(v["multi_color_box"], ace.detect_filament_mode(v["multi_color_box"]))
+        self.assertEqual(len(slots), 7)
+        v = self.apply("multiColorBox/report", {"multi_color_box": [{"id": 0, "slots": [slot(i, "ABS") for i in range(4)]}]})
+        self.assertEqual([s["type"] for s in v["multi_color_box"][1]["slots"]], ["ABS"] * 4)
 
     def test_files(self):
         records = [{"filename": "old.gcode", "size": 1, "timestamp": 1}, {"filename": "dir", "is_dir": True},
