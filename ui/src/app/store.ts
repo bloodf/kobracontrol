@@ -1,8 +1,8 @@
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import * as bridge from '../core/bridge';
 import { Tracker, message, type NoticeKind, type RunOptions } from '../core/tracker';
 import { showToast } from '@orca-plugins/ui-foundation/src/components/toast';
-import { t } from '../core/i18n';
+import { t, tMaybe } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';
 import { boundSlots } from '../core/logic';
@@ -57,18 +57,33 @@ export const s = reactive({
   /** Settings > Requirements, as the plugin last checked them; `checking` while its file checks run. */
   requirements: [] as Requirement[],
   checking: false,
+  /** The widgets on the Dashboard's open layout: the camera streams only while its widget is there. */
+  widgets: [] as string[],
 });
 
 // What commands answered goes to the page's toasts (bottom-left): "Pause failed: timeout" is a title and its detail.
 // An unknown outcome stays until closed, like an error: the user has to look at the printer.
 const TOAST_TONE = { error: 'error', unknown: 'warn', success: 'success', info: 'info' } as const;
 export function toast(kind: NoticeKind, text: string, key?: string): void {
+  note(text, kind === 'error' || kind === 'unknown' ? 'err' : 'out');
   const i = text.indexOf(': ');
   showToast({ tone: TOAST_TONE[kind], title: i < 0 ? text : text.slice(0, i + 1), body: i < 0 ? undefined : text.slice(i + 2), key,
     ...(kind === 'unknown' ? { timeout: 0 } : {}) });
 }
+// The Console widget's log: what the page sent to the printer, what came back and what the printer did. The Kobra X
+// takes no typed G-code, so this is the console it has. Reads the page repeats on its own are left out.
+export interface LogLine { id: number; text: string; kind: 'in' | 'out' | 'err' }
+export const activity = ref<LogLine[]>([]);
+export const LOG_MAX = 1000;
+let logId = 0;
+const QUIET = new Set(['spools', 'device', 'connect']);
+export function note(text: string, kind: LogLine['kind'] = 'out'): void {
+  const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  activity.value = [...activity.value, { id: ++logId, text: `${at}  ${text}`, kind }].slice(-LOG_MAX);
+}
+const argText = (args?: Record<string, unknown>) => Object.entries(args ?? {}).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ');
 export const tracker = new Tracker(
-  (cmd, args) => bridge.command(cmd, args, s.info?.generation),
+  (cmd, args) => { if (!QUIET.has(cmd)) note(`> ${cmd} ${argText(args)}`.trim(), 'in'); return bridge.command(cmd, args, s.info?.generation); },
   (key, params) => t(key, params),
   toast,
 );
@@ -290,7 +305,7 @@ const stockTab = () => s.tab === 'dash' || s.tab === 'stock';
 export function lease(): void {
   const vis = !s.hidden && s.tab === 'dash';
   // The stock is read for its own tab and for the dashboard, whose slot cards and drawing show the linked spools.
-  bridge.post({ type: 'lease', camera: s.camOn && vis, stock: !s.hidden && stockTab() && stockVisible.value, mse: playable() });
+  bridge.post({ type: 'lease', camera: s.camOn && vis && s.widgets.includes('camera'), stock: !s.hidden && stockTab() && stockVisible.value, mse: playable() });
 }
 
 export function start(): () => void {
@@ -309,6 +324,8 @@ export function start(): () => void {
   const offCfg = onConfig(m => { const v = cleanEvery(m.settings?.spoolman_refresh_s); if (v !== s.refreshS) { s.refreshS = v; auto.restart(); } });
   // Spooler says right away when it linked or unlinked a spool (its presence's "links"): re-read without waiting.
   const offLinks = watch(() => s.stock?.spooler?.links, (now, was) => { if (was !== undefined && now !== was) void loadSpools(true); });
+  // What the printer does goes in the Console too.
+  const offState = watch(() => s.status?.state, (now, was) => { if (now && was && now !== was) note(t('console.state', { state: tMaybe(`status.state.${now}`, now) })); });
   void hello();
-  return () => { off(); offCfg(); offLinks(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
+  return () => { off(); offCfg(); offLinks(); offState(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
 }

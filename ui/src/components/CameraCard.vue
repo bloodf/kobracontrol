@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiCamera, OuiEmpty, OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import { OuiCamera, OuiEmpty, OuiIcon, OuiPanel, OuiWidgetMaximize } from '@orca-plugins/ui-foundation/src/components';
 import { camera, cameraOff, settings } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { s, openSettings, lease, controlsOff, link, printerName, noFfmpeg, requirement } from '../app/store';
 import { t } from '../core/i18n';
 import { Player } from '../core/player';
 
+// The picture's shape (the widget's setting): the box keeps it at any widget size, the picture is shown whole in it.
+const props = withDefaults(defineProps<{ config?: { aspect?: string } }>(), { config: () => ({}) });
+const shape = computed(() => { const [w, h] = (props.config.aspect ?? '16/9').split('/'); return { '--oui-camera-w': w, '--oui-camera-h': h }; });
 // The stream from the plugin's Relay, played here; ffmpeg's JPEG frames (the fallback) still come as `frame`.
 const vid = ref<HTMLVideoElement | null>(null);
 let player: Player | null = null;
@@ -61,20 +64,21 @@ const alt = computed(() => t('cam.alt', { printer: printerName.value }));
        move the page. A camera that cannot run at all (no printer, no ffmpeg) is one row with the reason. -->
   <OuiPanel class="cam-card" :icon="camera" tone="sky" flush aria-labelledby="cam-h">
     <template #title><span id="cam-h">{{ t('cam.title') }}</span></template>
-    <template v-if="shown" #actions>
-      <Button severity="secondary" size="small" :label="t('cam.stop')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="cameraOff" :size="14" /></template></Button>
+    <template #actions>
+      <Button v-if="shown" severity="secondary" size="small" :label="t('cam.stop')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="cameraOff" :size="14" /></template></Button>
+      <OuiWidgetMaximize />
     </template>
     <!-- The same reason as every other control: the page shows one connection state. -->
     <OuiEmpty v-if="off" compact :state="noFfmpeg ? 'empty' : 'offline'" :icon="cameraOff" :title="t('cam.unavailable')">
       <span data-test="cam-why">{{ why }}</span>
       <template v-if="noFfmpeg" #actions><Button size="small" severity="secondary" text :label="t('cam.ffmpegSettings')" data-test="cam-req" @click="openSettings('needs-h')" /></template>
     </OuiEmpty>
-    <OuiCamera v-else-if="!shown" fit="contain" state="off" :alt="alt" :title="t('cam.offTitle')" :text="ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint')">
+    <OuiCamera v-else-if="!shown" fit="contain" state="off" :style="shape" :alt="alt" :title="t('cam.offTitle')" :text="ffmpegPending ? t('cam.checkingFfmpeg') : t('cam.offHint')">
       <template #actions><Button severity="secondary" size="small" :label="t('cam.start')" data-focus-key="camera" data-test="camera" @click="toggle"><template #icon><OuiIcon :icon="camera" :size="14" /></template></Button></template>
     </OuiCamera>
     <!-- On: the page's own picture. The <video> is there from the start (it must be, to play at all) and shows once frames
          play; until then ffmpeg's JPEG frames, or what the camera is doing (starting, failed and why). -->
-    <OuiCamera v-else class="cam-view" fit="contain" state="live" :alt="alt">
+    <OuiCamera v-else class="cam-view" fit="contain" state="live" :style="shape" :alt="alt">
       <template #picture>
         <video ref="vid" class="oui-camera-picture" :class="{ 'cam-hidden': !s.video }" muted autoplay playsinline disablepictureinpicture data-test="cam-video" :aria-label="alt"></video>
         <img v-if="!s.video && s.frame" class="oui-camera-picture" :src="s.frame" :alt="alt" draggable="false" @load="bridge.post({ type: 'frame_ack' })">

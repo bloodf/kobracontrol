@@ -4,8 +4,14 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+### Added
+
+- **Your own dashboard.** **Edit layout** on the Dashboard: drag a widget to move it, drag its edges or corners to resize it (it snaps to the grid and keeps a sensible least size), remove it, or add one from the list of every widget: Status, Filament, Controls, Temperatures, Camera, Move, Printer, Console and a Files shortcut. Widgets with settings have a gear: the camera's picture shape, how many console lines show, which readings the Temperatures widget shows. The keyboard works too: arrow keys move a widget, Shift and the arrow keys resize it, Delete removes it. **Save layout** keeps it. Make named layouts, switch between them, rename, delete or reset one to the default. They are saved in Kobra Control's settings, so they come back after a restart. Each widget fits its content to its size: the camera keeps its shape, a taller console shows more lines, a small Temperatures widget is compact. The camera and the console can be maximised. A narrow window shows the widgets in one column.
+- **Console** widget, in the default layout: what the page sent to the printer, what came back (errors marked) and the printer's state changes, newest last. The Kobra X takes no typed G-code, so there is nothing to type.
+
 ### Changed
 
+- Shared UI 5.4.0 (the dashboard grid).
 - Shared Orca UI foundation 5.0.8 (Vue 3.5.46, lucide-static 1.77.0); no visible change.
 
 ## [0.9.2] - 2026-11-20

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, markRaw, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiIcon, OuiPageHeader } from '@orca-plugins/ui-foundation/src/components';
-import { edit } from '@orca-plugins/ui-foundation/src/icons';
+import { OuiDashboard, OuiIcon, OuiPageHeader, validateLayout, type OuiDashboardLabels, type OuiWidget } from '@orca-plugins/ui-foundation/src/components';
+import { ace, camera, edit, files, move, printer, terminal, thermometer } from '@orca-plugins/ui-foundation/src/icons';
 import JobCard from './JobCard.vue';
 import ControlsPanel from './ControlsPanel.vue';
 import MotionPanel from './MotionPanel.vue';
@@ -12,13 +12,57 @@ import AceCard from './AceCard.vue';
 import SpoolerHint from './SpoolerHint.vue';
 import UsageCard from './UsageCard.vue';
 import FirstRun from './FirstRun.vue';
-import { s, run, tracker, busy, controlsOff, printerName, whyId } from '../app/store';
+import ConsoleCard from './ConsoleCard.vue';
+import TempsCard from './TempsCard.vue';
+import FilesCard from './FilesCard.vue';
+import { s, run, tracker, busy, controlsOff, printerName, whyId, lease, LOG_MAX } from '../app/store';
+import { config } from '../app/settings';
+import * as bridge from '../core/bridge';
 import { prompt } from '../core/dialog';
 import { t } from '../core/i18n';
 
 // The dashboard standard (DESIGN.md): the printer in the page header, the print across the top, what you work on
 // (filament, controls) in the main column and what you watch (camera, moves, the printer's facts) beside it.
 // Without a certificate or a printer the modules would only be empty: the one task and its recovery come instead.
+// The modules are widgets the user arranges (OuiDashboard): sizes in columns of 12 and 32 px rows. The default is the
+// dashboard standard: the print across the top, filament and controls beside the camera, moves and the printer's facts.
+const n = (v: number) => ({ value: v, label: String(v) });
+const widgets = computed<OuiWidget[]>(() => [
+  { id: 'job', title: t('status.title'), icon: printer, component: markRaw(JobCard), w: 12, h: 3, minW: 4, minH: 3 },
+  { id: 'ace', title: t('ace.title'), icon: ace, component: markRaw(AceCard), w: 12, h: 16, minW: 4, minH: 4 },
+  { id: 'controls', title: t('controls.title'), icon: thermometer, component: markRaw(ControlsPanel), w: 8, h: 6, minW: 4, minH: 4 },
+  { id: 'temps', title: t('widget.temps'), icon: thermometer, component: markRaw(TempsCard), w: 4, h: 4, minW: 2, minH: 3,
+    settings: [{ key: 'nozzle', label: t('temps.nozzle'), default: true }, { key: 'bed', label: t('temps.bed'), default: true }, { key: 'fan', label: t('fan.label'), default: true }] },
+  { id: 'camera', title: t('cam.title'), icon: camera, component: markRaw(CameraCard), w: 4, h: 6, minW: 3, minH: 4,
+    settings: [{ key: 'aspect', label: t('widget.aspect'), default: '16/9', options: [{ value: '16/9', label: '16:9' }, { value: '4/3', label: '4:3' }, { value: '1/1', label: '1:1' }] }] },
+  { id: 'motion', title: t('motion.title'), icon: move, component: markRaw(MotionPanel), w: 4, h: 6, minW: 3, minH: 4 },
+  { id: 'printer', title: t('device.panel'), icon: printer, component: markRaw(PrinterPanel), w: 4, h: 12, minW: 3, minH: 3 },
+  { id: 'console', title: t('console.title'), icon: terminal, component: markRaw(ConsoleCard), w: 8, h: 12, minW: 3, minH: 4,
+    settings: [{ key: 'lines', label: t('widget.lines'), default: 400, options: [100, 400, LOG_MAX].map(n) }] },
+  { id: 'files', title: t('nav.files'), icon: files, component: markRaw(FilesCard), w: 4, h: 3, minW: 3, minH: 3 },
+]);
+const defaults = computed(() => ({ name: t('layout.default'), items: [
+  { id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 12, h: 16 },
+  { id: 'controls', x: 0, y: 19, w: 8, h: 6 }, { id: 'camera', x: 8, y: 19, w: 4, h: 6 },
+  { id: 'console', x: 0, y: 25, w: 8, h: 12 }, { id: 'motion', x: 8, y: 25, w: 4, h: 6 }, { id: 'printer', x: 8, y: 31, w: 4, h: 12 }] }));
+const labels = computed<OuiDashboardLabels>(() => ({
+  toolbar: t('layout.toolbar'), layout: t('layout.layout'), edit: t('layout.edit'), save: t('layout.save'), cancel: t('layout.cancel'), add: t('layout.add'),
+  addTitle: t('layout.addTitle'), added: t('layout.added'), close: t('layout.close'), newLayout: t('layout.new'), rename: t('layout.rename'), remove: t('layout.remove'),
+  reset: t('layout.reset'), create: t('layout.create'), apply: t('layout.apply'), keep: t('layout.keep'), removeAsk: name => t('layout.removeAsk', { name }),
+  nameEmpty: t('layout.nameEmpty'), nameTaken: t('layout.nameTaken'), settings: widget => t('layout.settings', { widget }), removeWidget: widget => t('layout.removeWidget', { widget }),
+  widget: widget => t('layout.widget', { widget }), place: (widget, x, y, w, h) => t('layout.place', { widget, x, y, w, h }), removed: widget => t('layout.removed', { widget }),
+  hint: t('layout.hint'), narrow: t('layout.narrow'), empty: t('layout.empty'), maximize: t('layout.maximize'), restore: t('layout.restore'),
+}));
+// Stored with the plugin's settings (settings "dashboard"); what the user saved here wins over a config that is older.
+const saved = ref<unknown>(undefined);
+const layout = computed({
+  get: () => (saved.value !== undefined ? saved.value : config.value?.settings.dashboard),
+  set: (v: unknown) => { saved.value = v; bridge.post({ type: 'dashboard', value: v }); },
+});
+// The camera streams only while its widget is on the open layout.
+watch(() => { const st = validateLayout(layout.value, widgets.value, defaults.value); return st.layouts[st.active].items.map(i => i.id).join(); },
+  ids => { s.widgets = ids.split(','); lease(); }, { immediate: true });
+
 const firstRun = computed(() => s.phase === 'noCertificate' || s.phase === 'noTarget');
 const st = computed(() => s.status);
 const name = computed(() => st.value?.printer_name || printerName.value);
@@ -60,17 +104,6 @@ async function rename() {
     <UsageCard />
     <SpoolerHint />
 
-    <div class="oui-dash">
-      <JobCard class="oui-dash-top" />
-      <div class="oui-dash-main" data-test="filament">
-        <AceCard />
-        <ControlsPanel />
-      </div>
-      <div class="oui-dash-side" data-test="machine">
-        <CameraCard />
-        <MotionPanel />
-        <PrinterPanel />
-      </div>
-    </div>
+    <OuiDashboard v-model="layout" :widgets="widgets" :defaults="defaults" :labels="labels" />
   </template>
 </template>

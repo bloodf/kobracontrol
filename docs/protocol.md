@@ -91,7 +91,8 @@ anycubic/anycubicCloud/v1/{slicer|web}/printer/public/<modeId>/<deviceId>/#
 Message types: `info`, `status`, `print`, `tempature` (spelled this way by the printer),
 `multiColorBox`, `light`, `fan`, `file`, `axis`, `skip`, `video`.
 
-The printer has no G-code console channel, so kobracontrol has no console page.
+The printer has no G-code console channel. The Dashboard's Console widget is the page's own log: the commands the page
+sent, what they answered and the printer's state changes; nothing can be typed into it.
 
 Observed on firmware 2.0.2.8: two MQTT sessions coexist. Another client (Kobralink) stayed
 connected the whole time, and each client sees the reports the other one causes. kobracontrol still
