@@ -18,6 +18,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ### Fixed
 
+- A job from OrcaSlicer goes to the printer it names (the print's printer address, as OrcaSlicer's **Multi-device** tab sends it), not to the printer the agent is connected to.
 - The ACE and the spool holder are asked for every 5 seconds, as KX-Bridge and Kobralink do, not only when Kobra Control connects. A Kobra X on firmware 1.1.5.1 showed "The printer reports no filament slots" with 4 spools in its ACE; a printer that answers the first request without its ACE now shows the slots as soon as it reports them.
 
 ## [0.9.2] - 2026-11-20
