@@ -3,8 +3,8 @@
 
 The loop runs on its own thread: load the saved client certificate, recover the MQTT credentials from the
 printer (kept in memory only, never logged), connect, then ask for a read-only snapshot (info/query,
-print/query, multiColorBox/getInfo) and keep polling info/query (and print/query during a print), as
-Kobralink's pollLoop does. Nothing else is ever sent on its own: every other command is the user's.
+print/query, multiColorBox/getInfo) and keep polling info/query and multiColorBox/getInfo (and print/query during
+a print), as Kobralink's pollLoop and KX-Bridge's poll tick do. Nothing else is ever sent on its own: every other command is the user's.
 When the session drops it reconnects with a growing delay, recovering the credentials again each time.
 """
 
@@ -287,8 +287,14 @@ class Connection:
         queries = CONNECT_QUERIES if initial else CONNECT_QUERIES[:1]
         for type_, action in queries:
             printer.request(type_, action, timeout=5)
-        if not initial and self.state.view()["state"] in ("printing", "paused"):
+        if initial:
+            return
+        if self.state.view()["state"] in ("printing", "paused"):
             printer.query_print()
+        # The ACE and the spool holder, every poll as both references ask: an answer to the first getInfo alone
+        # left a Kobra X on firmware 1.1.5.1 with no slots although its ACE held 4 spools. Not waited for:
+        # multiColorBox/report updates the state whenever it comes.
+        printer.send("multiColorBox", "getInfo")
 
     def _fail(self, error, no_certificate):
         changed = error != self.error

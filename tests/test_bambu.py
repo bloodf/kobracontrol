@@ -193,6 +193,17 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(ams["ams_exist_bits"], "3")
         self.assertEqual(ams["tray_exist_bits"], "5B")   # ACE 0, 1, 3; holder 1 and 3 (trays 4, 6)
 
+    def test_two_aces_and_the_spool_holder(self):
+        """Chained ACE units (box ids 0, 1) are units 0 and 1, the holder unit 2: N x 4 + 3 sources."""
+        head = {"id": -1, "slots": [{"index": i, "status": 5, "type": "PLA", "color": [i, i, i]} for i in range(3)]}
+        ams = self.push(boxes=[head, ACE0, ACE1])["ams"]
+        self.assertEqual([(u["id"], u["display_name"]) for u in ams["ams"]],
+                         [("0", "ACE 1"), ("1", "ACE 2"), ("2", "Spool holder")])
+        self.assertEqual(ams["ams_exist_bits"], "7")
+        slots, mode = slots_of([head, ACE0, ACE1])
+        self.assertEqual([ace.slot_to_print_ams_index(s, mode) for s in slots if s["box_id"] == 1], [8])
+        self.assertEqual([ace.slot_to_print_ams_index(s, mode) for s in slots if s["box_id"] < 0], [0, 1, 2])
+
     def test_unit_names(self):
         ams = self.push(boxes=[ACE0, ACE1])["ams"]["ams"]
         self.assertEqual([u["display_name"] for u in ams], ["ACE 1", "ACE 2"])
