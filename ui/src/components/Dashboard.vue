@@ -115,6 +115,6 @@ async function rename() {
     <UsageCard />
     <SpoolerHint />
 
-    <OuiDashboard v-model="layout" :widgets="widgets" :defaults="defaults" :labels="labels" />
+    <OuiDashboard v-model="layout" :widgets="widgets" :defaults="defaults" :labels="labels" :narrow-at="1000" />
   </template>
 </template>
