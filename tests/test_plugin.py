@@ -1209,6 +1209,9 @@ class Page(Base):
         page.on_message({"type": "save_settings", "id": 4, "settings": {"printer_name": "Lab KX", "bogus": 1}})
         self.assertTrue(page.posted[-1]["result"]["saved"])
         self.assertEqual(plugin.get_store().effective()["printer_name"], "Lab KX")
+        page.on_message({"type": "save_settings", "id": 5, "settings": {"printer_name": "Other", "spoolman_url": "ftp://x"}})
+        self.assertIn("spoolman_url", page.posted[-1]["error"])   # not "saved": nothing was stored
+        self.assertEqual(plugin.get_store().effective()["printer_name"], "Lab KX")
         page.on_message({"type": "ui_language", "value": "pt-BR"})
         self.assertEqual(plugin.get_store().effective()["ui_language"], "pt-BR")
         self.assertIn('"pref": "pt-BR"', page.get_ui())

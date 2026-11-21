@@ -282,6 +282,7 @@ export const stockVisible = computed(() => !s.stockError && s.stock?.available =
 function onMessage(m: any): void {
   switch (m.type) {
     case 'status':
+      if (s.info && typeof m.gen === 'number' && m.gen !== s.info.generation) break;   // the printer before a switch
       s.status = m.data; s.statusAt = Date.now();
       if (m.data?.connected === true) keepHistory(m.data);
       if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message

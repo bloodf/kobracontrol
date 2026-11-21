@@ -125,10 +125,10 @@ def _to_slot(raw, global_index, box_id, box_pos):
         "global_index": global_index,
         "box_id": box_id,
         "box_pos": box_pos,
-        "index": _num(raw.get("index"), global_index),
+        "index": _num(raw.get("index"), global_index % 4),   # else its place in the unit (4 slots a unit)
         "status": _num(raw.get("status"), 0),
         "type": str(raw.get("type") if raw.get("type") is not None else ""),
-        "color": [_num(c[0], 0), _num(c[1], 0), _num(c[2], 0)],
+        "color": [max(0, min(255, int(_num(v, 0)))) for v in c[:3]],
         "rfid": None if rfid is None else _num(rfid, 0),
         "sku": None if sku is None else str(sku),
         "percent": None if raw.get("consumables_percent") is None else _num(raw["consumables_percent"], None),
@@ -342,6 +342,16 @@ def build_auto_ams_box_mapping(loaded, mode):
         s = by_index.get(i, fallback)
         out.append(_entry(i, s, mode, [255, 255, 255, 255], s["type"] or "PLA"))
     return out
+
+
+def auto_mapping_slots(loaded):
+    """{tool: global slot} for build_auto_ams_box_mapping: the slot each tool prints from, a gap's being the
+    highest loaded slot's."""
+    if not loaded:
+        return {}
+    by_index = {s["global_index"]: s["global_index"] for s in loaded}
+    top = max(by_index)
+    return {i: by_index.get(i, top) for i in range(top + 1)}
 
 
 def mapping_from_trays(tray_ids, filaments, slots, mode):

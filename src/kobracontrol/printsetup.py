@@ -49,7 +49,7 @@ def plate_summary(path, plate_index=1):
 def _num(text, kind=float):
     try:
         return kind(float(text))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return kind(0)
 
 

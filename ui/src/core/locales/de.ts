@@ -90,6 +90,7 @@ export const de: Record<MessageKey, string> = {
   'reason.noMove': "Bewegungen sind möglich, wenn der Drucker bereit oder pausiert ist",
   'reason.noFeed': "Zuführen und Zurückziehen sind gerade nicht möglich",
   'reason.slotEmpty': "Kein Filament in diesem Slot",
+  'reason.otherLoaded': "Ein anderer Slot ist geladen: Zurückziehen entlädt nur den geladenen Slot",
   'reason.noPrintNow': "Der Drucker kann gerade keinen Druck starten",
   'common.goBack': "Zurück",
   'common.cancel': "Abbrechen",

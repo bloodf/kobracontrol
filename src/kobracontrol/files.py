@@ -194,7 +194,9 @@ class FilesMixin:
     def cmd_file_details(self, name):
         printer = self._printer()
         details = printer.file_details(valid_name(name))
-        self._dcache(printer)[name] = details
+        cache = self._dcache(printer)
+        with self._details_lock:   # cmd_files prunes the same dict
+            cache[name] = details
         view = self._view()
         return {"name": name, "thumbnail": _thumbnail(details),
                 **plan(details, view["slots"], view["mode"], view.get("model") or "")}

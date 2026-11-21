@@ -292,4 +292,5 @@ TEXT = {
     'G-code warning: see the notification.': 'Ostrzeżenie dotyczące G-code: zobacz powiadomienie.',
     'waiting for the previous bridge to close': 'oczekiwanie na zamknięcie poprzedniego mostka',
     'Spool holder': 'Uchwyt na szpule',
+    'not a valid setting: %s; nothing was saved': 'nieprawidłowe ustawienie: %s; nic nie zapisano',
 }
