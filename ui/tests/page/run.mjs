@@ -431,8 +431,10 @@ test('feed and retract ask first and send the slot', `
   await click(q('[data-feed="4"]')); await yes();
   eq(cmds('slot_feed').map(m => m.args), [{slot: 4}], 'feed');
   await reply(last('cmd', 'slot_feed'), true);
-  await click(q('[data-retract="4"]')); await yes();
-  eq(cmds('slot_retract').map(m => m.args), [{slot: 4}], 'retract');
+  assert(q('[data-retract="4"]').disabled && q('[data-retract="4"]').getAttribute('aria-describedby') === 'slot-other-4',
+    'slot 3 is loaded: the printer would unload it, so slot 4 offers no Retract');
+  await click(q('[data-retract="3"]')); await yes();
+  eq(cmds('slot_retract').map(m => m.args), [{slot: 3}], 'retract');
   await reply(last('cmd', 'slot_retract'), true);
   await post({type: 'status', data: PRINTING()});
   assert(q('[data-feed="4"]').disabled && q('[data-retract="4"]').disabled, 'refused while printing (can.feed)');

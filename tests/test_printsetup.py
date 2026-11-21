@@ -216,5 +216,12 @@ class Plate(unittest.TestCase):
         self.assertEqual(got, [("Elegoo Red", 0.25), ("#5", 0.4), ("", None), ("", None), ("", 1.0)])
 
 
+class Numbers(unittest.TestCase):
+    def test_infinite_or_bad_numbers_read_as_zero(self):
+        self.assertEqual(ps._num("inf", int), 0)
+        self.assertEqual(ps._num("nan", int), 0)
+        self.assertEqual(ps._num("x"), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

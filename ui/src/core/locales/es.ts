@@ -95,6 +95,7 @@ export const es: Record<MessageKey, string> = {
   'reason.noMove': "Los movimientos están disponibles con la impresora inactiva o en pausa",
   'reason.noFeed': "Alimentar y retraer no están disponibles ahora",
   'reason.slotEmpty': "No hay filamento en esta ranura",
+  'reason.otherLoaded': "Hay otra ranura cargada: Retraer solo descarga la ranura cargada",
   'reason.noPrintNow': "La impresora no puede iniciar una impresión ahora",
   'common.goBack': "Volver",
   'common.cancel': "Cancelar",

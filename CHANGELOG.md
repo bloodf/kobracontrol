@@ -2,7 +2,7 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
-## [Unreleased]
+## [0.10.0] - 2026-11-21
 
 ### Added
 
@@ -15,6 +15,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ### Changed
 
+- Shared UI 5.6.1.
 - Shared UI 5.4.0 (the dashboard grid).
 - Shared Orca UI foundation 5.0.8 (Vue 3.5.46, lucide-static 1.77.0); no visible change.
 
@@ -25,6 +26,15 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - **The Stock tab no longer waits for ever on "Waiting for Spooler's stock list…".** Released Spooler versions share their stock list only with U1 Control, so the tab never got one. When Spooler shares no list (not installed, stopped, or such a version), the tab now lists the spools straight from Kobra Control's Spoolman (the one set in Settings, or the one Spooler uses) and says so; linking a spool to a slot works the same. Without any Spoolman address it says what to set instead of waiting.
 - **Spools no longer vanish a few seconds after opening the tab.** When OrcaSlicer selected the printer (a device or preset event), the page asked the plugin again and cleared the Spoolman spools; the new read was refused while the first one was still out, and the first one's answer was dropped, so the list stayed empty until the next refresh. The spools now stay for the same printer and are cleared only for another one.
 - **Print and Send find the printer on OrcaSlicer 2.5.x.** The printer agent now announces the selected preset's printer as soon as OrcaSlicer starts it, under the id OrcaSlicer looks for (`host:port`), and at once rather than queued. Before, a Kobra X preset with no printer address had no printer in the Device tab, and an address once saved under another printer agent (an OctoPrint physical printer, a Moonraker preset) stayed hidden from kobracontrol, so Print could not find the printer although the tab and the camera worked.
+- **Retract is offered only where it acts.** The printer unloads the filament in the print head whichever slot is asked, so with one slot loaded, Retract on another slot unloaded the loaded one while the question named the other. Retract is now only on the loaded slot (any slot that holds filament when none is loaded), and a screen reader says why it is off elsewhere.
+- **A print sent with no tray chosen books its grams on the right spool.** OrcaSlicer prints from the highest loaded slot when a filament's own slot is empty; the usage was booked only for a filament whose number matched a loaded slot, so a one-colour print from a single spool in slot 3 booked nothing.
+- An ACE that leaves out each slot's number no longer has its slots addressed as 5-8 when loading, unloading or editing the second ACE; a slot is numbered by its place in the unit.
+- A slot colour reported with fractions no longer breaks the print setup and the Stock tab.
+- A project whose slice info holds an infinite number no longer fails to open in the print setup.
+- **Settings says when a value was not saved.** A Spoolman address that is not http:// or https:// (or a bridge port out of range) was dropped while Settings said "Saved". Now nothing is saved and Settings says which setting is not valid.
+- After switching printers, a status from the printer before the switch no longer shows for a moment.
+- The printer connection no longer drops and reconnects for ever when OrcaSlicer has more than 1023 files and sockets open.
+- Reading a file's details while the file list refreshes can no longer fail with "dictionary changed size during iteration".
 
 ## [0.9.2] - 2026-11-20
 

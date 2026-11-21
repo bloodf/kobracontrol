@@ -207,7 +207,8 @@ class JobsMixin:
         trays = [int(t) for t in tray_ids or []]
         if not any(t >= 0 for t in trays):
             loaded, _ = ace.select_loaded_slots_for_print(data["slots"], data["mode"])
-            return ace.build_auto_ams_box_mapping(loaded, data["mode"]), {s["global_index"]: s["global_index"] for s in loaded}
+            mapping = ace.build_auto_ams_box_mapping(loaded, data["mode"])
+            return mapping, ace.auto_mapping_slots(loaded)
         printsetup.refuse_other_material(trays, list(filaments or []), data["slots"], data["mode"])
         mapping, problems = ace.mapping_from_trays(trays, list(filaments or []), data["slots"], data["mode"])
         if problems:

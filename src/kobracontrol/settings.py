@@ -101,6 +101,11 @@ def _clean(key, value):
     return value.strip() if isinstance(value, str) else value
 
 
+def invalid(changes):
+    """The known keys of changes whose value would not be stored, sorted."""
+    return sorted(k for k, v in changes.items() if k in DEFAULTS and _clean(k, v) is None)
+
+
 class Store:
     """JSON file at `path`, or load() -> text / save(text) callables when no path is available."""
 

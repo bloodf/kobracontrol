@@ -773,7 +773,11 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 get_store(self).update({"spoolman_refresh_s": data.get("value")})
                 self._post_config()
             elif kind == "save_settings":
-                get_store(self).update(dict(data.get("settings") or {}))
+                changes = dict(data.get("settings") or {})
+                bad = settings.invalid(changes)
+                if bad:
+                    raise ValueError(tr("not a valid setting: %s; nothing was saved") % ", ".join(bad))
+                get_store(self).update(changes)
                 sync_bridge(lambda: self.post_message(self._config_message()))
                 target = _target()
                 grant_on_ui_thread(svc, target.preset_host, user=True)

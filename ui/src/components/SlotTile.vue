@@ -42,6 +42,9 @@ const editOff = computed(() => !!controlsOff.value || busy.value.feed);
 const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
 // Disabled controls point at the reason: the page's (#kc-why), the printer's (#kc-busy), or this slot's own (it is empty).
 const whyId = computed(() => pageWhy(busy.value.feed) ?? (!ready.value ? `slot-why-${key.value}` : undefined));
+// The printer unloads whatever is loaded, whichever slot is asked: with another slot loaded, Retract is that slot's.
+const otherLoaded = computed(() => (s.status?.loaded_slot ?? -1) >= 0 && !loaded.value);
+const retractWhy = computed(() => whyId.value ?? (otherLoaded.value ? `slot-other-${key.value}` : undefined));
 async function feed() {
   const n = props.label;
   if (!await ask({ title: t('confirm.feed.title', { slot: n }), text: t('confirm.feed.text', { slot: n, printer: printerName.value }),
@@ -119,6 +122,7 @@ async function choose(id: number | null) {
 
     <span class="oui-sr">{{ t('slot.name', { n: slot.index + 1 }) }}</span>
     <span v-if="!ready" :id="`slot-why-${key}`" class="oui-sr">{{ t('reason.slotEmpty') }}</span>
+    <span v-else-if="otherLoaded" :id="`slot-other-${key}`" class="oui-sr">{{ t('reason.otherLoaded') }}</span>
 
     <form v-if="editing" class="sl-form" @submit.prevent="saveEdit">
       <p class="oui-label">{{ t('slot.editTitle', { slot: label }) }}</p>
@@ -151,7 +155,7 @@ async function choose(id: number | null) {
     <template #actions>
       <Button size="small" severity="secondary" :label="t('slot.feed')" :aria-label="t('slot.feedLabel', { slot: label })" :disabled="feedOff" :aria-describedby="whyId"
               :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`feed:${key}`" :data-feed="key" @click="feed" />
-      <Button size="small" severity="secondary" :label="t('slot.retract')" :aria-label="t('slot.retractLabel', { slot: label })" :disabled="feedOff" :aria-describedby="whyId"
+      <Button size="small" severity="secondary" :label="t('slot.retract')" :aria-label="t('slot.retractLabel', { slot: label })" :disabled="feedOff || otherLoaded" :aria-describedby="retractWhy"
               :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`retract:${key}`" :data-retract="key" @click="retract" />
       <span class="oui-spacer" />
       <Button size="small" severity="secondary" text :aria-label="t('slot.editLabel', { slot: label })" :title="t('slot.edit')" :disabled="editOff || editing"

@@ -99,6 +99,7 @@ export const pl: Record<PolishKey, string> = {
   'reason.noMove': 'Ruch jest dostępny, gdy drukarka jest bezczynna lub wstrzymana',
   'reason.noFeed': 'Podawanie i wycofywanie są teraz niedostępne',
   'reason.slotEmpty': 'Brak filamentu w tym slocie',
+  'reason.otherLoaded': 'Załadowany jest inny slot: Wycofaj rozładowuje tylko załadowany slot',
   'reason.noPrintNow': 'Drukarka nie może teraz rozpocząć druku',
   'common.goBack': 'Wróć',
   'common.cancel': 'Anuluj',

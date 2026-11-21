@@ -64,6 +64,15 @@ class AggregateSlots(unittest.TestCase):
         self.assertEqual([s["box_pos"] for s in slots], [0] * 4 + [1] * 4)
         self.assertEqual(loaded, 7)
 
+    def test_missing_index_is_the_place_in_its_unit(self):
+        raw = [{k: v for k, v in slot(i).items() if k != "index"} for i in range(4)]
+        slots, _ = ace.aggregate_slots([box(1, raw)], "ace_direct")
+        self.assertEqual([(s["global_index"], s["index"]) for s in slots], [(4, 0), (5, 1), (6, 2), (7, 3)])
+
+    def test_colour_components_become_whole_bytes(self):
+        slots, _ = ace.aggregate_slots([box(0, [slot(0, color=(12.6, -3, 300))])], "ace_direct")
+        self.assertEqual(slots[0]["color"], [12, 0, 255])
+
     def test_direct_truncates_to_four_slots(self):
         b = box(0, [slot(i) for i in range(6)])
         slots, _ = ace.aggregate_slots([b], "ace_direct")
@@ -671,6 +680,15 @@ class SetDryPayload(unittest.TestCase):
         for ids in ([], [4], [-1], ["0"]):
             with self.assertRaises(ValueError):
                 ace.set_dry_payload(ids, 45, 240)
+
+
+class AutoMappingSlots(unittest.TestCase):
+    def test_each_tool_books_on_the_slot_it_prints_from(self):
+        """One spool in slot 3: tools 0-2 all print from it, so a one-colour print (tool 0) books on slot 3."""
+        loaded = [{"global_index": 2, "type": "PLA", "color": [1, 2, 3], "box_id": 0, "index": 2, "status": 5}]
+        self.assertEqual(ace.auto_mapping_slots(loaded), {0: 2, 1: 2, 2: 2})
+        self.assertEqual(len(ace.build_auto_ams_box_mapping(loaded, "ace_direct")), 3)
+        self.assertEqual(ace.auto_mapping_slots([]), {})
 
 
 if __name__ == "__main__":

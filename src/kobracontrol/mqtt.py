@@ -12,7 +12,7 @@ follow Kobralink's mqtt.js usage.
 """
 
 import logging
-import select
+import selectors
 import socket
 import ssl
 import threading
@@ -329,8 +329,11 @@ class Client:
     def _recv(self):
         sock = self._sock
         pending = getattr(sock, "pending", None)  # TLS may hold decrypted bytes select() cannot see
-        if not (pending and pending()) and not select.select([sock], [], [], POLL)[0]:
-            return None
+        if not (pending and pending()):
+            with selectors.DefaultSelector() as sel:   # not select.select: it fails for a descriptor above 1023
+                sel.register(sock, selectors.EVENT_READ)
+                if not sel.select(POLL):
+                    return None
         try:
             with self._io:
                 return sock.recv(65536)

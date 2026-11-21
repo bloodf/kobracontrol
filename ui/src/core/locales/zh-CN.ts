@@ -90,6 +90,7 @@ export const zhCN: Record<MessageKey, string> = {
   'reason.noMove': "仅在打印机空闲或暂停时可移动",
   'reason.noFeed': "当前无法进料或退料",
   'reason.slotEmpty': "此槽位没有耗材丝",
+  'reason.otherLoaded': "已装入的是另一个槽位：退料只会退出已装入的槽位",
   'reason.noPrintNow': "打印机当前无法开始打印",
   'common.goBack': "返回",
   'common.cancel': "取消",

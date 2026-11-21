@@ -84,7 +84,10 @@ def dist_info(project, files):
     meta = {k: v.encode("utf-8") for k, v in meta.items()}
     # the Vue page bundles Vue, PrimeVue, PrimeUIX, Lucide icons (MIT, ISC) and the Manrope font (OFL): their notices travel with the wheel, next to our LICENSE
     meta[di + "licenses/LICENSE"] = (ROOT / "LICENSE").read_bytes()
-    for lic in sorted((ROOT / "ui" / "node_modules" / "@orca-plugins" / "ui-foundation" / "licenses").glob("*.txt")):
+    licences = sorted((ROOT / "ui" / "node_modules" / "@orca-plugins" / "ui-foundation" / "licenses").glob("*.txt"))
+    if not licences:
+        raise SystemExit("no licence texts in ui/node_modules/@orca-plugins/ui-foundation/licenses: run npm ci in ui/ first")
+    for lic in licences:
         meta[di + "licenses/" + lic.name] = lic.read_bytes()
     record = []
     for path, data in {**files, **meta}.items():
