@@ -2403,11 +2403,11 @@ test('settings pages: a page that needs attention is marked in the list', PAGES_
 const DASH_PLUGIN = `
 const STORE = dash => post(CONFIG({settings: {...SETTINGS, dashboard: dash}}));
 async function READY(dash) { await connect(); await (dash === undefined ? post(CONFIG()) : STORE(dash)); await post({type: 'status', data: VIEW()}); }
-const DEFAULT_IDS = ['job', 'ace', 'temps', 'camera', 'motion', 'controls', 'printer', 'console'];
-const DEFAULT_ORDER = DEFAULT_IDS;
+const DEFAULT_IDS = ['job', 'ace', 'controls', 'temps', 'printer', 'camera', 'motion', 'console'];
+const DEFAULT_ORDER = ['job', 'controls', 'ace', 'temps', 'camera', 'printer', 'motion', 'console'];
 const ALL_IDS = ['job', 'ace', 'temps', 'controls', 'camera', 'motion', 'printer', 'console', 'files'];
-const MOVER = 'camera', MOVER_FROM = '7 / span 6 | 20 / span 9', MOVE_COLS = 6, MOVER_TO = '1 / span 6 | 20 / span 9';
-const CAM_W = 6, CAM_H = 9, TEMPS = 'temps', CONSOLE_LEAST = 'span 3 | span 4';
+const MOVER = 'camera', MOVER_FROM = '10 / span 3 | 5 / span 9', MOVE_COLS = 3, MOVER_TO = '7 / span 3 | 5 / span 9';
+const CAM_W = 3, CAM_H = 9, TEMPS = 'temps', CONSOLE_LEAST = 'span 3 | span 4';
 const OLD_DEFAULT = [{id: 'job', x: 0, y: 0, w: 12, h: 3}, {id: 'ace', x: 0, y: 3, w: 12, h: 16}, {id: 'controls', x: 0, y: 19, w: 8, h: 6},
   {id: 'camera', x: 8, y: 19, w: 4, h: 6}, {id: 'console', x: 0, y: 25, w: 8, h: 12}, {id: 'motion', x: 8, y: 25, w: 4, h: 6}, {id: 'printer', x: 8, y: 31, w: 4, h: 12}];
 const MINE_CAMERA = '9 / span 4 | 20 / span 8';
@@ -2657,6 +2657,15 @@ for (const size of [[1280, 800], [1920, 1080]]) test(`dashboard: at ${size.join(
     .map(([id, b]) => id + ' ' + b.scrollHeight + '/' + b.clientHeight);
   eq(bad, [], 'every widget fits');
 `, { size });
+
+
+test('dashboard: a stored size too small for its content shows all of it and is kept as stored', DASH_JS + `
+  await READY({v: 1, active: 0, layouts: [{name: 'Tiny', items: [{id: 'job', x: 0, y: 0, w: 6, h: 2}, {id: 'console', x: 0, y: 2, w: 12, h: 6}]}]});
+  const body = q('.oui-panel-body', cell('job'));
+  assert(body.scrollHeight <= body.clientHeight + 1 && cell('job').getBoundingClientRect().height > 76, 'its rows grew to the content: ' + cell('job').getBoundingClientRect().height);
+  eq(place('job'), '1 / span 6 | 1 / span 2', 'its stored size is not changed');
+  eq(last('dashboard'), undefined, 'nothing is saved');
+`);
 
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);

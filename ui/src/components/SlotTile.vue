@@ -161,6 +161,18 @@ async function choose(id: number | null) {
 </template>
 
 <style>
+/* A dense card: tighter spacing, a smaller spool beside the name and material, one-line names and a slimmer amount;
+   the actions stay at the foot of a card stretched by its row. */
+.oui-slot.kc-slot { gap: 6px; padding: 6px 4px; }
+.oui-slot.kc-slot .oui-slot-head { min-height: 20px; }
+.oui-slot.kc-slot .oui-slot-main { gap: var(--oui-s2); }
+.oui-slot.kc-slot .oui-slot-main .oui-spool { width: 36px !important; height: 36px !important; flex: none; }
+.oui-slot.kc-slot .oui-slot-name { -webkit-line-clamp: 1; line-clamp: 1; line-height: 1.3; }
+.oui-slot.kc-slot .oui-slot-amount { gap: 3px; line-height: 18px; }
+.oui-slot.kc-slot .oui-slot-amount strong { font-size: var(--oui-text-md); }
+.oui-slot.kc-slot .oui-slot-extra { gap: 6px; }
+.oui-slot.kc-slot .oui-slot-actions { padding-top: 0; }
+
 .kc-slot .oui-slot-state { min-width: 0; }
 .kc-slot .oui-slot-state > .oui-status { max-width: 100%; }
 .kc-slot .oui-slot-state .oui-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
