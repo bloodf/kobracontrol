@@ -206,14 +206,19 @@ try {
     const m = await p.evaluate(`(async () => { ${HELPERS} const SCENE = ${JSON.stringify(scn)}; const STORE = SCENE.startsWith('store-'); const SCN = ${JSON.stringify(STORE_AS[scn] ?? scn)};
       const THUMB = ${JSON.stringify(THUMB)}; const FRAME = ${JSON.stringify(scn === 'store-status' ? FRAME : '')};
       await until(() => document.querySelector('#app > *'));
-      ${scn.startsWith('print') ? 'await settle();' + (scn === 'print-pick' ? "document.querySelector('[data-test=slot-0]').click(); await until(() => document.querySelector('.p-popover [role=radio]')); await sleep(400);" : '') : STATE}
+      ${scn.startsWith('print') ? 'await settle();' + (scn === 'print-pick' ? "document.querySelector('[data-test=slot-0]').click(); await until(() => document.querySelector('.p-popover [role=radio]')); await sleep(400);" : '') : (process.env.LAYOUT ? `{ const h0 = __t.handler; __t.handler = m => h0(m && m.type === 'config' ? {...m, settings: {...m.settings, dashboard: ${process.env.LAYOUT}}} : m); }` : '') + STATE}
       const over = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed'; })
         .slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
       // Text cut inside its own box (a button, tab, chip or cell narrower than its words), which page overflow misses.
       const clipped = [...document.querySelectorAll('button, [role=tab], th, td, label, .p-tag, .p-button-label, .oui-chip, .p-select-label')]
         .filter(e => e.offsetParent && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible')
         .slice(0, 8).map(e => e.tagName + '.' + String(e.className).slice(0, 30) + ' ' + JSON.stringify((e.textContent || '').trim().slice(0, 30)));
-      const natural = [...document.querySelectorAll('.oui-dash-cell')].map(c => { const p = c.querySelector('.oui-panel'); const b = p && p.querySelector(':scope > .oui-panel-body'); return [c.dataset.widget, Math.round(c.getBoundingClientRect().height), b && b.firstElementChild ? Math.round(b.firstElementChild.getBoundingClientRect().height + (p.getBoundingClientRect().height - b.getBoundingClientRect().height) + parseFloat(getComputedStyle(b).paddingTop) * 2) : 0]; });
+      // Each dashboard widget: its cell's height, what its content needs (header, padding and children), and whether its body
+      // clips or scrolls (MEASURE evidence for the default layout).
+      const natural = [...document.querySelectorAll('.oui-dash-cell')].map(c => { const p = c.querySelector('.oui-panel'); const b = p && p.querySelector(':scope > .oui-panel-body');
+        if (!b) return [c.dataset.widget, 0, 0, false]; const pr = p.getBoundingClientRect(), pad = parseFloat(getComputedStyle(b).paddingBottom);
+        const bottom = Math.max(...[...b.children].map(k => k.getBoundingClientRect().bottom), b.getBoundingClientRect().top + pad);
+        return [c.dataset.widget, Math.round(c.getBoundingClientRect().width), Math.round(c.getBoundingClientRect().height), Math.round(bottom - pr.top + pad), b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1]; });
       const b = document.querySelector('.p-button'); const cs = b ? getComputedStyle(b) : null;
       return { overflowX: document.documentElement.scrollWidth > innerWidth, clipped, scrollWidth: document.documentElement.scrollWidth, innerWidth, overflowing: over,
         dom: document.getElementsByTagName('*').length, lang: document.documentElement.lang, dark: document.documentElement.classList.contains('orca-dark'),
