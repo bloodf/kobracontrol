@@ -361,9 +361,11 @@ test('fan, light and speed mode', `
 // ------------------------------------------------------------------ ACE
 test('ACE card: units, slots, loaded slot, empty slot, activity', `
   await ready(VIEW());
-  assert(text(byTest('ace-mode')).includes('Print head and ACE together'), 'mode: ' + text(byTest('ace-mode')));
-  eq(qa('.ace-g').map(text), ['Print head', 'ACE 1'], 'groups');
+  assert(text(byTest('ace-mode')).includes('Spool holder and ACE together'), 'mode: ' + text(byTest('ace-mode')));
+  eq(qa('.ace-g').map(text), ['ACE 1', 'Spool holder'], 'groups: the ACE, then the spool holder');
   eq(qa('[data-slot]').length, 7, 'one tile per slot');
+  eq([qa('.kc-group[data-box="0"] [data-slot]').length, qa('.kc-group[data-box="-1"] [data-slot]').length], [4, 3], '4 ACE slots and 3 holder positions');
+  assert(text(q('.kc-group[data-box="-1"] [data-slot="0"]')).includes('PETG'), 'a holder position shows its filament');
   assert(text(q('[data-slot="3"]')).includes('Loaded in the print head') && text(q('[data-slot="3"]')).includes('Slot 1'), 'loaded slot: ' + text(q('[data-slot="3"]')));
   assert(text(q('[data-slot="1"]')).includes('Empty'), 'empty slot');
   assert(text(q('[data-slot="6"]')).includes('Loading'), 'activity: ' + text(q('[data-slot="6"]')));
@@ -392,7 +394,7 @@ test('slot reports: brand, material name, percent and weight from the printer; b
 
 test('toolhead-only printer: only the print head group, no unit controls', `
   await ready(VIEW({mode: 'toolhead', slots: SLOTS().slice(0, 3), ace_units: [], loaded_slot: 0}));
-  eq(qa('.ace-g').map(text), ['Print head'], 'one group');
+  eq(qa('.ace-g').map(text), ['Spool holder'], 'one group');
   assert(!q('[data-unit]'), 'no auto-feed or drying without an ACE');
   assert(text(byTest('ace-mode')).includes('no ACE'), 'mode text');
 `);
@@ -574,9 +576,9 @@ test('stock tab: choose the slot once on the left, then one Link per row; it ask
   assert(byTest('stock-card').offsetParent, 'shown');
   eq(qa('[data-stock]').length, 2, 'two spools listed');
   const targets = qa('[data-stock-target]');
-  eq(targets.map(b => b.getAttribute('data-stock-target')), ['0', '1', '2', '3', '4', '5', '6'], 'every slot is a place a spool can go');
+  eq(targets.map(b => b.getAttribute('data-stock-target')), ['3', '4', '5', '6', '0', '1', '2'], 'every slot is a place a spool can go, the ACE first, then the spool holder');
   eq(q('[data-test="stock-slot"]').getAttribute('role'), 'radiogroup', 'one of them is chosen');
-  eq(targets.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.getAttribute('data-stock-target')), ['0'], 'the first one to start with');
+  eq(targets.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.getAttribute('data-stock-target')), ['3'], 'the first one to start with');
   assert(text(q('[data-stock-target="1"]')).includes('Empty'), 'an empty slot says so: ' + text(q('[data-stock-target="1"]')));
   await click(q('[data-stock-target="4"]'));
   eq(q('[data-stock-target="4"]').getAttribute('aria-checked'), 'true', 'ACE 1 · Slot 2 chosen');
@@ -596,6 +598,7 @@ test('stock tab: rows say which slot holds them, and the spool in the chosen slo
   await tab('stock');
   eq(text(q('[data-spool="7"] [data-test="stock-in"]')), 'ACE 1 · Slot 1', 'where it is loaded');
   assert(!q('[data-spool="11"] [data-test="stock-in"]'), 'a spool in no slot has no chip');
+  await click(q('[data-stock-target="0"]'));
   assert(q('[data-stock="7"]') && !q('[data-linked]'), 'another slot is chosen: it can be linked there');
   await click(q('[data-stock-target="3"]'));
   eq(text(q('[data-linked="7"]')), 'Linked', 'already in the chosen slot');
@@ -621,8 +624,9 @@ test('stock tab: search, material and same-material filters; Refresh reads Spool
   assert(text(q('[data-view="stock"] .oui-toolbar')).includes('1 of 2 spools'), 'count: ' + text(q('[data-view="stock"] .oui-toolbar')));
   await type(q('[data-view="stock"] input[type=search]'), '');
   await until(() => ids().length === 2, 'cleared');
+  await click(q('[data-stock-target="0"]'));
   await click(q('#stock-fit'));
-  eq(ids(), ['11'], 'same material as the chosen slot (Print head · Slot 1 holds PETG)');
+  eq(ids(), ['11'], 'same material as the chosen slot (Spool holder · Slot 1 holds PETG)');
   await click(q('[data-stock-target="4"]'));
   eq(ids(), ['7'], 'follows the chosen slot (ACE 1 · Slot 2 holds ABS)');
   await click(q('[data-stock-target="1"]'));
@@ -1683,7 +1687,7 @@ test('files: the print panel shows what the file needs and which slot prints eac
   const info = text(q('[data-view="files"] .oui-files-detail'));
   for (const want of ['benchy.gcode', '4.2 MB', '7 h 10 min', '1,875', '103 g', '0.16 mm', '205 / 60 °C']) assert(info.includes(want), want + ' in ' + info);
   eq(qa('[data-mat]').length, 2, 'one row per filament');
-  assert(text(q('[data-mat="0"]')).includes('Print head · Slot 1') && text(q('[data-mat="0"]')).includes('PETG'), 'slot of filament 1: ' + text(q('[data-mat="0"]')));
+  assert(text(q('[data-mat="0"]')).includes('Spool holder · Slot 1') && text(q('[data-mat="0"]')).includes('PETG'), 'slot of filament 1: ' + text(q('[data-mat="0"]')));
   assert(text(byTest('mat-warn')).includes('ACE 1 · Slot 2') && text(byTest('mat-warn')).includes('ABS'), 'mismatch named: ' + text(byTest('mat-warn')));
   assert(!byTest('model-warn'), 'sliced for a Kobra X: no model warning');
   await click(byTest('print-start'));
@@ -2034,7 +2038,7 @@ test('pt-BR: the page follows the host language and has no leftover English in t
   eq(qa('[data-tab]').map(text), ['Painel', 'Estoque', 'Arquivos', 'Ajustes'], 'tabs');
   eq(statusText(), 'Pronta', 'state');
   assert(text(byTest('link')) === 'Conectada', 'pill');
-  eq(qa('.ace-g').map(text), ['Cabeça de impressão', 'ACE 1'], 'groups');
+  eq(qa('.ace-g').map(text), ['ACE 1', 'Suporte de carretel'], 'groups');
   assert(text(q('[data-slot="3"]')).includes('Carregado na cabeça de impressão'), 'slot state: ' + text(q('[data-slot="3"]')));
   await post({type: 'status', data: PRINTING()});
   assert(text(q('[data-test="pause"]')) === 'Pausar', 'buttons');
@@ -2162,7 +2166,7 @@ eq(document.documentElement.lang, '${lang}', 'html lang');
 eq(qa('[data-tab]').map(text), [D['nav.dash'], D['nav.stock'], D['nav.files'], D['nav.settings']], 'tabs');
 eq(statusText(), D['status.state.idle'], 'state');
 eq(text(byTest('link')), D['link.connected'], 'pill');
-eq(qa('.ace-g').map(text), [D['ace.head'], 'ACE 1'], 'groups');
+eq(qa('.ace-g').map(text), ['ACE 1', D['ace.head']], 'groups');
 assert(text(q('[data-slot="3"]')).includes(D['slot.loadedHere']), 'slot state: ' + text(q('[data-slot="3"]')));
 await post({type: 'status', data: PRINTING()});
 eq(text(q('[data-test="pause"]')), D['act.pause'], 'pause button');

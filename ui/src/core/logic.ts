@@ -29,11 +29,12 @@ export function hexOf(color: unknown): string {
 export interface SlotLike { global_index: number; box_id: number; index: number }
 export interface SlotGroup<T extends SlotLike> { boxId: number; slots: T[] }
 
-/** Slots grouped by the box that holds them: the print head (box -1) first, then ACE units by id. */
+/** Slots grouped by the box that holds them: ACE units by id, then the spool holder (box -1), as OrcaSlicer numbers its units. */
 export function groupSlots<T extends SlotLike>(slots: readonly T[]): SlotGroup<T>[] {
   const groups = new Map<number, T[]>();
   for (const sl of slots) groups.set(sl.box_id, [...(groups.get(sl.box_id) ?? []), sl]);
-  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([boxId, list]) => ({ boxId, slots: [...list].sort((a, b) => a.index - b.index) }));
+  const order = (boxId: number) => (boxId < 0 ? Number.MAX_SAFE_INTEGER : boxId);
+  return [...groups.entries()].sort((a, b) => order(a[0]) - order(b[0])).map(([boxId, list]) => ({ boxId, slots: [...list].sort((a, b) => a.index - b.index) }));
 }
 
 /** Object names a print can skip: the printer's objects minus those already skipped (anything but strings is dropped). */

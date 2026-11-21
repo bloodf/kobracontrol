@@ -291,4 +291,5 @@ TEXT = {
     'Skip G-code config block is on in this printer preset. The Kobra X screen probably reads the filament and print details from that block. Turn it off in Printer settings > Basic information > Advanced.': '此打印机预设已开启“跳过 G-code 配置块”。Kobra X 的屏幕很可能从该配置块读取耗材和打印信息。请在“打印机设置 > 基础信息 > 高级”中关闭它。',
     'This printer preset writes no PNG preview picture (G-code thumbnails: %s). The Kobra X screen probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG.': '此打印机预设不写入 PNG 预览图（G-code缩略图尺寸：%s）。Kobra X 的屏幕很可能只显示 PNG 图片。请在“打印机设置 > 基础信息 > 高级”中设置“G-code缩略图尺寸”，例如 300x300/PNG。',
     'waiting for the previous bridge to close': '正在等待上一个桥接关闭',
+    'Spool holder': '料盘架',
 }

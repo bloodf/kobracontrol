@@ -112,6 +112,28 @@ def _take_str(body, i):
     return body[i + 2:i + 2 + n], i + 2 + n
 
 
+
+# The print head's own feeder, box id -1: the 3 spool-holder positions (its fourth inlet carries the ACE). Not
+# captured from the owner's printer, which reported only its ACE (kobra_captures.MULTICOLORBOX_GETINFO,
+# head_tools_model 0); shaped as KX-Bridge's Kobra X capture (tests/test_ace_rfid_vendor_matching.py, box -1 next to
+# box 0, head_tools_model 1) with the slot fields of the real ACE slots. `seven_sources()` is the whole getInfo data.
+HOLDER_BOX = {"id": -1, "loaded_slot": -1, "slots": [
+    {"brand_name": "public", "color": [255, 255, 255], "consumables_percent": 100, "edit_status": 1, "icon_type": 0,
+     "index": 0, "material_name": "", "sku": "", "status": 5, "type": "PLA", "weight": 1000},
+    {"brand_name": "public", "color": [0, 0, 0], "consumables_percent": 0, "edit_status": 1, "icon_type": 0,
+     "index": 1, "material_name": "", "sku": "", "status": 0, "type": "", "weight": 0},
+    {"brand_name": "public", "color": [38, 38, 38], "consumables_percent": 100, "edit_status": 1, "icon_type": 0,
+     "index": 2, "material_name": "", "sku": "", "status": 5, "type": "PETG", "weight": 1000}]}
+
+
+def seven_sources(ace_data):
+    """multiColorBox/getInfo data: the holder box next to the ACE boxes of `ace_data` (a getInfo `data`)."""
+    data = json.loads(json.dumps(ace_data))
+    data["head_tools_model"] = 1
+    data["multi_color_box"] = [json.loads(json.dumps(HOLDER_BOX))] + list(data.get("multi_color_box") or [])
+    return data
+
+
 class _Session:
     def __init__(self, fake, sock):
         self.fake, self.sock, self.lock, self.subscribed = fake, sock, threading.Lock(), False

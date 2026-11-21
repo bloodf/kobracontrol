@@ -291,4 +291,5 @@ TEXT = {
     'This printer preset writes no PNG preview picture (G-code thumbnails: %s). The Kobra X screen probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG.': 'Ten profil drukarki nie zapisuje obrazu podglądu PNG (Miniatury G-code: %s). Ekran Kobra X prawdopodobnie pokazuje tylko obrazy PNG. Ustaw „Miniatury G-code” w Ustawienia drukarki > Podstawowe informacje > Zaawansowane, na przykład na 300x300/PNG.',
     'G-code warning: see the notification.': 'Ostrzeżenie dotyczące G-code: zobacz powiadomienie.',
     'waiting for the previous bridge to close': 'oczekiwanie na zamknięcie poprzedniego mostka',
+    'Spool holder': 'Uchwyt na szpule',
 }

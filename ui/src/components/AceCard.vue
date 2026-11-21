@@ -9,7 +9,7 @@ import { s, run, tracker, controlsOff, link, stale, whyId } from '../app/store';
 import { t } from '../core/i18n';
 import { groupSlots } from '../core/logic';
 
-// Filament: one group per feeder (the print head, each ACE), its auto-feed and drying strip, then one card per slot
+// Filament: one group per feeder (each ACE, then the spool holder), its auto-feed and drying strip, then one card per slot
 // with a strip of its filament colour, the spool, the amount, the Spoolman spool it books on and its actions. Why
 // feeding is off right now is said once, in the page's banner (#kc-busy).
 const groups = computed(() => groupSlots(s.status?.slots ?? []));

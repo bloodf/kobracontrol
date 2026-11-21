@@ -122,6 +122,33 @@ Observed on firmware 2.0.2.8:
 `ams_box_mapping` carries the filament-to-slot mapping chosen in OrcaSlicer's print dialog.
 `taskid` is `"-1"` for LAN jobs.
 
+### Filament sources: the spool holder and the ACE
+
+`multiColorBox/report` lists one box per feeder. Box ids 0 to 3 are ACE units. Box id -1 is the print
+head's own feeder: the spools on the printer's spool holder. With an ACE connected the head's fourth inlet
+carries the ACE, so the holder has 3 positions: 3 + 4 = 7 sources with one ACE (KX-Bridge
+`bridge_ams.py` `_aggregate_slots`, "ace_hub"; Kobralink `apps/api/src/bridge/ams.ts` `aggregateSlots`).
+Holder positions carry the same slot fields as ACE slots (`status`, `type`, `color`), set on the printer or
+with `multiColorBox/setInfo` on box -1. Neither reference reads RFID for them.
+
+`ams_index` in `ams_box_mapping`, both references (`_slot_to_print_ams_index`, `slotToPrintAmsIndex`):
+
+| Topology | Holder position n (0-2) | ACE unit u, slot s |
+|---|---|---|
+| holder and ACE (box -1 and 0..3) | n | 4 + u * 4 + s |
+| ACE only (no box -1) | none | u * 4 + s |
+| holder only (no ACE) | n (0-3) | none |
+
+kobracontrol gives OrcaSlicer the ACE units first, each as the unit of its id, and the holder as the unit
+after the last ACE, every unit with 4 trays (the Device tab draws no other size). A slot's number is its
+tray: ACE 1 is 1-4, the holder 5-7.
+
+Not seen on the printer this was written against (firmware 2.0.2.8): its `multiColorBox/getInfo` listed
+only its ACE (box 0, `head_tools_model` 0). KX-Bridge's tests carry a Kobra X report with box -1 next to
+box 0 (`head_tools_model` 1). The same printer's `getSliceParam` for a print started from ACE slot 1 read
+back `ams_index` 4 and listed 8 filaments, which fits a numbering where 0-3 are the head's inlets and 4-7
+the ACE's.
+
 `filepath` must be the folder, `"/"`, with `filename` given separately. With `"/<name>"` the printer
 ends the task with code 10111 ("abnormal end of task") about one second after the start. A start
 report alone is therefore no proof that the print runs: kobracontrol watches `print/report` for a

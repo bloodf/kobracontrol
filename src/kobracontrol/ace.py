@@ -8,8 +8,10 @@ function. Inputs are never mutated; every function returns new objects.
 
 Input: the `multi_color_box` list of a `multiColorBox/report` message, each box
 `{id, loaded_slot, auto_feed, slots: [{index, status, type, color, rfid, sku}],
-feed_status, drying_status, drying_settings}`. Box `id` -1 (or missing) is the
-print head ("toolhead"); ids >= 0 are ACE units.
+feed_status, drying_status, drying_settings}`. Box `id` -1 is the print head's
+own feeder ("toolhead"), whose slots are the spools on the printer's spool
+holder; ids >= 0 are ACE units. With an ACE connected the head's fourth inlet
+carries the ACE, so the holder has 3 positions: 3 + 4 sources with one ACE.
 
 Filament mode (`detect_filament_mode`):
     "toolhead"   only the head box (or nothing).
@@ -19,9 +21,10 @@ Filament mode (`detect_filament_mode`):
 Slot dict (`aggregate_slots`):
     global_index  int   position in the flat slot list (rules below)
     box_id        int   reported box id, -1 for the head
-    box_pos       int   ams_id: 0 for the head/toolhead; ACE: box_id in
-                        ace_direct, box_id + 1 in ace_hub (stable under gaps
-                        and report order, as KX-Bridge's multi-ACE tests need)
+    box_pos       int   ams_id (OrcaSlicer's AMS unit): ACE: its box_id;
+                        head: 0 without an ACE, else the unit after the last
+                        ACE (stable under gaps and report order, as
+                        KX-Bridge's multi-ACE tests need)
     index         int   slot index inside its box
     status        int   5 = filament loaded/ready; anything else is not usable
     type          str   material, "" when unknown
@@ -35,19 +38,26 @@ Slot dict (`aggregate_slots`):
     material_name str   "" when absent
     activity      str   "" (see `slot_activity_map`: loading/unloading/loaded)
 
-global_index rule:
+global_index rule: box_pos * 4 + slot position, the same number as the tray id
     toolhead:   slot position in the head box (0..n-1)
     ace_direct: box_id * 4 + index   (each ACE truncated to 4 slots)
-    ace_hub:    head slots 0..2 (head truncated to 3); ACE slots are
-                3 + box_id * 4 + index.
+    ace_hub:    ACE slots box_id * 4 + index, as in ace_direct; the head
+                (truncated to 3) after the last ACE: one ACE -> 0..3 ACE,
+                4..6 holder.
+    KX-Bridge and Kobralink number the head first in hub mode (head 0..2,
+    ACE 3 + box_id * 4 + index). Here the ACE keeps its numbers whether or
+    not the holder is reported, and a slot's number is the tray id Spooler
+    writes into a spool's location ("S<n>", n = box * 4 + slot + 1).
 tray id rule (Bambu form, what OrcaSlicer's dialog uses):
     tray_id = box_pos * 4 + index
-print `ams_index` rule (`slot_to_print_ams_index`, goes into ams_box_mapping):
-    ace_hub, ACE slot:  4 + box_id * 4 + index
-    otherwise:          global_index
-    So in hub mode tray_id == ams_index for every slot (head box_pos 0 ->
-    0..2, ACE 0 -> 4..7, ...). Hub `global_index` of ACE slots (3 + ...) is
-    NOT the print index; always go through `slot_to_print_ams_index`.
+print `ams_index` rule (`slot_to_print_ams_index`, goes into ams_box_mapping),
+both references (KX-Bridge _slot_to_print_ams_index, Kobralink
+slotToPrintAmsIndex):
+    ace_hub, ACE slot:   4 + box_id * 4 + index
+    ace_hub, head slot:  index (0..2)
+    otherwise:           global_index
+    Neither tray id nor global_index is the print index in hub mode; always
+    go through `slot_to_print_ams_index`.
 
 mapping entry: {paint_index, ams_index, paint_color [r,g,b,a],
 ams_color [r,g,b,a], material_type}.
@@ -155,23 +165,28 @@ def aggregate_slots(boxes, mode):
                 loaded = bid * 4 + local
         return slots, loaded
 
-    # ace_hub
-    if head:
-        for i, s in enumerate((head.get("slots") or [])[:3]):
-            slots.append(_to_slot(s, i, -1, 0))
-        local = _num(head.get("loaded_slot"), -1)
-        if 0 <= local <= 2:
-            loaded = local
+    # ace_hub: the ACE units as in ace_direct, then the head (the spool holder)
+    # as the unit after the last ACE. An ACE's loaded slot wins over the head's.
     for unit in aces:
         bid = _box_id(unit)
-        pos = bid + 1
-        base = 3 + bid * 4
-        for i, s in enumerate(unit.get("slots") or []):
-            slots.append(_to_slot(s, base + i, bid, pos))
+        for i, s in enumerate((unit.get("slots") or [])[:4]):
+            slots.append(_to_slot(s, bid * 4 + i, bid, bid))
         local = _num(unit.get("loaded_slot"), -1)
-        if local >= 0:
-            loaded = base + local
+        if 0 <= local < 4:
+            loaded = bid * 4 + local
+    if head:
+        pos = _head_pos(aces)
+        for i, s in enumerate((head.get("slots") or [])[:3]):
+            slots.append(_to_slot(s, pos * 4 + i, -1, pos))
+        local = _num(head.get("loaded_slot"), -1)
+        if 0 <= local <= 2 and loaded < 0:
+            loaded = pos * 4 + local
     return slots, loaded
+
+
+def _head_pos(aces):
+    """The head's unit in hub mode: the one after the last ACE (0 with none)."""
+    return max((_box_id(b) for b in aces), default=-1) + 1
 
 
 def slot_usable_for_print(slot, mode):
@@ -185,13 +200,12 @@ def slot_usable_for_print(slot, mode):
     return slot["box_id"] == -1
 
 
-def box_local_to_global(box_id, local_slot, mode):
-    """KX-Bridge _box_local_to_global (same as Kobralink's inline maths)."""
+def box_local_to_global(box_id, local_slot, mode, head_pos=0):
+    """KX-Bridge _box_local_to_global, with this module's global_index rule. head_pos: the head's unit in
+    hub mode (`_head_pos`)."""
     if box_id == -1:
-        return local_slot
-    if mode == "ace_direct":
-        return box_id * 4 + local_slot
-    return 3 + box_id * 4 + local_slot
+        return (head_pos if mode == "ace_hub" else 0) * 4 + local_slot
+    return box_id * 4 + local_slot
 
 
 def slot_activity_map(boxes, global_loaded, mode, pending_load_slot=-1):
@@ -207,6 +221,7 @@ def slot_activity_map(boxes, global_loaded, mode, pending_load_slot=-1):
     The extra "loaded" marker on the loaded slot is Kobralink's.
     """
     out = {}
+    head_pos = _head_pos([b for b in boxes if _box_id(b) >= 0])
     for box in boxes:
         fs = box.get("feed_status") or {}
         status = _num(fs.get("current_status"), -1)
@@ -220,7 +235,7 @@ def slot_activity_map(boxes, global_loaded, mode, pending_load_slot=-1):
         act = {1: "loading", 2: "unloading"}.get(ftype)
         if act is None:
             continue
-        g = box_local_to_global(_box_id(box), local, mode)
+        g = box_local_to_global(_box_id(box), local, mode, head_pos)
         if ftype == 1 and pending_load_slot >= 0 and g != pending_load_slot:
             if global_loaded >= 0 and global_loaded != pending_load_slot:
                 out[global_loaded] = "unloading"
@@ -234,8 +249,8 @@ def slot_activity_map(boxes, global_loaded, mode, pending_load_slot=-1):
 
 
 def slot_to_print_ams_index(slot, mode):
-    if mode == "ace_hub" and slot["box_id"] >= 0:
-        return 4 + slot["box_id"] * 4 + slot["index"]
+    if mode == "ace_hub":
+        return 4 + slot["box_id"] * 4 + slot["index"] if slot["box_id"] >= 0 else slot["index"]
     return slot["global_index"]
 
 
@@ -367,13 +382,14 @@ def global_to_box_slot(slots, global_index, mode):
     found = next((s for s in slots if s["global_index"] == global_index), None)
     if found:
         return found["box_id"], found["index"]
-    ace_present = any(s["box_id"] >= 0 for s in slots)
-    if mode == "ace_direct" and ace_present:
-        return global_index // 4, global_index % 4
-    if not ace_present or global_index < 3:
+    # Not among the slots: by the global_index rule, unit global_index // 4. In hub mode the head is the
+    # unit after the last known ACE.
+    if mode == "toolhead":
         return -1, global_index
-    offset = global_index - 3
-    return offset // 4, offset % 4
+    pos, local = global_index // 4, global_index % 4
+    if mode == "ace_hub" and pos == max((s["box_id"] for s in slots), default=-1) + 1:
+        return -1, local
+    return pos, local
 
 
 def _minutes(value):
