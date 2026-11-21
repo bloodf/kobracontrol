@@ -1367,7 +1367,9 @@ class KobraAgent(pa.PrinterAgentBase):
 
     # jobs (job threads: blocking is fine) ------------------------------------------------------------------
     def _job_host(self, params):
-        return self.host or host_of(getattr(params, "dev_ip", ""))
+        """The printer the job names (PrintParams.dev_ip, as OrcaSlicer's Multi-device tab sends it), else the
+        connected one: never the connected printer for a job that names another."""
+        return host_of(getattr(params, "dev_ip", "")) or self.host
 
     @staticmethod
     def _progress(update_fn):

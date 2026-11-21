@@ -721,6 +721,17 @@ class Agent(Base):
         self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, None, None, None), 0)
         self.assertEqual(self.fake.uploads, [])
 
+    def test_a_job_goes_to_the_printer_it_names(self):
+        """OrcaSlicer's Multi-device tab names each printer in PrintParams.dev_ip: the connected printer must not get
+        another printer's job."""
+        self.connect()
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), plate_index=1, dev_ip="127.0.0.9")
+        self.assertNotEqual(self.agent.start_send_gcode_to_sdcard(params, None, lambda: False, None), 0)   # unreachable
+        self.assertEqual(self.fake.uploads, [])
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), plate_index=1, dev_ip="127.0.0.1")
+        self.assertEqual(self.agent.start_send_gcode_to_sdcard(params, None, lambda: False, None), 0)
+        self.assertEqual(self.fake.uploads[0]["filename"], "cube.gcode")
+
     def test_send_uploads_only(self):
         self.connect()
         stages = []

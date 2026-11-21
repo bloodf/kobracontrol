@@ -26,7 +26,7 @@ import jobs  # noqa: E402
 import kobra  # noqa: E402
 import locate  # noqa: E402
 import service  # noqa: E402
-from fake_kobra import FakeKobra, make_tls_files  # noqa: E402
+from fake_kobra import HOLDER_BOX, FakeKobra, make_tls_files  # noqa: E402
 
 ACE0 = {"id": 0, "loaded_slot": -1, "auto_feed": 1, "slots": [
     {"index": 0, "status": 5, "type": "PLA", "color": [255, 0, 0]},
@@ -185,6 +185,36 @@ class Connect(Base):
 
     def test_unknown_command(self):
         self.assertIn("unknown command", self.run_cmd("__class__")["error"])
+
+
+class LateAce(unittest.TestCase):
+    """A Kobra X on firmware 1.1.5.1 showed "no filament slots" with 4 spools in its ACE: it answered only the
+    connect's getInfo, before its ACE was there. Not a capture from that firmware (none exists yet): this fake
+    answers the first getInfo with no boxes and later ones with the ACE and the spool holder, as KX-Bridge and
+    Kobralink would see them by asking every poll."""
+
+    def test_slots_appear_on_a_later_poll(self):
+        fake = FakeKobra().start()
+        self.addCleanup(fake.stop)
+        fake.reply("info", "query", {"printerName": "KX", "version": "1.1.5.1", "project": None,
+                                     "urls": {"fileUploadurl": fake.upload_url, "rtspUrl": ""}}, state="done")
+        fake.reply("print", "query", {}, state="free")
+        fake.reply("multiColorBox", "getInfo", {"multi_color_box": []}, state="success")
+        svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              http_port=fake.http_port, mqtt_port=fake.mqtt_port, camera_factory=FakeCamera,
+                              relay_factory=FakeCamera, spoolman_factory=FakeSpoolman)
+        self.addCleanup(svc.close)
+        with mock.patch.object(connection, "POLL_EVERY", 0.2):
+            svc.set_target(service.Target(fake.host))
+            conn = svc.connections[fake.host]
+            wait(lambda: conn.connected and conn.view()["firmware"] == "1.1.5.1")
+            self.assertEqual(conn.view()["multi_color_box"], [])
+            fake.reply("multiColorBox", "getInfo", {"head_tools_model": 1, "multi_color_box": [HOLDER_BOX, ACE0]},
+                       state="success")
+            wait(lambda: len(conn.view()["multi_color_box"]) == 2)
+        data, _ = service.status_data(conn.view())
+        self.assertEqual(data["mode"], "ace_hub")
+        self.assertEqual(len(data["slots"]), 7)
 
 
 class NoCert(unittest.TestCase):
