@@ -2,6 +2,18 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [0.10.2] - 2026-11-21
+
+### Fixed
+
+- **ACE slots no longer vanish a few seconds after they show.** Kobra Control asks the printer for its ACE every 5 seconds, and some firmware (seen on 1.1.5.1) sometimes answers without it; each such answer wiped the slots ("The printer reports no filament slots", "Print head only, no ACE connected"). An answer with no boxes now changes nothing, as in KX-Bridge and Kobralink.
+- **A report about one box or one slot no longer hides the others.** A printer report that names only the ACE, only the spool holder or only one edited slot updated that much and dropped the rest, so the Filament widget could show one filament while the ACE held four. Each report now updates the boxes and slots it names and keeps the rest.
+
+### Changed
+
+- **Setting up the upload bridge is quicker.** The Dashboard's "The Kobra X doesn't speak OctoPrint" notice now also offers the other way out, keeping the OctoPrint physical printer and pointing it at Kobra Control, with a button to the upload bridge's settings. There the address (`127.0.0.1:8765`) has a **Copy** button next to the API key's.
+- The README and the Orca Cloud listing say step by step where the plugin list (**Plugins**) is on each system and that **Activate** is the first column of the plugin list, and how to turn the plugin off or remove it. The Portuguese README gets the OctoPrint answer.
+
 ## [0.10.1] - 2026-11-21
 
 ### Changed

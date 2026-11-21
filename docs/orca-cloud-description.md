@@ -37,7 +37,7 @@ Checked on a Kobra X (firmware 2.0.2.8) outside OrcaSlicer; pause, resume, stop,
 
 ## How to start
 
-1. Install the plugin and tick Activate. The Kobra Control tab appears next to Prepare, Preview and Device.
+1. Subscribe, then in OrcaSlicer open the plugin list (macOS: File > Plugins in the menu bar; Windows and Linux: the small ▾ arrow next to File at the top left of the window > Plugins). Tick the box in the Activate column on the Kobra Control row. The Kobra Control tab appears next to Prepare, Preview and Device.
 2. Turn on LAN mode on the printer. The tab finds it on your network; allow the address when OrcaSlicer asks.
 3. To print from OrcaSlicer's own Print dialog, tick Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, restart OrcaSlicer and set the printer preset's Printer Agent to `kobracontrol`.
 
@@ -105,7 +105,7 @@ Conferido em uma Kobra X (firmware 2.0.2.8) fora do OrcaSlicer; pausar, retomar,
 
 ## Como começar
 
-1. Instale o plugin e marque Activate. A aba Kobra Control aparece ao lado de Prepare, Preview e Device.
+1. Assine e abra a lista de plugins do OrcaSlicer (macOS: File > Plugins na barra de menus; Windows e Linux: a seta ▾ ao lado de File > Plugins). Marque a caixa da coluna Activate na linha do Kobra Control. A aba Kobra Control aparece ao lado de Prepare, Preview e Device.
 2. Ligue o modo LAN na impressora. A aba a encontra na sua rede; permita o endereço quando o OrcaSlicer perguntar.
 3. Para imprimir pelo diálogo Print do próprio OrcaSlicer, marque Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, reinicie o OrcaSlicer e defina o Printer Agent do perfil de impressora como `kobracontrol`.
 

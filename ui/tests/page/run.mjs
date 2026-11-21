@@ -704,6 +704,9 @@ test('setup hints: an OctoPrint physical printer is called out; the agent steps 
   await until(() => byTest('setup-octoprint'), 'OctoPrint warning');
   assert(text(byTest('setup-octoprint')).includes('192.0.2.88') && text(byTest('setup-octoprint')).includes('no OctoPrint server'), text(byTest('setup-octoprint')));
   assert(!byTest('setup-steps'), 'one hint at a time');
+  await click(byTest('setup-octo-bridge'));
+  await until(() => byTest('bridge-address'), 'the OctoPrint notice opens the upload bridge settings');
+  await tab('dash');
   await post(CONFIG({setup: {kobra: true, agent: '', host_type: 'octoprint', host: ''}}));
   await until(() => byTest('setup-steps') && !byTest('setup-octoprint'), 'no print host: the steps');
   assert(text(byTest('setup-steps')).includes('Printer Agent to kobracontrol'), text(byTest('setup-steps')));
@@ -2040,6 +2043,7 @@ test('settings: upload bridge is off by default; key, copy, new key and OrcaSlic
   eq(q('input#c-bridge').checked, false, 'off by default');
   eq(text(byTest('bridge-chip')), 'Off', 'chip');
   eq(byTest('bridge-key').value, 'KEY-aaaaaaaaaaaaaaaaaaaaaa', 'key shown');
+  eq(byTest('bridge-address').value, '127.0.0.1:8765', 'address shown, to copy into the OctoPrint physical printer');
   assert(text(byTest('bridge-steps')).includes('OctoPrint') && text(byTest('bridge-steps')).includes('127.0.0.1:8765'), 'steps: ' + text(byTest('bridge-steps')));
   await click(q('input#c-bridge'));
   await click(byTest('save-top'));

@@ -32,13 +32,19 @@ O Kobra Control (`kobracontrol`) é um plugin do OrcaSlicer 2.5 para a Anycubic 
 
 ## 📦 Instalação
 
-O Kobra Control está no Orca Cloud: abra [a página do plugin](https://cloud.orcaslicer.com/p/59c786285255) e instale por lá.
+O Kobra Control está no Orca Cloud: abra [a página do plugin](https://cloud.orcaslicer.com/p/59c786285255) e assine. Assinar baixa o plugin, mas não o liga. Depois, no OrcaSlicer (os menus aparecem aqui com os nomes em inglês):
+
+1. Abra a lista de plugins. No macOS: **File > Plugins** na barra de menus no topo da tela. No Windows e no Linux: clique na pequena seta **▾** ao lado de **File**, no canto superior esquerdo da janela do OrcaSlicer, e depois em **Plugins** (lá ele não fica dentro do menu File).
+2. A primeira coluna da lista se chama **Activate**. Marque a caixa dessa coluna na linha do **Kobra Control**.
+3. Permita o que o OrcaSlicer pedir. A aba **Kobra Control** aparece ao lado de Prepare, Preview e Device.
+
+Para desligar, desmarque a mesma caixa. Para remover, selecione **Kobra Control** na mesma lista e desinstale por lá, ou cancele a assinatura no Orca Cloud.
 
 A partir de um arquivo (os menus do OrcaSlicer aparecem aqui com os nomes em inglês):
 
 1. Baixe `kobracontrol_any.whl` da [última versão](https://github.com/bloodf/kobracontrol/releases/latest).
-2. No OrcaSlicer, abra **File > Plugins > Install local plugin** e escolha o arquivo.
-3. Marque **Activate** e permita o que o OrcaSlicer pedir. A aba **Kobra Control** aparece ao lado de Prepare, Preview e Device.
+2. No OrcaSlicer, abra a lista de plugins (macOS: **File > Plugins**; Windows e Linux: a seta **▾** ao lado de **File** > **Plugins**), escolha **Install local plugin** e o arquivo.
+3. Marque a caixa dele na coluna **Activate** e permita o que o OrcaSlicer pedir. A aba **Kobra Control** aparece ao lado de Prepare, Preview e Device.
 
 | Requisito | Detalhe |
 |---|---|
@@ -199,6 +205,17 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 <summary>O perfil de impressora não tem o Printer Agent kobracontrol.</summary>
 
 **Use printer agents instead of print hosts** está desligado. Ligue em **Preferences > Developer > Experimental Features** e reinicie o OrcaSlicer.
+</details>
+
+<details>
+<summary>"Could not connect to OctoPrint" ao imprimir na Kobra X.</summary>
+
+A Kobra X não tem servidor OctoPrint, então uma impressora física do tipo OctoPrint apontada para o endereço da própria impressora não a alcança. Dois caminhos:
+
+- **Imprimir pelo agente de impressora do Kobra Control** (recomendado). Remova essa impressora física, marque **Use printer agents instead of print hosts** em **Preferences > Developer > Experimental Features**, reinicie o OrcaSlicer e defina **Printer Agent** como `kobracontrol` numa cópia do seu perfil de impressora da Kobra X. O endereço da impressora é opcional ali: o Kobra Control encontra a impressora na rede.
+- **Manter a impressora física OctoPrint, mas apontá-la para o Kobra Control.** Na aba Kobra Control abra **Ajustes > Ponte de envio**, ligue a ponte e copie os dois valores que ela mostra (cada um tem um botão **Copiar**) para a impressora física: **Hostname, IP or URL** `127.0.0.1:8765` (não o IP da impressora) e **API Key / Password** a chave da ponte. Clique em **Test**. Enviar e imprimir então espera na aba Kobra Control até você clicar em **Iniciar impressão**.
+
+O Painel avisa, com um botão para a ponte de envio, quando o perfil da Kobra X selecionado envia para o OctoPrint.
 </details>
 
 <details>
