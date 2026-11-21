@@ -2,6 +2,21 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [0.10.1] - 2026-11-21
+
+### Changed
+
+- Shared UI 5.6.2.
+
+### Fixed
+
+- **Send no longer overwrites the file being printed.** Sending a plate under the name of the file the printer is printing (or has paused) is refused and nothing is uploaded, as the upload bridge already did.
+- **A jog no longer runs twice.** When another command held the queue and the page had already said a move's outcome is unknown, the late move still ran after the next one. A move that waited longer than the page does is now dropped, and nothing is sent.
+- A temperature report that leaves out a target no longer shows that heater as off while it heats.
+- A light report without a brightness, or a refused light command, no longer resets the light to off at 80 %.
+- A finished feed reported without a slot number is no longer acknowledged as slot 1.
+- An ACE slot reported with a negative number no longer stops OrcaSlicer's Device tab from updating.
+
 ## [0.10.0] - 2026-11-21
 
 ### Added

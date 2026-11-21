@@ -263,6 +263,7 @@ TEXT = {
     # upload bridge
     '%s is on the printer. Start the print in Kobra Control.': '%s jest na drukarce. Uruchom wydruk w Kobra Control.',
     '%s is the file being printed; nothing was sent': '%s to plik, który jest właśnie drukowany; nic nie wysłano',
+    'the move waited too long behind another command and was dropped; nothing was sent': 'ruch czekał zbyt długo za innym poleceniem i został odrzucony; nic nie wysłano',
     'expected multipart/form-data': 'oczekiwano multipart/form-data',
     'invalid API key: copy it from Kobra Control > Settings > Upload bridge': 'nieprawidłowy klucz API: skopiuj go z Kobra Control > Ustawienia > Mostek wysyłania',
     'malformed upload': 'nieprawidłowe przesyłanie',

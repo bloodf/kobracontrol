@@ -1297,8 +1297,8 @@ class StateTests(unittest.TestCase):
         self.assertEqual((v["nozzle_temp"], v["nozzle_target"], v["bed_temp"], v["bed_target"]), (200.5, 210, 60, 60))
         v = self.apply("light/report", {"status": 1, "brightness": 55, "type": 3})
         self.assertEqual((v["light_on"], v["light_brightness"]), (True, 55))
-        v = self.apply("light/report", {"status": 0})
-        self.assertEqual((v["light_on"], v["light_brightness"]), (False, 80))
+        v = self.apply("light/report", {"status": 0})   # a report without brightness keeps the last one
+        self.assertEqual((v["light_on"], v["light_brightness"]), (False, 55))
         self.assertEqual(self.apply("fan/report", {"fan_speed_pct": 70})["fan_pct"], 70)
         self.assertEqual(self.apply("fan/report", {"other": 1})["fan_pct"], 70)
 
@@ -1678,6 +1678,21 @@ class StateTests(unittest.TestCase):
             self.s.apply("print/report", junk)
         json.dumps(self.s.view())
         self.assertIsInstance(self.s.view()["updated_at"], float)
+
+
+class ReviewTwoState(unittest.TestCase):
+    def test_partial_reports_keep_the_rest(self):   # M2, L6
+        s = kobra.State(model="Kobra X")
+        s.apply("tempature/report", {"data": {"curr_nozzle_temp": 150, "target_nozzle_temp": 220,
+                                              "curr_hotbed_temp": 40, "target_hotbed_temp": 60}})
+        s.apply("tempature/report", {"data": {"curr_nozzle_temp": 160}})
+        v = s.view()
+        self.assertEqual((v["nozzle_temp"], v["nozzle_target"], v["bed_target"]), (160, 220, 60))
+        s.apply("light/report", {"data": {"status": 1, "brightness": 40}})
+        s.apply("light/report", {"state": "failed", "data": {}})
+        s.apply("light/report", {"data": {}})
+        v = s.view()
+        self.assertEqual((v["light_on"], v["light_brightness"]), (True, 40))
 
 
 if __name__ == "__main__":

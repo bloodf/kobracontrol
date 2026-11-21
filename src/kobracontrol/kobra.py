@@ -1067,7 +1067,8 @@ class State:
         if d:
             for key, field in (("curr_nozzle_temp", "nozzle_temp"), ("target_nozzle_temp", "nozzle_target"),
                                ("curr_hotbed_temp", "bed_temp"), ("target_hotbed_temp", "bed_target")):
-                self._v[field] = _num(d.get(key))
+                if key in d:   # a partial report keeps the rest: a missing target is not a heater turned off
+                    self._v[field] = _num(d[key])
 
     def _on_temp(self, p, d):
         self._temps(d)
@@ -1084,7 +1085,12 @@ class State:
             self._v["head_tools_model"] = d["head_tools_model"]
 
     def _on_light(self, p, d):
-        self._v.update(light_on=bool(d.get("status")), light_brightness=_num(d.get("brightness", 80), 80))
+        if p.get("state") == "failed":   # a refused light/control: the light did not change
+            return
+        if "status" in d:
+            self._v["light_on"] = bool(d["status"])
+        if "brightness" in d:
+            self._v["light_brightness"] = _num(d["brightness"], 80)
 
     def _on_fan(self, p, d):
         if "fan_speed_pct" in d:

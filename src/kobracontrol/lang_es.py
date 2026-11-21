@@ -280,6 +280,7 @@ TEXT = {
     'requests from web pages are not accepted': 'no se aceptan solicitudes de páginas web',
     'see the OrcaSlicer log': 'consulta el registro de OrcaSlicer',
     '%s is the file being printed; nothing was sent': '%s es el archivo que se está imprimiendo; no se envió nada',
+    'the move waited too long behind another command and was dropped; nothing was sent': 'el movimiento esperó demasiado detrás de otro comando y se descartó; no se envió nada',
     '%s on the printer is not the file OrcaSlicer sent; nothing was started': '%s en la impresora no es el archivo que envió OrcaSlicer; no se inició nada',
     'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman indica el perfil de filamento "%s", que no es uno de sus perfiles para esta impresora en OrcaSlicer. La ranura mantiene el perfil habitual.',
     'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman indica el perfil de filamento "%s", que coincide con varios de sus perfiles en OrcaSlicer si se ignoran mayúsculas y minúsculas. La ranura mantiene el perfil habitual.',

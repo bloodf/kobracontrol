@@ -60,6 +60,10 @@ NOTHING_LOADED = lazy("no filament is loaded in the print head, so there is noth
 NOZZLE_MAX, BED_MAX = 320, 120
 LIMITS = {"nozzle_max": NOZZLE_MAX, "bed_max": BED_MAX}
 IDLE = ("idle", "finished", "cancelled")
+# A queued move older than the page's timeout (ui/src/core/tracker.ts DEFAULT_TIMEOUT_MS): the page already told the
+# user the outcome is unknown and let them jog again, so running it late would move the head twice.
+LATE_DROPPED, LATE_AFTER_S = ("move",), 20.0
+LATE = lazy("the move waited too long behind another command and was dropped; nothing was sent")
 MOVE_MAX = 50.0                 # mm per jog: the largest step the page offers; anything larger is clamped
 AXIS = {"x": 1, "y": 2, "z": 3}
 # Jog as Kobralink and KX-Bridge's client: axis 1/2/3, move_type 1 = +, 0 = -, distance > 0.
@@ -364,7 +368,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             threading.Thread(target=self._guard, args=(command, lambda: self._run(*job)),
                              name="kobracontrol-" + str(command), daemon=True).start()
         else:
-            self.jobs.put(job)
+            self.jobs.put(job + (time.monotonic(),))
 
     def _run_bounded(self, request_id, command, args, ctx):
         try:
@@ -399,6 +403,11 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             job = self.jobs.get()
             if job is None:
                 return
+            *job, queued = job
+            if job[1] in LATE_DROPPED and time.monotonic() - queued > LATE_AFTER_S:
+                self.log("kobracontrol: %s dropped after %.0f s in the queue" % (job[1], time.monotonic() - queued))
+                self.publish({"type": "reply", "id": job[0], "error": tr(LATE)})
+                continue
             self._guard("command worker", lambda: self._run(*job))
 
     def _run(self, request_id, command, args, ctx):
@@ -662,8 +671,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             events = self._feed_acks.setdefault(conn.host, {})
             for box in view.get("multi_color_box") or []:
                 status = box.get("feed_status") if isinstance(box.get("feed_status"), dict) else {}
-                bid, key = box.get("id", -1), (status.get("current_status"), status.get("slot_index", 0))
-                if key[0] not in (10, 11):
+                bid, key = box.get("id", -1), (status.get("current_status"), status.get("slot_index"))
+                if key[0] not in (10, 11) or not isinstance(key[1], int):   # no slot named: nothing to acknowledge
                     events.pop(bid, None)
                     continue
                 entry = events.get(bid)
