@@ -32,7 +32,7 @@ const items = computed(() => [
 .kc-temps { display: grid; gap: var(--oui-s3); grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .kc-temp { display: grid; gap: var(--oui-s2); align-content: start; }
 /* Compact in a small widget: the values in one row, without targets and charts. */
-@container oui-widget (max-width: 320px) or (max-height: 72px) {
+@container oui-widget (max-width: 320px) {
   .kc-temps { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: var(--oui-s2); }
   .kc-temp .oui-readout-sub, .kc-temp-spark { display: none; }
 }

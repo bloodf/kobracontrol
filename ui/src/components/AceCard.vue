@@ -44,6 +44,18 @@ const setAuto = (id: number, on: boolean) => run({ key: `auto:${id}`, label: t('
 </template>
 
 <style>
+/* When the dashboard row is taller than the slots, the slots share it (actions stay at their foot): no strip left empty. */
+.oui-dash-grid:not([data-narrow]) [data-test='ace-card'] > .oui-panel-body { display: flex; flex-direction: column; }
+.oui-dash-grid:not([data-narrow]) [data-test='ace-card'] > .oui-panel-body > .oui-stack { display: flex; flex-direction: column; flex: 1 1 auto; }
+.oui-dash-grid:not([data-narrow]) [data-test='ace-card'] /* Every row of slots full: the print head's three side by side from 560 px, an ACE's four from 780 px (two by two below). */
+.kc-group { container: kc-group / inline-size; }
+@container kc-group (min-width: 560px) { .kc-group[data-box='-1'] > .oui-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container kc-group (min-width: 360px) { .kc-group:not([data-box='-1']) > .oui-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container kc-group (min-width: 780px) { .kc-group:not([data-box='-1']) > .oui-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kc-group { display: flex; flex-direction: column; flex: 1 1 auto; }
+.oui-dash-grid:not([data-narrow]) [data-test='ace-card'] .kc-group > .oui-cards { flex: 1 1 auto; grid-auto-rows: 1fr; }
+.kc-group { grid-template-rows: auto auto 1fr; }
+.oui-dash-grid:not([data-narrow]) [data-test='ace-card'] .kc-group > .oui-cards { grid-auto-rows: 1fr; }
 .kc-group { display: grid; gap: var(--oui-s2); }
 .kc-group-head { display: flex; align-items: center; justify-content: space-between; gap: var(--oui-s2); min-height: 26px; }
 .kc-group + .kc-group { padding-top: var(--oui-s3); border-top: 1px solid var(--oui-border); }
