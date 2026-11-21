@@ -44,6 +44,7 @@ _granted = set()   # printer addresses declared at load or allowed since: the se
 _refused = set()   # addresses refused in OrcaSlicer's dialog this session: asked again only on a user action
 _queue_on_main = None   # OrcaSlicer's queue_on_main, once it hands it to the printer agent
 _last_hints = ("", "", "")   # preset_hints() as last read on the UI thread, for the script's worker thread
+_last_setup = {}             # preset_setup() as last read on the UI thread, for the page's config message
 STOP_WAIT = 10.0   # s a restart worker waits for the previous bridge to let go of its port (an upload may be finishing)
 UI_WAIT = 5.0      # s a worker thread waits for the UI thread to read the presets
 # OrcaSlicer status codes (src/slic3r/Utils/bambu_networking.hpp, v2.5.0)
@@ -475,11 +476,58 @@ def preset_hints():
     return host, preset.name, agent
 
 
+def preset_setup():
+    """How the selected printer preset reaches the printer, for the page's setup hints: {"kobra": a Kobra X preset,
+    "agent": its printer agent, "host_type": its print host type (OctoPrint, PrusaLink...), "host": its print host's
+    address}. A Kobra X has no OctoPrint server: Print and Send work through the kobracontrol printer agent only."""
+    bundle = orca.host.preset_bundle()
+    preset = bundle.current_printer_preset()
+
+    def value(key):
+        return clean(preset.config_value(key)) or clean(bundle.full_config_value(key))
+    return {"kobra": value("printer_agent") == AGENT_ID or is_kobra_x(preset.config_value("printer_model"), preset.name,
+                                                                         preset.config_value("inherits")),
+            "agent": value("printer_agent"), "host_type": value("host_type"), "host": host_of(value("print_host"))}
+
+
+def dev_id_from_address(host, port):
+    """OrcaSlicer's MachineObject::dev_id_from_address: the preset's print host without scheme and path, with
+    printhost_port in place of its own port when one is set. select_machine() looks the printer up by this id."""
+    text = clean(host)
+    for scheme in ("http://", "https://"):
+        if text.startswith(scheme):
+            text = text[len(scheme):]
+    text = text.split("/", 1)[0]
+    port = clean(port)
+    return "%s:%s" % (text.split(":", 1)[0], port) if port else text
+
+
+def agent_address():
+    """UI thread: (dev_id, host) of the printer the agent stands for before OrcaSlicer connects it: the selected
+    preset's print host (under the dev_id select_machine() looks for), else the printer the tab found; ("", "")
+    with neither."""
+    try:
+        bundle = orca.host.preset_bundle()
+        preset = bundle.current_printer_preset()
+        value = lambda key: clean(preset.config_value(key)) or clean(bundle.full_config_value(key))   # noqa: E731
+        print_host, port = value("print_host"), value("printhost_port")
+    except Exception as e:   # no preset bundle yet
+        log("printer preset not readable (%s)" % e)
+        print_host = port = ""
+    if print_host and host_of(print_host):
+        return dev_id_from_address(print_host, port), host_of(print_host)
+    target = _service.target if _service is not None else None
+    host = target.host if target is not None else ""
+    return host, host
+
+
 def ui_preset_hints():
-    """UI thread only: preset_hints(), kept for worker threads; ("", "", "") when no preset can be read yet."""
-    global _last_hints
+    """UI thread only: preset_hints(), kept for worker threads; ("", "", "") when no preset can be read yet.
+    preset_setup() is kept with them, for the page's config message."""
+    global _last_hints, _last_setup
     try:
         _last_hints = preset_hints()
+        _last_setup = preset_setup()
     except Exception as e:   # no preset bundle yet: the network search still runs
         log("printer preset not readable (%s)" % e)
         return "", "", ""
@@ -760,7 +808,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         located = {"address": target.host, "source": target.source, "preset_host": target.preset_host,
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
-        return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler,
+        return {"type": "config", "settings": cfg, "certificate": certificate_state(), "spooler": spooler, "setup": dict(_last_setup),
                 "version": VERSION, "limits": dict(LIMITS), "located": located, "agent_id": AGENT_ID,
                 "bridge": bridge_state()}
 
@@ -1044,17 +1092,27 @@ class KobraAgent(pa.PrinterAgentBase):
 
     # discovery and selection --------------------------------------------------------------------------
     def start_discovery(self, start, sending):
-        if start and self.host:
-            self._announce()
+        """UI thread. Announces the printer before any connect_printer, as MoonrakerPrinterAgent does, and at once (not
+        queued): OrcaSlicer 2.5's select_machine(), which runs right after this, looks the preset's print host up only
+        among this agent's machines. An entry saved for that address under another agent (an OctoPrint physical
+        printer, a Moonraker preset) stays hidden from it, and a preset with no print host has no entry at all: the
+        Device tab shows no printer and Print can't find one. Discovery with that dev_id gives the entry to this agent
+        or creates it (DeviceManager::on_machine_alive)."""
+        if start:
+            dev_id, host = (self.dev_id, self.host) if self.host else agent_address()
+            if host:
+                self._announce(dev_id, host)
         return True
 
-    def _announce(self):
+    def _announce(self, dev_id, host):
         """MoonrakerPrinterAgent announce_printhost_device: the configured printer, never a network scan."""
-        view = service().view_for(self.host) or {}
-        self._emit("ssdp", json.dumps({
-            "dev_name": view.get("printer_name") or MODEL, "dev_id": self.dev_id or self.host, "dev_ip": self.host,
-            "dev_type": MODEL, "dev_signal": "0", "connect_type": "lan", "bind_state": "free", "sec_link": "secure",
-            "ssdp_version": "v1"}))
+        view = (_service.view_for(host) if _service is not None else None) or {}
+        with self._lock:
+            fn = self._cb.get("ssdp")
+        if fn is not None:
+            call_safely("ssdp", fn, json.dumps({
+                "dev_name": view.get("printer_name") or MODEL, "dev_id": dev_id or host, "dev_ip": host, "dev_type": MODEL,
+                "dev_signal": "0", "connect_type": "lan", "bind_state": "free", "sec_link": "secure", "ssdp_version": "v1"}))
 
     def get_user_selected_machine(self):
         return self.selected

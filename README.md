@@ -32,7 +32,7 @@ Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for the Anycubic Kobr
 
 ## 📦 Install
 
-Kobra Control is listed on Orca Cloud: open [its page](https://cloud.orcaslicer.com/p/59c786285255) and install it from there.
+Kobra Control is listed on Orca Cloud: open [its page](https://cloud.orcaslicer.com/p/59c786285255) and subscribe. Subscribing downloads it but does not turn it on: in OrcaSlicer open **File > Plugins**, find **Kobra Control** in the list and tick **Activate**, then allow what OrcaSlicer asks for. The **Kobra Control** tab appears next to Prepare, Preview and Device.
 
 From a file:
 
@@ -199,6 +199,18 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 <summary>The printer preset has no kobracontrol Printer Agent.</summary>
 
 **Use printer agents instead of print hosts** is off. Turn it on under **Preferences > Developer > Experimental Features** and restart OrcaSlicer.
+</details>
+
+<details>
+<summary>"Could not connect to OctoPrint" when I print to the Kobra X.</summary>
+
+The Kobra X has no OctoPrint server, so a physical printer of the type OctoPrint (or any other print host type) can't reach it. Remove that physical printer and print through Kobra Control's printer agent: tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. The printer's address is optional there: Kobra Control finds the printer on the network. The Dashboard says so when the selected Kobra X preset sends to OctoPrint.
+</details>
+
+<details>
+<summary>The Stock tab: does it need Spooler?</summary>
+
+No. With Spooler running and sharing its stock list, the tab shows Spooler's list. Without it, or with a Spooler version that shares its list only with U1 Control, the tab lists the spools straight from the Spoolman set in **Settings** (or the one Spooler uses), and says so.
 </details>
 
 <details>

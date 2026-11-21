@@ -662,6 +662,57 @@ test('stock tab lists only a usable list; the lease flag follows; Settings says 
   assert(text(byTest('spooler-no-stock')).includes('needs a Spooler version that supports Kobra Control'), 'Settings says why: ' + text(q('.sv')));
 `);
 
+test('stock without Spooler\'s list: Kobra Control\'s own Spoolman list, never an endless wait', `
+  await ready(VIEW());
+  await tab('stock');
+  const own = STOCK({same_spoolman: null, spooler_reason: 'waiting', stock: {...STOCK().stock, code: 'own', source: 'spoolman', key: 'spoolman:http://box:7912', ts: null}});
+  await reply(last('cmd', 'stock'), own);
+  await until(() => byTest('stock-card') && q('[data-stock="7"]'), 'the own list is shown');
+  assert(text(byTest('stock-head')).includes('From Spoolman · 2 spools'), 'says where the list comes from: ' + text(byTest('stock-head')));
+  assert(!text(byTest('stock-head')).includes('Spooler 0.21.0'), 'no Spooler version for a list Spooler did not make');
+  assert(text(byTest('stock-own')).includes('comes straight from Spoolman'), 'says why: ' + text(byTest('stock-own')));
+  const n = cmds('stock').length;
+  await until(() => cmds('stock').length > n, 'asked again', 8000);
+  await reply(last('cmd', 'stock'), STOCK({available: false, reason: 'unsupported', stock: {state: 'missing', code: 'waiting', text: 'Waiting for Spooler\\u2019s stock list…', rows: [], key: ''}}));
+  await until(() => byTest('spoolman-card'), 'no list');
+  assert(text(byTest('spoolman-card')).includes('doesn’t share its stock with Kobra Control'), 'no endless wait: ' + text(byTest('spoolman-card')));
+  assert(qa('[data-test="spoolman-card"] button').length === 1, 'with the way to Settings');
+`);
+
+test('same printer: a selection_changed keeps the Spoolman spools (they used to vanish until the next refresh)', `
+  await ready(VIEW());
+  await until(() => last('cmd', 'spools'), 'spools asked');
+  const first = last('cmd', 'spools');
+  await post({type: 'selection_changed'});
+  await until(() => sent().filter(m => m.type === 'hello').length === 2, 'hello again');
+  await reply(last('hello'), {address: '192.168.1.50', printer: 'Bench Kobra', generation: 1});
+  await post({type: 'status', data: VIEW()});
+  await reply(first, {spools: ROWS, bindings: {}});
+  await tab('stock');
+  await until(() => text(byTest('spool-source')).includes('2 spools'), 'the spools stay: ' + text(byTest('spool-source')));
+  await post({type: 'selection_changed'});
+  await reply(last('hello'), {address: '192.0.2.60', printer: 'Other Kobra', generation: 2});
+  await until(() => !text(byTest('spool-source')).includes('2 spools'), 'another printer: read again, not shown from the old one');
+`);
+
+test('setup hints: an OctoPrint physical printer is called out; the agent steps until kobracontrol is the agent', `
+  await connect();
+  await post(CONFIG({setup: {kobra: true, agent: '', host_type: 'octoprint', host: '192.0.2.88'}}));
+  await post({type: 'status', data: VIEW()});
+  await until(() => byTest('setup-octoprint'), 'OctoPrint warning');
+  assert(text(byTest('setup-octoprint')).includes('192.0.2.88') && text(byTest('setup-octoprint')).includes('no OctoPrint server'), text(byTest('setup-octoprint')));
+  assert(!byTest('setup-steps'), 'one hint at a time');
+  await post(CONFIG({setup: {kobra: true, agent: '', host_type: 'octoprint', host: ''}}));
+  await until(() => byTest('setup-steps') && !byTest('setup-octoprint'), 'no print host: the steps');
+  assert(text(byTest('setup-steps')).includes('Printer Agent to kobracontrol'), text(byTest('setup-steps')));
+  await click(byTest('setup-dismiss'));
+  eq(last('save_settings').settings, {setup_hint_dismissed: true}, 'Don\\'t show again is saved');
+  await post(CONFIG({setup: {kobra: true, agent: 'kobracontrol', host_type: 'octoprint', host: '192.0.2.88'}}));
+  await until(() => !byTest('setup-steps') && !byTest('setup-octoprint'), 'with the kobracontrol agent: nothing to say');
+  await post(CONFIG({setup: {kobra: false, agent: '', host_type: 'octoprint', host: '192.0.2.9'}}));
+  await until(() => !byTest('setup-octoprint'), 'not a Kobra X preset: nothing to say');
+`);
+
 // ------------------------------------------------------------------ filament use
 test('filament use: nothing pending shows no card, and the page asked for it', `
   await ready(VIEW());

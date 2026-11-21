@@ -996,7 +996,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def cmd_stock(self, refresh=False):
         """StockMixin's answer plus `available` and `reason`: "absent" (Spooler not running here), "stale",
         "waiting", "unsupported" (Spooler runs but has published no list for kobracontrol for STOCK_UNSUPPORTED_S:
-        released Spooler versions only publish for u1control), or the stock state's code; None when available."""
+        released Spooler versions only publish for u1control), or the stock state's code; None when available.
+        Without Spooler's list, the stock is Kobra Control's own Spoolman list (StockMixin.own_stock) when it has a
+        Spoolman address: `available`, with Spooler's reason in `spooler_reason`."""
         out = super().cmd_stock(refresh)
         spooler, stock = out["spooler"]["state"], out["stock"]["state"]
         now = time.monotonic()
@@ -1014,6 +1016,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             reason = "unsupported" if waited >= STOCK_UNSUPPORTED_S else "waiting"
         else:
             reason = stock if stock == "stale" else out["stock"].get("code") or stock
+        own = self.own_stock(self._snapshot()[-1]) if reason is not None else None
+        if own is not None:   # Spooler shares no list: Kobra Control's own Spoolman read, never an endless wait
+            return {**out, "stock": own, "same_spoolman": None, "available": True, "reason": None, "spooler_reason": reason}
         return {**out, "available": reason is None, "reason": reason}
 
     def cmd_find_certificate(self, path=None):

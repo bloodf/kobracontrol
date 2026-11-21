@@ -6,6 +6,7 @@ import peers
 from i18n import lazy, tr
 
 STOCK_CHANGED = lazy("Spooler's stock list changed since this one was shown; nothing was written. Pick the spool again.")
+OWN_KEY = "spoolman:"   # the key of Kobra Control's own Spoolman list (own_stock), followed by its Spoolman address
 
 
 def _int(value):
@@ -78,11 +79,40 @@ class StockMixin:
         spooler, stock = self.peers.stock()
         with self.lock:
             bindings = {str(k): v for k, v in self.bindings.items()}
-            by_spool = {v: k for k, v in sorted(self.bindings.items(), reverse=True)}   # lowest slot wins a tie
-        stock = {**stock, "rows": [{**r, "bound_slot": by_spool.get(r["id"])} for r in stock["rows"]]}
+        stock = self._with_bound(stock)
         return {"spooler": {k: v for k, v in spooler.items() if k != "session"}, "stock": stock,
                 "same_spoolman": self._origin_check(target, spooler["origin"]) if spooler["state"] == "active" else None,
                 "usage": self._usage_owner(target), "bindings": bindings}
+
+    def _with_bound(self, stock):
+        with self.lock:
+            by_spool = {v: k for k, v in sorted(self.bindings.items(), reverse=True)}   # lowest slot wins a tie
+        return {**stock, "rows": [{**r, "bound_slot": by_spool.get(r["id"])} for r in stock["rows"]]}
+
+    def own_stock(self, target):
+        """Kobra Control's own Spoolman spools as a stock list (source "spoolman"), for when Spooler shares none: not
+        installed, stopped, or a version that publishes its list only for u1control. None without a Spoolman address
+        or when Spoolman can't be read."""
+        if target is None or not target.spoolman_url:
+            return None
+        with self.lock:
+            spools = list(self.spools)
+        if not spools:
+            # ponytail: an empty Spoolman is read again on every stock poll (5 s); a "read once" flag if that matters
+            try:
+                self.cmd_spools()
+            except Exception:
+                return None
+            with self.lock:
+                spools = list(self.spools)
+        origin = peers.normalize_origin(target.spoolman_url)
+        rows = [{"id": sp["id"], "filament_id": sp.get("filament_id"), "name": sp.get("name") or "",
+                 "vendor": sp.get("vendor") or "Generic", "material": sp.get("material") or "",
+                 "location": sp.get("location") or "", "colour": sp.get("colour"), "colours": sp.get("colours") or [],
+                 "remaining": sp.get("remaining"), "initial": sp.get("initial"), "low": False, "use_first": False}
+                for sp in spools if not sp.get("archived")]
+        return self._with_bound({**peers.parse_stock(None, None), "state": "ok", "code": "own", "text": "",
+                                 "rows": rows, "key": OWN_KEY + origin, "origin": origin, "source": "spoolman"})
 
     def _current_row(self, key, spool_id):
         if self.peers is None:
@@ -103,6 +133,10 @@ class StockMixin:
         and kobracontrol's own Spoolman read finds that spool with the same filament. Then the normal bind."""
         slot, spool_id, key = _assign_args(slot, spool_id, key)
         target = self._ctx()[-1]
+        if key.startswith(OWN_KEY):   # from own_stock: Kobra Control's own Spoolman, nothing of Spooler's to check
+            if target is None or key != OWN_KEY + peers.normalize_origin(target.spoolman_url):
+                raise ValueError(tr(STOCK_CHANGED))
+            return self.cmd_bind_spool(slot, spool_id)
         spooler, row = self._current_row(key, spool_id)
         if self._origin_check(target, spooler["origin"]) is False:
             raise ValueError(tr("Kobra Control's Spoolman (%s) isn't the one Spooler uses (%s); nothing was written. "

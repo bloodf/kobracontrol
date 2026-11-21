@@ -10,6 +10,7 @@ import PrinterPanel from './PrinterPanel.vue';
 import CameraCard from './CameraCard.vue';
 import AceCard from './AceCard.vue';
 import SpoolerHint from './SpoolerHint.vue';
+import SetupHint from './SetupHint.vue';
 import UsageCard from './UsageCard.vue';
 import FirstRun from './FirstRun.vue';
 import ConsoleCard from './ConsoleCard.vue';
@@ -109,6 +110,7 @@ async function rename() {
   <!-- Always here, also on the first run: the page's messages are moved into it (App.vue). -->
   <div class="kc-msgs" data-msgs="dash" />
 
+  <SetupHint />
   <FirstRun v-if="firstRun" />
 
   <template v-else>

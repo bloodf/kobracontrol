@@ -145,18 +145,23 @@ export const bindings = computed(() => boundSlots(
 
 function reset(): void {
   s.epoch++;
-  Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0, spools: [], spoolsError: '', spoolsLoaded: false,
+  // The Spoolman spools stay: they are the last ones read, and hello() clears them only for another printer. An
+  // OrcaSlicer device or preset event (selection_changed) says hello again for the same printer, and must not blank them.
+  Object.assign(s, { info: null, error: '', offline: '', status: null, statusAt: 0,
     frame: '', video: false, camError: '', camReason: '', usageError: '', retryAt: 0, history: {}, historyAt: 0, device: '' });   // candidates stay until an answer replaces them
   if (s.stock) s.stock = { ...s.stock, bindings: {}, same_spoolman: null, usage: 'unknown' };
   cancelDialog();
 }
 
 let helloInFlight = false;
+/** The printer the spools in `s.spools` were read for. */
+let spoolsFor = '';
 let lastNote = '';
 /** Ask the plugin for the printer. `retry`: the user pressed Retry, so a failed connection tries again now
  *  instead of after its growing delay; otherwise its last error comes back at once. */
 export async function hello(retry = false): Promise<void> {
   const offered = s.phase === 'noTarget' && s.candidates.length > 0;
+  const was = s.info?.address ?? spoolsFor;
   reset();
   // A printer offered for a choice stays on screen while the plugin is asked again: no flicker to "Connecting".
   if (!offered) s.phase = 'connecting';
@@ -165,6 +170,8 @@ export async function hello(retry = false): Promise<void> {
   try {
     const r: Info = await bridge.request({ type: 'hello', retry });
     if (epoch !== s.epoch) return;
+    if (was && r.address !== was) Object.assign(s, { spools: [], spoolsError: '', spoolsLoaded: false });   // another printer
+    spoolsFor = r.address;
     s.info = r;
     s.phase = 'connected';
     s.candidates = [];
@@ -229,9 +236,11 @@ export async function choosePrinter(c: bridge.Candidate): Promise<void> {
 /** Spools and slot links from Spoolman; false when the read failed. */
 export async function loadSpools(quiet: boolean): Promise<boolean> {
   if (!targetKnown.value) return true;
-  const epoch = s.epoch;
+  const epoch = s.epoch, address = s.info?.address;
   const r = await run({ key: 'spools', label: t('act.spools'), cmd: 'spools', quiet: true });
-  if (epoch !== s.epoch) return true;
+  // A hello for the same printer while this read was out keeps its answer: the read hello() asks for is refused as
+  // 'busy' meanwhile, so dropping this one would leave the list empty until the next refresh.
+  if (epoch !== s.epoch && (!s.info || s.info.address !== address)) return true;
   if (r.ok) {
     s.spools = r.result.spools ?? [];
     s.spoolsError = '';
