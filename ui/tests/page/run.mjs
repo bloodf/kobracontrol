@@ -691,7 +691,7 @@ test('same printer: a selection_changed keeps the Spoolman spools (they used to 
   await tab('stock');
   await until(() => text(byTest('spool-source')).includes('2 spools'), 'the spools stay: ' + text(byTest('spool-source')));
   await post({type: 'selection_changed'});
-  await reply(last('hello'), {address: '192.168.1.60', printer: 'Other Kobra', generation: 2});
+  await reply(last('hello'), {address: '192.0.2.60', printer: 'Other Kobra', generation: 2});
   await until(() => !text(byTest('spool-source')).includes('2 spools'), 'another printer: read again, not shown from the old one');
 `);
 
