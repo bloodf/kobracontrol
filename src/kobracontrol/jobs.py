@@ -155,6 +155,9 @@ class JobsMixin:
         """send_file -> (name, bytes sent)."""
         conn = self.ready(host)
         filename = remote_name(name or os.path.basename(path))
+        data = self._data(conn)
+        if data["state"] in ("printing", "paused") and data.get("filename") == filename:
+            raise kobra.KobraError(tr("%s is the file being printed; nothing was sent") % filename)
         self._forget_pending(filename)   # a waiting bridge print of that name would start this file instead
         with plate_source(path, plate_index) as (source, size, _):
             self._upload(conn, filename, source, size, progress, cancelled)

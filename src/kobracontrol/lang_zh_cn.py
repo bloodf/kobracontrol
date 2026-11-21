@@ -280,6 +280,7 @@ TEXT = {
     'requests from web pages are not accepted': '不接受来自网页的请求',
     'see the OrcaSlicer log': '请查看 OrcaSlicer 日志',
     '%s is the file being printed; nothing was sent': '%s 是正在打印的文件；未发送任何内容',
+    'the move waited too long behind another command and was dropped; nothing was sent': '移动在另一条命令之后等待过久，已被丢弃；未发送任何内容',
     '%s on the printer is not the file OrcaSlicer sent; nothing was started': '打印机上的 %s 不是 OrcaSlicer 发送的文件；未开始任何打印',
     'Spoolman names the filament preset "%s", which isn\'t one of your own presets for this printer in OrcaSlicer. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”不是您在 OrcaSlicer 中适用于此打印机的自定义预设。该槽位继续使用原来的预设。',
     'Spoolman names the filament preset "%s", which matches several of your presets in OrcaSlicer when upper and lower case are ignored. Its slot keeps the usual preset.': 'Spoolman 指定的耗材丝预设“%s”在忽略大小写时与您在 OrcaSlicer 中的多个预设匹配。该槽位继续使用原来的预设。',

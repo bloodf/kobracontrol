@@ -1778,3 +1778,24 @@ class ReviewTwo(Base):
         self.run_cmd("dry_start", aces=[0], temp=99.6, minutes=5)
         data = wait(lambda: self.sent("multiColorBox", "setDry"))[0]["data"]
         self.assertEqual(data, ace.set_dry_payload([0], 80, 10))
+
+
+class ReviewTwo(Base):
+    def test_send_refuses_the_file_being_printed(self):   # M1: as the upload bridge does
+        self.set_state("printing")
+        with self.assertRaises(kobra.KobraError):
+            self.svc.send_file(self.fake.host, make_3mf(self.tmp), "a")
+        self.assertFalse(self.fake.uploads)
+
+    def test_late_move_is_dropped(self):   # M4: the page gave up on it and let the user jog again
+        self.fake.reply("axis", "move", {})
+        with mock.patch.object(service, "LATE_AFTER_S", -1.0):
+            self.assertIn("dropped", self.run_cmd("move", axis="x", distance=5)["error"])
+        self.assertFalse(self.sent("axis", "move"))
+
+    def test_feed_status_without_slot_is_not_acknowledged(self):   # M3
+        box = dict(ACE0, id=0, feed_status={"current_status": 10, "type": 1})
+        self.fake.report("multiColorBox/report", {"type": "multiColorBox", "action": "update", "state": "success",
+                                                  "data": {"multi_color_box": [box]}})
+        time.sleep(3.5)
+        self.assertFalse(self.sent("multiColorBox", "feedFilament"))

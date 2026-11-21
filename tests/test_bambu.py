@@ -297,5 +297,14 @@ class ParseCommand(unittest.TestCase):
         self.assertEqual(r, {"print": {"command": "gcode_line", "sequence_id": "7", "param": "M104 S1\n", "result": "success"}})
 
 
+class BadSlotIndex(unittest.TestCase):
+    def test_negative_index_is_skipped(self):   # L9: one bad slot never breaks every push
+        box = {"id": 0, "slots": [{"index": -1, "status": 5, "type": "PLA", "color": [1, 2, 3]},
+                                  {"index": 1, "status": 5, "type": "PLA", "color": [1, 2, 3]}]}
+        slots, mode = slots_of([box])
+        trays = bambu.push_status(view(), slots, mode)["print"]["ams"]["ams"][0]["tray"]
+        self.assertEqual([t["id"] for t in trays if t.get("tray_type")], ["1"])
+
+
 if __name__ == "__main__":
     unittest.main()

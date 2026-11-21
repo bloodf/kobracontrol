@@ -103,7 +103,7 @@ def ams_block(slots, preferred=None):
     units, names, ams_bits, tray_bits, remain = {}, {}, 0, 0, False
     for slot in sorted(slots, key=lambda s: (s["box_pos"], s["index"])):
         pos, index = slot["box_pos"], slot["index"]
-        if index > 3:
+        if not isinstance(index, int) or not 0 <= index <= 3 or pos < 0:   # a malformed slot never breaks the push
             continue
         ams_bits |= 1 << pos
         names[pos] = tr("Spool holder") if slot["box_id"] < 0 else "ACE %d" % (slot["box_id"] + 1)
