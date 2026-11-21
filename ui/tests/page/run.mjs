@@ -2399,11 +2399,14 @@ test('settings pages: a page that needs attention is marked in the list', PAGES_
 const DASH_PLUGIN = `
 const STORE = dash => post(CONFIG({settings: {...SETTINGS, dashboard: dash}}));
 async function READY(dash) { await connect(); await (dash === undefined ? post(CONFIG()) : STORE(dash)); await post({type: 'status', data: VIEW()}); }
-const DEFAULT_IDS = ['job', 'ace', 'controls', 'camera', 'console', 'motion', 'printer'];
+const DEFAULT_IDS = ['job', 'ace', 'temps', 'camera', 'motion', 'controls', 'printer', 'console'];
 const DEFAULT_ORDER = DEFAULT_IDS;
-const ALL_IDS = ['job', 'ace', 'controls', 'temps', 'camera', 'motion', 'printer', 'console', 'files'];
-const MOVER = 'camera', MOVER_FROM = '9 / span 4 | 20 / span 6', MOVE_COLS = 8, MOVER_TO = '1 / span 4 | 20 / span 6';
-const CAM_W = 4, CAM_H = 6, TEMPS = 'temps';
+const ALL_IDS = ['job', 'ace', 'temps', 'controls', 'camera', 'motion', 'printer', 'console', 'files'];
+const MOVER = 'camera', MOVER_FROM = '7 / span 6 | 20 / span 9', MOVE_COLS = 6, MOVER_TO = '1 / span 6 | 20 / span 9';
+const CAM_W = 6, CAM_H = 9, TEMPS = 'temps', CONSOLE_LEAST = 'span 3 | span 4';
+const OLD_DEFAULT = [{id: 'job', x: 0, y: 0, w: 12, h: 3}, {id: 'ace', x: 0, y: 3, w: 12, h: 16}, {id: 'controls', x: 0, y: 19, w: 8, h: 6},
+  {id: 'camera', x: 8, y: 19, w: 4, h: 6}, {id: 'console', x: 0, y: 25, w: 8, h: 12}, {id: 'motion', x: 8, y: 25, w: 4, h: 6}, {id: 'printer', x: 8, y: 31, w: 4, h: 12}];
+const MINE_CAMERA = '9 / span 4 | 20 / span 8';
 const TEMPS_COMPACT = () => { const subs = qa('.oui-readout-sub', cell('temps')); return subs.length > 0 && subs.every(e => getComputedStyle(e).display === 'none'); };
 `;
 const CONSOLE_CHECK = `
@@ -2416,8 +2419,6 @@ const CONSOLE_CHECK = `
   assert(text(byTest('console-log')).includes('Printer: '), 'what the printer does is logged: ' + text(byTest('console-log')));
 `;
 const SETTINGS_CHECK = `
-  await click(byTest('dash-add'));
-  await click(q('[data-add="temps"]'));
   await click(q('[data-settings="temps"]'));
   await click(q('input', q('[data-setting="bed"]', byTest('dash-settings'))));
 `;
@@ -2611,7 +2612,7 @@ test('dashboard: a stored layout is checked: unknown widgets dropped, sizes brou
   await READY({v: 1, active: 0, layouts: [{name: 'Mine', items: [{id: 'ghost', x: 0, y: 0, w: 4, h: 4}, {id: 'camera', x: 9, y: 3, w: 99, h: 1}, {id: 'console', x: 0, y: 0, w: 2, h: 2, cfg: {lines: 7}}]}]});
   eq(shown().sort(), ['camera', 'console'], 'the unknown widget is dropped');
   eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span 12 | span 4', 'too wide and too short: brought within limits');
-  eq(place('console').replace(/\\d+ \\/ /g, ''), 'span 3 | span 4', 'the least size of the console');
+  eq(place('console').replace(/\\d+ \\/ /g, ''), CONSOLE_LEAST, 'the least size of the console');
   await STORE('not a dashboard');
   eq(shown(), DEFAULT_IDS, 'broken data: the default layout');
 `);
@@ -2632,6 +2633,26 @@ test('dashboard: a narrow window shows one column in reading order and is not ed
   assert(tops.every((t, i) => !i || t > tops[i - 1]), 'in reading order: ' + tops.join());
   assert(byTest('dash-edit').disabled, 'Edit layout is off');
 `, { size: [480, 900] });
+
+
+test('dashboard: a layout still as the first default gets the new one; an arranged one stays; Reset gives the new one', DASH_JS + `
+  await READY({v: 1, active: 0, layouts: [{name: 'Default', items: OLD_DEFAULT}, {name: 'Mine', items: OLD_DEFAULT.map(i => i.id === 'camera' ? {...i, h: i.h + 2} : i)}]});
+  eq(shown(), DEFAULT_IDS, 'the untouched default shows the new default');
+  eq(place(MOVER), MOVER_FROM, 'at its new place');
+  await pick(byTest('dash-layout'), 'Mine');
+  eq(place('camera'), MINE_CAMERA, 'the arranged layout is as it was saved');
+  await edit();
+  await click(byTest('dash-reset'));
+  await click(byTest('dash-save'));
+  eq(saved().layouts[1].items.map(i => i.id), DEFAULT_IDS, 'Reset to default gives the new default');
+  eq(place(MOVER), MOVER_FROM, 'with its places');
+`);
+for (const size of [[1280, 800], [1920, 1080]]) test(`dashboard: at ${size.join('x')} no widget of the default layout clips or scrolls inside`, DASH_JS + `
+  await READY();
+  const bad = qa('.oui-dash-cell').map(c => [c.dataset.widget, q('.oui-panel-body', c)]).filter(([, b]) => b && (b.scrollHeight > b.clientHeight + 1 || b.scrollWidth > b.clientWidth + 1))
+    .map(([id, b]) => id + ' ' + b.scrollHeight + '/' + b.clientHeight);
+  eq(bad, [], 'every widget fits');
+`, { size });
 
 // ------------------------------------------------------------------ runner
 const workers = Number(process.env.WORKERS ?? 4);
