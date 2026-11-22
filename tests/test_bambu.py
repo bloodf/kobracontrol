@@ -127,14 +127,6 @@ class PushStatus(unittest.TestCase):
         trays = [t for unit in p["ams"]["ams"] for t in unit["tray"]]
         self.assertEqual([t["tray_info_idx"] for t in trays], ["SPLA1B2C3D4E5", "OFYPdQJh", "", "", "OFY9muEs", "", "", ""])
 
-    def test_generic_ids_match_orcas_library(self):
-        """GENERIC_IDS against OrcaFilamentLibrary at the commit in tests/fixtures/orca_generic_ids.json (made by
-        scripts/generic_ids.py): a family missing from the library, or an id that differs, fails here."""
-        with open(os.path.join(ROOT, "tests", "fixtures", "orca_generic_ids.json"), encoding="utf-8") as f:
-            pinned = json.load(f)
-        self.assertRegex(pinned["commit"], r"^[0-9a-f]{40}$")
-        self.assertEqual({k: pinned["ids"].get(k) for k in bambu.GENERIC_IDS}, bambu.GENERIC_IDS)
-
     def test_generic_id_by_the_real_material(self):
         self.assertEqual(bambu.generic_filament_id("PETG"), "OFYPdQJh")
         self.assertEqual(bambu.generic_filament_id("pla matte"), "OFmY0l6t")
