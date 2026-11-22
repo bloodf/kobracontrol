@@ -2,6 +2,12 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Added
+
+- **Kobra prints in Spooler's history.** Each print Kobra Control books in Spoolman is also listed in `kobracontrol/prints.json` in OrcaSlicer's data folder (the last 200: file, finish time, grams and spool per slot, printer name and model). Spooler reads it and shows those prints in its print history and Stats tab, once each. Spooler never books them again: the filament use is still booked by Kobra Control only.
+
 ## [0.11.0] - 2026-11-21
 
 ### Added

@@ -16,6 +16,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "src", "kobracontrol")]
 
+import peers  # noqa: E402
 import spoolman as sm  # noqa: E402
 import usage  # noqa: E402
 
@@ -410,6 +411,35 @@ class AcknowledgeTests(LedgerCase):
         host = self.start()
         self.remember(host)
         self.assertEqual(host.cmd_usage()["pending"], [{"file": "part.gcode", "printer": PRINTER, "grams": {0: 2.0, 1: 3.0}}])
+
+
+class SharedPrintTests(LedgerCase):
+    """Finished prints go to <data folder>/kobracontrol/prints.json for Spooler's history, once each."""
+
+    def shared(self):
+        return json.loads(Path(self.folder, "kobracontrol", peers.PRINTS_FILE).read_text(encoding="utf-8"))
+
+    def test_a_booked_print_is_shared_once_with_its_slots_and_spools(self):
+        host = self.start(bindings={0: 7})
+        host.peers = peers.SpoolerLink(self.folder)
+        self.remember(host)
+        host.track(PRINTER, {"state": "printing", "filename": "part.gcode", "model": "Kobra X"})
+        host.track(PRINTER, {"state": "finished", "filename": "", "model": "Kobra X"})
+        doc = self.shared()
+        self.assertEqual((doc["schema"], doc["version"]), (peers.PRINTS_SCHEMA, peers.PRINTS_VERSION))
+        [rec] = doc["prints"]
+        self.assertEqual((rec["file"], rec["printer"], rec["model"], rec["spoolman"]), ("part.gcode", NAME, "Kobra X", URL))
+        self.assertEqual(rec["slots"], [{"slot": 0, "grams": 2.0, "spool": 7}, {"slot": 1, "grams": 3.0, "spool": None}])
+        job = usage.Job(PRINTER, "part.gcode", {1: 1.0}, job_id=rec["id"])
+        host._share_print(job, {})   # a retry of the same job changes nothing
+        self.assertEqual(self.shared()["prints"], [rec])
+
+    def test_the_file_keeps_the_last_prints_only(self):
+        link = peers.SpoolerLink(self.folder)
+        for n in range(peers.PRINTS_MAX + 3):
+            link.note_print({"id": str(n), "slots": []})
+        ids = [p["id"] for p in self.shared()["prints"]]
+        self.assertEqual((len(ids), ids[0], ids[-1]), (peers.PRINTS_MAX, "3", str(peers.PRINTS_MAX + 2)))
 
 
 class IdentTests(unittest.TestCase):
