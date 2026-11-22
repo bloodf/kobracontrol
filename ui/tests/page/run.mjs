@@ -2045,7 +2045,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true,
-    bridge_enabled: false, bridge_port: 8765, cloud_enabled: false, cloud_printer: ''}, 'every setting, by its name');
+    bridge_enabled: false, bridge_port: 8765, cloud_enabled: false, cloud_printer: '', ofd_enabled: false}, 'every setting, by its name');
   assert(!toasts().includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
