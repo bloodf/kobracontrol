@@ -224,3 +224,26 @@ class SlotMatchTests(unittest.TestCase):
         with open(os.path.join(os.path.dirname(shared), sb.SETTINGS_FILE), "w", encoding="utf-8") as f:
             f.write("{}")
         self.assertEqual(sb.match_paths(storage), ([shared, own], shared))
+
+
+class SlotOfdTests(unittest.TestCase):
+    """Open Filament Database proposals for a slot, from the index kept in Spooler's folder (Spooler installed) or this
+    plugin's own."""
+
+    def test_proposals_and_folder(self):
+        with open(os.path.join(os.path.dirname(__file__), "fixtures", "ofd_index.json"), encoding="utf-8") as f:
+            profiles = sb.filmatch.ofd_profiles(json.load(f))
+        slot = {"global_index": 0, "type": "PLA", "color": [0, 0, 0], "brand": "", "material_name": ""}
+        self.assertEqual(sb.slot_ofd(profiles, slot, None), [])   # no manufacturer known: nothing to propose
+        found = sb.slot_ofd(profiles, slot, {"vendor": "Polymaker", "name": "Panchroma Matte Black"})
+        self.assertEqual(found[0]["name"], "Polymaker Dual Panchroma Matte PLA (OFD)")
+        self.assertEqual(sb.slot_ofd(profiles, {**slot, "brand": "eSUN"}, None)[0]["brand"], "eSUN 3D")
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        storage = os.path.join(tmp, "orca_plugins", "plugin_data", "kobracontrol")
+        self.assertEqual(sb.ofd_folder(storage), os.path.join(storage, "ofd"))
+        os.makedirs(os.path.join(tmp, sb.DATA_SUBDIR))
+        with open(os.path.join(tmp, sb.DATA_SUBDIR, sb.SETTINGS_FILE), "w", encoding="utf-8") as f:
+            f.write("{}")
+        self.assertEqual(sb.ofd_folder(storage), os.path.join(tmp, sb.DATA_SUBDIR, "ofd"))
+        self.assertEqual(sb.ofd_folder(""), "")

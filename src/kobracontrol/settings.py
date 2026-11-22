@@ -36,6 +36,7 @@ DEFAULTS = {
     "dashboard": {},   # the Dashboard's layouts (clean_dashboard); {} = the page's default
     "cloud_enabled": False,              # Anycubic Cloud (cloud.py): opt-in; its tokens live in cloud.json, not here
     "cloud_printer": "",                 # the cloud printer id the tab and the printer agent drive; "" = the LAN one
+    "ofd_enabled": False,                # Open Filament Database proposals on the slot cards: opt-in; off, never contacted
 }
 PORT_RANGE = (1024, 65535)
 REFRESH_RANGE = (10, 300)

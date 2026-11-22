@@ -1025,6 +1025,41 @@ test('requirements: without Spoolman, refreshing and linking spools are off', `
   assert(text(q('#sm-s-h').closest('section')).includes('No Spoolman address'), 'says why');
 `);
 
+test('settings: Open Filament Database is off by default; on and saved, its list line and Read again', `
+  await connect();
+  await post(CONFIG());
+  await tab('settings');
+  await until(() => q('.oui-settings-link[data-section="sm-s-h"]'), 'settings shown');
+  await click(q('.oui-settings-link[data-section="sm-s-h"]'));
+  await until(() => q('#ofd-on'), 'the OFD row');
+  assert(!q('#ofd-on').checked && !byTest('ofd-state'), 'off by default, nothing more shown');
+  await click(q('#ofd-on'));
+  await until(() => byTest('ofd-state'), 'turned on');
+  assert(text(byTest('ofd-state')).includes('Save to turn it on') && text(byTest('ofd-state')).includes('MIT'), 'saved first; the licence is named: ' + text(byTest('ofd-state')));
+  assert(!last('ofd'), 'nothing asked before the save');
+  await click(byTest('save-top'));
+  eq(last('save_settings').settings.ofd_enabled, true, 'saved on');
+  await reply(last('save_settings'), {saved: true});
+  await post(CONFIG({settings: {...SETTINGS, ofd_enabled: true}}));
+  await until(() => last('ofd'), 'once saved on, the line asks for the kept list');
+  await reply(last('ofd'), {on: true, fetched: 1795371399, version: '2026.11.22', count: 2133, stale: false, error: ''});
+  await until(() => text(byTest('ofd-state')).includes('2133'), 'the list line: ' + text(byTest('ofd-state')));
+  await click(byTest('ofd-refresh'));
+  eq(last('ofd').refresh, true, 'Read again asks OFD now');
+`);
+test('slot cards: Open Filament Database proposals are listed, marked untuned, and not installable yet', `
+  await ready(VIEW());
+  await until(() => last('preset_matches'), 'asked');
+  await reply(last('preset_matches'), {matches: [{slot: 2, name: 'Generic PLA', source: 'generic', score: 25, reasons: [['material', 'PLA']], confident: true, remembered_key: '',
+    candidates: [{name: 'Generic PLA', score: 25, reasons: [['material', 'PLA']]}],
+    ofd: [{name: 'Polymaker Panchroma Matte PLA (OFD)', score: 58, reasons: [['material', 'PLA'], ['vendor', 'Polymaker']]}]}]});
+  await until(() => q('[data-match="2"]'), 'slot 3 line');
+  await click(q('.oui-match-change', q('[data-match="2"]')));
+  await until(() => qa('.oui-match-option', q('[data-match="2"]')).length === 2, 'the candidate and the proposal');
+  const ofdRow = qa('.oui-match-option', q('[data-match="2"]'))[1];
+  assert(text(ofdRow).includes('OFD, untuned') && ofdRow.disabled, 'marked and not pickable: ' + text(ofdRow));
+`);
+
 // ------------------------------------------------------------------ first-run, offline, stale
 test('first run: no certificate is one clear task, and Find certificate recovers', `
   await until(() => last('hello'));
