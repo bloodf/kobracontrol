@@ -12,6 +12,7 @@ import threading
 
 import ace
 import kobra
+import profiles
 from i18n import tr
 
 MAX_NAME = 255
@@ -130,7 +131,7 @@ def _material(value):
     return " ".join(value.split()).upper() if isinstance(value, str) else ""
 
 
-def plan(details, slots, mode, model=""):
+def plan(details, slots, mode, model="", mode_id="20030"):
     """What a printer file needs, next to the slots a print of it from the Files page would use.
 
     details: the printer's file_details; slots, mode: status.data. Returns {"info": {estimated_s, layers,
@@ -148,7 +149,7 @@ def plan(details, slots, mode, model=""):
             "filament_g": _finite(d.get("total_filament_used")), "layer_height": _finite(basic.get("layer_height")),
             "nozzle_temp": _finite(temps.get("nozzle_temp"), 0), "bed_temp": _finite(temps.get("bed_temp"), 0),
             "nozzle": _finite(d.get("nozzle_diameter")), "printer_model": printer_model,
-            "model_ok": not printer_model or bool(re.search(r"kobra[ _-]*x\b", printer_model, re.I))}
+            "model_ok": profiles.same_model(printer_model, mode_id, model)}
     usable = {s["global_index"]: s for s in ace.select_loaded_slots_for_print(slots, mode)[0]}
     top = max(usable) if usable else None
     materials = []
@@ -199,7 +200,7 @@ class FilesMixin:
             cache[name] = details
         view = self._view()
         return {"name": name, "thumbnail": _thumbnail(details),
-                **plan(details, view["slots"], view["mode"], view.get("model") or "")}
+                **plan(details, view["slots"], view["mode"], view.get("model") or "", view.get("mode_id") or "20030")}
 
     def cmd_file_print(self, name, auto_leveling=False, vibration_compensation=False, flow_calibration=False,
                        timelapse=False):

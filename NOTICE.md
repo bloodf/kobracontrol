@@ -21,9 +21,17 @@ Per-module provenance:
 
 Modules not listed are adapted from [u1control](https://github.com/bloodf/u1control) (GPL-3.0-only, same author) or written for kobracontrol.
 
+## Model data
+
+The model table (`profiles.py`, [docs/models.md](docs/models.md)) is facts gathered from public sources: model codes
+from [anycubic_ha_local](https://github.com/chrisfore/anycubic_ha_local) and [Rinkhals](https://github.com/jbatonnet/Rinkhals),
+bed sizes from Anycubic Slicer Next's machine profiles, temperature maxima from Anycubic's published specifications.
+The Kobra 3 and Kobra S1 Max report payloads in `tests/test_models.py` are re-typed, with addresses and ids replaced,
+from Rinkhals' MQTT notes and from anycubic_ha_local's test fixtures (MIT licence, copyright 2026 Chris Fore).
+
 ## Interoperability
 
-The Kobra X LAN protocol was reverse-engineered by those projects for interoperability. kobracontrol uses it only to talk to a Kobra X that the user owns, on the user's own network.
+The Anycubic LAN protocol was reverse-engineered by those projects for interoperability. kobracontrol uses it only to talk to a printer that the user owns, on the user's own network.
 
 ## What kobracontrol does not include
 

@@ -27,21 +27,21 @@ Prepare, Preview and Device.
 
 ## 2. Turn on LAN mode on the printer
 
-The plugin talks to the printer on the local network and needs LAN mode enabled on the Kobra X.
+The plugin talks to the printer on the local network and needs LAN mode enabled on the printer (Kobra X, Kobra 3 or Kobra S1 family; see [models.md](models.md)).
 Put the computer and the printer on the same network.
 
 The tab finds the printer by itself, in this order:
 
 1. the address under Settings > Printer address, if you typed one (used as given);
 2. the address it found before for the selected printer preset;
-3. the printer preset's own address, if a Kobra X in LAN mode answers there;
-4. a search of the local network (SSDP). A Kobra X it finds is only listed: choose **Use this one** (or
+3. the printer preset's own address, if an Anycubic printer in LAN mode answers there;
+4. a search of the local network (SSDP). A printer it finds is only listed: choose **Use this one** (or
    **Allow and use**) once. The choice is remembered when the preset's Printer Agent is kobracontrol;
    under another agent's preset it is used for that session only.
 
 If a found address stops answering (a new DHCP address, say), it searches again by itself, at most once
 a minute. Settings shows the address in use and how it was found, with **Search again**. When the
-preset's address is not a Kobra X (a Moonraker bridge such as Kobralink at port 7125, say), the tab says
+preset's address is not an Anycubic printer in LAN mode (a Moonraker bridge such as Kobralink at port 7125, say), the tab says
 so in one line and lists the printer it found.
 
 When the tab finds a printer OrcaSlicer does not let it reach yet, the printer is listed with **Allow and
@@ -69,7 +69,7 @@ kobracontrol agent (a plugin cannot read the preference itself, so before that i
 
 ## 5. Set the printer preset (only for Print, Send and the Device tab)
 
-In a copy of your Kobra X printer preset:
+In a copy of your Anycubic printer preset:
 
 - set the printer's address to the printer's IP
 - set **Printer Agent** to `kobracontrol`
@@ -79,7 +79,7 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
 
 ## 6. Check and print
 
-1. Run Plugins > **Check Kobra X connection**. It reports the certificate, credentials, MQTT
+1. Run Plugins > **Check printer connection**. It reports the certificate, credentials, MQTT
    connection and firmware version.
 2. Open the Device tab: status, temperatures and ACE slots should appear.
 3. In Orca's Print dialog, sync the ACE slots, map each filament to a slot and send the print.
@@ -94,8 +94,8 @@ Kobralink) keeps working through Kobralink; the Kobra Control tab says which age
 When OrcaSlicer's Print or Send goes through kobracontrol, the plugin reads the plate's G-code before the
 upload: the first 1 MB and the last 256 kB. It never changes the file, and a warning never stops the print.
 Each warning shows as an OrcaSlicer notification and in the log; the Print dialog's last line ("Print
-started" or "File uploaded") says to look at the notification. Plugins > **Check Kobra X connection** names the same settings when the
-selected Kobra X printer preset has them.
+started" or "File uploaded") says to look at the notification. Plugins > **Check printer connection** names the same settings when the
+selected Anycubic printer preset has them.
 
 | Check | Warning when | What to change in the printer preset |
 |---|---|---|
@@ -152,7 +152,7 @@ is needed for it.
    Kobra Control use the network address 127.0.0.1: answer Yes. The status then reads
    "Listening on 127.0.0.1:8765".
 2. Press **Copy** next to the API key.
-3. In OrcaSlicer, edit the Kobra X printer preset and open its connection settings (the icon next to the printer):
+3. In OrcaSlicer, edit the Anycubic printer preset and open its connection settings (the icon next to the printer):
    - **Host type**: OctoPrint
    - **Hostname, IP or URL**: `127.0.0.1:8765` (the port from step 1)
    - **API Key / Password**: paste the key
@@ -193,8 +193,8 @@ What the bridge does and does not do:
 | Nothing connects, the printer does not answer on port 18910 or 9883 | LAN mode is off. Turn it on at the printer. |
 | The check reports the certificate is rejected by the printer | The bundled certificate no longer matches this firmware. Install Anycubic Slicer Next and press **Find certificate** to use your own copy (see section 3). |
 | The preset has no `kobracontrol` Printer Agent, or Print and Device tab do not use the plugin | **Use printer agents instead of print hosts** is off. Turn it on under Preferences > Developer > Experimental Features and restart OrcaSlicer. |
-| "Something answers at … but it is not a Kobra X in LAN mode" | The address is another device, often a bridge such as Kobralink, or LAN mode is off. Leave Settings > Printer address blank so the tab searches, or enter the printer's own IP there. |
-| "No Kobra X answered the network search" | The printer is off, on another network, in LAN mode off, or the network blocks multicast. Enter its IP under Settings > Printer address. |
+| "Something answers at … but it is not an Anycubic printer in LAN mode" | The address is another device, often a bridge such as Kobralink, or LAN mode is off. Leave Settings > Printer address blank so the tab searches, or enter the printer's own IP there. |
+| "No Anycubic printer answered the network search" | The printer is off, on another network, in LAN mode off, or the network blocks multicast. Enter its IP under Settings > Printer address. |
 | Connection check fails with a timeout or connection refused | The address is wrong, or the printer is on another network. Use the printer's current IP. |
 | The printer's screen shows no filament or no picture for a file sent from OrcaSlicer | Likely the printer preset skips the G-code settings block or writes no PNG preview. See section 7. |
 

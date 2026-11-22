@@ -32,6 +32,7 @@ import kobra
 import locate
 import peers
 import printsetup
+import profiles
 import requirements
 import settings
 import spoolman as sm
@@ -53,12 +54,12 @@ BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_pr
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = lazy("%s is already running; try again when it ends")
 STALE = lazy("the selected printer changed; nothing was sent to it")
-NO_PRINTER = lazy("no Kobra X selected: choose an Anycubic Kobra X printer preset with its IP address")
+NO_PRINTER = lazy("no printer selected: choose an Anycubic printer preset (Kobra X, Kobra 3 or Kobra S1 family) with its IP address")
+UNKNOWN_MODEL = lazy("Kobra Control does not know this printer model yet (model code %s), so it only shows its status and "
+                     "files: %s is turned off. Please report the model code so it can be added.")
 NOTHING_LOADED = lazy("no filament is loaded in the print head, so there is nothing to unload")
-# The Kobra X machine profile (OrcaSlicer resources/profiles/Anycubic/machine/Anycubic Kobra X 0.4 nozzle.json)
-# sets no temperature maxima; these are Kobralink's limits (packages/shared/src/control.ts setTemperature).
-NOZZLE_MAX, BED_MAX = 320, 120
-LIMITS = {"nozzle_max": NOZZLE_MAX, "bed_max": BED_MAX}
+# Temperature maxima are per model (profiles.py); the page's defaults before a printer answers:
+LIMITS = dict(profiles.FAMILY_LIMITS)
 IDLE = ("idle", "finished", "cancelled")
 # A queued move older than the page's timeout (ui/src/core/tracker.ts DEFAULT_TIMEOUT_MS): the page already told the
 # user the outcome is unknown and let them jog again, so running it late would move the head twice.
@@ -132,9 +133,20 @@ def peers_origin(url):
     return peers.normalize_origin(url) if url else ""
 
 
+def read_only(view):
+    """A printer whose model code has no LAN profile (profiles.py): status and files only. A view without a code
+    (no login yet) is not judged."""
+    mode_id = view.get("mode_id")
+    return bool(mode_id) and not (profiles.get(mode_id) or {}).get("lan")
+
+
 def can_flags(view):
-    """What the printer state allows now (status.data `can`)."""
+    """What the printer state allows now (status.data `can`). An unknown model never heats, moves, feeds or prints;
+    pause, resume and stop stay available for a print someone else started."""
     st, on = view.get("state"), bool(view.get("connected"))
+    if read_only(view):
+        return {"pause": on and st == "printing" and not view.get("preparing"), "resume": on and st == "paused",
+                "stop": on and st in ("printing", "paused"), "move": False, "heat": False, "feed": False, "print": False}
     idle, running, paused = on and st in IDLE, on and st == "printing", on and st == "paused"
     running_print = running and not view.get("preparing")   # heating/levelling: the printer has no print to pause yet
     return {"pause": running_print, "resume": paused, "stop": running or paused, "move": idle,
@@ -155,7 +167,8 @@ def status_data(view, units_before=(), bindings=None, pending_load=-1):
               "usable": ace.slot_usable_for_print(s, mode), "spool_id": bindings.get(s["global_index"])} for s in slots]
     view = {k: v for k, v in view.items() if k != "file_details"}   # some file's details, maybe not the running one
     data = {**view, "upload_url": "", "mode": mode, "slots": slots, "loaded_slot": loaded, "ace_units": units,
-            "can": can_flags(view)}
+            "can": can_flags(view), "limits": profiles.limits(view.get("mode_id") or "20030"),
+            "profile": profiles.describe(view.get("mode_id"), view.get("model") or "")}
     return data, units
 
 
@@ -256,7 +269,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if impostor:
             conn.mismatch = impostor
             conn._stop.set()
-            conn._fail(tr("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+            conn._fail(tr("A different Anycubic printer answered at %s: its certificate is not the one of the printer Kobra Control "
                        "knows. It was not used.") % host, False)
             _background(conn.stop, "impostor-stop")
             _background(lambda: self._refuse_impostor(conn), "impostor")
@@ -505,6 +518,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if not data["connected"]:
             raise kobra.KobraError(self._conn().error or tr("the printer is not connected"))
         if not data["can"][flag]:
+            if read_only(data):
+                raise kobra.KobraError(tr(UNKNOWN_MODEL) % (data["mode_id"], what))
             raise kobra.KobraError(tr("%s is not possible while the printer is %s") % (what, tr(data["state"])))
         return data
 
@@ -752,7 +767,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             raise cls(conn.error or tr("the printer at %s did not answer yet") % target.host)
         view = conn.view()
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
-                "firmware": view["firmware"], "limits": LIMITS, "source": target.source,
+                "firmware": view["firmware"], "limits": profiles.limits(view.get("mode_id") or "20030"), "source": target.source,
                 "note": self.locate_note if target.source in ("discovered", "chosen") else ""}
 
     def _task_id(self):
@@ -785,8 +800,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
 
     def cmd_set_temp(self, nozzle=None, bed=None):
         data = self._allowed("heat", tr("heating"))
-        nozzle = None if nozzle is None else max(0, min(float(nozzle), NOZZLE_MAX))
-        bed = None if bed is None else max(0, min(float(bed), BED_MAX))
+        limits = profiles.limits(data["mode_id"] or "20030")   # per model: a Kobra 3 bed stops at 110, not 120
+        nozzle = None if nozzle is None else max(0, min(float(nozzle), limits["nozzle_max"]))
+        bed = None if bed is None else max(0, min(float(bed), limits["bed_max"]))
         if nozzle is None and bed is None:
             raise ValueError(tr("no temperature given"))
         if data["state"] == "printing":   # only a running print takes print/update; paused uses tempature/set

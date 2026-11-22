@@ -1110,7 +1110,7 @@ class Page(Base):
         reply = wait(lambda: next((m for m in page.posted if m.get("type") == "reply" and m.get("id") == 1), None))
         self.assertEqual(reply["result"]["address"], "127.0.0.1")
         config = next(m for m in page.posted if m["type"] == "config")
-        self.assertEqual(config["limits"], {"nozzle_max": 320, "bed_max": 120})
+        self.assertEqual(config["limits"], {"nozzle_max": 300, "bed_max": 100})   # before a printer answers (profiles.FAMILY_LIMITS)
         self.assertEqual(config["certificate"], {"found": True, "source": "bundled"})   # the bundled certificate
         self.assertEqual(config["version"], plugin.VERSION)
         self.assertEqual(set(config["located"]), {"address", "source", "preset_host", "preset_agent", "spoolman_url",
@@ -1193,7 +1193,7 @@ class Page(Base):
             page.on_message({"type": "hello", "id": 2})   # no Kobra X preset: the network search finds none
             reply = wait(lambda: next((m for m in page.posted if m.get("id") == 2), None), 15)
             self.assertTrue(reply["no_target"])
-            self.assertIn("No Kobra X answered the network search", reply["error"])
+            self.assertIn("No Anycubic printer answered the network search", reply["error"])
             plugin.get_store().update({"host": "http://127.0.0.1:1234"})
             self.assertEqual(plugin._target().host, "127.0.0.1")   # the host setting overrides the preset
         finally:
@@ -1345,7 +1345,7 @@ class Language(Base):
         self.connect()   # connect_printer reads the language: OrcaSlicer runs the agent before any page
         self.assertEqual(i18n.language(), "es")
         self.assertEqual(self.agent.get_agent_info().description,
-                         i18n.CATALOGUES["es"]["Anycubic Kobra X over the LAN (MQTT), by kobracontrol"])
+                         i18n.CATALOGUES["es"]["Anycubic Kobra X, Kobra 3 and Kobra S1 printers over the LAN (MQTT), by kobracontrol"])
 
 
 class OneSession(Base):

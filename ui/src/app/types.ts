@@ -26,6 +26,10 @@ export interface Status {
   assist?: Record<string, boolean> | null;
   /** An Upload and Print from OrcaSlicer (upload bridge) waiting for Start here; null when there is none. */
   bridge_pending?: { id: string; name: string; at: number } | null;
+  /** This model's temperature maxima (profiles.py); 0 for a model Kobra Control does not know. */
+  limits?: Limits;
+  /** profiles.describe: known = has a LAN profile (else read-only), verified = tried on a real printer. */
+  profile?: { known: boolean; verified: boolean; name: string; mode_id: string; single_client: boolean };
 }
 export interface Info { address: string; printer: string; generation: number; model?: string; firmware?: string;
   source?: AddressSource; note?: string }

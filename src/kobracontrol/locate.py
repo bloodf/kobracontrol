@@ -237,10 +237,10 @@ class NotFound(kobra.KobraError):
 
 
 def _found_offer(found, preset_host):
-    where = tr("%s%s at %s") % (found["name"] or tr("a Kobra X"), " (%s)" % found["model"] if found["model"] else "", found["ip"])
+    where = tr("%s%s at %s") % (found["name"] or tr("an Anycubic printer"), " (%s)" % found["model"] if found["model"] else "", found["ip"])
     text = tr("Found %s on the network. Use it? Kobra Control connects only to a printer you choose.") % where
     if preset_host and preset_host != found["ip"]:
-        text = tr("The printer preset points to %s, which is not a Kobra X in LAN mode. %s") % (preset_host, text)
+        text = tr("The printer preset points to %s, which is not an Anycubic printer in LAN mode. %s") % (preset_host, text)
     return text
 
 
@@ -290,7 +290,7 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
                 rejected.append(ip)
             continue
         if mine(info):
-            return Found(ip, "discovered", tr("Found %s again at %s.") % (info["name"] or tr("the Kobra X"), ip), info["name"],
+            return Found(ip, "discovered", tr("Found %s again at %s.") % (info["name"] or tr("the printer"), ip), info["name"],
                          info.get("id", ""), record.get("fp", ""), info.get("model", ""))
         (different if record else printers).append(info)
     offered = [{**c, "needs_allow": False, "different": bool(record)} for c in different + printers]
@@ -301,10 +301,10 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
         # it with its growing delay), never another printer.
         return Found(record["ip"], "remembered", expect_fp=record.get("fp", ""), identity=record.get("id", ""))
     if different:
-        raise NotFound(tr("A different Kobra X answered at %s. Use it? Kobra Control does not switch to another printer "
+        raise NotFound(tr("A different Anycubic printer answered at %s. Use it? Kobra Control does not switch to another printer "
                        "by itself.") % ", ".join(c["ip"] for c in different), offered, rejected=rejected)
     if len(offered) > 1:
-        raise NotFound(tr("%d possible Kobra X printers answer on this network: choose one.") % len(offered), offered,
+        raise NotFound(tr("%d possible Anycubic printers answer on this network: choose one.") % len(offered), offered,
                        rejected=rejected)
     if printers:   # exactly one, already reachable: offered, used only once the user chooses it
         raise NotFound(_found_offer(printers[0], preset_host), offered, rejected=rejected)
@@ -316,12 +316,12 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
 
 def _nothing(preset_host, own_agent, errors):
     why = errors.get("search")
-    searched = (tr("The network search could not run (%s)") % why) if why else tr("No Kobra X answered the network search")
+    searched = (tr("The network search could not run (%s)") % why) if why else tr("No Anycubic printer answered the network search")
     if preset_host:
         reason = errors.get(preset_host)
         refused = "refused" in str(reason).lower() or "errno 61" in str(reason).lower() or "errno 111" in str(reason)
-        what = (tr("something answers at %s but it is not a Kobra X in LAN mode (port 18910 refused)") % preset_host
-                if refused else tr("no Kobra X answers at %s (%s)") % (preset_host, reason))
+        what = (tr("something answers at %s but it is not an Anycubic printer in LAN mode (port 18910 refused)") % preset_host
+                if refused else tr("no Anycubic printer answers at %s (%s)") % (preset_host, reason))
         where = tr("the printer preset") if not own_agent else tr("the printer preset (Printer Agent kobracontrol)")
         return tr("%s. The address comes from %s, and %s. Enter the printer's own address under Settings > Printer "
                   "address, and check that LAN mode is on at the printer.") % (searched, where, what)

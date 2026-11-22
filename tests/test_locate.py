@@ -209,7 +209,7 @@ class Locate(unittest.TestCase):
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", BRIDGE, probe=probe, search=lambda: [("10.0.0.41", {})])
         text = str(cm.exception)
-        self.assertIn("The printer preset points to 10.25.16.41, which is not a Kobra X", text)
+        self.assertIn("The printer preset points to 10.25.16.41, which is not an Anycubic printer", text)
         self.assertIn("Found Workshop KX (Anycubic Kobra X) at 10.0.0.41 on the network. Use it?", text)
         self.assertEqual([(c["ip"], c["needs_allow"], c["different"]) for c in cm.exception.candidates],
                          [("10.0.0.41", False, False)])
@@ -231,7 +231,7 @@ class Locate(unittest.TestCase):
             return refused(ip) if ip == "10.0.0.2" else kx(ip, "SERIAL-B")
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", "", self.A, probe=probe, search=lambda: [("10.0.0.3", {})])
-        self.assertIn("A different Kobra X answered at 10.0.0.3. Use it?", str(cm.exception))
+        self.assertIn("A different Anycubic printer answered at 10.0.0.3. Use it?", str(cm.exception))
         self.assertEqual([(c["ip"], c["different"]) for c in cm.exception.candidates], [("10.0.0.3", True)])
         self.assertEqual(cm.exception.pending, [])
 
@@ -257,7 +257,7 @@ class Locate(unittest.TestCase):
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", BRIDGE, probe=refused, search=list)
         text = str(cm.exception)
-        self.assertIn("something answers at 10.25.16.41 but it is not a Kobra X in LAN mode", text)
+        self.assertIn("something answers at 10.25.16.41 but it is not an Anycubic printer in LAN mode", text)
         self.assertIn("comes from the printer preset", text)
         self.assertIn("Settings > Printer address", text)
         self.assertIn("LAN mode is on", text)
@@ -269,7 +269,7 @@ class Locate(unittest.TestCase):
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", "", probe=probe, search=lambda: [("10.25.3.3", {})])
         self.assertEqual((cm.exception.candidates, cm.exception.pending, cm.exception.rejected), ([], [], ["10.25.3.3"]))
-        self.assertIn("No Kobra X answered", str(cm.exception))
+        self.assertIn("No Anycubic printer answered", str(cm.exception))
         with self.assertRaises(locate.NotFound):   # skipped this session: not probed again
             locate.locate("", "", probe=self.never, search=lambda: [("10.25.3.3", {})], skip={"10.25.3.3"})
 
@@ -396,7 +396,7 @@ class ServiceLocates(unittest.TestCase):
         svc, published = self.service()
         reply = self.hello(svc, published, choose=False)
         self.assertTrue(reply["no_target"])
-        self.assertIn("10.25.16.41, which is not a Kobra X", reply["error"])
+        self.assertIn("10.25.16.41, which is not an Anycubic printer", reply["error"])
         self.assertIn("Found Workshop KX (Anycubic Kobra X) at 127.0.0.1 on the network. Use it?", reply["error"])
         self.assertEqual([(c["ip"], c["needs_allow"]) for c in reply["candidates"]], [("127.0.0.1", False)])
         svc.submit("h-again", "connect", {})   # another tab (Settings) says hello: still only offered
@@ -440,7 +440,7 @@ class ServiceLocates(unittest.TestCase):
         reply = self.hello(svc, published)
         self.assertTrue(reply["no_target"])
         self.assertEqual(reply["candidates"], [])
-        self.assertIn("not a Kobra X in LAN mode", reply["error"])
+        self.assertIn("not an Anycubic printer in LAN mode", reply["error"])
         self.assertEqual(svc.connections, {})
 
     def test_choose_and_search_again(self):
@@ -464,7 +464,7 @@ class ServiceLocates(unittest.TestCase):
         self.book.put("Kobra left", "10.0.0.2", "SERIAL-OTHER", "")
         svc, published = self.service(probe=lambda ip: refused(ip) if ip != "127.0.0.1" else self.probe(ip))
         reply = self.hello(svc, published, key="Kobra left", choose=False)
-        self.assertIn("A different Kobra X answered at 127.0.0.1. Use it?", reply["error"])
+        self.assertIn("A different Anycubic printer answered at 127.0.0.1. Use it?", reply["error"])
         self.assertEqual([(c["ip"], c["different"]) for c in reply["candidates"]], [("127.0.0.1", True)])
         self.assertEqual(svc.target.host, "")
         self.assertNotIn("127.0.0.1", svc.connections)
@@ -569,7 +569,7 @@ class ServiceLocates(unittest.TestCase):
         conn = svc.connections["127.0.0.1"]
         self.fake.stop()   # A is gone
         wait(lambda: not conn.connected, 15)
-        svc.locate_error = locate.NotFound("A different Kobra X answered at 10.0.0.3. Use it?",
+        svc.locate_error = locate.NotFound("A different Anycubic printer answered at 10.0.0.3. Use it?",
                                            [{"ip": "10.0.0.3", "name": "B", "model": "", "needs_allow": False,
                                              "different": True}])
         for rid in ("h2", "h3"):

@@ -2,6 +2,21 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [0.11.0] - 2026-11-21
+
+### Added
+
+- **More Anycubic printers over the LAN (experimental).** Besides the Kobra X, Kobra Control now drives the Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max and Kobra 4, which use the same LAN mode. The printer says which model it is when Kobra Control logs in. Only the Kobra X has been tried with Kobra Control so far: the page marks the other models "experimental" and asks for testers. The list, the limits and their sources are in [docs/models.md](docs/models.md).
+- **Temperature limits follow the model.** The highest nozzle and bed temperatures you can set, in the tab and in OrcaSlicer's Device tab, are the printer model's own (a Kobra 3 bed stops at 110 °C, a Kobra S1 Max nozzle at 350 °C). The plugin enforces them itself too.
+- **An unknown model is read-only.** A printer that reports a model code Kobra Control has no profile for shows its status and files, but heating, moving, filament and printing stay off, with a notice that names the code. Pause, resume and stop still work.
+- **"Another app holds the printer".** The Kobra 3 and Kobra S1 families accept one app at a time over the LAN. When one of them keeps refusing the login, Kobra Control now says that Anycubic Slicer Next, Home Assistant or Kobralink is probably connected and waits for **Retry** instead of trying again forever.
+- Printer presets for all of these models are recognised: the address hint, the setup hints and the G-code preset checks work for a Kobra 3 or Kobra S1 preset as they do for a Kobra X one, and a file sliced for another model gets the usual warning.
+
+### Changed
+
+- **A new default Dashboard layout.** On the left, the print, then the filament slots, then the console; on the right, the controls, then the temperatures over the printer's facts beside the camera over the moves. A Default layout you never arranged gets it; layouts you saved stay exactly as you saved them.
+- Texts say "the printer" or "an Anycubic printer" where they used to say "Kobra X". The printer agent is now called "Anycubic (kobracontrol)"; its id stays `kobracontrol`, so existing printer presets keep working. The script **Check Kobra X connection** is now **Check printer connection**.
+
 ## [0.10.2] - 2026-11-21
 
 ### Fixed

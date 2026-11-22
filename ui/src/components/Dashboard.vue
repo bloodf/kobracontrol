@@ -44,16 +44,21 @@ const widgets = computed<OuiWidget[]>(() => [
     settings: [{ key: 'lines', label: t('widget.lines'), default: 400, options: [100, 400, LOG_MAX].map(n) }] },
   { id: 'files', title: t('nav.files'), icon: files, component: markRaw(FilesCard), w: 4, h: 3, minW: 3, minH: 3 },
 ]);
-// Two halves, as on U1 Control: the print over the filament on the left; the controls over the temperatures beside the
-// camera, the printer's facts beside the moves, on the right; the console across the bottom. Both halves end on the
-// same row, and rows grow to fit content, so there are no holes. Files is in the catalogue.
-const defaults = computed(() => ({ name: t('layout.default'), items: [
-  { id: 'job', x: 0, y: 0, w: 6, h: 2 }, { id: 'ace', x: 0, y: 2, w: 6, h: 16 },
-  { id: 'controls', x: 6, y: 0, w: 6, h: 4 }, { id: 'temps', x: 6, y: 4, w: 3, h: 4 }, { id: 'printer', x: 6, y: 8, w: 3, h: 10 },
+// The owner's own arrangement: the print over the filament over the console on the left; the controls, then the
+// temperatures over the printer's facts beside the camera over the moves, on the right. Rows grow to fit content.
+// Files is in the catalogue. A widget a printer does not offer is left out and the rest keep their places.
+const DEFAULT_ITEMS = [
+  { id: 'job', x: 0, y: 0, w: 6, h: 2 }, { id: 'ace', x: 0, y: 2, w: 6, h: 8 },
+  { id: 'controls', x: 6, y: 0, w: 6, h: 4 }, { id: 'temps', x: 6, y: 4, w: 3, h: 4 }, { id: 'printer', x: 6, y: 8, w: 3, h: 4 },
   { id: 'camera', x: 9, y: 4, w: 3, h: 9 }, { id: 'motion', x: 9, y: 13, w: 3, h: 5 },
-  { id: 'console', x: 0, y: 18, w: 12, h: 6 }] }));
+  { id: 'console', x: 0, y: 10, w: 6, h: 8 }];
+const defaults = computed(() => { const ids = new Set(widgets.value.map(w => w.id));
+  return { name: t('layout.default'), items: DEFAULT_ITEMS.filter(i => ids.has(i.id)) }; });
 // Earlier defaults: a layout still exactly as one of them is given today's.
-const RETIRED = [[{ id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 12, h: 16 }, { id: 'controls', x: 0, y: 19, w: 8, h: 6 },
+const RETIRED = [[{ id: 'job', x: 0, y: 0, w: 6, h: 2 }, { id: 'ace', x: 0, y: 2, w: 6, h: 16 },
+  { id: 'controls', x: 6, y: 0, w: 6, h: 4 }, { id: 'temps', x: 6, y: 4, w: 3, h: 4 }, { id: 'printer', x: 6, y: 8, w: 3, h: 10 },
+  { id: 'camera', x: 9, y: 4, w: 3, h: 9 }, { id: 'motion', x: 9, y: 13, w: 3, h: 5 }, { id: 'console', x: 0, y: 18, w: 12, h: 6 }],
+[{ id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 12, h: 16 }, { id: 'controls', x: 0, y: 19, w: 8, h: 6 },
   { id: 'camera', x: 8, y: 19, w: 4, h: 6 }, { id: 'console', x: 0, y: 25, w: 8, h: 12 }, { id: 'motion', x: 8, y: 25, w: 4, h: 6 }, { id: 'printer', x: 8, y: 31, w: 4, h: 12 }],
 [{ id: 'job', x: 0, y: 0, w: 12, h: 3 }, { id: 'ace', x: 0, y: 3, w: 12, h: 16 }, { id: 'temps', x: 0, y: 19, w: 6, h: 4 }, { id: 'camera', x: 6, y: 19, w: 6, h: 9 },
   { id: 'motion', x: 0, y: 23, w: 6, h: 5 }, { id: 'controls', x: 0, y: 28, w: 8, h: 6 }, { id: 'printer', x: 8, y: 28, w: 4, h: 12 }, { id: 'console', x: 0, y: 34, w: 8, h: 6 }]];
