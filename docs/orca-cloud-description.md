@@ -5,135 +5,99 @@ The listing text for <https://cloud.orcaslicer.com/p/59c786285255>: paste the En
 ## English
 
 ```markdown
-Run the Anycubic Kobra X from OrcaSlicer over your LAN.
+Run your Anycubic printer from OrcaSlicer: over your LAN, or through Anycubic Cloud if you opt in.
 
-## What you need
+## Printers
 
-- OrcaSlicer 2.5.0 or newer.
-- An Anycubic Kobra X on the same network, with LAN mode enabled (checked on firmware 2.0.2.8).
-- `ffmpeg` is optional: only for the Kobra Control tab's camera when its built-in player can't play the stream.
+- Kobra X: tested (firmware 2.0.2.8).
+- Kobra 3, 3 V2, 3 Max, S1, S1 Max, 4: same LAN protocol, experimental. Testers welcome.
+- Kobra 2 Pro, Plus, Max: Anycubic Cloud only, experimental.
 
-Anycubic Slicer Next is not required: the client certificate the printer asks for is bundled.
+An unknown model connects read-only. Needs OrcaSlicer 2.5.0 or newer; no Anycubic Slicer Next needed.
 
 ## What it does
 
 ![Send prints over your local network](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-01-lan-en.png)
 
-Print and Send from OrcaSlicer's own dialogs, with the filament-to-slot mapping you pick there.
+Print and Send from OrcaSlicer's own dialogs, with your filament-to-slot mapping.
 
 ![Keep an eye on your print](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-02-status-en.png)
 
-Status, temperatures, pause, resume, stop, light, fan, speed and camera, in the Device tab and in a Kobra Control tab.
+Status, temperatures, pause, resume, stop, light, fan, speed and camera.
 
 ![Manage the filament in each slot](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-03-ace-en.png)
 
-ACE slots with feed, retract, auto-feed and drying, and a Spoolman spool linked to each slot.
+ACE slots with feed, retract and drying, each linked to a Spoolman spool.
 
 ![Choose files before you print](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-04-files-en.png)
 
-The printer's files, with time, layers, filament and slot mapping shown before you print, and the time-lapse videos.
-
-Checked on a Kobra X (firmware 2.0.2.8) outside OrcaSlicer; pause, resume, stop, feed, retract and drying are not tried yet. Details in the README.
+The printer's files with time, layers and filament, plus time-lapses.
 
 ## How to start
 
-1. Subscribe, then in OrcaSlicer open the plugin list (macOS: File > Plugins in the menu bar; Windows and Linux: the small ▾ arrow next to File at the top left of the window > Plugins). Tick the box in the Activate column on the Kobra Control row. The Kobra Control tab appears next to Prepare, Preview and Device.
-2. Turn on LAN mode on the printer. The tab finds it on your network; allow the address when OrcaSlicer asks.
-3. To print from OrcaSlicer's own Print dialog, tick Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, restart OrcaSlicer and set the printer preset's Printer Agent to `kobracontrol`.
+1. Subscribe, open the plugin list (macOS: File > Plugins; Windows/Linux: ▾ next to File > Plugins) and tick Activate on Kobra Control.
+2. Turn on LAN mode on the printer. The Kobra Control tab finds it.
+3. To print from OrcaSlicer's Print dialog: tick Preferences > Developer > Experimental Features > Use printer agents, restart, set the preset's Printer Agent to `kobracontrol`.
 
 ## Privacy
 
-Kobra Control connects only to your Kobra X and, if you set one, your Spoolman server. It has no cloud service and no telemetry.
+LAN mode talks only to your printer and your Spoolman server. Anycubic Cloud is off until you sign in under Settings; it uses Anycubic's unofficial app interface (see the README for the risk). No telemetry. Use it on a network you trust.
 
-What OrcaSlicer is asked to allow: network access to the printer's address and the local multicast group 239.255.255.250, and to your Spoolman address if you set one; reading OrcaSlicer's temporary folder, where the sliced file is read and checked but never changed; reading Anycubic Slicer Next only when you press Find certificate; running `ffmpeg` only as a fallback for the tab's camera.
-
-Use it on a network you trust: the printer's LAN protocol hands out its credentials to anyone on the network.
-
-Independent project, not made or supported by Anycubic.
-
-## Languages
-
-English, Brazilian Portuguese, Spanish, German, Simplified Chinese and Polish.
+Independent project, not made or supported by Anycubic. English, Português, Español, Deutsch, 简体中文, Polski.
 
 ## More plugins by bloodf
 
-- [Organizer](https://cloud.orcaslicer.com/p/5bf381fd42d4): Arrange parts by their real outline and fill a plate with more copies.
-- [Embedder](https://cloud.orcaslicer.com/p/58222d4f9e52): Magnet and NFC pockets, with the pause at the right layer.
-- [Print Calculator](https://cloud.orcaslicer.com/p/521c07cf6de2): Price every plate: filament, energy, labour, fees and margin.
-- [Spooler](https://cloud.orcaslicer.com/p/50c35dcbd6f3): Your Spoolman stock inside OrcaSlicer, with what is left on each spool.
-- [U1 Control](https://cloud.orcaslicer.com/p/55b8c347d443): Run the Snapmaker U1 from OrcaSlicer: toolheads, camera, files.
+[Organizer](https://cloud.orcaslicer.com/p/5bf381fd42d4) · [Embedder](https://cloud.orcaslicer.com/p/58222d4f9e52) · [Print Calculator](https://cloud.orcaslicer.com/p/521c07cf6de2) · [Spooler](https://cloud.orcaslicer.com/p/50c35dcbd6f3) · [U1 Control](https://cloud.orcaslicer.com/p/55b8c347d443)
 
-Each plugin works on its own; installed together they share data where it helps.
-
-## Source code
-
-https://github.com/bloodf/kobracontrol (GPL-3.0-only)
+Source: https://github.com/bloodf/kobracontrol (GPL-3.0-only)
 ```
 
 ## Português (Brasil)
 
 ```markdown
-Controle a Anycubic Kobra X pelo OrcaSlicer na sua rede.
+Controle sua impressora Anycubic pelo OrcaSlicer: na rede local ou, se você quiser, pela Anycubic Cloud.
 
-## O que você precisa
+## Impressoras
 
-- OrcaSlicer 2.5.0 ou mais novo.
-- Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado (conferido no firmware 2.0.2.8).
-- `ffmpeg` é opcional: só para a câmera da aba Kobra Control quando o player embutido não consegue mostrar a transmissão.
+- Kobra X: testada (firmware 2.0.2.8).
+- Kobra 3, 3 V2, 3 Max, S1, S1 Max, 4: mesmo protocolo LAN, experimental. Testadores são bem-vindos.
+- Kobra 2 Pro, Plus, Max: só pela Anycubic Cloud, experimental.
 
-O Anycubic Slicer Next não é necessário: o certificado de cliente que a impressora exige vem no plugin.
+Um modelo desconhecido conecta só para leitura. Requer OrcaSlicer 2.5.0 ou mais novo; não precisa do Anycubic Slicer Next.
 
 ## O que faz
 
 ![Envie impressões pela rede local](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-01-lan-pt-BR.png)
 
-Print e Send pelos diálogos do próprio OrcaSlicer, com o mapeamento de filamento para slot que você escolhe ali.
+Print e Send pelos diálogos do OrcaSlicer, com o seu mapeamento de filamento para slot.
 
 ![Acompanhe sua impressão](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-02-status-pt-BR.png)
 
-Status, temperaturas, pausar, retomar, parar, luz, ventoinha, velocidade e câmera, na aba Device e na aba Kobra Control.
+Status, temperaturas, pausar, retomar, parar, luz, ventoinha, velocidade e câmera.
 
 ![Gerencie o filamento de cada slot](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-03-ace-pt-BR.png)
 
-Slots do ACE com alimentar, recolher, alimentação automática e secagem, e uma bobina do Spoolman vinculada a cada slot.
+Slots do ACE com alimentar, recolher e secagem, cada um ligado a uma bobina do Spoolman.
 
 ![Escolha os arquivos antes de imprimir](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-04-files-pt-BR.png)
 
-Os arquivos da impressora, com tempo, camadas, filamento e os slots de cada cor antes de imprimir, e os vídeos de time-lapse.
-
-Conferido em uma Kobra X (firmware 2.0.2.8) fora do OrcaSlicer; pausar, retomar, parar, alimentar, recolher e secagem ainda não foram experimentados. Detalhes no README.
+Os arquivos da impressora com tempo, camadas e filamento, e os time-lapses.
 
 ## Como começar
 
-1. Assine e abra a lista de plugins do OrcaSlicer (macOS: File > Plugins na barra de menus; Windows e Linux: a seta ▾ ao lado de File > Plugins). Marque a caixa da coluna Activate na linha do Kobra Control. A aba Kobra Control aparece ao lado de Prepare, Preview e Device.
-2. Ligue o modo LAN na impressora. A aba a encontra na sua rede; permita o endereço quando o OrcaSlicer perguntar.
-3. Para imprimir pelo diálogo Print do próprio OrcaSlicer, marque Preferences > Developer > Experimental Features > Use printer agents instead of print hosts, reinicie o OrcaSlicer e defina o Printer Agent do perfil de impressora como `kobracontrol`.
+1. Assine, abra a lista de plugins (macOS: File > Plugins; Windows/Linux: ▾ ao lado de File > Plugins) e marque Activate no Kobra Control.
+2. Ligue o modo LAN na impressora. A aba Kobra Control a encontra.
+3. Para imprimir pelo diálogo Print do OrcaSlicer: marque Preferences > Developer > Experimental Features > Use printer agents, reinicie e defina o Printer Agent do perfil como `kobracontrol`.
 
 ## Privacidade
 
-O Kobra Control se conecta só à sua Kobra X e, se você configurar, ao seu servidor Spoolman. Não existe serviço na nuvem nem telemetria.
+No modo LAN, só fala com sua impressora e seu Spoolman. A Anycubic Cloud fica desligada até você entrar em Settings; usa a interface não oficial do app da Anycubic (veja o risco no README). Sem telemetria. Use em uma rede de confiança.
 
-O que o OrcaSlicer vai pedir: acesso de rede ao endereço da impressora e ao grupo multicast local 239.255.255.250, e ao seu Spoolman, se houver; leitura da pasta temporária do OrcaSlicer (o arquivo fatiado é lido, nunca alterado); leitura do Anycubic Slicer Next só quando você toca em Procurar certificado; `ffmpeg` só como alternativa para a câmera da aba.
-
-Use em uma rede em que você confia: o protocolo LAN da impressora entrega as credenciais a qualquer um na rede.
-
-Projeto independente, não é feito nem mantido pela Anycubic.
-
-## Idiomas
-
-Inglês, português do Brasil, espanhol, alemão, chinês simplificado e polonês.
+Projeto independente, não é feito nem mantido pela Anycubic. English, Português, Español, Deutsch, 简体中文, Polski.
 
 ## Mais plugins do bloodf
 
-- [Organizer](https://cloud.orcaslicer.com/p/5bf381fd42d4): Organize as peças pelo contorno real e encha a mesa com mais cópias.
-- [Embedder](https://cloud.orcaslicer.com/p/58222d4f9e52): Bolsos para ímãs e NFC, com a pausa na camada certa.
-- [Print Calculator](https://cloud.orcaslicer.com/p/521c07cf6de2): Preço de cada mesa: filamento, energia, mão de obra, taxas e margem.
-- [Spooler](https://cloud.orcaslicer.com/p/50c35dcbd6f3): Seu estoque do Spoolman dentro do OrcaSlicer, com o que resta em cada bobina.
-- [U1 Control](https://cloud.orcaslicer.com/p/55b8c347d443): Controle a Snapmaker U1 pelo OrcaSlicer: cabeças, câmera, arquivos.
+[Organizer](https://cloud.orcaslicer.com/p/5bf381fd42d4) · [Embedder](https://cloud.orcaslicer.com/p/58222d4f9e52) · [Print Calculator](https://cloud.orcaslicer.com/p/521c07cf6de2) · [Spooler](https://cloud.orcaslicer.com/p/50c35dcbd6f3) · [U1 Control](https://cloud.orcaslicer.com/p/55b8c347d443)
 
-Cada plugin funciona sozinho; instalados juntos, compartilham dados onde ajuda.
-
-## Código-fonte
-
-https://github.com/bloodf/kobracontrol (GPL-3.0-only)
+Código-fonte: https://github.com/bloodf/kobracontrol (GPL-3.0-only)
 ```
