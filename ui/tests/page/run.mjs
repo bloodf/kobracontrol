@@ -1047,17 +1047,21 @@ test('settings: Open Filament Database is off by default; on and saved, its list
   await click(byTest('ofd-refresh'));
   eq(last('ofd').refresh, true, 'Read again asks OFD now');
 `);
-test('slot cards: Open Filament Database proposals are listed, marked untuned, and not installable yet', `
+test('slot cards: an Open Filament Database proposal is marked untuned; picking it installs it by its id', `
   await ready(VIEW());
   await until(() => last('preset_matches'), 'asked');
   await reply(last('preset_matches'), {matches: [{slot: 2, name: 'Generic PLA', source: 'generic', score: 25, reasons: [['material', 'PLA']], confident: true, remembered_key: '',
     candidates: [{name: 'Generic PLA', score: 25, reasons: [['material', 'PLA']]}],
-    ofd: [{name: 'Polymaker Panchroma Matte PLA (OFD)', score: 58, reasons: [['material', 'PLA'], ['vendor', 'Polymaker']]}]}]});
+    ofd: [{id: 'f667', inherits: 'Generic PLA @System', name: 'Polymaker Panchroma Matte PLA (OFD)', score: 58, reasons: [['material', 'PLA'], ['vendor', 'Polymaker']]}]}]});
   await until(() => q('[data-match="2"]'), 'slot 3 line');
   await click(q('.oui-match-change', q('[data-match="2"]')));
   await until(() => qa('.oui-match-option', q('[data-match="2"]')).length === 2, 'the candidate and the proposal');
   const ofdRow = qa('.oui-match-option', q('[data-match="2"]'))[1];
-  assert(text(ofdRow).includes('OFD, untuned') && ofdRow.disabled, 'marked and not pickable: ' + text(ofdRow));
+  assert(text(ofdRow).includes('OFD, untuned') && !ofdRow.disabled, 'marked and pickable: ' + text(ofdRow));
+  await click(ofdRow);
+  eq([last('preset_pick').slot, last('preset_pick').ofd, last('preset_pick').inherits], [2, 'f667', 'Generic PLA @System'], 'installed by its OFD id and parent');
+  await reply(last('preset_pick'), {matches: [], note: 'Installed; the Device tab reports it once OrcaSlicer lists it'});
+  await until(() => document.body.textContent.includes('Device tab reports it'), 'the note is shown');
 `);
 
 // ------------------------------------------------------------------ first-run, offline, stale

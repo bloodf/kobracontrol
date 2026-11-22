@@ -82,4 +82,4 @@ export interface UsageView { pending: UsagePending[]; unconfirmed: UsageEntry[];
 /** A slot's OrcaSlicer preset as the Device tab reports it (preset_matches): reasons are filmatch [code, value]. */
 export interface PresetMatch { slot: number; name: string; source: 'linked' | 'remembered' | 'spooler' | 'generic' | 'none'; score: number | null;
   reasons: unknown; confident: boolean; candidates: { name: string; score: number; reasons: unknown }[]; remembered_key: string;
-  /** Open Filament Database proposals, while it is on. */ ofd?: { name: string; score: number; reasons: unknown }[] }
+  /** Open Filament Database proposals, while it is on. */ ofd?: { id: string; name: string; inherits: string; score: number; reasons: unknown }[] }
