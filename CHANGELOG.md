@@ -2,6 +2,12 @@
 
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Changed
+
+- Internal: the filament matching code (colour distance, material names, generic preset ids and the preset choice) now comes from the shared Orca UI foundation 5.7.0, one copy for Spooler, U1 Control and Kobra Control. Presets are picked exactly as before.
+
 ## [0.11.0] - 2026-11-21
 
 ### Added
