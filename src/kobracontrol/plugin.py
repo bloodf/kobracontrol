@@ -440,6 +440,30 @@ def filament_catalog():
     return presets, clean(printer.config_value("printer_model")) or printer.name
 
 
+def _own_ofd_presets():
+    """UI thread, no I/O: the presets of Kobra Control's own OFD bundle compatible with the selected printer, as
+    {"name", "file"} (their filament_id is read from the file later); [] when they can't be read."""
+    try:
+        collection = orca.host.preset_bundle().filaments
+        return [{"name": p.name, "file": p.file or ""} for p in (collection.preset(i) for i in range(collection.size()))
+                if (getattr(p, "bundle_id", "") or "") == spooler_bridge.OFD_BUNDLE and getattr(p, "is_compatible", COMPATIBLE_DEFAULT)]
+    except Exception as e:
+        log("own OFD presets not readable (%r)" % e)
+        return []
+
+
+def ofd_parent_config(name):
+    """UI thread, no I/O: the settings of the system preset an OFD preset inherits ({key: text}); None when there is none."""
+    try:
+        preset = orca.host.preset_bundle().filaments.find_preset(name) if isinstance(name, str) and name else None
+        if preset is None or not getattr(preset, "is_system", False):
+            return None
+        return {str(k): str(preset.config_value(k)) for k in preset.config_keys() if preset.config_value(k) is not None}
+    except Exception as e:
+        log("OFD parent %r not readable (%r)" % (name, e))
+        return None
+
+
 def user_presets():
     """The user's own filament presets, for a spool's orca_filament_preset (spooler_bridge.find_user_preset); UI
     thread, no I/O. Not system or default presets, and not a plugin bundle's (named "_local/...")."""
@@ -815,7 +839,10 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind in ("preset_matches", "preset_pick"):   # slot cards: the preset each slot is reported as, and Change
                 presets, label = filament_catalog()
                 users = _user_presets_safe()
-                threading.Thread(target=self._slot_matches, args=(svc, kind, data, presets, label, users),
+                own = _own_ofd_presets()
+                # An OFD pick names its parent: its settings are read here, on the UI thread (the worker checks the name).
+                parent = ofd_parent_config(data.get("inherits")) if kind == "preset_pick" and isinstance(data.get("ofd"), str) else None
+                threading.Thread(target=self._slot_matches, args=(svc, kind, data, presets, label, users, own, parent),
                                  name="kobracontrol-matches", daemon=True).start()
             elif kind == "spoolman_refresh":   # Settings: how often the page re-reads Spoolman; invalid keeps the stored one
                 get_store(self).update({"spoolman_refresh_s": data.get("value")})
@@ -837,6 +864,29 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
+    def _install_ofd(self, storage, slots, spools, data, parent, label, users, ctx, paths, write):
+        """A slot card's Change to an OFD proposal (worker thread): installed by Spooler or into Kobra Control's own
+        bundle, then remembered for the slot. Returns a note for the page ("" when it is in use now)."""
+        slot = next((sl for sl in slots if sl["global_index"] == data.get("slot")), None)
+        if slot is None or not get_store(self).effective().get("ofd_enabled"):
+            raise ValueError(tr("That preset can't be used for this slot."))
+        spool = spools.get(slot.get("spool_id"))
+        folder = spooler_bridge.ofd_folder(storage)
+        entry = next((p for p in spooler_bridge.filmatch.ofd_index(folder, offline=True)["profiles"] if p["id"] == data["ofd"]), None)
+        if entry is None or entry["inherits"] != data.get("inherits"):
+            raise ValueError(tr("That preset can't be used for this slot."))
+        try:
+            how, what = spooler_bridge.install_ofd(storage, slot, spool, data["ofd"], parent, label,
+                                                   orca.host.preset.bundles.reload_local, VERSION, [u["file"] for u in users])
+        except ValueError as e:
+            raise ValueError(tr("The Open Filament Database preset can't be used: %s") % e) from None
+        if how == "spooler":
+            return tr("Spooler puts it into its preset of spool #%s on its next sync") % what
+        keys = spooler_bridge.slot_match(ctx, slot, spool)["keys"]
+        if keys and write:
+            spooler_bridge.filmatch.remember(write, {keys[0]: "%s%s/%s" % ("_local/", spooler_bridge.OFD_BUNDLE, what)}, label)
+        return tr("Installed; the Device tab reports it once OrcaSlicer lists it")
+
     def _ofd_state(self, data):
         """Worker thread: Settings' OFD line, {"on"} and, while on, {"fetched", "version", "count", "stale", "error"}."""
         try:
@@ -850,19 +900,22 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
-    def _slot_matches(self, svc, kind, data, presets, label, users):
+    def _slot_matches(self, svc, kind, data, presets, label, users, own=(), parent=None):
         """Worker thread (reads files): answer the page with every ready slot's preset match, after a Change."""
         try:
             storage = _storage()
             profiles = spooler_bridge.read_json(spooler_bridge.data_dir(storage), spooler_bridge.PROFILES_FILE) or {}
             paths, write = spooler_bridge.match_paths(storage)
-            ctx = spooler_bridge.match_context(presets, label, users, profiles, spooler_bridge.load_stores(paths), _match_file_ids, log)
+            ctx = spooler_bridge.match_context(presets, label, users, profiles, spooler_bridge.load_stores(paths), _match_file_ids, log, own)
+            note = ""
             with svc.lock:
                 host = svc.target.host if svc.target else ""
                 spools, bindings = {sp["id"]: sp for sp in svc.spools}, dict(svc.bindings)
             view = svc.view_for(host) if host else None
             slots = [sl for sl in (status_data(view, bindings=bindings)[0]["slots"] if view else []) if sl.get("status") == 5]
-            if kind == "preset_pick":
+            if kind == "preset_pick" and isinstance(data.get("ofd"), str):
+                note = self._install_ofd(storage, slots, spools, data, parent, label, users, ctx, paths, write)
+            elif kind == "preset_pick":
                 slot = next((sl for sl in slots if sl["global_index"] == data.get("slot")), None)
                 name = data.get("name")
                 try:
@@ -877,7 +930,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             matches = [{**{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")},
                         "ofd": spooler_bridge.slot_ofd(profiles, sl, spools.get(sl.get("spool_id"))) if profiles else []}
                        for sl in slots]
-            self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches}})
+            self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches, "note": note}})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
@@ -1133,6 +1186,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self.selected = ""
         self.dev_id, self.host, self.access_code = "", "", ""
         self._catalog = ([], "", None)       # (Spooler presets, printer label, Spooler's profiles.json) for tray ids
+        self._ofd_presets = []               # Kobra Control's own OFD presets ({"name", "file"}), for tray ids
         self._catalog_at = 0.0
         self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
         self._links_busy = threading.Lock()
@@ -1296,6 +1350,7 @@ class KobraAgent(pa.PrinterAgentBase):
             log("filament presets not readable (%s); trays show generic presets" % e)
             return
         self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+        self._ofd_presets = _own_ofd_presets()
         self._user_presets = users
         threading.Thread(target=self._load_links, args=(target,), name="kobracontrol-links", daemon=True).start()
 
@@ -1335,7 +1390,7 @@ class KobraAgent(pa.PrinterAgentBase):
         presets, label, profiles = self._catalog
         # A preset picked by hand on a slot card (matches.json) comes after the spool's own link, before Spooler's.
         stores = spooler_bridge.load_stores(spooler_bridge.match_paths(_storage())[0])
-        ctx = spooler_bridge.match_context(presets, label, self._user_presets, profiles, stores, self._file_ids, log) \
+        ctx = spooler_bridge.match_context(presets, label, self._user_presets, profiles, stores, self._file_ids, log, self._ofd_presets) \
             if any(st.get("entries") for st in stores) else None
 
         def preferred(slot):

@@ -164,8 +164,8 @@ async function choose(id: number | null) {
       <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
                       :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
                       :candidates="match.source === 'linked' ? [] : [...match.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) })),
-                        ...(match.ofd ?? []).map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons), badge: t('ofd.badge'), note: t('ofd.note'), disabled: true }))]"
-                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name)" />
+                        ...(match.ofd ?? []).map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons), badge: t('ofd.badge'), note: t('ofd.note') }))]"
+                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name, match?.ofd?.find(c => c.name === name))" />
     </div>
 
     <template #actions>
