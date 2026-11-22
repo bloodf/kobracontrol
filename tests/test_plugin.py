@@ -152,6 +152,9 @@ class Registration(unittest.TestCase):
         self.assertEqual(perms["network"], ["http://239.255.255.250"])   # the SSDP group only
         self.assertEqual(perms["fs_read"], plugin.job_read_grants())   # no Anycubic Slicer Next folder by default
         self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
+        plugin.get_store().update({"ofd_enabled": True})   # the Open Filament Database only while it is on
+        plugin.KobraControl().register_capabilities()
+        self.assertEqual(orca.permissions[-1]["network"], ["http://239.255.255.250", "https://api.openfilamentdatabase.org"])
 
     def test_register_capabilities_reads_no_preset(self):
         """Plugins load on a thread of their own while OrcaSlicer's UI thread loads the presets: reading them then

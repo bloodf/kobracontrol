@@ -11,7 +11,7 @@ export const config = ref<Config | null>(null);
 const DEFAULT_NAME = 'Anycubic Kobra X';
 export const form = reactive({ host: '', name: DEFAULT_NAME, ffmpeg: '', camera: true, leveling: true, vibration: true, flow: false, timelapse: false,
   spoolman: '', spoolmanAuto: true, usage: true, printDialog: true, rememberOptions: true,
-  bridge: false, bridgePort: 8765, cloud: false, cloudPrinter: '' });
+  bridge: false, bridgePort: 8765, cloud: false, cloudPrinter: '', ofd: false });
 export const saving = ref(false);
 /** A Spoolman address is set here or comes from Spooler: linking spools to slots needs one. */
 export const spoolmanSet = computed(() => !!(config.value?.settings.spoolman_url || s.located?.spoolman_url));
@@ -24,13 +24,13 @@ const fromSettings = (st: Record<string, any>): Form => ({
   timelapse: st.timelapse === true, spoolman: st.spoolman_url || '',
   spoolmanAuto: st.spoolman_auto !== false, usage: st.spoolman_report_usage !== false,
   printDialog: st.print_dialog !== false, rememberOptions: st.remember_print_options !== false, bridge: st.bridge_enabled === true, bridgePort: Number(st.bridge_port) || 8765,
-  cloud: st.cloud_enabled === true, cloudPrinter: String(st.cloud_printer || '') });
+  cloud: st.cloud_enabled === true, cloudPrinter: String(st.cloud_printer || ''), ofd: st.ofd_enabled === true });
 const toSettings = (f: Form): Record<string, unknown> => ({
   host: f.host.trim(), printer_name: f.name.trim() || DEFAULT_NAME, ffmpeg_path: f.ffmpeg.trim(), camera_enabled: f.camera,
   auto_leveling: f.leveling, vibration_compensation: f.vibration, flow_calibration: f.flow, timelapse: f.timelapse, spoolman_url: f.spoolman.trim(),
   spoolman_auto: f.spoolmanAuto, spoolman_report_usage: f.usage,
   print_dialog: f.printDialog, remember_print_options: f.rememberOptions, bridge_enabled: f.bridge, bridge_port: f.bridgePort,
-  cloud_enabled: f.cloud, cloud_printer: f.cloudPrinter });
+  cloud_enabled: f.cloud, cloud_printer: f.cloudPrinter, ofd_enabled: f.ofd });
 
 /** The settings typed here and not saved yet, by their plugin names. */
 export const changed = computed(() => {

@@ -253,6 +253,22 @@ def match_context(presets, label, users, profiles, stores, file_ids, log=None):
     return {"presets": presets, "label": label, "users": users or [], "profiles": profiles, "stores": stores, "ids": ids}
 
 
+def ofd_folder(storage):
+    """The folder the Open Filament Database's index is kept in: Spooler's (shared) while Spooler is installed, else
+    this plugin's own; "" when there is none."""
+    folder = data_dir(storage)
+    if folder and os.path.isfile(os.path.join(folder, SETTINGS_FILE)):
+        return os.path.join(folder, filmatch.OFD_DIR)
+    return os.path.join(storage, filmatch.OFD_DIR) if storage else ""
+
+
+def slot_ofd(profiles, slot, spool):
+    """OFD presets for what a slot holds: its spool's (or the slot's own) manufacturer and material."""
+    vendor = (spool or {}).get("vendor") or slot.get("brand") or ""
+    name = " ".join(str(x) for x in ((spool or {}).get("name"), slot.get("material_name")) if x)
+    return filmatch.rank_ofd(profiles, vendor, str(slot.get("type") or ""), name, MATCH_CHOICES)
+
+
 def _slot_colour(slot):
     c = list(slot.get("color") or [])[:3]
     return "#%02X%02X%02X" % tuple(max(0, min(255, int(x))) for x in c) if len(c) == 3 else ""

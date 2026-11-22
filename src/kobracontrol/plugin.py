@@ -810,6 +810,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 sync_language()
             elif kind == "dashboard":   # the Dashboard's layouts, saved by the page; an invalid value keeps the stored one
                 get_store(self).update({"dashboard": data.get("value")})
+            elif kind == "ofd":   # Settings: the Open Filament Database line; refresh: Read again (only while it is on)
+                threading.Thread(target=self._ofd_state, args=(data,), name="kobracontrol-ofd", daemon=True).start()
             elif kind in ("preset_matches", "preset_pick"):   # slot cards: the preset each slot is reported as, and Change
                 presets, label = filament_catalog()
                 users = _user_presets_safe()
@@ -835,6 +837,19 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
+    def _ofd_state(self, data):
+        """Worker thread: Settings' OFD line, {"on"} and, while on, {"fetched", "version", "count", "stale", "error"}."""
+        try:
+            folder = spooler_bridge.ofd_folder(_storage()) if get_store(self).effective().get("ofd_enabled") else ""
+            if folder:
+                found = spooler_bridge.filmatch.ofd_index(folder, force=data.get("refresh") is True)
+                result = {"on": True, "count": len(found["profiles"]), **{k: found[k] for k in ("fetched", "version", "stale", "error")}}
+            else:
+                result = {"on": False}
+            self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+        except Exception as e:
+            self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
+
     def _slot_matches(self, svc, kind, data, presets, label, users):
         """Worker thread (reads files): answer the page with every ready slot's preset match, after a Change."""
         try:
@@ -857,7 +872,10 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 except ValueError:
                     raise ValueError(tr("That preset can't be used for this slot.")) from None
                 ctx["stores"] = spooler_bridge.load_stores(paths)
-            matches = [{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")}
+            ofd_dir = spooler_bridge.ofd_folder(storage) if get_store(self).effective().get("ofd_enabled") else ""
+            profiles = spooler_bridge.filmatch.ofd_index(ofd_dir)["profiles"] if ofd_dir else []   # a day old: read again
+            matches = [{**{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")},
+                        "ofd": spooler_bridge.slot_ofd(profiles, sl, spools.get(sl.get("spool_id"))) if profiles else []}
                        for sl in slots]
             self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches}})
         except Exception as e:
@@ -1680,6 +1698,10 @@ class KobraControl(orca.base):
         network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
         try:   # Anycubic Cloud's hosts only while it is on (opt-in)
             network += ["https://" + h for h in cloud_hosts()] if get_store().effective()["cloud_enabled"] else []
+        except Exception:
+            pass
+        try:   # the Open Filament Database only while it is on (opt-in)
+            network += [spooler_bridge.filmatch.OFD_ORIGIN] if get_store().effective()["ofd_enabled"] else []
         except Exception:
             pass
         orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
