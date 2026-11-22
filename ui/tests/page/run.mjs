@@ -1983,7 +1983,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true,
-    bridge_enabled: false, bridge_port: 8765}, 'every setting, by its name');
+    bridge_enabled: false, bridge_port: 8765, cloud_enabled: false, cloud_printer: ''}, 'every setting, by its name');
   assert(!toasts().includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
@@ -2059,6 +2059,117 @@ test('settings: upload bridge is off by default; key, copy, new key and OrcaSlic
   await until(() => toasts().includes('old one no longer works'), 'new key said');
   await post(CONFIG({settings: {...SETTINGS, bridge_enabled: true}, bridge: {enabled: true, running: false, port: 8765, host: '127.0.0.1', key: 'k', error: 'port 8765 could not be opened (Address already in use)'}}));
   assert(text(byTest('bridge-state')).includes('Address already in use'), 'error shown: ' + text(byTest('bridge-state')));
+`);
+const CLOUD_JS = `
+const CLOUD_ON = extra => CONFIG({settings: {...SETTINGS, cloud_enabled: true, cloud_printer: '', ...extra}});
+const CLOUD_PRINTERS = [{id: '42', name: 'Garage K2', model: 'Kobra 2 Pro', online: true, printing: false},
+  {id: '77', name: 'Office K2', model: 'Kobra 2 Max', online: false, printing: false}];
+`;
+test('anycubic cloud: off by default; turning it on and saving shows the sign-in', CLOUD_JS + `
+  await ready(VIEW());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="cloud-h"]'));
+  eq(q('input#c-cloud').checked, false, 'off by default');
+  eq(text(byTest('cloud-chip')), 'Off', 'chip');
+  assert(text(q('#cloud-h')).includes('Kobra 2') && text(q('[data-test="cloud-more"]')).includes('cloud-universe.anycubic.com'), 'says who gets what');
+  eq(byTest('cloud-sign-in'), null, 'no sign-in while off');
+  eq(cmds('cloud_state'), [], 'nothing asked while off');
+  await click(q('input#c-cloud'));
+  assert(byTest('cloud-save-first'), 'asks to save first');
+  await click(byTest('save-top'));
+  const m = last('save_settings');
+  eq([m.settings.cloud_enabled, m.settings.cloud_printer], [true, ''], 'switch saved');
+  await reply(m, {});
+  await post(CLOUD_ON());
+  await until(() => last('cmd', 'cloud_state'), 'state asked once on');
+  await reply(last('cmd', 'cloud_state'), {enabled: true, signed_in: false, email: '', slicer_log: false});
+  await until(() => byTest('cloud-sign-in'), 'sign-in shown');
+  eq(text(byTest('cloud-chip')), 'Not signed in', 'chip');
+  eq(byTest('cloud-find').disabled, true, 'no Anycubic Slicer Next logs here: disabled');
+  assert(text(byTest('cloud-sign-in')).includes('paste a token'), 'says why');
+`);
+test('anycubic cloud: Anycubic Slicer Next sign-in shows the email; a pasted token is sent once and cleared', CLOUD_JS + `
+  await ready(VIEW());
+  await post(CLOUD_ON());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="cloud-h"]'));
+  await until(() => last('cmd', 'cloud_state'), 'state asked');
+  await reply(last('cmd', 'cloud_state'), {enabled: true, signed_in: false, email: '', slicer_log: true});
+  await until(() => byTest('cloud-find') && !byTest('cloud-find').disabled, 'find offered');
+  await click(byTest('cloud-find'));
+  await fail(last('cmd', 'cloud_find'), 'No Anycubic sign-in was found');
+  assert(alerts().includes('No Anycubic sign-in was found'), 'error said: ' + alerts());
+  await click(q('[data-test="cloud-paste"] summary'));
+  eq(byTest('cloud-token').type, 'password', 'token hidden');
+  await type(byTest('cloud-token'), 'eyJsecret');
+  await click(byTest('cloud-token-sign-in'));
+  eq(last('cmd', 'cloud_sign_in').args, {token: 'eyJsecret'}, 'token sent');
+  eq(byTest('cloud-token').value, '', 'cleared at once');
+  await fail(last('cmd', 'cloud_sign_in'), 'token expired');
+  await click(byTest('cloud-find'));
+  await reply(last('cmd', 'cloud_find'), {email: 'me@example.org'});
+  await until(() => byTest('cloud-email'), 'signed in');
+  eq(text(byTest('cloud-email')), 'Signed in as me@example.org', 'email');
+  eq(text(byTest('cloud-chip')), 'Signed in', 'chip');
+  assert(!document.body.innerText.includes('eyJsecret') && !qa('input').some(i => i.value.includes('eyJsecret')), 'the token is not on the page');
+  await until(() => last('cmd', 'cloud_printers'), 'printers asked');
+  await click(byTest('cloud-sign-out'));
+  await reply(last('cmd', 'cloud_sign_out'), {});
+  await until(() => byTest('cloud-sign-in'), 'signed out');
+  await tab('dash');
+  await until(() => byTest('console-log'), 'console');
+  const log = text(byTest('console-log'));
+  assert(!log.includes('eyJsecret') && log.includes('cloud_sign_in token=***'), 'the console hides the token: ' + log);
+`);
+test('anycubic cloud: choosing a printer saves cloud_printer; Use the LAN printer clears it', CLOUD_JS + `
+  await ready(VIEW());
+  await post(CLOUD_ON());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="cloud-h"]'));
+  await until(() => last('cmd', 'cloud_state'), 'state asked');
+  await reply(last('cmd', 'cloud_state'), {enabled: true, signed_in: true, email: 'me@example.org', slicer_log: true});
+  await until(() => last('cmd', 'cloud_printers'), 'printers asked');
+  await reply(last('cmd', 'cloud_printers'), CLOUD_PRINTERS);
+  await until(() => byTest('cloud-printers'), 'list shown');
+  const rows = text(byTest('cloud-printers'));
+  assert(rows.includes('Garage K2') && rows.includes('Kobra 2 Pro') && rows.includes('Online') && rows.includes('Offline'), 'rows: ' + rows);
+  eq(byTest('cloud-use-lan'), null, 'on the LAN printer: nothing to go back to');
+  await click(q('[data-printer="42"] input'));
+  const m = last('save_settings');
+  eq([m.settings.cloud_enabled, m.settings.cloud_printer], [true, '42'], 'chosen and saved');
+  await reply(m, {});
+  await post(CLOUD_ON({cloud_printer: '42'}));
+  eq(q('[data-printer="42"] input').checked, true, 'checked');
+  await click(byTest('cloud-refresh'));
+  eq(cmds('cloud_printers').length, 2, 'Refresh asks again');
+  await reply(last('cmd', 'cloud_printers'), CLOUD_PRINTERS);
+  await click(byTest('cloud-use-lan'));
+  eq(last('save_settings').settings.cloud_printer, '', 'back to the LAN printer');
+`);
+test('anycubic cloud: the dashboard says so; moves, heat and feed say why; Pause and Resume ask first', `
+  await ready(PRINTING({transport: 'cloud', can: {pause: true, resume: false, stop: true, move: false, heat: false, feed: false, print: false}}));
+  eq(text(byTest('cloud-tag')), 'Anycubic Cloud', 'tag in the page header');
+  const why = text(byTest('busy-banner'));
+  assert(why.includes('Not available over Anycubic Cloud') && !why.includes('Moves are available'), 'cloud reason: ' + why);
+  await click(byTest('pause'));
+  assert(dialogOpen() && dialogText().includes('Pause the print on Bench Kobra? The order goes through Anycubic Cloud.'), 'asks: ' + dialogText());
+  await no();
+  eq(cmds('pause'), [], 'cancel sends nothing');
+  await click(byTest('pause'));
+  await yes();
+  eq(cmds('pause').length, 1, 'confirmed pause sent');
+  await reply(last('cmd', 'pause'), true);
+  await post({type: 'status', data: PRINTING({transport: 'cloud', state: 'paused', can: {pause: false, resume: true, stop: true, move: false, heat: false, feed: false, print: false}})});
+  await click(byTest('resume'));
+  assert(dialogText().includes('Resume the print on Bench Kobra?'), 'resume asks: ' + dialogText());
+  await yes();
+  eq(cmds('resume').length, 1, 'confirmed resume sent');
+`);
+test('anycubic cloud: on the LAN there is no tag and Pause asks nothing', `
+  await ready(PRINTING());
+  eq(byTest('cloud-tag'), null, 'no tag');
+  await click(byTest('pause'));
+  eq(cmds('pause').length, 1, 'sent at once');
 `);
 
 test('upload bridge: a print from OrcaSlicer waits for Start; refused while the printer is busy', `
@@ -2389,7 +2500,7 @@ test('print setup: Portuguese, narrow window, no auto feed without an ACE', PD_H
   assert(b.top >= a.bottom - 1, 'one column of options');
 `, { boot: {...PD, data: {...PRINT_DATA, auto_feed: null}}, lang: 'pt-BR', pref: 'pt-BR', size: [380, 800] });
 // ------------------------------------------------------------------ settings pages (one page per section)
-const PAGES = ['conn-h', 'cert-h', 'print-h', 'cam-s-h', 'sm-s-h', 'bridge-h', 'needs-h', 'lang-h', 'about-h'];
+const PAGES = ['conn-h', 'cert-h', 'print-h', 'cam-s-h', 'sm-s-h', 'bridge-h', 'cloud-h', 'needs-h', 'lang-h', 'about-h'];
 const PAGES_JS = `
 const PAGES = ${JSON.stringify(PAGES)};
 const link = id => q('.oui-settings-link[data-section="' + id + '"]');

@@ -6,6 +6,7 @@ import json
 import os
 import pkgutil
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -17,6 +18,7 @@ import ace
 import bambu
 import bridge
 import certs
+import cloud
 import gcode_check
 import i18n
 import locate
@@ -273,6 +275,8 @@ def service(publish=None):
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
+        if _service.cloud is None:
+            sync_cloud(_service)
         return _service
 
 
@@ -632,11 +636,39 @@ def finished_line(text, warnings):
     return text + " " + tr("G-code warning: see the notification.") if warnings else text
 
 
+def cloud_host():
+    """"cloud:<id>" when Settings turn Anycubic Cloud on and choose a cloud printer, else "": the tab and the printer
+    agent then drive that printer through the cloud, whatever the printer preset's address."""
+    cfg = get_store().effective()
+    return cloud.HOST_PREFIX + cfg["cloud_printer"] if cfg["cloud_enabled"] and cfg["cloud_printer"] else ""
+
+
+def cloud_hosts():
+    return (cloud.API_HOST, cloud.MQTT_HOST) + cloud.UPLOAD_HOSTS
+
+
+def sync_cloud(svc, ask=False):
+    """Give the service the Anycubic account while Settings have the cloud on, take it away when off. ask (UI thread,
+    the user just turned it on): let OrcaSlicer ask about the cloud hosts now, with an audited name lookup, as for a
+    printer address; at load they are in the permission request instead."""
+    cfg, folder = get_store().effective(), _storage()
+    if not (cfg["cloud_enabled"] and folder):
+        svc.cloud = None
+        return
+    if svc.cloud is None:
+        svc.cloud = cloud.Account(os.path.join(folder, cloud.TOKEN_FILE), log)
+        for host in cloud_hosts() if ask else ():
+            try:
+                socket.getaddrinfo(host, 443)
+            except OSError as e:   # PermissionError: refused; the first request says so again
+                log("network access to %s: %s" % (host, e))
+
+
 def _target(hints=None):
     """The tab's target. hints: preset_hints() already read on the UI thread; None reads them here (UI thread)."""
     cfg = get_store().effective()
     preset_host, preset_name, agent = ui_preset_hints() if hints is None else hints
-    return Target(host_of(cfg.get("host")), settings.printer_label(cfg.get("printer_name")),
+    return Target(cloud_host() or host_of(cfg.get("host")), settings.printer_label(cfg.get("printer_name")),
                   clean(cfg.get("spoolman_url")), bool(cfg["spoolman_auto"]), bool(cfg["spoolman_report_usage"]),
                   clean(cfg.get("ffmpeg_path")), bool(cfg["camera_enabled"]), preset_host=preset_host,
                   preset_key=preset_name, preset_agent=agent)
@@ -787,6 +819,7 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                     raise ValueError(tr("not a valid setting: %s; nothing was saved") % ", ".join(bad))
                 get_store(self).update(changes)
                 sync_bridge(lambda: self.post_message(self._config_message()))
+                sync_cloud(svc, ask=bool(changes.get("cloud_enabled")))
                 target = _target()
                 grant_on_ui_thread(svc, target.preset_host, user=True)
                 svc.set_target(target, retry=True)   # a new address connects at once; the same one now
@@ -1146,7 +1179,7 @@ class KobraAgent(pa.PrinterAgentBase):
     # connection -----------------------------------------------------------------------------------------
     def connect_printer(self, params):
         """UI thread: remember the printer, attach to its shared connection (whose own thread does the I/O)."""
-        host = host_of(getattr(params, "host", ""))
+        host = cloud_host() or host_of(getattr(params, "host", ""))
         if not host or not getattr(params, "dev_id", ""):
             return ERR_INVALID_HANDLE
         sync_language()
@@ -1382,7 +1415,7 @@ class KobraAgent(pa.PrinterAgentBase):
     def _job_host(self, params):
         """The printer the job names (PrintParams.dev_ip, as OrcaSlicer's Multi-device tab sends it), else the
         connected one: never the connected printer for a job that names another."""
-        return host_of(getattr(params, "dev_ip", "")) or self.host
+        return cloud_host() or host_of(getattr(params, "dev_ip", "")) or self.host
 
     @staticmethod
     def _progress(update_fn):
@@ -1612,6 +1645,10 @@ class KobraControl(orca.base):
         # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
         # contact.
         network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
+        try:   # Anycubic Cloud's hosts only while it is on (opt-in)
+            network += ["https://" + h for h in cloud_hosts()] if get_store().effective()["cloud_enabled"] else []
+        except Exception:
+            pass
         orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
         orca.register_capability(KobraAgent)
         orca.register_capability(KobraControlPage)

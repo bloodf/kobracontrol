@@ -21,7 +21,7 @@
 
 ## ✨ O que faz
 
-O Kobra Control (`kobracontrol`) é um plugin do OrcaSlicer 2.5 para impressoras Anycubic com modo LAN: a Kobra X e, em caráter experimental, a Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max e Kobra 4. Ele fala direto com a impressora pela rede local e registra um agente de impressora no OrcaSlicer, então os diálogos Print e Send e a aba Device do próprio OrcaSlicer funcionam com a impressora. Ele também cria a aba **Kobra Control**, com painel, câmera, os slots de filamento do ACE, os arquivos da impressora e o Spoolman. Não precisa de conta na nuvem nem de pacotes Python extras.
+O Kobra Control (`kobracontrol`) é um plugin do OrcaSlicer 2.5 para impressoras Anycubic com modo LAN: a Kobra X e, em caráter experimental, a Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max e Kobra 4. Ele fala direto com a impressora pela rede local e registra um agente de impressora no OrcaSlicer, então os diálogos Print e Send e a aba Device do próprio OrcaSlicer funcionam com a impressora. Ele também cria a aba **Kobra Control**, com painel, câmera, os slots de filamento do ACE, os arquivos da impressora e o Spoolman. Não precisa de conta na nuvem nem de pacotes Python extras; uma conexão opcional pela Anycubic Cloud atende impressoras sem modo LAN.
 
 <p align="center">
   <picture>
@@ -68,7 +68,20 @@ A impressora diz qual é o seu modelo quando o Kobra Control entra, e o Kobra Co
 | Kobra S1 Max | 20029 | Experimental | 350 / 120 °C |
 | Kobra 4 | 20028 | Experimental | 300 / 100 °C |
 
-As famílias Kobra 3 e Kobra S1 aceitam só um app por vez pela rede local. Se o Anycubic Slicer Next, o Home Assistant ou o Kobralink estiver conectado, o Kobra Control avisa e espera você apertar **Tentar de novo**, em vez de tentar sem parar. Uma impressora que informa um código de modelo fora desta lista conecta só para leitura: você vê o status e os arquivos, mas aquecer, mover, filamento e imprimir ficam desligados até o modelo ser adicionado. A série Kobra 2 não tem modo LAN no firmware original.
+As famílias Kobra 3 e Kobra S1 aceitam só um app por vez pela rede local. Se o Anycubic Slicer Next, o Home Assistant ou o Kobralink estiver conectado, o Kobra Control avisa e espera você apertar **Tentar de novo**, em vez de tentar sem parar. Uma impressora que informa um código de modelo fora desta lista conecta só para leitura: você vê o status e os arquivos, mas aquecer, mover, filamento e imprimir ficam desligados até o modelo ser adicionado. A série Kobra 2 não tem modo LAN no firmware original: ela funciona pela Anycubic Cloud (abaixo).
+
+### Anycubic Cloud (opcional, experimental)
+
+Para impressoras sem modo LAN (Kobra 2, Kobra 2 Pro, Plus e Max) ou uma impressora que você mantém na nuvem da Anycubic em vez do modo LAN. Vem **desligada**: ligue em **Ajustes > Anycubic Cloud**, aperte **Usar meu login do Anycubic Slicer Next** (ou cole um token) e escolha a impressora. O Kobra Control nunca pede sua senha.
+
+| Pela nuvem | |
+|---|---|
+| Funciona | Status (temperaturas, trabalho, progresso), imprimir pelo OrcaSlicer ou pela aba, pausar, retomar e parar (pausar e retomar perguntam antes) |
+| Não funciona | Aquecer, mover, levar à origem, filamento e secagem, a câmera, a lista de arquivos da impressora. São recusados antes de qualquer envio. |
+| Vai para a Anycubic | Seu token de login, a lista de impressoras, os arquivos que você imprime (sem alteração) e as ordens de impressão, para `cloud-universe.anycubic.com`, `mqtt-universe.anycubic.com` e o armazenamento de arquivos da Anycubic no Amazon S3 |
+| Fica no seu computador | `cloud.json` na pasta do plugin (legível só por você no macOS e no Linux), nunca nos logs. **Sair** apaga o arquivo. |
+
+**O risco.** O Kobra Control usa a interface não oficial dos apps da Anycubic, do mesmo jeito que o Anycubic Slicer Next. A Anycubic pode mudá-la ou bloqueá-la a qualquer momento, e usá-la pode violar os termos da Anycubic: sua conta pode ser limitada. Entrar aqui pode encerrar a sessão aberta do Anycubic Slicer Next na mesma conta. Uma impressora em modo LAN não fica na nuvem; use a conexão LAN para ela. Ainda não testado numa impressora real: testadores são bem-vindos. Detalhes em [SECURITY.md](SECURITY.md#anycubic-cloud-opt-in) (em inglês).
 
 ### Conferido na impressora
 
@@ -127,7 +140,7 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 | Ajustes | Requisitos (ffmpeg, Anycubic Slicer Next, printer agents do OrcaSlicer e Spoolman: o que foi encontrado, quem precisa e como instalar), conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
 | Plugins > Run | **Check printer connection** informa certificado, credenciais, MQTT e versão do firmware. **Find Anycubic certificate** procura o certificado de cliente e informa o resultado. |
 
-Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e modelos Kobra sem modo LAN (a série Kobra 2, a Kobra original, Kobra Go e Neo).
+Não há suporte para: console de G-code (o protocolo LAN da impressora não tem), a câmera pela Anycubic Cloud e modelos Kobra sem nenhuma rede (a Kobra original, Kobra Go e Neo).
 
 <a id="-como-usar"></a>
 ## 🛠️ Como usar
@@ -165,13 +178,15 @@ O passo a passo completo e uma tabela de solução de problemas estão em [docs/
 | Leitura: a pasta temporária do OrcaSlicer | O arquivo fatiado que Print e Send entregam. Ele é lido, verificado e enviado como está, nunca alterado. |
 | Leitura: os arquivos do Anycubic Slicer Next, só quando você toca em **Procurar certificado** | O certificado de cliente dele. O OrcaSlicer pergunta antes. |
 | Execução: `ffmpeg`, só para a câmera da aba | Transformar a transmissão da impressora em imagens. O OrcaSlicer mostra o comando e pergunta. |
+| Rede: `cloud-universe.anycubic.com`, `mqtt-universe.anycubic.com` e os hosts de envio da Anycubic no S3, só com a Anycubic Cloud ligada | Login, lista de impressoras, status, envios e ordens de impressão pela nuvem (opcional). |
+| Leitura: a pasta de logs do Anycubic Slicer Next, só quando você aperta **Usar meu login do Anycubic Slicer Next** | O token de login que ele deixou ali. O OrcaSlicer pergunta antes. |
 | Threads | O trabalho de rede fora da thread principal do OrcaSlicer. |
 
-Arquivos de impressão e comandos vão para a impressora, vínculos de bobina e consumo vão para o Spoolman, e nada vai para outro lugar. Não há telemetria nem coleta de uso. O plugin grava arquivos só na própria pasta de armazenamento (ajustes, o registro de impressões, as impressoras encontradas) e lê a lista de estoque do Spooler quando o Spooler está instalado.
+Arquivos de impressão e comandos vão para a impressora, vínculos de bobina e consumo vão para o Spoolman, e nada vai para outro lugar, a não ser que você ligue a Anycubic Cloud: aí eles vão para a Anycubic, para a impressora da nuvem que você escolheu. Não há telemetria nem coleta de uso. O plugin grava arquivos só na própria pasta de armazenamento (ajustes, o registro de impressões, as impressoras encontradas) e lê a lista de estoque do Spooler quando o Spooler está instalado.
 
 ### Rede e certificado
 
-O Kobra Control se conecta só à impressora e ao seu servidor Spoolman, se você configurar um. A impressora é acessada por HTTP na porta 18910 e por MQTT com TLS mútuo na porta 9883, no endereço que você definiu ou em um que o plugin encontrou na rede local e confirmou ser uma impressora Anycubic em modo LAN. A busca na rede envia consultas SSDP apenas para o grupo multicast local 239.255.255.250. Não existe serviço na nuvem.
+O Kobra Control se conecta só à impressora e ao seu servidor Spoolman, se você configurar um. A impressora é acessada por HTTP na porta 18910 e por MQTT com TLS mútuo na porta 9883, no endereço que você definiu ou em um que o plugin encontrou na rede local e confirmou ser uma impressora Anycubic em modo LAN. A busca na rede envia consultas SSDP apenas para o grupo multicast local 239.255.255.250. O Kobra Control só fala com a nuvem da Anycubic se você ligar a Anycubic Cloud.
 
 Use em uma rede em que você confia. A impressora entrega as credenciais MQTT a qualquer um na rede, e o certificado TLS dela é autoassinado e não é verificado, então a conexão só protege contra leitura passiva.
 

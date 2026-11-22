@@ -31,8 +31,10 @@ function cancelWaiting(): void {
 // empty whenever one of those says more (offline, connecting, no status), and an old status must not hide it, as the
 // controls it turns off point at it.
 const busyWhy = computed(() => {
-  const b = busy.value, st = s.status;
-  const list = s.tab === 'dash' ? [b.feed && t('reason.noFeed'), b.move && t('reason.noMove'), b.heat && t('reason.noHeat'), b.print && t('reason.noDeviceChange'),
+  const b = busy.value, st = s.status, cloud = st?.transport === 'cloud';
+  // over Anycubic Cloud, moving, heating and feeding are never possible: one sentence says so
+  const own = cloud ? [(b.feed || b.move || b.heat) && t('reason.cloud')] : [b.feed && t('reason.noFeed'), b.move && t('reason.noMove'), b.heat && t('reason.noHeat')];
+  const list = s.tab === 'dash' ? [...own, b.print && t('reason.noDeviceChange'),
     st?.state === 'printing' && st.preparing && !st.can.pause && fmt.pair(t('act.pause'), t('reason.preparing'))]
     : s.tab === 'files' ? [b.print && t('reason.noPrintNow')] : [];
   return list.filter((x): x is string => !!x);

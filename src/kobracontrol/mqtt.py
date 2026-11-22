@@ -158,7 +158,9 @@ class Client:
             raise MqttError(tr("no answer on the printer's MQTT port %s:%s (%s)") % (self.host, self.port, e)) from None
         enable_tcp_keepalive(raw)
         try:
-            sock = self.ssl_context.wrap_socket(raw) if self.ssl_context else raw
+            # a context that checks the name (the cloud broker's) gets the host name; the printer's self-signed one does not
+            sock = (self.ssl_context.wrap_socket(raw, server_hostname=self.host if self.ssl_context.check_hostname else None)
+                    if self.ssl_context else raw)
             self._sock = sock
             sock.sendall(self._connect_packet())
             self._await_connack(sock)

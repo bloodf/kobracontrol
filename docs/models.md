@@ -33,13 +33,22 @@ started elsewhere can still be stopped.
 | Kobra S1 / Combo | 20025 | yes | 320 / 120 | 250 x 250 x 250 | ACE | `:18088/flv` | yes | experimental |
 | Kobra S1 Max | 20029 | yes (firmware 2.6.9.6, 2.7.1.4) | 350 / 120 | 350 x 350 x 350 | ACE | `:18088/flv` | yes | experimental |
 | Kobra 4 | 20028 | yes (listed by anycubic_ha_local) | 300 / 100 | 260 x 260 x 260 | ACE | `:18088/flv` | yes | experimental |
-| Kobra 2 Pro / Plus / Max | 20021 / 20022 / 20023 | no | 260 / 110 | 220 / 320 / 426 | none | none | – | not over the LAN |
+| Kobra 2 Pro / Plus / Max | 20021 / 20022 / 20023 | no | 260 / 110 | 220 / 320 / 426 | none | none | – | Anycubic Cloud only (opt-in, experimental) |
 
 "Experimental" means: same LAN protocol by every public source, never tried with Kobra Control. The page shows a
 notice on these printers and asks for testers.
 
 Not covered: the Kobra 2 Neo, the original Kobra, Kobra Go, Vyper and other Marlin printers have no network protocol
 Kobra Control could use.
+
+## Anycubic Cloud
+
+A printer chosen under Settings > Anycubic Cloud is reached through Anycubic's servers (`cloud.py`): status from the
+account's MQTT reports plus the printer and job lists every 15 s, and print, pause, resume and stop as REST orders,
+each after a fresh look at the printer and its job. The model code comes from the printer list (`machine_type`); the
+same table applies, and a Kobra 2 code counts as known there. Over the cloud nothing heats, moves or feeds, and there
+is no camera (the Kobra 2 camera is an AWS Kinesis WebRTC stream, not ported yet). The multi-colour slot mapping is
+not sent over the cloud (`ams_info` null): the printer uses its own default.
 
 ## One client at a time
 

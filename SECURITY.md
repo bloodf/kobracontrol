@@ -1,7 +1,8 @@
 # Security
 
 kobracontrol connects to the printer address you give it and, if you set one up, to your Spoolman
-server. It has no cloud service of its own.
+server. It has no cloud service of its own. Only if you turn on **Anycubic Cloud** in Settings (off by
+default) does it also talk to Anycubic's servers; see [Anycubic Cloud](#anycubic-cloud-opt-in) below.
 
 ## What it protects and what it does not
 
@@ -98,6 +99,38 @@ address in OrcaSlicer's dialog, Kobra Control connects to that device. What it c
 Once the real printer is remembered, its identity and certificate pin, together with the explicit
 choice above, stop a device that answers later from taking its place unnoticed. A device that copies
 the printer's `/info` identity is still refused if it cannot present the printer's certificate.
+
+## Anycubic Cloud (opt-in)
+
+Off by default. It exists for printers without a LAN mode (the Kobra 2 series) and for printers kept on
+Anycubic's cloud. Turning it on changes what leaves your computer:
+
+- **Where:** `cloud-universe.anycubic.com` (HTTPS: sign-in, printer list, jobs, print orders),
+  `mqtt-universe.anycubic.com:8883` (MQTT over TLS: the printer's status reports) and Anycubic's file storage
+  on Amazon S3 (the G-code you print, through a one-time upload address Anycubic hands out). OrcaSlicer asks
+  you to allow these hosts when you turn the cloud on. Nothing else is contacted.
+- **What:** your Anycubic sign-in token, the account's printer list, the print files you send (as sliced,
+  never changed; uploaded as temporary files) and the print, pause, resume and stop orders you give. Over the
+  cloud nothing heats, moves or feeds: those commands are refused in the plugin before anything is sent.
+- **Your sign-in:** the plugin never asks for your password. **Use my Anycubic Slicer Next sign-in** reads
+  Anycubic Slicer Next's log folder (read only, after OrcaSlicer asks you) for the sign-in token it left
+  there; or you paste a token. The token is exchanged once for a session token. Both are kept in
+  `cloud.json` in the plugin's storage folder, readable only by you on macOS and Linux (mode 0600; on Windows
+  protected by your user profile's permissions), and are never sent to the page or written to logs.
+  **Sign out** deletes the file.
+- **TLS:** HTTPS is verified the normal way. The MQTT broker's certificate is verified against Anycubic's
+  root CA ("AC Root CA", bundled) and the broker's name; the plugin lowers OpenSSL's security level only so the
+  broker's SHA-1-signed certificate is accepted.
+- **Which printer:** only the printer you chose in Settings is ever used; a missing or offline printer is an
+  error, never a reason to pick another one. Before every print order the plugin reads the printer again and
+  refuses when it is offline or already printing; before pause, resume and stop it reads the active job
+  again and refuses when there is none or it is already in that state. In the tab, pause and resume ask
+  first over the cloud, as stop always does.
+- **The risk:** this uses Anycubic's unofficial app interface the way Anycubic Slicer Next does, with the
+  request-signing values and the broker key every copy of Anycubic Slicer Next carries. Anycubic can change
+  or block it at any time, and using it may break Anycubic's terms of service: your account could be
+  limited. Signing in here may also end the session Anycubic Slicer Next has open on the same account. A
+  printer in LAN mode is not on the cloud, so use the LAN connection for those.
 
 ## What asks first
 

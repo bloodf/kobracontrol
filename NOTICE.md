@@ -21,6 +21,67 @@ Per-module provenance:
 
 Modules not listed are adapted from [u1control](https://github.com/bloodf/u1control) (GPL-3.0-only, same author) or written for kobracontrol.
 
+## Anycubic Cloud (MIT-licensed sources)
+
+`cloud.py`, the opt-in Anycubic Cloud connection, ports small parts of two MIT-licensed OrcaSlicer plugins.
+Their notices are kept here as their licence asks:
+
+- [OrcaCubic](https://github.com/cathome1/OrcaCubic) by cathome1: the request signature and the MQTT login
+  (RSA PKCS#1 v1.5 with the standard library). Not taken: its G-code rewriting and its fall-back to the first
+  online printer.
+- [anycubic-plugin](https://github.com/Bob-41/anycubic-plugin) by Bob-41: the token exchange, finding the token in
+  Anycubic Slicer Next's logs, the broker's CA and verified TLS, the upload steps, the order ids, and the look at
+  the printer and its active job before every order (its protocol notes, `mqtt_auth_protocol.md`). Not taken:
+  the Agora camera, the paho-mqtt dependency, the local bridge.
+
+```
+MIT License
+
+Copyright (c) 2026 cathome1
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+```
+MIT License
+
+Copyright (c) 2026 Anycubic Cloud Print Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Model data
 
 The model table (`profiles.py`, [docs/models.md](docs/models.md)) is facts gathered from public sources: model codes
@@ -33,9 +94,13 @@ from Rinkhals' MQTT notes and from anycubic_ha_local's test fixtures (MIT licenc
 
 The Anycubic LAN protocol was reverse-engineered by those projects for interoperability. kobracontrol uses it only to talk to a printer that the user owns, on the user's own network.
 
-## What kobracontrol does not include
+## What kobracontrol carries from Anycubic
 
-Unlike those projects, kobracontrol does not include Anycubic's TLS client certificate or key, in the repository or in the wheel. It reads them locally from the user's own Anycubic Slicer Next installation (or a file the user picks) and keeps a copy in the plugin's storage folder.
+- Anycubic Slicer Next's TLS client certificate and key (`CN=AnycubicSlicer`): a shared client identity, the same in
+  every copy of Anycubic Slicer Next, which the printer requires on its LAN MQTT port. Bundled so the plugin needs no
+  setup; a copy from the user's own install can replace it (Find certificate).
+- For the opt-in Anycubic Cloud only (`cloud.py`): the request-signing values and the MQTT broker's public key that
+  every copy of Anycubic Slicer Next carries, and Anycubic's public root CA certificate, used to verify the broker.
 
 ## Printer photo
 

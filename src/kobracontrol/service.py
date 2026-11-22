@@ -25,6 +25,7 @@ import traceback
 
 import ace
 import camera
+import cloud
 import certs
 import connection
 from connection import camera_url_for, find_and_save_certificate  # noqa: F401  (plugin.py imports them here)
@@ -50,7 +51,8 @@ RELAY_RETRY_S = (60.0, 3600.0)   # a stream the built-in player refused goes to 
 STATUS_EVERY = 1.0
 URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
-BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device")
+BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device", "cloud_state",
+           "cloud_find", "cloud_sign_in", "cloud_sign_out", "cloud_printers")
 DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
 BUSY = lazy("%s is already running; try again when it ends")
 STALE = lazy("the selected printer changed; nothing was sent to it")
@@ -137,20 +139,22 @@ def read_only(view):
     """A printer whose model code has no LAN profile (profiles.py): status and files only. A view without a code
     (no login yet) is not judged."""
     mode_id = view.get("mode_id")
-    return bool(mode_id) and not (profiles.get(mode_id) or {}).get("lan")
+    if not mode_id:
+        return False
+    profile = profiles.get(mode_id)
+    return not profile or not (profile["lan"] or view.get("transport") == "cloud")   # a Kobra 2 only over the cloud
 
 
 def can_flags(view):
     """What the printer state allows now (status.data `can`). An unknown model never heats, moves, feeds or prints;
     pause, resume and stop stay available for a print someone else started."""
     st, on = view.get("state"), bool(view.get("connected"))
-    if read_only(view):
-        return {"pause": on and st == "printing" and not view.get("preparing"), "resume": on and st == "paused",
-                "stop": on and st in ("printing", "paused"), "move": False, "heat": False, "feed": False, "print": False}
     idle, running, paused = on and st in IDLE, on and st == "printing", on and st == "paused"
     running_print = running and not view.get("preparing")   # heating/levelling: the printer has no print to pause yet
-    return {"pause": running_print, "resume": paused, "stop": running or paused, "move": idle,
-            "heat": idle or running or paused, "feed": idle or paused, "print": idle}
+    ro, remote = read_only(view), view.get("transport") == "cloud"   # over the cloud: print, pause, resume, stop only
+    return {"pause": running_print, "resume": paused, "stop": running or paused, "move": idle and not (ro or remote),
+            "heat": (idle or running or paused) and not (ro or remote), "feed": (idle or paused) and not (ro or remote),
+            "print": idle and not ro}
 
 
 def status_data(view, units_before=(), bindings=None, pending_load=-1):
@@ -168,7 +172,7 @@ def status_data(view, units_before=(), bindings=None, pending_load=-1):
     view = {k: v for k, v in view.items() if k != "file_details"}   # some file's details, maybe not the running one
     data = {**view, "upload_url": "", "mode": mode, "slots": slots, "loaded_slot": loaded, "ace_units": units,
             "can": can_flags(view), "limits": profiles.limits(view.get("mode_id") or "20030"),
-            "profile": profiles.describe(view.get("mode_id"), view.get("model") or "")}
+            "profile": profiles.describe(view.get("mode_id"), view.get("model") or "", view.get("transport") == "cloud")}
     return data, units
 
 
@@ -207,6 +211,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self._units, self._feed_acks, self._capture, self._busy = {}, {}, None, set()
         self._camera_refused = set()
         self._reset_printer_state()
+        self.cloud = None   # cloud.Account when Settings turn Anycubic Cloud on (plugin.py); None = LAN only
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
         self.relay = relay_factory(self._camera_url, self._on_video, self._on_relay_error, log=log)
         # ffmpeg and Anycubic Slicer Next: checked once on a thread of their own when the page first asks
@@ -243,7 +248,13 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
                 raise kobra.KobraError(tr("Kobra Control is shutting down"))
             conn = self.connections.get(host)
             fresh = conn is None
-            if fresh:
+            if fresh and cloud.printer_id(host):
+                if self.cloud is None:
+                    raise kobra.KobraError(tr("Anycubic Cloud is off: turn it on under Settings > Anycubic Cloud"))
+                conn = self.cloud_connection(host)
+                conn.add_listener(self._on_change)
+                self.connections[host] = conn
+            elif fresh:
                 conn = connection.Connection(host, self.tls, self.log, self.http_port, self.mqtt_port, self.fetch,
                                              pins=self.pins)
                 if identity is None and self.addresses is not None:
@@ -520,6 +531,8 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if not data["can"][flag]:
             if read_only(data):
                 raise kobra.KobraError(tr(UNKNOWN_MODEL) % (data["mode_id"], what))
+            if data.get("transport") == "cloud" and flag in ("move", "heat", "feed"):
+                raise kobra.KobraError(tr(cloud.NOT_ON_CLOUD))
             raise kobra.KobraError(tr("%s is not possible while the printer is %s") % (what, tr(data["state"])))
         return data
 
@@ -1045,6 +1058,50 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if own is not None:   # Spooler shares no list: Kobra Control's own Spoolman read, never an endless wait
             return {**out, "stock": own, "same_spoolman": None, "available": True, "reason": None, "spooler_reason": reason}
         return {**out, "available": reason is None, "reason": reason}
+
+    # Anycubic Cloud (opt-in, cloud.py) -------------------------------------------------------------------------------
+
+    def cloud_connection(self, host):
+        return cloud.CloudConnection(host, self.cloud, self.log)
+
+    def _account(self):
+        if self.cloud is None:
+            raise kobra.KobraError(tr("Anycubic Cloud is off: turn it on under Settings > Anycubic Cloud"))
+        return self.cloud
+
+    def cmd_cloud_state(self):
+        account = self.cloud
+        return {"enabled": account is not None, "signed_in": bool(account and account.signed_in),
+                "email": account.email if account else "", "slicer_log": any(os.path.isdir(d) for d in cloud.slicer_log_dirs())}
+
+    def cmd_cloud_find(self):
+        """Sign in with the account Anycubic Slicer Next is signed in to, from its logs (read only)."""
+        account = self._account()
+        try:
+            token = cloud.find_slicer_token()
+        except PermissionError:
+            raise kobra.KobraError(tr("OrcaSlicer did not allow reading Anycubic Slicer Next's logs. Allow it when "
+                                      "OrcaSlicer asks, or paste a token instead.")) from None
+        if not token:
+            raise kobra.KobraError(tr("No Anycubic sign-in was found in Anycubic Slicer Next's logs. Sign in to Anycubic "
+                                      "Slicer Next (or open it once while signed in), then try again, or paste a token."))
+        return {"email": account.sign_in(token)}
+
+    def cmd_cloud_sign_in(self, token=""):
+        return {"email": self._account().sign_in(token)}
+
+    def cmd_cloud_sign_out(self):
+        self._account().sign_out()
+        return {}
+
+    def cmd_cloud_printers(self):
+        out = []
+        for p in self._account().printers():
+            profile = profiles.get(p.get("machine_type"))
+            out.append({"id": str(p.get("id") or ""), "name": str(p.get("name") or ""),
+                        "model": profile["name"] if profile else str(p.get("machine_type") or ""),
+                        "online": str(p.get("device_status")) == "1", "printing": str(p.get("is_printing")) == "2"})
+        return out
 
     def cmd_find_certificate(self, path=None):
         found = find_and_save_certificate(self.cert_dir, path)

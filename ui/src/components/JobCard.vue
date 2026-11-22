@@ -55,8 +55,19 @@ const paused = computed(() => state.value === 'paused');
 const show = computed(() => ({ pause: !paused.value && (printing.value || !!st.value?.can.pause), resume: paused.value || !!st.value?.can.resume,
   stop: printing.value || !!st.value?.can.stop, skip: printing.value }));
 const describedBy = computed(() => whyId(!!st.value?.preparing));
-const pause = () => run({ key: 'pause', label: t('act.pause'), cmd: 'pause', okText: t('ok.pause'), sentText: t('sent.pause'), timeoutMs: 15000 });
-const resume = () => run({ key: 'resume', label: t('act.resume'), cmd: 'resume', okText: t('ok.resume'), sentText: t('sent.resume'), timeoutMs: 15000 });
+// Over Anycubic Cloud, Pause and Resume ask first too: the order goes through Anycubic's servers.
+const CONFIRM = { pause: ['confirm.pause.title', 'confirm.pause.text', 'confirm.pause.yes', 'confirm.pause.no'],
+  resume: ['confirm.resume.title', 'confirm.resume.text', 'confirm.resume.yes', 'confirm.resume.no'] } as const;
+const cloudOk = (kind: 'pause' | 'resume') => { const [title, text, yes, no] = CONFIRM[kind];
+  return st.value?.transport !== 'cloud' || ask({ title: t(title), text: t(text, { printer: printerName.value }), yes: t(yes), no: t(no) }); };
+async function pause() {
+  if (!await cloudOk('pause')) return;
+  await run({ key: 'pause', label: t('act.pause'), cmd: 'pause', okText: t('ok.pause'), sentText: t('sent.pause'), timeoutMs: 15000 });
+}
+async function resume() {
+  if (!await cloudOk('resume')) return;
+  await run({ key: 'resume', label: t('act.resume'), cmd: 'resume', okText: t('ok.resume'), sentText: t('sent.resume'), timeoutMs: 15000 });
+}
 async function stop() {
   if (!await ask({ title: t('confirm.stop.title'), text: t('confirm.stop.text', { printer: printerName.value }),
     yes: t('confirm.stop.yes'), no: t('confirm.stop.no'), danger: true })) return;
