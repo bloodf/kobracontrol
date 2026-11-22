@@ -42,6 +42,7 @@ const busyWhy = computed(() => {
 const top = computed(() => (link.value === 'noCertificate' ? 'cert' : link.value === 'noTarget' ? 'target' : link.value === 'offline' ? 'offline'
   : link.value === 'connecting' ? 'connecting' : link.value === 'connected' && !s.status?.connected ? 'noStatus'
   : s.status && statusAge.value > STALE_STATUS_S ? 'stale' : ''));
+const model = computed(() => { const p = s.status?.connected ? s.status.profile : undefined; return p && (!p.known || !p.verified) ? p : null; });
 const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [text, ''] : [text.slice(0, i + 1), text.slice(i + 2)]; };
 </script>
 
@@ -52,6 +53,13 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
       <OuiBanner :show="busyWhy.length > 0" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
                  dismissible :dismiss-key="`busy:${where}:${s.tab}:${busyWhy.join('|')}`" :close-label="t('common.close')">
         {{ busyWhy.map(text => t('fmt.sentence', { text })).join(' ') }}
+      </OuiBanner>
+
+      <!-- A model never tried with Kobra Control (experimental), or one it has no profile for (read-only). -->
+      <OuiBanner :show="!!model" :tone="model?.known ? 'info' : 'warn'" data-test="model-banner"
+                 :title="t(model?.known ? 'model.experimental.title' : 'model.unknown.title', { name: model?.name || '' })"
+                 dismissible :dismiss-key="`model:${model?.mode_id}:${model?.known}`" :close-label="t('common.close')">
+        {{ t(model?.known ? 'model.experimental.body' : 'model.unknown.body', { name: model?.name || '', code: model?.mode_id || '' }) }}
       </OuiBanner>
 
       <!-- The Dashboard shows these tasks itself; hidden there, not cleared, so a closed one stays closed. -->

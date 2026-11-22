@@ -1048,7 +1048,7 @@ test('first run: no usable printer says how to select one', `
   await click(btn('Open Settings', box));
   assert(q('#c-host') && !q('#conn-h').hidden, 'goes to the address field');
   await tab('files');
-  assert(text(byTest('files-why')).includes('No Kobra X found yet'), 'Files says what is missing');
+  assert(text(byTest('files-why')).includes('No Anycubic printer found yet'), 'Files says what is missing');
   eq(cmds('files'), [], 'no file request without a printer');
   await tab('dash');
   await click(byTest('search-again'));
@@ -1133,7 +1133,7 @@ test('a found printer is never used or allowed without a click (GUI test 2026-11
   await fail(last('hello'), 'Found Workshop KX (Anycubic Kobra X) at 10.0.0.41 on the network. Use it? Kobra Control connects only to a printer you choose.',
     {no_target: true, candidates: [{ip: '10.0.0.41', name: 'Workshop KX', model: 'Anycubic Kobra X', needs_allow: false, different: false}], pending: []});
   const box = byTest('first-run-target');
-  await until(() => text(box).includes('Kobra X found'), 'one printer: the title says one');
+  await until(() => text(box).includes('Anycubic printer found'), 'one printer: the title says one');
   assert(!text(box).includes('Several'), 'not "several" for one: ' + text(box));
   await settle();
   eq(sent().filter(m => m.type === 'allow_hosts').length, 0, 'no OrcaSlicer dialog by itself');
@@ -1214,7 +1214,7 @@ test('first run: several printers found, pick one', `
   await fail(last('hello'), '2 Kobra X printers answer on this network: choose one.', {no_target: true,
     candidates: [{ip: '10.0.0.2', name: 'Left KX', model: 'Anycubic Kobra X'}, {ip: '10.0.0.3', name: 'Right KX', model: 'Anycubic Kobra X'}]});
   const box = byTest('first-run-target');
-  assert(text(box).includes('Several Kobra X found') && text(box).includes('Right KX') && text(box).includes('10.0.0.3'), 'picker: ' + text(box));
+  assert(text(box).includes('Several Anycubic printers found') && text(box).includes('Right KX') && text(box).includes('10.0.0.3'), 'picker: ' + text(box));
   await click(q('[data-pick-ip="10.0.0.3"]'));
   eq(cmds('choose_printer').map(m => m.args), [{host: '10.0.0.3'}], 'choice sent');
   await reply(last('cmd', 'choose_printer'), {address: '10.0.0.3'});
@@ -2461,7 +2461,7 @@ const DASH_PLUGIN = `
 const STORE = dash => post(CONFIG({settings: {...SETTINGS, dashboard: dash}}));
 async function READY(dash) { await connect(); await (dash === undefined ? post(CONFIG()) : STORE(dash)); await post({type: 'status', data: VIEW()}); }
 const DEFAULT_IDS = ['job', 'ace', 'controls', 'temps', 'printer', 'camera', 'motion', 'console'];
-const DEFAULT_ORDER = ['job', 'controls', 'ace', 'temps', 'camera', 'printer', 'motion', 'console'];
+const DEFAULT_ORDER = ['job', 'controls', 'ace', 'temps', 'camera', 'printer', 'console', 'motion'];
 const ALL_IDS = ['job', 'ace', 'temps', 'controls', 'camera', 'motion', 'printer', 'console', 'files'];
 const MOVER = 'camera', MOVER_FROM = '10 / span 3 | 5 / span 9', MOVE_COLS = 3, MOVER_TO = '7 / span 3 | 5 / span 9';
 const CAM_W = 3, CAM_H = 9, TEMPS = 'temps', CONSOLE_LEAST = 'span 3 | span 4';
@@ -2549,7 +2549,9 @@ test('dashboard: resize from a corner and from an edge snaps to the grid, keeps 
   await dragBy(handle('camera', 'se'), 2 * step(), 2 * ROW);
   eq(place('camera').replace(/\\d+ \\/ /g, ''), 'span ' + (CAM_W + 2) + ' | span ' + (CAM_H + 2), 'the corner grows width and height by whole cells');
   await dragBy(handle('camera', 's'), 0, -1 * ROW);
-  eq(place('camera').split(' | ')[1].replace(/\\d+ \\/ /, ''), 'span ' + (CAM_H + 1), 'the bottom edge changes the height only');
+  // Rows grow to fit their content, so a row's height in pixels depends on its neighbours: lower, not by exactly one.
+  const [cols, rows] = place('camera').replace(/\\d+ \\/ /g, '').split(' | ');
+  assert(cols === 'span ' + (CAM_W + 2) && Number(rows.slice(5)) < CAM_H + 2, 'the bottom edge changes the height only: ' + place('camera'));
   await dragBy(handle('camera', 'w'), 2 * step(), 0);
   eq(place('camera').split(' | ')[0].replace(/\\d+ \\/ /, ''), 'span ' + CAM_W, 'the left edge changes the width and the column');
   await dragBy(handle('camera', 'se'), -12 * step(), -12 * ROW);

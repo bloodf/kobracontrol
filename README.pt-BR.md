@@ -6,7 +6,7 @@
 </p>
 
 <h1 align="center">🟣 Kobra Control</h1>
-<p align="center"><b>Controle a Anycubic Kobra X pelo OrcaSlicer na sua rede.</b><br><sub>Um plugin para o OrcaSlicer · by bloodf</sub></p>
+<p align="center"><b>Controle sua impressora Anycubic Kobra pelo OrcaSlicer na sua rede.</b><br><sub>Um plugin para o OrcaSlicer · by bloodf</sub></p>
 
 <p align="center">
   <a href="https://cloud.orcaslicer.com/p/59c786285255"><img alt="Instalar pelo Orca Cloud" src="https://img.shields.io/badge/Orca_Cloud-Instalar-6240c8?style=for-the-badge"></a>
@@ -21,7 +21,7 @@
 
 ## ✨ O que faz
 
-O Kobra Control (`kobracontrol`) é um plugin do OrcaSlicer 2.5 para a Anycubic Kobra X. Ele fala direto com a impressora pela rede local e registra um agente de impressora no OrcaSlicer, então os diálogos Print e Send e a aba Device do próprio OrcaSlicer funcionam com a Kobra X. Ele também cria a aba **Kobra Control**, com painel, câmera, os slots de filamento do ACE, os arquivos da impressora e o Spoolman. Não precisa de conta na nuvem nem de pacotes Python extras.
+O Kobra Control (`kobracontrol`) é um plugin do OrcaSlicer 2.5 para impressoras Anycubic com modo LAN: a Kobra X e, em caráter experimental, a Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max e Kobra 4. Ele fala direto com a impressora pela rede local e registra um agente de impressora no OrcaSlicer, então os diálogos Print e Send e a aba Device do próprio OrcaSlicer funcionam com a impressora. Ele também cria a aba **Kobra Control**, com painel, câmera, os slots de filamento do ACE, os arquivos da impressora e o Spoolman. Não precisa de conta na nuvem nem de pacotes Python extras.
 
 <p align="center">
   <picture>
@@ -49,10 +49,26 @@ A partir de um arquivo (os menus do OrcaSlicer aparecem aqui com os nomes em ing
 | Requisito | Detalhe |
 |---|---|
 | OrcaSlicer | 2.5.0 ou mais novo, na versão oficial. Não precisa de versão modificada. |
-| Impressora | Uma Anycubic Kobra X na mesma rede, com o modo LAN ligado. Conferido no firmware 2.0.2.8. |
+| Impressora | Uma impressora Anycubic da lista abaixo na mesma rede, com o modo LAN ligado. A Kobra X foi conferida no firmware 2.0.2.8. |
 | `ffmpeg` | Opcional. A aba Kobra Control mostra a câmera com o player embutido; o `ffmpeg` só é necessário quando esse player não consegue (uma transmissão RTSP, ou um sistema sem suporte a vídeo H.264, possível no Linux). A câmera da aba Device funciona sem ele. |
 | Anycubic Slicer Next | Não é necessário. O certificado de cliente que a impressora exige vem no plugin. |
 | Spoolman | Opcional, para acompanhar as bobinas. |
+
+### Impressoras suportadas
+
+A impressora diz qual é o seu modelo quando o Kobra Control entra, e o Kobra Control usa os limites desse modelo (principalmente as temperaturas máximas de bico e mesa que ele deixa definir). Todas estas impressoras usam o mesmo protocolo LAN segundo todas as fontes públicas (Kobralink, KX-Bridge, Rinkhals, anycubic_ha_local), mas só a Kobra X foi testada com o Kobra Control. As outras são **experimentais: testadores são bem-vindos**. Se você tem uma, [abra uma issue](https://github.com/bloodf/kobracontrol/issues) contando o que funcionou e o que não funcionou. A tabela completa e as fontes estão em [docs/models.md](docs/models.md) (em inglês).
+
+| Impressora | Código do modelo | Situação | Bico / mesa máx. |
+|---|---|---|---|
+| Kobra X | 20030 | Conferida (firmware 2.0.2.8) | 320 / 120 °C |
+| Kobra 3, Kobra 3 Combo | 20024 | Experimental | 300 / 110 °C |
+| Kobra 3 V2 | 20027 | Experimental | 300 / 110 °C |
+| Kobra 3 Max | 20026 | Experimental | 300 / 90 °C |
+| Kobra S1, Kobra S1 Combo | 20025 | Experimental | 320 / 120 °C |
+| Kobra S1 Max | 20029 | Experimental | 350 / 120 °C |
+| Kobra 4 | 20028 | Experimental | 300 / 100 °C |
+
+As famílias Kobra 3 e Kobra S1 aceitam só um app por vez pela rede local. Se o Anycubic Slicer Next, o Home Assistant ou o Kobralink estiver conectado, o Kobra Control avisa e espera você apertar **Tentar de novo**, em vez de tentar sem parar. Uma impressora que informa um código de modelo fora desta lista conecta só para leitura: você vê o status e os arquivos, mas aquecer, mover, filamento e imprimir ficam desligados até o modelo ser adicionado. A série Kobra 2 não tem modo LAN no firmware original.
 
 ### Conferido na impressora
 
@@ -109,19 +125,19 @@ O Kobra Control é um projeto independente. Não é feito nem mantido pela Anycu
 | Spoolman | Vincule uma bobina do Spoolman a um slot. As impressões concluídas registram ali o filamento usado quando a opção está ligada. |
 | Funciona com o Spooler | O [Spooler](https://github.com/bloodf/spooler) transforma seus filamentos do Spoolman em perfis de filamento do OrcaSlicer. Com ele instalado, a aba Estoque mostra o estoque do Spooler. O Kobra Control também funciona ao lado do [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
 | Ajustes | Requisitos (ffmpeg, Anycubic Slicer Next, printer agents do OrcaSlicer e Spoolman: o que foi encontrado, quem precisa e como instalar), conexão (com a impressão digital do certificado da impressora), certificado, padrões de impressão, caminho do `ffmpeg`, Spoolman e idioma. Se a impressora apresentar um certificado TLS diferente do anterior, todas as abas mostram um aviso. |
-| Plugins > Run | **Check Kobra X connection** informa certificado, credenciais, MQTT e versão do firmware. **Find Anycubic certificate** procura o certificado de cliente e informa o resultado. |
+| Plugins > Run | **Check printer connection** informa certificado, credenciais, MQTT e versão do firmware. **Find Anycubic certificate** procura o certificado de cliente e informa o resultado. |
 
-Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e outros modelos Kobra.
+Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de G-code (o protocolo LAN da impressora não tem) e modelos Kobra sem modo LAN (a série Kobra 2, a Kobra original, Kobra Go e Neo).
 
 <a id="-como-usar"></a>
 ## 🛠️ Como usar
 
-1. Ligue o modo LAN na Kobra X e deixe a impressora e o computador na mesma rede.
+1. Ligue o modo LAN na impressora e deixe a impressora e o computador na mesma rede.
 2. Abra a aba **Kobra Control**. Ela procura a impressora sozinha. Na primeira vez, o OrcaSlicer pergunta uma vez se o kobracontrol pode se conectar àquele endereço. Permita.
 3. Use o **Painel** para acompanhar a impressão, definir temperaturas, ligar a câmera com **Ligar** e alimentar, recolher ou secar filamento.
 4. Para imprimir um arquivo guardado na impressora, abra **Arquivos**, pressione **Imprimir** no arquivo, confira o painel e pressione **Iniciar impressão**.
 5. Para enviar impressões pelo próprio OrcaSlicer, abra **Preferences > Developer > Experimental Features**, marque **Use printer agents instead of print hosts** e reinicie o OrcaSlicer. Depois, em uma cópia do seu perfil de impressora da Kobra X, defina **Printer Agent** como `kobracontrol` e o endereço como o IP da impressora.
-6. Execute **Plugins > Check Kobra X connection**. Depois, no diálogo de impressão do OrcaSlicer, sincronize os slots do ACE, associe cada filamento a um slot e envie a impressão.
+6. Execute **Plugins > Check printer connection**. Depois, no diálogo de impressão do OrcaSlicer, sincronize os slots do ACE, associe cada filamento a um slot e envie a impressão.
 
 <p align="center">
   <picture>
@@ -132,7 +148,7 @@ Não há suporte para: Anycubic Cloud e acesso de fora da rede local, console de
 
 Os passos 5 e 6 são opcionais. Sem eles a aba funciona sozinha, por exemplo ao lado do Kobralink ou de outra ponte Moonraker que o seu perfil de impressora já usa, e Print, Send e a aba Device do OrcaSlicer continuam usando o agente do próprio perfil.
 
-A aba procura a impressora nesta ordem: o endereço em **Ajustes**, se você definiu um; o endereço que ela encontrou antes para o perfil de impressora selecionado; o endereço do próprio perfil, se uma Kobra X responder ali; e por fim uma busca na rede local (SSDP, do jeito que o Anycubic Slicer Next encontra impressoras). Uma impressora encontrada pela busca só é usada depois que você a escolhe.
+A aba procura a impressora nesta ordem: o endereço em **Ajustes**, se você definiu um; o endereço que ela encontrou antes para o perfil de impressora selecionado; o endereço do próprio perfil, se uma impressora Anycubic em modo LAN responder ali; e por fim uma busca na rede local (SSDP, do jeito que o Anycubic Slicer Next encontra impressoras). Uma impressora encontrada pela busca só é usada depois que você a escolhe.
 
 Depois que a impressão começa, a impressora pode passar muitos minutos em preparação (aquecendo, nivelando e passando pelos slots do ACE) antes da primeira camada. Em um teste isso levou cerca de 11 minutos para uma impressão de 5 minutos. A impressora não travou; enquanto isso o trabalho aparece como imprimindo.
 
@@ -155,7 +171,7 @@ Arquivos de impressão e comandos vão para a impressora, vínculos de bobina e 
 
 ### Rede e certificado
 
-O Kobra Control se conecta só à Kobra X e ao seu servidor Spoolman, se você configurar um. A impressora é acessada por HTTP na porta 18910 e por MQTT com TLS mútuo na porta 9883, no endereço que você definiu ou em um que o plugin encontrou na rede local e confirmou ser uma Kobra X em modo LAN. A busca na rede envia consultas SSDP apenas para o grupo multicast local 239.255.255.250. Não existe serviço na nuvem.
+O Kobra Control se conecta só à impressora e ao seu servidor Spoolman, se você configurar um. A impressora é acessada por HTTP na porta 18910 e por MQTT com TLS mútuo na porta 9883, no endereço que você definiu ou em um que o plugin encontrou na rede local e confirmou ser uma impressora Anycubic em modo LAN. A busca na rede envia consultas SSDP apenas para o grupo multicast local 239.255.255.250. Não existe serviço na nuvem.
 
 Use em uma rede em que você confia. A impressora entrega as credenciais MQTT a qualquer um na rede, e o certificado TLS dela é autoassinado e não é verificado, então a conexão só protege contra leitura passiva.
 
@@ -190,13 +206,13 @@ Só quando o player embutido não consegue mostrar a câmera a aba Kobra Control
 </details>
 
 <details>
-<summary>Nada conecta, ou aparece "No Kobra X answered the network search".</summary>
+<summary>Nada conecta, ou aparece "No Anycubic printer answered the network search".</summary>
 
 Confira se o modo LAN está ligado na impressora e se ela e o computador estão na mesma rede. Se a sua rede bloqueia multicast, digite o IP da impressora em **Ajustes > Endereço da impressora**.
 </details>
 
 <details>
-<summary>"Something answers at … but it is not a Kobra X in LAN mode".</summary>
+<summary>"Something answers at … but it is not an Anycubic printer in LAN mode".</summary>
 
 O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o modo LAN está desligado. Deixe **Ajustes > Endereço da impressora** em branco para a aba procurar, ou digite ali o IP da própria impressora.
 </details>
@@ -208,14 +224,14 @@ O endereço é de outro aparelho, muitas vezes uma ponte como o Kobralink, ou o 
 </details>
 
 <details>
-<summary>"Could not connect to OctoPrint" ao imprimir na Kobra X.</summary>
+<summary>"Could not connect to OctoPrint" ao imprimir na impressora.</summary>
 
-A Kobra X não tem servidor OctoPrint, então uma impressora física do tipo OctoPrint apontada para o endereço da própria impressora não a alcança. Dois caminhos:
+A impressora não tem servidor OctoPrint, então uma impressora física do tipo OctoPrint apontada para o endereço da própria impressora não a alcança. Dois caminhos:
 
 - **Imprimir pelo agente de impressora do Kobra Control** (recomendado). Remova essa impressora física, marque **Use printer agents instead of print hosts** em **Preferences > Developer > Experimental Features**, reinicie o OrcaSlicer e defina **Printer Agent** como `kobracontrol` numa cópia do seu perfil de impressora da Kobra X. O endereço da impressora é opcional ali: o Kobra Control encontra a impressora na rede.
 - **Manter a impressora física OctoPrint, mas apontá-la para o Kobra Control.** Na aba Kobra Control abra **Ajustes > Ponte de envio**, ligue a ponte e copie os dois valores que ela mostra (cada um tem um botão **Copiar**) para a impressora física: **Hostname, IP or URL** `127.0.0.1:8765` (não o IP da impressora) e **API Key / Password** a chave da ponte. Clique em **Test**. Enviar e imprimir então espera na aba Kobra Control até você clicar em **Iniciar impressão**.
 
-O Painel avisa, com um botão para a ponte de envio, quando o perfil da Kobra X selecionado envia para o OctoPrint.
+O Painel avisa, com um botão para a ponte de envio, quando o perfil de impressora Anycubic selecionado envia para o OctoPrint.
 </details>
 
 <details>

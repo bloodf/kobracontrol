@@ -1,4 +1,4 @@
-"""Anycubic Kobra X LAN protocol: credentials, MQTT commands, upload, state. Ported from Kobralink and
+"""Anycubic LAN protocol (Kobra X, Kobra 3 and S1 families): credentials, MQTT commands, upload, state. Ported from Kobralink and
 KX-Bridge (both GPL-3.0); where they disagree, a comment says which behaviour is kept and why.
 
 `fetch_credentials(ip)` -> Credentials; `Printer(creds, ssl_context=certs.context(...))` talks MQTT;
@@ -31,8 +31,9 @@ State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KE
                    feeding, any unknown phase of a running job); state is then "printing" and progress,
                    layers, elapsed and remaining keep their last values (the printer reports 0 meanwhile)
   kobra_state      raw printer state ("free", "printing", "pause", "stoped", ...; "" before any report)
-  printer_name, model, firmware                       str ("" when unknown; model from the constructor
-                                                      unless info/report carries model/modelName)
+  printer_name, model, firmware                       str ("" when unknown; model from the constructor or the
+                                                      credentials unless info/report carries model/modelName)
+  mode_id          str, the printer's model code from /ctrl (profiles.py), "" before the first login
   filename         str, current job ("" when idle or after a terminal state)
   progress         number 0-100 as reported; never decreases within a job (reset when a new job reports
                    "checking", and by a terminal state); preparation phases keep the previous value
@@ -753,7 +754,7 @@ VIEW_KEYS = ("connected", "state", "preparing", "box_set_failed", "camera_url_re
              "bed_temp", "bed_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
              "head_tools_model", "files", "file_details", "upload_url", "camera_url", "camera_urls",
              "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job", "aux_fan_pct",
-             "features", "last_project", "phase_unit", "phase_channel", "mac", "stats", "assist")
+             "features", "last_project", "phase_unit", "phase_channel", "mac", "stats", "assist", "mode_id")
 
 
 def normalise(kobra_state):
@@ -938,7 +939,14 @@ class State:
             "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0,
             "box_set_failed": False, "camera_url_rev": 0, "last_job": None,
             "aux_fan_pct": 0, "features": {}, "last_project": None, "phase_unit": None, "phase_channel": None,
-            "mac": "", "stats": {}, "assist": None}
+            "mac": "", "stats": {}, "assist": None, "mode_id": ""}
+
+    def set_model(self, mode_id, model):
+        """The model code and name from the printer's credentials (profiles.py); a later info/report name wins."""
+        with self._lock:
+            self._v["mode_id"] = mode_id
+            if model:
+                self._v["model"] = model
 
     def view(self):
         with self._lock:

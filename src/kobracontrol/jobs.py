@@ -238,7 +238,7 @@ class JobsMixin:
         with self.lock:
             target = self.target
         if target is None or not target.host:
-            raise bridge.Refused(503, tr("no Kobra X selected in Kobra Control; nothing was sent"))
+            raise bridge.Refused(503, tr("no Anycubic printer selected in Kobra Control; nothing was sent"))
         name = remote_name(filename)
         try:
             data = self._data(self.ready(target.host))

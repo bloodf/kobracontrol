@@ -284,6 +284,7 @@ function onMessage(m: any): void {
     case 'status':
       if (s.info && typeof m.gen === 'number' && m.gen !== s.info.generation) break;   // the printer before a switch
       s.status = m.data; s.statusAt = Date.now();
+      if (m.data?.limits) s.limits = { ...LIMITS, ...m.data.limits };   // per model: a Kobra 3 bed stops at 110
       if (m.data?.connected === true) keepHistory(m.data);
       if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message
       // Statuses come every second, connected or not: only one that says connected means it answers again.

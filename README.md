@@ -6,7 +6,7 @@
 </p>
 
 <h1 align="center">🟣 Kobra Control</h1>
-<p align="center"><b>Run the Anycubic Kobra X from OrcaSlicer over your LAN.</b><br><sub>An OrcaSlicer plugin · by bloodf</sub></p>
+<p align="center"><b>Run your Anycubic Kobra printer from OrcaSlicer over your LAN.</b><br><sub>An OrcaSlicer plugin · by bloodf</sub></p>
 
 <p align="center">
   <a href="https://cloud.orcaslicer.com/p/59c786285255"><img alt="Install from Orca Cloud" src="https://img.shields.io/badge/Orca_Cloud-Install-6240c8?style=for-the-badge"></a>
@@ -21,7 +21,7 @@
 
 ## ✨ What it does
 
-Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for the Anycubic Kobra X. It talks to the printer directly on your local network and registers an OrcaSlicer printer agent, so OrcaSlicer's own Print and Send dialogs and its Device tab work with the Kobra X. It also adds a **Kobra Control** tab with a dashboard, the camera, the ACE filament slots, the printer's files and Spoolman. It needs no cloud account and no extra Python packages.
+Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for Anycubic printers with a LAN mode: the Kobra X, and (experimental) the Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max and Kobra 4. It talks to the printer directly on your local network and registers an OrcaSlicer printer agent, so OrcaSlicer's own Print and Send dialogs and its Device tab work with the printer. It also adds a **Kobra Control** tab with a dashboard, the camera, the ACE filament slots, the printer's files and Spoolman. It needs no cloud account and no extra Python packages.
 
 <p align="center">
   <picture>
@@ -49,10 +49,26 @@ From a file:
 | Requirement | Detail |
 |---|---|
 | OrcaSlicer | 2.5.0 or newer, the stock build. No patched build is needed. |
-| Printer | An Anycubic Kobra X on the same network, with LAN mode enabled. Checked on firmware 2.0.2.8. |
+| Printer | An Anycubic printer from the list below on the same network, with LAN mode enabled. The Kobra X is checked on firmware 2.0.2.8. |
 | `ffmpeg` | Optional. The Kobra Control tab plays the camera with its built-in player; `ffmpeg` is only needed when that player can't (an RTSP stream, or a system without H.264 video support, possible on Linux). The Device tab camera works without it. |
 | Anycubic Slicer Next | Not required. The client certificate the printer asks for is bundled. |
 | Spoolman | Optional, for spool tracking. |
+
+### Supported printers
+
+The printer says which model it is when Kobra Control logs in, and Kobra Control picks that model's limits (most of all the highest nozzle and bed temperatures it lets you set). All of these printers use the same LAN protocol according to every public source (Kobralink, KX-Bridge, Rinkhals, anycubic_ha_local), but only the Kobra X has been tried with Kobra Control. The others are **experimental: testers are welcome**. If you own one, please [open an issue](https://github.com/bloodf/kobracontrol/issues) with what worked and what did not. The full table and its sources are in [docs/models.md](docs/models.md).
+
+| Printer | Model code | Status | Nozzle / bed max |
+|---|---|---|---|
+| Kobra X | 20030 | Verified (firmware 2.0.2.8) | 320 / 120 °C |
+| Kobra 3, Kobra 3 Combo | 20024 | Experimental | 300 / 110 °C |
+| Kobra 3 V2 | 20027 | Experimental | 300 / 110 °C |
+| Kobra 3 Max | 20026 | Experimental | 300 / 90 °C |
+| Kobra S1, Kobra S1 Combo | 20025 | Experimental | 320 / 120 °C |
+| Kobra S1 Max | 20029 | Experimental | 350 / 120 °C |
+| Kobra 4 | 20028 | Experimental | 300 / 100 °C |
+
+The Kobra 3 and Kobra S1 families let only one app at a time connect over the LAN. If Anycubic Slicer Next, Home Assistant or Kobralink is connected, Kobra Control says so and waits for you to press **Retry** instead of trying again and again. A printer that reports a model code not in this list connects read-only: you see its status and files, but heating, moving, filament and printing stay off until its model is added. The Kobra 2 series has no LAN mode on stock firmware.
 
 ### Verified on the printer
 
@@ -109,19 +125,19 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 | Spoolman | Link a Spoolman spool to a slot. Finished prints book their filament use there when the option is on. |
 | Works with Spooler | [Spooler](https://github.com/bloodf/spooler) turns your Spoolman filaments into OrcaSlicer filament profiles. With it installed, the Stock tab shows Spooler's stock. Kobra Control also works alongside [Print Calculator](https://github.com/bloodf/orca_print_calculator). |
 | Settings | Requirements (ffmpeg, Anycubic Slicer Next, OrcaSlicer's printer agents and Spoolman: what is found, what needs it, how to install it), connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
-| Plugins > Run | **Check Kobra X connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
+| Plugins > Run | **Check printer connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
 
-Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and other Kobra models.
+Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and Kobra models without a LAN mode (the Kobra 2 series, the original Kobra, Kobra Go and Neo).
 
 <a id="-how-to-use"></a>
 ## 🛠️ How to use
 
-1. Turn on LAN mode on the Kobra X and put the printer and the computer on the same network.
+1. Turn on LAN mode on the printer and put the printer and the computer on the same network.
 2. Open the **Kobra Control** tab. It looks for the printer by itself. The first time, OrcaSlicer asks once whether kobracontrol may connect to that address. Allow it.
 3. Use the **Dashboard** to follow the print, set temperatures, turn the camera on with **Turn on**, and feed, retract or dry filament.
 4. To print a file stored on the printer, open **Files**, press **Print** on the file, check the panel and press **Start printing**.
-5. To send prints from OrcaSlicer itself, open **Preferences > Developer > Experimental Features**, tick **Use printer agents instead of print hosts** and restart OrcaSlicer. Then, in a copy of your Kobra X printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
-6. Run **Plugins > Check Kobra X connection**. Then, in OrcaSlicer's print dialog, sync the ACE slots, map each filament to a slot and send the print.
+5. To send prints from OrcaSlicer itself, open **Preferences > Developer > Experimental Features**, tick **Use printer agents instead of print hosts** and restart OrcaSlicer. Then, in a copy of your Anycubic printer preset, set **Printer Agent** to `kobracontrol` and the address to the printer's IP.
+6. Run **Plugins > Check printer connection**. Then, in OrcaSlicer's print dialog, sync the ACE slots, map each filament to a slot and send the print.
 
 <p align="center">
   <picture>
@@ -132,7 +148,7 @@ Not supported: Anycubic Cloud and access from outside your local network, a G-co
 
 Steps 5 and 6 are optional. Without them the tab works on its own, for example next to Kobralink or another Moonraker bridge that your printer preset already uses, and OrcaSlicer's Print, Send and Device tab keep using the preset's own agent.
 
-The tab looks for the printer in this order: the address in **Settings** if you set one, the address it found before for the selected printer preset, the preset's own address if a Kobra X answers there, then a search of the local network (SSDP, the way Anycubic Slicer Next finds printers). A printer the search finds is used only after you choose it.
+The tab looks for the printer in this order: the address in **Settings** if you set one, the address it found before for the selected printer preset, the preset's own address if an Anycubic printer in LAN mode answers there, then a search of the local network (SSDP, the way Anycubic Slicer Next finds printers). A printer the search finds is used only after you choose it.
 
 After a print starts, the printer can spend many minutes in preparation (heating, levelling, and cycling through the ACE slots) before the first layer. In one test that took about 11 minutes for a 5 minute print. The printer is not hung; the job is reported as printing meanwhile.
 
@@ -155,7 +171,7 @@ Print files and commands go to the printer, spool links and filament use go to S
 
 ### Network and certificate
 
-Kobra Control connects only to the Kobra X and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as a Kobra X in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. There is no cloud service.
+Kobra Control connects only to the printer and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as an Anycubic printer in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. There is no cloud service.
 
 Use it on a network you trust. The printer hands out its MQTT credentials to anyone on the network, and its TLS certificate is self-signed and not verified, so the connection is protected against passive reading only.
 
@@ -190,13 +206,13 @@ Only when the built-in player can't play the camera does the Kobra Control tab u
 </details>
 
 <details>
-<summary>Nothing connects, or "No Kobra X answered the network search".</summary>
+<summary>Nothing connects, or "No Anycubic printer answered the network search".</summary>
 
 Check that LAN mode is on at the printer and that the printer and the computer are on the same network. If your network blocks multicast, type the printer's IP under **Settings > Printer address**.
 </details>
 
 <details>
-<summary>"Something answers at … but it is not a Kobra X in LAN mode".</summary>
+<summary>"Something answers at … but it is not an Anycubic printer in LAN mode".</summary>
 
 The address belongs to another device, often a bridge such as Kobralink, or LAN mode is off. Leave **Settings > Printer address** blank so the tab searches, or type the printer's own IP there.
 </details>
@@ -208,14 +224,14 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 </details>
 
 <details>
-<summary>"Could not connect to OctoPrint" when I print to the Kobra X.</summary>
+<summary>"Could not connect to OctoPrint" when I print to the printer.</summary>
 
-The Kobra X has no OctoPrint server, so a physical printer of the type OctoPrint pointed at the printer's own address can't reach it. Two ways out:
+The printer has no OctoPrint server, so a physical printer of the type OctoPrint pointed at the printer's own address can't reach it. Two ways out:
 
 - **Print through Kobra Control's printer agent** (recommended). Remove that physical printer, tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. The printer's address is optional there: Kobra Control finds the printer on the network.
 - **Keep the OctoPrint physical printer, but point it at Kobra Control.** In the Kobra Control tab open **Settings > Upload bridge**, turn it on, and copy the two values it shows (each has a **Copy** button) into the physical printer: **Hostname, IP or URL** `127.0.0.1:8765` (not the printer's IP) and **API Key / Password** the bridge's key. Press **Test**. Upload and Print then waits in the Kobra Control tab for you to press **Start print**.
 
-The Dashboard says so, with a button to the upload bridge, when the selected Kobra X preset sends to OctoPrint.
+The Dashboard says so, with a button to the upload bridge, when the selected Anycubic printer preset sends to OctoPrint.
 </details>
 
 <details>

@@ -23,19 +23,20 @@ import locate
 import kobra
 import peers
 import printsetup
+import profiles
 
 
 import requirements
 import settings
 import spooler_bridge
 from i18n import tr
-from service import (BED_MAX, LIMITS, NOTHING_LOADED, NOZZLE_MAX, Service, Target, camera_url_for, can_flags,
+from service import (LIMITS, NOTHING_LOADED, Service, Target, camera_url_for, can_flags,
                      find_and_save_certificate, status_data)
 
 VERSION = "0.0.0-dev"
 AGENT_ID = "kobracontrol"
-AGENT_NAME = "Anycubic Kobra X (kobracontrol)"
-MODEL = "Anycubic Kobra X"
+AGENT_NAME = "Anycubic (kobracontrol)"   # the id stays "kobracontrol": existing printer presets keep working
+MODEL = "Anycubic Kobra X"                # the model shown before a printer answers (the first supported one)
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
 ADDRESSES_FILE = "addresses.json"   # printer preset -> the Kobra X found for it (locate.Addresses)
@@ -93,8 +94,15 @@ def host_of(address):
     return text.rsplit(":", 1)[0] if text.count(":") == 1 else text
 
 
-def is_kobra_x(*values):
-    return any(re.search(r"kobra[ _-]*x\b", clean(v), re.I) for v in values if v)
+def is_kobra(*values):
+    """A printer preset for an Anycubic model Kobra Control reaches over the LAN (profiles.py)."""
+    return profiles.is_anycubic_lan(*(clean(v) for v in values if v))
+
+
+def model_of(view):
+    """The printer's model name for OrcaSlicer: its profile's, else what it reports, else MODEL."""
+    profile = profiles.get((view or {}).get("mode_id"))
+    return profile["name"] if profile else (view or {}).get("model") or MODEL
 
 
 def json_for_html(data):
@@ -469,7 +477,7 @@ def preset_hints():
     bundle = orca.host.preset_bundle()
     preset = bundle.current_printer_preset()
     agent = clean(preset.config_value("printer_agent")) or clean(bundle.full_config_value("printer_agent"))
-    if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
+    if agent != AGENT_ID and not is_kobra(preset.config_value("printer_model"), preset.name,
                                             preset.config_value("inherits")):
         return "", preset.name, agent
     host = host_of(preset.config_value("print_host")) or host_of(bundle.full_config_value("print_host"))
@@ -485,7 +493,7 @@ def preset_setup():
 
     def value(key):
         return clean(preset.config_value(key)) or clean(bundle.full_config_value(key))
-    return {"kobra": value("printer_agent") == AGENT_ID or is_kobra_x(preset.config_value("printer_model"), preset.name,
+    return {"kobra": value("printer_agent") == AGENT_ID or is_kobra(preset.config_value("printer_model"), preset.name,
                                                                          preset.config_value("inherits")),
             "agent": value("printer_agent"), "host_type": value("host_type"), "host": host_of(value("print_host"))}
 
@@ -582,7 +590,7 @@ def ui_preset_gcode_problems():
         bundle = orca.host.preset_bundle()
         preset = bundle.current_printer_preset()
         agent = clean(preset.config_value("printer_agent")) or clean(bundle.full_config_value("printer_agent"))
-        if agent != AGENT_ID and not is_kobra_x(preset.config_value("printer_model"), preset.name,
+        if agent != AGENT_ID and not is_kobra(preset.config_value("printer_model"), preset.name,
                                                 preset.config_value("inherits")):
             return []
         return gcode_check.preset_problems(preset.config_value("gcode_skip_config_block"),
@@ -914,7 +922,7 @@ def ask_print(params, host, path, trays, filaments, task, cancel_fn):
            "seconds": plate["seconds"], "grams": plate["grams"], "metres": round(plate["metres"], 2),
            "thumbnail": plate["thumbnail"]}
     page = printsetup.page_data({"name": printer, "host": host, "state": data["state"], "can_print": data["can"]["print"],
-                                 "model": data.get("model") or MODEL}, job, fils, data, names,
+                                 "model": model_of(data)}, job, fils, data, names,
                                 start, options, auto_feed, cfg["remember_print_options"])
     answer, data = _show_print_dialog(page, host, cancel_fn, data)
     choice = printsetup.read_answer(answer, fils, data["slots"], data["mode"], start, options, auto_feed)
@@ -1056,7 +1064,7 @@ class KobraAgent(pa.PrinterAgentBase):
         return AGENT_NAME
 
     def get_agent_info(self):
-        return pa.AgentInfo(AGENT_ID, AGENT_NAME, VERSION, tr("Anycubic Kobra X over the LAN (MQTT), by kobracontrol"))
+        return pa.AgentInfo(AGENT_ID, AGENT_NAME, VERSION, tr("Anycubic Kobra X, Kobra 3 and Kobra S1 printers over the LAN (MQTT), by kobracontrol"))
 
     # host callbacks: stored, may be None ------------------------------------------------------------
     def _store(self, key, fn):
@@ -1115,7 +1123,7 @@ class KobraAgent(pa.PrinterAgentBase):
             fn = self._cb.get("ssdp")
         if fn is not None:
             call_safely("ssdp", fn, json.dumps({
-                "dev_name": view.get("printer_name") or MODEL, "dev_id": dev_id or host, "dev_ip": host, "dev_type": MODEL,
+                "dev_name": view.get("printer_name") or model_of(view), "dev_id": dev_id or host, "dev_ip": host, "dev_type": model_of(view),
                 "dev_signal": "0", "connect_type": "lan", "bind_state": "free", "sec_link": "secure", "ssdp_version": "v1"}))
 
     def get_user_selected_machine(self):
@@ -1128,8 +1136,8 @@ class KobraAgent(pa.PrinterAgentBase):
     def bind_detect(self, dev_ip, sec_link, detect):
         view = service().view_for(host_of(dev_ip)) or {}
         detect.dev_id = self.dev_id if self.host and self.host == host_of(dev_ip) else dev_ip
-        detect.dev_name = view.get("printer_name") or MODEL
-        detect.model_id = MODEL
+        detect.dev_name = view.get("printer_name") or model_of(view)
+        detect.model_id = model_of(view)
         detect.version = view.get("firmware") or ""
         detect.connect_type = "lan"
         detect.bind_state = "free"
@@ -1309,7 +1317,8 @@ class KobraAgent(pa.PrinterAgentBase):
         if not view["connected"]:
             return
         data, _ = status_data(view)
-        self._message(bambu.push_status(view, data["slots"], data["mode"], NOZZLE_MAX, BED_MAX, self._preferred()))
+        self._message(bambu.push_status(view, data["slots"], data["mode"], data["limits"]["nozzle_max"],
+                                          data["limits"]["bed_max"], self._preferred()))
 
     # commands -------------------------------------------------------------------------------------------
     def send_message(self, dev_id, json_str, qos, flag):
@@ -1324,7 +1333,7 @@ class KobraAgent(pa.PrinterAgentBase):
             return bambu.UNSUPPORTED
         view = service().view_for(self.host) if self.host else None
         if kind == "get_version":
-            self._message(bambu.version_reply((view or {}).get("firmware"), (view or {}).get("model") or MODEL))
+            self._message(bambu.version_reply((view or {}).get("firmware"), model_of(view)))
             return OK
         if kind == "get_access_code":
             self._message(bambu.access_code_reply(self.access_code))
@@ -1479,7 +1488,7 @@ class KobraAgent(pa.PrinterAgentBase):
         return self.start_local_print(params, update_fn, cancel_fn)
 
     def start_print(self, params, update_fn, cancel_fn, wait_fn):
-        return bambu.UNSUPPORTED   # cloud printing: the Kobra X is driven over the LAN only
+        return bambu.UNSUPPORTED   # cloud printing: Kobra Control drives the printer over the LAN only
 
     def start_sdcard_print(self, params, update_fn, cancel_fn):
         sync_language()
@@ -1539,7 +1548,7 @@ class KobraAgent(pa.PrinterAgentBase):
 
 class CheckConnection(orca.script.ScriptPluginCapabilityBase):
     def get_name(self):
-        return "Check Kobra X connection"
+        return "Check printer connection"
 
     def execute(self):
         # Scripts run on a worker thread of their own (OrcaSlicer docs/HLSD/python-plugin-async-bridge.md, "Per-
@@ -1553,17 +1562,17 @@ class CheckConnection(orca.script.ScriptPluginCapabilityBase):
             host = svc.wait_located(CHECK_SECONDS).host
             conn = svc.ready(host, timeout=max(1.0, deadline - time.monotonic()))
         except locate.NotFound as e:
-            text = tr("Couldn't reach the Kobra X: %s") % e
+            text = tr("Couldn't reach the printer: %s") % e
             if e.pending or e.candidates:   # only the tab can ask OrcaSlicer about them or let the user choose
                 text += " " + tr("Open the Kobra Control tab to allow or choose the printer.")
             return orca.ExecutionResult.skipped(text)
         except Exception as e:
-            return orca.ExecutionResult.skipped(" ".join([tr("Couldn't reach the Kobra X: %s") % e] + preset_gcode_warnings()))
+            return orca.ExecutionResult.skipped(" ".join([tr("Couldn't reach the printer: %s") % e] + preset_gcode_warnings()))
         view = conn.view()
         data, _ = status_data(view)
         loaded = ", ".join("S%d %s" % (s["global_index"] + 1, s["type"] or "?") for s in data["slots"] if s["status"] == 5)
         return orca.ExecutionResult.success(" ".join([tr("%s at %s (firmware %s), %s. %s") % (
-            view["printer_name"] or MODEL, host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded."))]
+            view["printer_name"] or model_of(view), host, view["firmware"] or "?", tr(view["state"]), loaded or tr("No filament loaded."))]
             + preset_gcode_warnings()))
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "kobracontrol"
-version = "0.10.2"
+version = "0.11.0"
 description = "Anycubic Kobra X control for OrcaSlicer: direct LAN printing through a printer agent, Device tab status, ACE slots, camera, files and Spoolman."
 authors = [{ name = "bloodf" }]
 license = "GPL-3.0-only"

@@ -15,12 +15,17 @@ import urllib.parse
 
 import certs
 import kobra
+import profiles
 from i18n import lazy, tr
 
 POLL_EVERY = 5.0                # s between read-only polls while connected
 RETRY_FIRST, RETRY_MAX = 2.0, 60.0
 STABLE_AFTER = 30.0             # s a session must stay up before the retry delay starts again from RETRY_FIRST
 CONNECT_QUERIES = (("info", "query"), ("print", "query"), ("multiColorBox", "getInfo"))
+HELD_AFTER = 3                  # refused MQTT logins in a row on a one-client printer before retrying stops
+HELD = lazy("The %s at %s takes one app at a time over the LAN, and another app holds it now (Anycubic Slicer Next, "
+            "Home Assistant, Kobralink or another OrcaSlicer). Close that app, then press Retry. Kobra Control "
+            "does not keep retrying on its own.")
 
 
 class NoCertificate(kobra.KobraError):
@@ -59,7 +64,7 @@ def _explain(host, error, origin="", http=False):
                 "saved address is granted when the plugin loads.") % (host, host)
     text = str(error)
     if http and refused(text):
-        return tr("Something answers at %s, but it is not a Kobra X in LAN mode: port 18910 refused the connection. "
+        return tr("Something answers at %s, but it is not an Anycubic printer in LAN mode: port 18910 refused the connection. "
                 "Check that %s is the printer itself (not a bridge such as Kobralink or Moonraker) and that LAN mode "
                 "is on at the printer.%s") % (host, host, tr(" The address comes from %s.") % tr(origin) if origin else "")
     return text
@@ -73,7 +78,7 @@ def refused(text):
 
 class Connection:
     def __init__(self, host, tls, log=print, http_port=18910, mqtt_port=9883, fetch=kobra.fetch_credentials,
-                 model="Anycubic Kobra X", pins=None):
+                 model="", pins=None):
         self.host, self.tls, self.log, self.fetch, self.pins = host, tls, log, fetch, pins
         self.server_cert = None   # {"fingerprint", "changed_from"} of the printer's TLS certificate, None without TLS
         self.http_port, self.mqtt_port = http_port, mqtt_port
@@ -91,6 +96,9 @@ class Connection:
         # follows the printer to a new address and a known identity at a new address must show the same certificate.
         self.identity = ""
         self._fresh = False                 # retry(): start the delay again from RETRY_FIRST
+        # A one-client printer (profiles.py single_client) refused HELD_AFTER logins in a row: another app holds it,
+        # so the loop waits for the user's Retry instead of retrying on a timer.
+        self.held, self._refusals = False, 0
         self.firmware_name = ""
         self._listeners = []
         self._lock = threading.Lock()
@@ -178,12 +186,13 @@ class Connection:
 
     def _backoff(self, delay):
         """Wait delay[0] (cut short only by retry() or stop()), then double it up to RETRY_MAX."""
-        self.next_try = time.time() + delay[0]
-        self._retry.wait(delay[0])
+        self.next_try = 0.0 if self.held else time.time() + delay[0]
+        self._retry.wait(None if self.held else delay[0])
         self._retry.clear()
         self.next_try = 0.0
         if self._fresh:
             self._fresh, delay[0] = False, RETRY_FIRST
+            self.held, self._refusals = False, 0
         else:
             delay[0] = min(delay[0] * 2, RETRY_MAX)
 
@@ -216,12 +225,16 @@ class Connection:
             self.http_failed = True
             creds = self.fetch(self.host, port=self.http_port)
             self.http_failed = False
+            profile = profiles.get(creds.mode_id)
+            self.state.set_model(creds.mode_id, profile["name"] if profile else creds.model)
             printer = kobra.Printer(creds, ssl_context=ssl_context, mqtt_port=self.mqtt_port, http_port=self.http_port,
                                     on_report=self._report, on_disconnect=self._dropped)
             printer.connect()
         except kobra.KobraError as e:
             if printer:
                 printer.close()
+            if self._one_client_refused(e):
+                return False
             self._fail(_explain(self.host, e, self.origin, self.http_failed), getattr(e, "no_certificate", False))
             return False
         except OSError as e:   # e.g. the plugin sandbox refusing a socket before kobra wraps it
@@ -241,22 +254,38 @@ class Connection:
             printer.close()
             self.mismatch = printer.tls_fingerprint or "none"
             self._stop.set()   # never retried: the service offers this printer as a choice instead
-            self._fail(tr("A different Kobra X answered at %s: its certificate is not the one of the printer Kobra Control "
+            self._fail(tr("A different Anycubic printer answered at %s: its certificate is not the one of the printer Kobra Control "
                        "knows. It was not used.") % self.host, False)
             return False
         self._note_certificate(printer.tls_fingerprint)
         self.printer = printer
         self._poll(initial=True)   # the first snapshot, before anyone sees the printer as connected
         if not printer.connected:
+            if self._one_client_refused(None):
+                return False
             self._fail(tr("the printer closed the session right after it opened; another app connected to the printer may "
                        "be the cause"), False)
             return False
         self.state.connected = True
+        self._refusals = 0
         self._opened_at = time.monotonic()
         self.error, self.no_certificate = "", False
         self._connected.set()
         self.log("kobracontrol: connected to %s" % self.host)
         self._notify()
+        return True
+
+    def _one_client_refused(self, error):
+        """A one-client printer refused the MQTT login (after /ctrl answered): count it, and after HELD_AFTER in a
+        row say that another app holds the printer and stop retrying on a timer. True when the failure was reported."""
+        profile = profiles.get(self.state.view().get("mode_id"))
+        if self.http_failed or not (profile and profile["single_client"]) or getattr(error, "code", None) == "denied":
+            return False
+        self._refusals += 1
+        if self._refusals < HELD_AFTER:
+            return False
+        self.held = True
+        self._fail(tr(HELD) % (profile["name"], self.host), False)
         return True
 
     def _note_certificate(self, fingerprint):

@@ -19,19 +19,19 @@ THUMBNAIL = re.compile(rb"^;[ \t]*(thumbnail(?:_\w+)?) begin ", re.M)
 CONFIG_END = b"; CONFIG_BLOCK_END"
 TRUE = ("1", "true")
 
-NO_CONFIG = lazy("The G-code has no settings block at its end. The Kobra X screen probably reads the filament and print "
+NO_CONFIG = lazy("The G-code has no settings block at its end. The printer's screen probably reads the filament and print "
                  "details from it. Likely cause: Skip G-code config block is on. Turn it off in Printer settings > Basic "
                  "information > Advanced and slice again.")
-NO_THUMBNAIL = lazy("The G-code has no preview picture, so the Kobra X screen probably shows the file without one. Set G-code "
+NO_THUMBNAIL = lazy("The G-code has no preview picture, so the printer's screen probably shows the file without one. Set G-code "
                     "thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG, and slice "
                     "again.")
-NOT_PNG = lazy("The G-code's preview picture is not a PNG, and the Kobra X screen probably shows only PNG pictures. Use "
+NOT_PNG = lazy("The G-code's preview picture is not a PNG, and the printer's screen probably shows only PNG pictures. Use "
                "/PNG sizes in Printer settings > Basic information > Advanced > G-code thumbnails, for example "
                "300x300/PNG, and slice again.")
-PRESET_SKIPS_CONFIG = lazy("Skip G-code config block is on in this printer preset. The Kobra X screen probably reads the "
+PRESET_SKIPS_CONFIG = lazy("Skip G-code config block is on in this printer preset. The printer's screen probably reads the "
                            "filament and print details from that block. Turn it off in Printer settings > Basic "
                            "information > Advanced.")
-PRESET_NO_PNG = lazy("This printer preset writes no PNG preview picture (G-code thumbnails: %s). The Kobra X screen "
+PRESET_NO_PNG = lazy("This printer preset writes no PNG preview picture (G-code thumbnails: %s). The printer's screen "
                      "probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > "
                      "Advanced, for example to 300x300/PNG.")
 

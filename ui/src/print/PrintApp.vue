@@ -124,7 +124,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true));
     </label>
 
     <section class="pd-plate" :aria-label="t('pd.thumb')">
-      <span class="pd-for">{{ t('pd.for', { model: D.printer.model || 'Kobra X' }) }}<template v-if="D.job.plate"> · {{ t('pd.plate', { n: D.job.plate }) }}</template></span>
+      <span class="pd-for">{{ t('pd.for', { model: D.printer.model || 'Anycubic' }) }}<template v-if="D.job.plate"> · {{ t('pd.plate', { n: D.job.plate }) }}</template></span>
       <img v-if="D.job.thumbnail" class="pd-thumb" :src="'data:image/png;base64,' + D.job.thumbnail" :alt="t('pd.thumb')" />
       <OuiIcon v-else :icon="plateIcon" :size="72" class="pd-thumb pd-thumb-none" />
       <dl class="pd-facts">

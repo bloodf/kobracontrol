@@ -1466,7 +1466,7 @@ class RefusedInfoPort(unittest.TestCase):
         self.svc.set_target(service.Target("127.0.0.1"))
         conn = self.svc.connections["127.0.0.1"]
         wait(lambda: conn.failures)
-        self.assertIn("Something answers at 127.0.0.1, but it is not a Kobra X in LAN mode", conn.error)
+        self.assertIn("Something answers at 127.0.0.1, but it is not an Anycubic printer in LAN mode", conn.error)
         self.assertIn("not a bridge such as Kobralink", conn.error)
         self.assertIn("LAN mode", conn.error)
         self.assertIn("The address comes from Settings > Printer address.", conn.error)
