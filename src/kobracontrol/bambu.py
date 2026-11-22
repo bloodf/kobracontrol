@@ -27,6 +27,8 @@ import json
 import re
 import time
 
+from filmatch import FILAMENT_FAMILIES, GENERIC_IDS, generic_filament_id  # noqa: F401  (shared with Spooler and U1 Control)
+from filmatch import generic_family as material_family  # noqa: F401
 from i18n import tr
 
 UNSUPPORTED = -7010            # IPrinterAgent: "command not supported"
@@ -34,26 +36,8 @@ HAS_SDCARD_NORMAL = 1          # DevStorage.h SdcardState
 FLOW_CALI_BIT = 1 << 16        # home_flag: the printer can run flow (PA) calibration before a print
 CHAMBER_LIGHT = "chamber_light"
 
-# Material -> OrcaFilamentLibrary family, from MRA:794-841 map_filament_type_to_generic_id.
-FILAMENT_FAMILIES = {
-    "PLA": "PLA", "PLA-CF": "PLA-CF", "PLA SILK": "PLA Silk", "PLA-SILK": "PLA Silk", "PLA MATTE": "PLA Matte",
-    "PLA HIGH SPEED": "PLA High Speed", "PLA-HS": "PLA High Speed", "PLA HS": "PLA High Speed",
-    "ABS": "ABS", "ASA": "ASA", "PETG": "PETG", "PET": "PETG", "PCTG": "PCTG",
-    "PA": "PA", "NYLON": "PA", "PA-CF": "PA-CF", "PPA": "PPA-CF", "PPA-CF": "PPA-CF", "PPA-GF": "PPA-GF",
-    "PC": "PC", "PE": "PE", "PP": "PP", "PVA": "PVA", "HIPS": "HIPS", "BVOH": "BVOH", "TPU": "TPU",
-    "EVA": "EVA", "PHA": "PHA", "COPE": "CoPE", "SBS": "SBS",
-}
-# filament_id of each "Generic <family> @System" preset in OrcaSlicer's OrcaFilamentLibrary (resources/profiles/
-# OrcaFilamentLibrary/filament, resolved through "inherits", OrcaSlicer main 32f6db87). OrcaSlicer's plugin API
-# doesn't show a preset's filament_id, so they are listed here. An id OrcaSlicer doesn't know still works: its sync
-# from AMS then takes "Generic <tray_type>" (PresetBundle::sync_ams_list); only an empty one becomes "Generic PLA".
-GENERIC_IDS = {
-    "ABS": "OFY9muEs", "ASA": "OFLPAxz3", "BVOH": "OFo2UF2C", "CoPE": "OFjt9en1", "EVA": "OFCD8qiU",
-    "HIPS": "OFsFon5l", "PA": "OFg8ndtj", "PA-CF": "OFQLcbps", "PC": "OFLakOUI", "PCTG": "OFu1evlr",
-    "PE": "OFPklMI1", "PETG": "OFYPdQJh", "PHA": "OF74KeQR", "PLA": "OFDSrzZ8", "PLA High Speed": "OFmpMwxS",
-    "PLA Matte": "OFmY0l6t", "PLA Silk": "OFesA6rF", "PLA-CF": "OFWbdGsC", "PP": "OF1UNk9P", "PPA-CF": "OF8tPByX",
-    "PPA-GF": "OF8Tlg47", "PVA": "OFDvXujf", "SBS": "OFhQfUQY", "TPU": "OFgbpcy9",
-}
+# FILAMENT_FAMILIES (material -> OrcaFilamentLibrary family, MRA:794-841 map_filament_type_to_generic_id) and
+# GENERIC_IDS (filament_id of each "Generic <family> @System" preset) come from filmatch.
 
 # view["state"] -> gcode_state (DM:3558 set_print_state). As MRA:133-150: cancelled and error are FAILED.
 # "busy" (an unknown printer state) is RUNNING, so OrcaSlicer never starts a print on a busy printer.
@@ -65,20 +49,6 @@ GCODE_STATE = {"idle": "IDLE", "printing": "RUNNING", "busy": "RUNNING", "paused
 STAGES = {"auto_leveling": 1, "hotbed_heating": 2, "frequency_sweeping": 3, "nozzle_heating": 7,
           "nozzle_purging": 14, "nozzle_wiping": 14, "ace_filament_unfeeding": 22, "ace_filament_feeding": 24}
 PRINT_STAGE = {"printing": 1, "paused": 2, "finished": 3, "error": 4}   # MRA:2146-2158
-
-
-def material_family(material):
-    """OrcaFilamentLibrary family of a material, or None: the table, else the longest family named in it as a
-    whole word."""
-    text = " ".join(str(material or "").split()).upper()
-    return FILAMENT_FAMILIES.get(text) or next(
-        (FILAMENT_FAMILIES[k] for k in sorted(FILAMENT_FAMILIES, key=len, reverse=True)
-         if re.search(r"(?<![A-Z0-9])%s(?![A-Z0-9])" % re.escape(k), text)), None)
-
-
-def generic_filament_id(material):
-    """filament_id of the material's "Generic <family> @System" preset, or ""."""
-    return GENERIC_IDS.get(material_family(material), "")
 
 
 def _hex(color):
