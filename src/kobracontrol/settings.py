@@ -34,6 +34,8 @@ DEFAULTS = {
     "bridge_enabled": False,             # Upload-and-Print bridge (bridge.py): opt-in
     "bridge_port": 8765,
     "dashboard": {},   # the Dashboard's layouts (clean_dashboard); {} = the page's default
+    "cloud_enabled": False,              # Anycubic Cloud (cloud.py): opt-in; its tokens live in cloud.json, not here
+    "cloud_printer": "",                 # the cloud printer id the tab and the printer agent drive; "" = the LAN one
 }
 PORT_RANGE = (1024, 65535)
 REFRESH_RANGE = (10, 300)
@@ -98,6 +100,8 @@ def _clean(key, value):
         return printsetup.clean_memory(value)
     if key == "dashboard":
         return clean_dashboard(value)
+    if key == "cloud_printer":
+        return value if value == "" or (value.isdigit() and len(value) <= 20) else None
     return value.strip() if isinstance(value, str) else value
 
 

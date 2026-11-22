@@ -21,7 +21,7 @@
 
 ## ✨ What it does
 
-Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for Anycubic printers with a LAN mode: the Kobra X, and (experimental) the Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max and Kobra 4. It talks to the printer directly on your local network and registers an OrcaSlicer printer agent, so OrcaSlicer's own Print and Send dialogs and its Device tab work with the printer. It also adds a **Kobra Control** tab with a dashboard, the camera, the ACE filament slots, the printer's files and Spoolman. It needs no cloud account and no extra Python packages.
+Kobra Control (`kobracontrol`) is an OrcaSlicer 2.5 plugin for Anycubic printers with a LAN mode: the Kobra X, and (experimental) the Kobra 3, Kobra 3 V2, Kobra 3 Max, Kobra S1, Kobra S1 Max and Kobra 4. It talks to the printer directly on your local network and registers an OrcaSlicer printer agent, so OrcaSlicer's own Print and Send dialogs and its Device tab work with the printer. It also adds a **Kobra Control** tab with a dashboard, the camera, the ACE filament slots, the printer's files and Spoolman. It needs no cloud account and no extra Python packages; an opt-in Anycubic Cloud connection covers printers without a LAN mode.
 
 <p align="center">
   <picture>
@@ -68,7 +68,20 @@ The printer says which model it is when Kobra Control logs in, and Kobra Control
 | Kobra S1 Max | 20029 | Experimental | 350 / 120 °C |
 | Kobra 4 | 20028 | Experimental | 300 / 100 °C |
 
-The Kobra 3 and Kobra S1 families let only one app at a time connect over the LAN. If Anycubic Slicer Next, Home Assistant or Kobralink is connected, Kobra Control says so and waits for you to press **Retry** instead of trying again and again. A printer that reports a model code not in this list connects read-only: you see its status and files, but heating, moving, filament and printing stay off until its model is added. The Kobra 2 series has no LAN mode on stock firmware.
+The Kobra 3 and Kobra S1 families let only one app at a time connect over the LAN. If Anycubic Slicer Next, Home Assistant or Kobralink is connected, Kobra Control says so and waits for you to press **Retry** instead of trying again and again. A printer that reports a model code not in this list connects read-only: you see its status and files, but heating, moving, filament and printing stay off until its model is added. The Kobra 2 series has no LAN mode on stock firmware: it works through Anycubic Cloud (below).
+
+### Anycubic Cloud (opt-in, experimental)
+
+For printers without a LAN mode (Kobra 2, Kobra 2 Pro, Plus and Max) or a printer you keep on Anycubic's cloud instead of LAN mode. It is **off by default**: turn on **Settings > Anycubic Cloud**, press **Use my Anycubic Slicer Next sign-in** (or paste a token) and choose the printer. Kobra Control never asks for your password.
+
+| Over the cloud | |
+|---|---|
+| Works | Status (temperatures, job, progress), print from OrcaSlicer or the tab, pause, resume and stop (pause and resume ask first) |
+| Does not | Heating, moving, homing, filament and drying commands, the camera, the printer's file list. They are refused before anything is sent. |
+| Goes to Anycubic | Your sign-in token, the printer list, the print files you send (unchanged) and the print orders you give, to `cloud-universe.anycubic.com`, `mqtt-universe.anycubic.com` and Anycubic's file storage on Amazon S3 |
+| Kept on your computer | `cloud.json` in the plugin's storage folder (readable only by you on macOS and Linux), never logged. **Sign out** deletes it. |
+
+**The risk.** Kobra Control uses Anycubic's unofficial app interface the way Anycubic Slicer Next does. Anycubic can change or block it at any time, and using it may be against Anycubic's terms: your account could be limited. Signing in may end the session Anycubic Slicer Next has open on the same account. A printer in LAN mode is not on the cloud; use the LAN connection for it. Untested on a real printer so far: testers welcome. Details are in [SECURITY.md](SECURITY.md#anycubic-cloud-opt-in).
 
 ### Verified on the printer
 
@@ -127,7 +140,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 | Settings | Requirements (ffmpeg, Anycubic Slicer Next, OrcaSlicer's printer agents and Spoolman: what is found, what needs it, how to install it), connection (with the printer's certificate fingerprint), certificate, print defaults, `ffmpeg` path, Spoolman and language. If the printer presents a different TLS certificate than last time, every tab shows a warning. |
 | Plugins > Run | **Check printer connection** reports the certificate, credentials, MQTT and firmware version. **Find Anycubic certificate** looks for the client certificate and reports the result. |
 
-Not supported: Anycubic Cloud and access from outside your local network, a G-code console (the printer's LAN protocol has none), and Kobra models without a LAN mode (the Kobra 2 series, the original Kobra, Kobra Go and Neo).
+Not supported: a G-code console (the printer's LAN protocol has none), the camera over Anycubic Cloud, and Kobra models with no network at all (the original Kobra, Kobra Go and Neo).
 
 <a id="-how-to-use"></a>
 ## 🛠️ How to use
@@ -165,13 +178,15 @@ Full steps and a troubleshooting table are in [docs/setup.md](docs/setup.md).
 | Read: OrcaSlicer's temporary folder | The sliced file that Print and Send hand over. It is read, checked and uploaded as it is, never changed. |
 | Read: Anycubic Slicer Next's files, only when you press **Find certificate** | Its client certificate. OrcaSlicer asks first. |
 | Run: `ffmpeg`, only for the camera in the tab | Turning the printer's stream into pictures. OrcaSlicer shows the command and asks. |
+| Network: `cloud-universe.anycubic.com`, `mqtt-universe.anycubic.com` and Anycubic's S3 upload hosts, only when Anycubic Cloud is on | Sign-in, printer list, status, uploads and print orders over the cloud (opt-in). |
+| Read: Anycubic Slicer Next's log folder, only when you press **Use my Anycubic Slicer Next sign-in** | The sign-in token it left there. OrcaSlicer asks first. |
 | Threads | Network work off OrcaSlicer's main thread. |
 
-Print files and commands go to the printer, spool links and filament use go to Spoolman, and nothing goes anywhere else. There is no telemetry and no analytics. The plugin writes files only in its own storage folder (settings, the print ledger, the printers it found) and reads Spooler's stock list when Spooler is installed.
+Print files and commands go to the printer, spool links and filament use go to Spoolman, and nothing goes anywhere else, unless you turn on Anycubic Cloud: then they go to Anycubic for the cloud printer you chose. There is no telemetry and no analytics. The plugin writes files only in its own storage folder (settings, the print ledger, the printers it found) and reads Spooler's stock list when Spooler is installed.
 
 ### Network and certificate
 
-Kobra Control connects only to the printer and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as an Anycubic printer in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. There is no cloud service.
+Kobra Control connects only to the printer and to your Spoolman server, if you set one. The printer is reached over HTTP on port 18910 and MQTT over mutual TLS on port 9883, at the address you set or one the plugin found on your local network and confirmed as an Anycubic printer in LAN mode. The network search sends SSDP queries to the local multicast group 239.255.255.250 only. Kobra Control talks to Anycubic's cloud only when you turn on Anycubic Cloud.
 
 Use it on a network you trust. The printer hands out its MQTT credentials to anyone on the network, and its TLS certificate is self-signed and not verified, so the connection is protected against passive reading only.
 

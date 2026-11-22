@@ -12,9 +12,12 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 - **"Another app holds the printer".** The Kobra 3 and Kobra S1 families accept one app at a time over the LAN. When one of them keeps refusing the login, Kobra Control now says that Anycubic Slicer Next, Home Assistant or Kobralink is probably connected and waits for **Retry** instead of trying again forever.
 - Printer presets for all of these models are recognised: the address hint, the setup hints and the G-code preset checks work for a Kobra 3 or Kobra S1 preset as they do for a Kobra X one, and a file sliced for another model gets the usual warning.
 
+- **Anycubic Cloud, opt-in (experimental).** For printers without a LAN mode (the Kobra 2 series) or kept on Anycubic's cloud: turn on Settings > Anycubic Cloud, sign in with the account Anycubic Slicer Next is signed in to (found in its logs) or a pasted token, and choose the printer. The tab and OrcaSlicer's Print then show its status and print, pause, resume and stop through Anycubic's servers. Before every order Kobra Control reads the printer and its job again and refuses when that order no longer fits. Over the cloud nothing heats, moves or feeds, and pause and resume ask first. The sign-in is kept in `cloud.json` in the plugin's storage folder, readable only by you, and never logged. This uses Anycubic's unofficial app interface: Anycubic can change or block it, and it may be against Anycubic's terms. The README and SECURITY.md say what goes where. Parts are ported from OrcaCubic and Bob-41's anycubic-plugin (both MIT; see NOTICE.md). It has not been tried on a real printer yet.
+
 ### Changed
 
 - **A new default Dashboard layout.** On the left, the print, then the filament slots, then the console; on the right, the controls, then the temperatures over the printer's facts beside the camera over the moves. A Default layout you never arranged gets it; layouts you saved stay exactly as you saved them.
+- The README and SECURITY.md no longer promise "no cloud": Kobra Control still talks only to your printer and Spoolman unless you turn Anycubic Cloud on.
 - Texts say "the printer" or "an Anycubic printer" where they used to say "Kobra X". The printer agent is now called "Anycubic (kobracontrol)"; its id stays `kobracontrol`, so existing printer presets keep working. The script **Check Kobra X connection** is now **Check printer connection**.
 
 ## [0.10.2] - 2026-11-21

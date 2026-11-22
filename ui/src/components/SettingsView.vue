@@ -5,9 +5,10 @@ import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
 import { OuiEmpty, OuiFormRow, OuiFormSection, OuiIcon, OuiKeyValue, OuiRequirement, OuiStatus, type OuiSettingsSection } from '@orca-plugins/ui-foundation/src/components';
-import { camera, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, upload, wrench } from '@orca-plugins/ui-foundation/src/icons';
+import { camera, external, info, languages, link as linkIcon, printer, refresh, save as saveIcon, search, shieldCheck, spoolman, upload, wrench } from '@orca-plugins/ui-foundation/src/icons';
 import { UI_VERSION } from '@orca-plugins/ui-foundation/src';
 import BridgeSettings from './BridgeSettings.vue';
+import CloudSettings from './CloudSettings.vue';
 import SettingsPages from './SettingsPages.vue';
 import CertFinder from './CertFinder.vue';
 import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, pagePlays, requirement, checkRequirements } from '../app/store';
@@ -79,6 +80,7 @@ const sections = computed<OuiSettingsSection[]>(() => [
   { id: 'cam-s-h', label: t('camset.title'), icon: camera, ...(s.camReason === 'no_ffmpeg' || noFfmpeg.value ? { state: 'warn' as const } : {}) },
   { id: 'sm-s-h', label: t('sm.title'), icon: spoolman },
   { id: 'bridge-h', label: t('bridge.title'), icon: upload, ...(config.value?.bridge?.enabled && !config.value.bridge.running ? { state: 'warn' as const } : {}) },
+  { id: 'cloud-h', label: t('cloud.title'), icon: external },
   { id: 'needs-h', label: t('req.tab'), icon: wrench, ...(reqWarn.value ? { state: 'warn' as const } : {}) },
   { id: 'lang-h', label: t('lang.title'), icon: languages },
   { id: 'about-h', label: t('about.title'), icon: info },
@@ -95,7 +97,7 @@ watch(() => [s.settingsPage, s.tab, !!config.value], () => {
 // The save bar names what is not saved yet.
 const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
   auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', print_dialog: 'printdef.dialog', remember_print_options: 'pd.remember', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
-  bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port' };
+  bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port', cloud_enabled: 'cloud.enable', cloud_printer: 'cloud.printer' };
 const changedText = computed(() => fmt.list(changed.value.map(k => t(FIELD[k] as 'conn.host'))));
 const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
 // Enter in a text field saves, as the form's own button did.
@@ -190,6 +192,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
         </OuiFormSection>
 
         <BridgeSettings />
+        <CloudSettings />
 
         <OuiFormSection id="lang-h" :icon="languages" tone="neutral" :title="t('lang.title')">
           <OuiFormRow :label="t('lang.label')" :hint="t('lang.help')">

@@ -76,12 +76,13 @@ export interface LogLine { id: number; text: string; kind: 'in' | 'out' | 'err' 
 export const activity = ref<LogLine[]>([]);
 export const LOG_MAX = 1000;
 let logId = 0;
-const QUIET = new Set(['spools', 'device', 'connect']);
+const QUIET = new Set(['spools', 'device', 'connect', 'cloud_state']);
 export function note(text: string, kind: LogLine['kind'] = 'out'): void {
   const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   activity.value = [...activity.value, { id: ++logId, text: `${at}  ${text}`, kind }].slice(-LOG_MAX);
 }
-const argText = (args?: Record<string, unknown>) => Object.entries(args ?? {}).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ');
+// A pasted Anycubic Cloud token (cloud_sign_in) never reaches the console.
+const argText = (args?: Record<string, unknown>) => Object.entries(args ?? {}).map(([k, v]) => `${k}=${k === 'token' ? '***' : typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ');
 export const tracker = new Tracker(
   (cmd, args) => { if (!QUIET.has(cmd)) note(`> ${cmd} ${argText(args)}`.trim(), 'in'); return bridge.command(cmd, args, s.info?.generation); },
   (key, params) => t(key, params),

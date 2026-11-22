@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "kobracontrol"
-MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "profiles", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "printsetup", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "bridge", "jobs", "locating", "service")  # dependency order
+MODULES = ("lang_pt_br", "lang_es", "lang_de", "lang_zh_cn", "lang_pl", "i18n", "profiles", "aes", "mqtt", "certs", "kobra", "locate", "ace", "bambu", "fmp4", "camera", "spoolman", "requirements", "printsetup", "settings", "spooler_bridge", "peers", "usage", "files", "stockview", "connection", "gcode_check", "bridge", "jobs", "locating", "cloud", "service")  # dependency order
 
 # WebView2 (OrcaSlicer on Windows) takes at most 2 MiB of base64 = 1,572,864 bytes of page; keep 10% for the boot data
 PAGE_MAX = int(1_572_864 * 0.9)

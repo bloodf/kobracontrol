@@ -100,8 +100,9 @@ def limits(mode_id):
     return {"nozzle_max": p["nozzle_max"], "bed_max": p["bed_max"]} if p else {"nozzle_max": 0, "bed_max": 0}
 
 
-def describe(mode_id, model=""):
-    """status.data `profile`: {"known", "verified", "name", "mode_id", "single_client"} for the page's notices."""
+def describe(mode_id, model="", cloud=False):
+    """status.data `profile`: {"known", "verified", "name", "mode_id", "single_client"} for the page's notices. known:
+    Kobra Control can drive it this way (a Kobra 2 only over Anycubic Cloud)."""
     p = get(mode_id)
-    return {"known": bool(p and p["lan"]), "verified": bool(p and p["verified"]), "mode_id": str(mode_id or ""),
+    return {"known": bool(p and (p["lan"] or cloud)), "verified": bool(p and p["verified"]), "mode_id": str(mode_id or ""),
             "name": p["name"] if p else (model or ""), "single_client": bool(p and p["single_client"])}

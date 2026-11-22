@@ -14,6 +14,8 @@ export interface Status {
   skipped_objects: string[]; pause_reason: { code?: number; msg?: string } | null; last_error: { msg?: string; code?: number } | null;
   phase_unit?: number | null; phase_channel?: number | null; box_set_failed: boolean; updated_at: number;
   mode: 'toolhead' | 'ace_direct' | 'ace_hub'; slots: Slot[]; loaded_slot: number; ace_units: AceUnit[]; can: Can;
+  /** 'cloud' when this printer is reached through Anycubic Cloud (no move, heat or feed there); absent on the LAN. */
+  transport?: 'cloud';
   /** The printer's TLS certificate (SHA-256 hex); changed_from is the one seen before when it changed, else "". */
   tls?: { fingerprint: string; changed_from: string } | null;
   /** info/report features ({"flow_calibration_support": true, ...}); {} before the printer said. */

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, markRaw, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiDashboard, OuiIcon, OuiPageHeader, validateLayout, replaceRetired, type OuiDashboardLabels, type OuiWidget } from '@orca-plugins/ui-foundation/src/components';
+import { OuiDashboard, OuiIcon, OuiPageHeader, OuiStatus, validateLayout, replaceRetired, type OuiDashboardLabels, type OuiWidget } from '@orca-plugins/ui-foundation/src/components';
 import { ace, camera, edit, files, move, printer, terminal, thermometer } from '@orca-plugins/ui-foundation/src/icons';
 import JobCard from './JobCard.vue';
 import ControlsPanel from './ControlsPanel.vue';
@@ -105,6 +105,7 @@ async function rename() {
 
 <template>
   <OuiPageHeader v-if="!firstRun" :title="name" :meta="meta" data-test="printer-head">
+    <template v-if="st?.transport === 'cloud'" #meta>{{ meta }} <OuiStatus state="idle" data-test="cloud-tag">{{ t('cloud.title') }}</OuiStatus></template>
     <template #actions>
       <Button severity="secondary" text :label="t('device.rename')" :disabled="renameOff" :aria-describedby="whyId(busy.print)"
               :loading="tracker.isBusy('rename')" data-focus-key="rename" data-test="rename" @click="rename">
