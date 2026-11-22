@@ -342,6 +342,7 @@ export const zhCN: Record<MessageKey, string> = {
   'slot.empty': "空",
   'slot.noType': "未设置材料",
   'slot.edit': "编辑",
+  'match.title': 'OrcaSlicer 预设', 'match.none': '没有合适的 OrcaSlicer 预设', 'match.linked': '已在 Spoolman 中关联', 'match.spooler': 'Spooler 预设', 'match.change': '更改', 'match.score': '评分 {n}', 'match.auto': '自动', 'match.autoHint': '忘记手动选择的预设', 'match.remembered': '手动选择', 'match.r.material': '材料 {v}', 'match.r.variant': '{v} 的变体', 'match.r.vendor': '供应商 {v}', 'match.r.generic': '通用预设', 'match.r.other_vendor': '其他供应商（{v}）', 'match.r.word': '名称中有“{v}”', 'match.r.extra_word': '料盘上没有“{v}”', 'match.r.printer': '适用于此打印机', 'match.r.other_printer': '适用于其他打印机', 'match.r.nozzle': '{v} mm 喷嘴',
   'slot.editLabel': "编辑 {slot}",
   'slot.editTitle': "编辑 {slot}",
   'slot.material': "材料",

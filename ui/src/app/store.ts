@@ -7,7 +7,7 @@ import { cancelDialog } from '../core/dialog';
 import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';
 import { boundSlots } from '../core/logic';
 import { playable } from '../core/player';
-import type { Certificate, Config, Info, Limits, Located, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
+import type { Certificate, Config, Info, Limits, Located, PresetMatch, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
 
 export type Phase = 'connecting' | 'connected' | 'noTarget' | 'noCertificate' | 'unreachable';
 export const LIMITS: Limits = { nozzle_max: 300, bed_max: 100 };
@@ -28,6 +28,9 @@ export const s = reactive({
   limits: { ...LIMITS },
   certificate: null as Certificate | null,
   spools: [] as Spool[],
+  /** Each ready slot's preset as the Device tab reports it, by global slot index (preset_matches). */
+  matches: {} as Record<string, PresetMatch>,
+  matchBusy: false,
   /** Seconds between Spoolman re-reads (settings spoolman_refresh_s; 0 = off), and whether the last ones failed. */
   refreshS: REFRESH_DEFAULT_S,
   spoolsRetrying: false,
@@ -320,6 +323,21 @@ export function lease(): void {
   bridge.post({ type: 'lease', camera: s.camOn && vis && s.widgets.includes('camera'), stock: !s.hidden && stockTab() && stockVisible.value, mse: playable() });
 }
 
+// ------------------------------------------------------------------ slot presets (filmatch)
+// Read again whenever what a slot holds changes (material, colour, linked spool); Change remembers another preset.
+const takeMatches = (r: any) => { s.matches = Object.fromEntries(((r?.matches ?? []) as PresetMatch[]).map(m => [String(m.slot), m])); };
+export async function loadMatches(): Promise<void> {
+  try { takeMatches(await bridge.request({ type: 'preset_matches' })); } catch { /* the cards just show no preset line */ }
+}
+export async function pickPreset(slot: number, name: string | null): Promise<void> {
+  if (s.matchBusy) return;
+  s.matchBusy = true;
+  try { takeMatches(await bridge.request({ type: 'preset_pick', slot, name })); }
+  catch (e) { tracker.notify('error', t('msg.failed', { action: t('match.change'), error: message(e) })); }
+  finally { s.matchBusy = false; }
+}
+const holds = () => JSON.stringify((s.status?.slots ?? []).map(sl => [sl.global_index, sl.status, sl.type, sl.color, sl.sku, sl.rfid, sl.brand, sl.spool_id]));
+
 export function start(): () => void {
   bridge.attach();
   const off = bridge.onMessage(onMessage);
@@ -338,6 +356,7 @@ export function start(): () => void {
   const offLinks = watch(() => s.stock?.spooler?.links, (now, was) => { if (was !== undefined && now !== was) void loadSpools(true); });
   // What the printer does goes in the Console too.
   const offState = watch(() => s.status?.state, (now, was) => { if (now && was && now !== was) note(t('console.state', { state: tMaybe(`status.state.${now}`, now) })); });
+  const offHolds = watch(holds, (now, was) => { if (now !== was && s.status) void loadMatches(); });
   void hello();
-  return () => { off(); offCfg(); offLinks(); offState(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
+  return () => { off(); offCfg(); offLinks(); offState(); offHolds(); auto.stop(); document.removeEventListener('visibilitychange', onVis); timers.forEach(clearInterval); };
 }

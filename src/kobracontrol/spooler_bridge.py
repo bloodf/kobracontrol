@@ -8,6 +8,7 @@ import json
 import os
 import re
 
+import filmatch
 import spoolman
 
 BUNDLE_ID = "spooler"
@@ -192,3 +193,121 @@ def standalone_id(preset, log=None):
         log("filament preset file not readable: %s" % path)
     fid = data.get("filament_id") if data else None
     return fid.strip() if isinstance(fid, str) else ""
+
+
+def cached_standalone_id(preset, cache, log=None):
+    """standalone_id(), read once per version of the preset's file: cache is {(file, mtime, size, inherits): filament_id}."""
+    try:
+        st = os.stat(preset["file"])
+        key = (preset["file"], st.st_mtime_ns, st.st_size, bool(preset.get("inherits")))   # size too: a rewrite can keep a coarse mtime
+    except (OSError, ValueError, TypeError):
+        key = (preset.get("file"), None, None, None)   # gone or unreadable: never a cached id of an older version
+    if key not in cache:
+        cache[key] = standalone_id(preset, log)
+    return cache[key]
+
+
+# --- Matching a slot to a preset (filmatch) ------------------------------------------------------------------------
+# A slot is reported to OrcaSlicer's sync from AMS with a filament_id (tray_info_idx), so only presets whose id is known
+# can be chosen: Spooler's (profiles.json "ids"), the user's standalone ones (their file) and the Generic preset of the
+# slot's material (filmatch.GENERIC_IDS). The preset picked by hand for what a slot holds (its spool, RFID tag, SKU, or
+# vendor + material) is kept in matches.json: Spooler's (shared with Spooler and U1 Control) read first and written
+# while Spooler is installed, else Kobra Control's own.
+MATCH_CHOICES = 5   # candidates a slot card offers
+_stores = {}        # path -> ((mtime, size), store): matches.json read again only when it changed
+
+
+def match_paths(storage):
+    """(paths to read, Spooler's first; the path to write, "" when there is none) for this plugin's storage folder."""
+    folder = data_dir(storage)
+    shared = os.path.join(folder, filmatch.MATCHES_FILE) if folder else ""
+    own = os.path.join(storage, filmatch.MATCHES_FILE) if storage else ""
+    spooler_on = bool(shared) and os.path.isfile(os.path.join(folder, SETTINGS_FILE))
+    return [p for p in (shared, own) if p], shared if spooler_on else own
+
+
+def load_stores(paths):
+    out = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            stamp = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            stamp = None
+        cached = _stores.get(path)
+        if not cached or cached[0] != stamp:
+            cached = _stores[path] = (stamp, filmatch.load_matches(path) if stamp else {"version": 1, "entries": {}})
+        out.append(cached[1])
+    return out
+
+
+def match_context(presets, label, users, profiles, stores, file_ids, log=None):
+    """What slot_match needs, read once: the presets a slot can be reported as, {name: filament_id}. presets: Spooler's
+    preset meta compatible with the printer; users: the user's own presets ({"name", "compatible", "file", "inherits"})."""
+    spooler_ids = {_bare(str(k)).casefold(): v for k, v in ((profiles or {}).get("ids") or {}).items() if isinstance(v, str) and v}
+    ids = {p["name"]: spooler_ids[_bare(p["name"]).casefold()] for p in presets if _bare(p["name"]).casefold() in spooler_ids}
+    for user in users or ():
+        fid = cached_standalone_id(user, file_ids, log) if user.get("compatible") else ""
+        if fid:
+            ids[user["name"]] = fid
+    return {"presets": presets, "label": label, "users": users or [], "profiles": profiles, "stores": stores, "ids": ids}
+
+
+def _slot_colour(slot):
+    c = list(slot.get("color") or [])[:3]
+    return "#%02X%02X%02X" % tuple(max(0, min(255, int(x))) for x in c) if len(c) == 3 else ""
+
+
+def _slot_presets(ctx, slot, spool):
+    """(head, {name: filament_id} the slot can be reported as, ranked candidates of its material)."""
+    material = str(slot.get("type") or "")
+    family = filmatch.generic_family(material)
+    generic = "Generic %s" % family if family else ""
+    known = {**ctx["ids"], **({generic: filmatch.GENERIC_IDS[family]} if generic else {})}
+    head = {"type": material, "vendor": (spool or {}).get("vendor") or slot.get("brand") or "", "sub_type": "",
+            "colour": _slot_colour(slot)}
+    return head, known, generic, filmatch.rank_filament_presets(list(known), head, None, ctx["label"])
+
+
+def slot_match(ctx, slot, spool):
+    """The preset the Device tab reports for a slot, and why: {"slot", "name", "id", "source", "score", "reasons",
+    "confident", "candidates", "keys", "remembered_key"}. source: "linked" (the spool's orca_filament_preset),
+    "remembered" (picked by hand), "spooler" (Spooler's preset of the spool), "generic" or "none"."""
+    head, known, generic, ranked = _slot_presets(ctx, slot, spool)
+    fits = {r["name"] for r in ranked}
+    keys = filmatch.observation_keys((spool or {}).get("id"), slot.get("rfid") or "", slot.get("sku") or "", head["vendor"], head["type"])
+    name, source, used = "", "none", ""
+    linked = find_user_preset(spool["orca_preset"], ctx["users"])[0] if (spool or {}).get("orca_preset") else None
+    if linked and known.get(linked["name"]):
+        name, source = linked["name"], "linked"
+    for key in keys if not name else ():
+        name = next((n for n in filmatch.recall(ctx["stores"], [key], ctx["label"]) if n in fits), "")
+        if name:
+            source, used = "remembered", key
+            break
+    if not name and spool:
+        mine = preset_for_spool(ctx["presets"], spool, ctx["profiles"], ctx["label"])
+        if mine and known.get(mine):
+            name, source = mine, "spooler"
+    if not name and generic:
+        name, source = generic, "generic"
+    row = next((r for r in ranked if r["name"] == name), {})
+    top = bool(ranked) and ranked[0]["name"] == name
+    return {"slot": slot.get("global_index"), "name": name, "id": known.get(name, ""), "source": source,
+            "score": row.get("score"), "reasons": row.get("reasons") or [],
+            "confident": source in ("linked", "remembered", "spooler") or (top and filmatch.confident(ranked, filmatch.PRESET_MARGIN)),
+            "candidates": ranked[:MATCH_CHOICES], "keys": keys, "remembered_key": used}
+
+
+def remember_slot(ctx, slot, spool, name, paths, write):
+    """A slot card's Change: remember name for what the slot holds (its most specific key) on this printer; None
+    forgets the choice made by hand. Raises ValueError for a preset that can't be reported for the slot's material."""
+    match = slot_match(ctx, slot, spool)
+    if name is None:
+        for path in paths if match["remembered_key"] else ():
+            filmatch.remember(path, {match["remembered_key"]: ""}, ctx["label"])
+            filmatch.remember(path, {match["remembered_key"]: ""})
+        return
+    if name not in {r["name"] for r in _slot_presets(ctx, slot, spool)[3]} or not match["keys"] or not write:
+        raise ValueError(name)
+    filmatch.remember(write, {match["keys"][0]: name}, ctx["label"])

@@ -2,9 +2,11 @@
 import { computed, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { OuiIcon, OuiLevel, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
 import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
-import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy } from '../app/store';
+import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy, pickPreset } from '../app/store';
+import { reasonTexts } from '../core/match';
+import type { MessageKey } from '../core/messages';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
 import { family, hexOf } from '../core/logic';
@@ -38,6 +40,11 @@ const state = computed<{ state: OuiState; text: string } | null>(() => {
   return null;
 });
 
+// The OrcaSlicer preset this slot is reported as to the Device tab (its sync from AMS loads it), why, and Change.
+const match = computed(() => (ready.value ? s.matches[String(key.value)] ?? null : null));
+const words = (reasons: unknown) => reasonTexts(reasons, (code, v) => t(`match.r.${code}` as MessageKey, { v }));
+const BADGES: Record<string, MessageKey> = { remembered: 'match.remembered', linked: 'match.linked', spooler: 'match.spooler' };
+const matchLabels = computed(() => ({ change: t('match.change'), none: t('match.none'), score: t('match.score'), auto: t('match.auto'), autoHint: t('match.autoHint') }));
 const editOff = computed(() => !!controlsOff.value || busy.value.feed);
 const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
 // Disabled controls point at the reason: the page's (#kc-why), the printer's (#kc-busy), or this slot's own (it is empty).
@@ -152,6 +159,14 @@ async function choose(id: number | null) {
       </template>
     </Select>
 
+    <div v-if="match && !editing" class="sl-match" :data-match="key">
+      <p class="oui-label">{{ t('match.title') }}</p>
+      <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
+                      :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
+                      :candidates="match.source === 'linked' ? [] : match.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) }))"
+                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name)" />
+    </div>
+
     <template #actions>
       <Button size="small" severity="secondary" :label="t('slot.feed')" :aria-label="t('slot.feedLabel', { slot: label })" :disabled="feedOff" :aria-describedby="whyId"
               :loading="tracker.isBusy(`feed:${key}`)" :data-focus-key="`feed:${key}`" :data-feed="key" @click="feed" />
@@ -181,6 +196,8 @@ async function choose(id: number | null) {
 .kc-slot .oui-slot-state > .oui-status { max-width: 100%; }
 .kc-slot .oui-slot-state .oui-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sl-pick { width: 100%; min-width: 0; }
+.sl-match { display: grid; gap: 2px; padding-top: 6px; border-top: 1px solid var(--oui-border); }
+.sl-match .oui-match-name { font-size: var(--oui-text-sm); }
 .sl-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .sl-form { display: grid; gap: var(--oui-s2); padding: var(--oui-s2); border-radius: var(--oui-radius); background: var(--oui-inset); }
 .sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--oui-s2); align-items: center; }

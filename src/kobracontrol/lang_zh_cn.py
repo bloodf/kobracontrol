@@ -293,6 +293,7 @@ TEXT = {
     "This printer preset writes no PNG preview picture (G-code thumbnails: %s). The printer's screen probably shows only PNG pictures. Set G-code thumbnails in Printer settings > Basic information > Advanced, for example to 300x300/PNG.": '此打印机预设不写入 PNG 预览图（G-code缩略图尺寸：%s）。打印机的屏幕很可能只显示 PNG 图片。请在“打印机设置 基础信息 高级”中设置“G-code缩略图尺寸”，例如 300x300/PNG。',
     'waiting for the previous bridge to close': '正在等待上一个桥接关闭',
     'Spool holder': '料盘架',
+    "That preset can't be used for this slot.": '该预设不适用于此槽位。',
     'not a valid setting: %s; nothing was saved': '无效的设置：%s；未保存任何内容',
     'The %s at %s takes one app at a time over the LAN, and another app holds it now (Anycubic Slicer Next, Home Assistant, Kobralink or another OrcaSlicer). Close that app, then press Retry. Kobra Control does not keep retrying on its own.': '%s（%s）通过局域网一次只接受一个应用，目前被另一个应用占用（Anycubic Slicer Next、Home Assistant、Kobralink 或另一个 OrcaSlicer）。请关闭该应用，然后点击“重试”。Kobra Control 不会自行反复重试。',
     'Kobra Control does not know this printer model yet (model code %s), so it only shows its status and files: %s is turned off. Please report the model code so it can be added.': 'Kobra Control 尚不认识这个打印机型号（型号代码 %s），因此只显示其状态和文件：%s 已关闭。请反馈该型号代码，以便添加支持。',

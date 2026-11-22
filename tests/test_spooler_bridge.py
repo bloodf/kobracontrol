@@ -166,3 +166,61 @@ class LinkedPresetTests(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"name": "My PLA", "filament_id": ""}, f)
         self.assertEqual(sb.standalone_id(self.user("My PLA", file=path)), "")
+
+
+class SlotMatchTests(unittest.TestCase):
+    """A slot card's preset: what the Device tab reports, why, and a pick remembered in matches.json."""
+    LABEL = "Anycubic Kobra X"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, "matches.json")
+        name = sb.NAME_PREFIX + "Acme PLA Red @Anycubic Kobra X"
+        self.mine = [{"name": name, "bundle_id": sb.BUNDLE_ID, "vendor": "Acme", "colour": "#FF0000"}]
+        self.profiles = {"version": 1, "filaments": {"9": {self.LABEL: name}}, "ids": {name: "SPL0123456789"}}
+        user = os.path.join(self.tmp, "Polymaker PLA.json")
+        with open(user, "w", encoding="utf-8") as f:
+            json.dump({"name": "Polymaker PLA", "inherits": "", "filament_id": "P1234567"}, f)
+        self.users = [{"name": "Polymaker PLA", "compatible": True, "file": user, "inherits": ""},
+                      {"name": "Inherits PLA", "compatible": True, "file": user, "inherits": "Generic PLA @System"}]
+        self.slot = {"global_index": 0, "type": "PLA", "color": [255, 0, 0], "sku": "", "rfid": None, "brand": ""}
+
+    def ctx(self):
+        return sb.match_context(self.mine, self.LABEL, self.users, self.profiles, sb.load_stores([self.path]), {})
+
+    def test_without_a_pick_it_is_what_the_agent_reports(self):
+        spool = {"id": 5, "filament_id": 9, "vendor": "Acme", "material": "PLA", "colour": "#FE0101"}
+        m = sb.slot_match(self.ctx(), self.slot, spool)
+        self.assertEqual((m["name"], m["id"], m["source"]), (self.mine[0]["name"], "SPL0123456789", "spooler"))
+        m = sb.slot_match(self.ctx(), self.slot, None)
+        self.assertEqual((m["name"], m["id"], m["source"]), ("Generic PLA", "OFDSrzZ8", "generic"))
+        names = [c["name"] for c in m["candidates"]]
+        self.assertIn("Polymaker PLA", names)
+        self.assertNotIn("Inherits PLA", names)   # no id of its own: sync from AMS would load its parent
+        self.assertEqual(sb.slot_match(self.ctx(), {**self.slot, "type": "PETG"}, None)["candidates"][0]["name"], "Generic PETG")
+
+    def test_pick_remembered_then_forgotten(self):
+        sb.remember_slot(self.ctx(), self.slot, None, "Polymaker PLA", [self.path], self.path)
+        m = sb.slot_match(self.ctx(), self.slot, None)
+        self.assertEqual((m["name"], m["id"], m["source"], m["remembered_key"]), ("Polymaker PLA", "P1234567", "remembered", "mat:|pla|"))
+        self.assertTrue(m["confident"])
+        # the same pick for a slot with another colour of PLA; not for PETG
+        self.assertEqual(sb.slot_match(self.ctx(), {**self.slot, "color": [0, 0, 255]}, None)["source"], "remembered")
+        self.assertEqual(sb.slot_match(self.ctx(), {**self.slot, "type": "PETG"}, None)["source"], "generic")
+        with self.assertRaises(ValueError):
+            sb.remember_slot(self.ctx(), self.slot, None, "Generic PETG", [self.path], self.path)
+        with self.assertRaises(ValueError):
+            sb.remember_slot(self.ctx(), self.slot, None, "Inherits PLA", [self.path], self.path)
+        sb.remember_slot(self.ctx(), self.slot, None, None, [self.path], self.path)
+        self.assertEqual(sb.slot_match(self.ctx(), self.slot, None)["source"], "generic")
+
+    def test_spoolers_store_first_and_written_while_installed(self):
+        storage = os.path.join(self.tmp, "orca_plugins", "plugin_data", "kobracontrol")
+        shared = os.path.join(self.tmp, sb.DATA_SUBDIR, "matches.json")
+        own = os.path.join(storage, "matches.json")
+        self.assertEqual(sb.match_paths(storage), ([shared, own], own))
+        os.makedirs(os.path.dirname(shared))
+        with open(os.path.join(os.path.dirname(shared), sb.SETTINGS_FILE), "w", encoding="utf-8") as f:
+            f.write("{}")
+        self.assertEqual(sb.match_paths(storage), ([shared, own], shared))

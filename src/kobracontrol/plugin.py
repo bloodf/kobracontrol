@@ -69,6 +69,7 @@ _bridge_error = ""       # why it is not running although on (shown in Settings)
 _bridge_key = ""         # the key when there is no storage folder to keep it in (this session only)
 _agent_seen = False   # our printer agent is in use: OrcaSlicer made one, or its selected printer names it
 _preset_notices = set()   # orca_filament_preset names already reported as not usable this session
+_match_file_ids = {}      # (preset file, mtime, size) -> filament_id, for the slot cards' preset match
 _user_presets_failed = False
 # Preset.is_compatible is bound in OrcaSlicer 2.5 (PluginHostPresets.cpp); a host without it reads as compatible
 # (True), as OrcaSlicer itself treats a preset with no compatibility condition.
@@ -809,6 +810,11 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 sync_language()
             elif kind == "dashboard":   # the Dashboard's layouts, saved by the page; an invalid value keeps the stored one
                 get_store(self).update({"dashboard": data.get("value")})
+            elif kind in ("preset_matches", "preset_pick"):   # slot cards: the preset each slot is reported as, and Change
+                presets, label = filament_catalog()
+                users = _user_presets_safe()
+                threading.Thread(target=self._slot_matches, args=(svc, kind, data, presets, label, users),
+                                 name="kobracontrol-matches", daemon=True).start()
             elif kind == "spoolman_refresh":   # Settings: how often the page re-reads Spoolman; invalid keeps the stored one
                 get_store(self).update({"spoolman_refresh_s": data.get("value")})
                 self._post_config()
@@ -826,6 +832,34 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 result = {"saved": True}
                 self._requirements(svc, self._post_config(), force=True)   # a Settings save checks again too
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+        except Exception as e:
+            self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
+
+    def _slot_matches(self, svc, kind, data, presets, label, users):
+        """Worker thread (reads files): answer the page with every ready slot's preset match, after a Change."""
+        try:
+            storage = _storage()
+            profiles = spooler_bridge.read_json(spooler_bridge.data_dir(storage), spooler_bridge.PROFILES_FILE) or {}
+            paths, write = spooler_bridge.match_paths(storage)
+            ctx = spooler_bridge.match_context(presets, label, users, profiles, spooler_bridge.load_stores(paths), _match_file_ids, log)
+            with svc.lock:
+                host = svc.target.host if svc.target else ""
+                spools, bindings = {sp["id"]: sp for sp in svc.spools}, dict(svc.bindings)
+            view = svc.view_for(host) if host else None
+            slots = [sl for sl in (status_data(view, bindings=bindings)[0]["slots"] if view else []) if sl.get("status") == 5]
+            if kind == "preset_pick":
+                slot = next((sl for sl in slots if sl["global_index"] == data.get("slot")), None)
+                name = data.get("name")
+                try:
+                    if slot is None:
+                        raise ValueError(name)
+                    spooler_bridge.remember_slot(ctx, slot, spools.get(slot.get("spool_id")), name if name is None else str(name), paths, write)
+                except ValueError:
+                    raise ValueError(tr("That preset can't be used for this slot.")) from None
+                ctx["stores"] = spooler_bridge.load_stores(paths)
+            matches = [{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")}
+                       for sl in slots]
+            self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches}})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
@@ -1281,10 +1315,16 @@ class KobraAgent(pa.PrinterAgentBase):
                 queue(lambda: call_safely("filament catalog", self._refresh_catalog, profiles or {}))
         bound = self._bound_spools()
         presets, label, profiles = self._catalog
+        # A preset picked by hand on a slot card (matches.json) comes after the spool's own link, before Spooler's.
+        stores = spooler_bridge.load_stores(spooler_bridge.match_paths(_storage())[0])
+        ctx = spooler_bridge.match_context(presets, label, self._user_presets, profiles, stores, self._file_ids, log) \
+            if any(st.get("entries") for st in stores) else None
 
         def preferred(slot):
             spool = bound.get(slot["global_index"])
-            return self._linked_id(spool) or spooler_bridge.tray_filament_id(spool, presets, profiles, label)
+            picked = spooler_bridge.slot_match(ctx, slot, spool) if ctx else {}
+            return self._linked_id(spool) or (picked["id"] if picked.get("source") == "remembered" else "") \
+                or spooler_bridge.tray_filament_id(spool, presets, profiles, label)
         return preferred
 
     def _linked_id(self, spool):
@@ -1298,14 +1338,7 @@ class KobraAgent(pa.PrinterAgentBase):
             self._preset_notice(name, problem)
             return ""
         _preset_notices.discard(name)   # usable again: a later break warns again
-        try:
-            st = os.stat(preset["file"])
-            key = (preset["file"], st.st_mtime_ns, st.st_size)   # size too: a rewrite can keep a coarse mtime
-        except (OSError, ValueError, TypeError):
-            key = (preset["file"], None, None)   # gone or unreadable: never a cached id of an older version
-        if key not in self._file_ids:   # read once per file version; a bad file is logged once
-            self._file_ids[key] = spooler_bridge.standalone_id(preset, log)
-        return self._file_ids[key]
+        return spooler_bridge.cached_standalone_id(preset, self._file_ids, log)   # read once per file version
 
     @staticmethod
     def _preset_notice(name, problem):

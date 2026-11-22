@@ -359,6 +359,7 @@ export const es: Record<MessageKey, string> = {
   'slot.empty': "Vacía",
   'slot.noType': "material sin definir",
   'slot.edit': "Editar",
+  'match.title': 'Perfil de OrcaSlicer', 'match.none': 'Ningún perfil de OrcaSlicer sirve', 'match.linked': 'Vinculado en Spoolman', 'match.spooler': 'Perfil de Spooler', 'match.change': 'Cambiar', 'match.score': 'Puntuación {n}', 'match.auto': 'Automático', 'match.autoHint': 'Olvidar el perfil elegido a mano', 'match.remembered': 'Elegido a mano', 'match.r.material': 'material {v}', 'match.r.variant': 'variante de {v}', 'match.r.vendor': 'fabricante {v}', 'match.r.generic': 'perfil genérico', 'match.r.other_vendor': 'otro fabricante ({v})', 'match.r.word': '«{v}» en el nombre', 'match.r.extra_word': '«{v}» no está en el carrete', 'match.r.printer': 'hecho para esta impresora', 'match.r.other_printer': 'hecho para otra impresora', 'match.r.nozzle': 'boquilla de {v} mm',
   'slot.editLabel': "Editar {slot}",
   'slot.editTitle': "Editar {slot}",
   'slot.material': "Material",

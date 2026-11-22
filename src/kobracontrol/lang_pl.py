@@ -293,6 +293,7 @@ TEXT = {
     'G-code warning: see the notification.': 'Ostrzeżenie dotyczące G-code: zobacz powiadomienie.',
     'waiting for the previous bridge to close': 'oczekiwanie na zamknięcie poprzedniego mostka',
     'Spool holder': 'Uchwyt na szpule',
+    "That preset can't be used for this slot.": 'Ten profil nie pasuje do tego slotu.',
     'not a valid setting: %s; nothing was saved': 'nieprawidłowe ustawienie: %s; nic nie zapisano',
     'The %s at %s takes one app at a time over the LAN, and another app holds it now (Anycubic Slicer Next, Home Assistant, Kobralink or another OrcaSlicer). Close that app, then press Retry. Kobra Control does not keep retrying on its own.': '%s pod adresem %s obsługuje przez LAN tylko jedną aplikację naraz, a teraz zajmuje ją inna aplikacja (Anycubic Slicer Next, Home Assistant, Kobralink lub inny OrcaSlicer). Zamknij tę aplikację i kliknij „Spróbuj ponownie”. Kobra Control nie ponawia prób sama.',
     'Kobra Control does not know this printer model yet (model code %s), so it only shows its status and files: %s is turned off. Please report the model code so it can be added.': 'Kobra Control nie zna jeszcze tego modelu drukarki (kod modelu %s), więc pokazuje tylko jej stan i pliki: %s jest wyłączone. Zgłoś kod modelu, aby można było go dodać.',
