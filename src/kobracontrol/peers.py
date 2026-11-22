@@ -35,6 +35,10 @@ SELF = "kobracontrol"
 SPOOLER = "spooler"
 PRESENCE_FILE = "presence.json"
 STOCK_FILE = "stock.json"
+PRINTS_FILE = "prints.json"   # finished prints Kobra Control booked, for Spooler's print history (note_print)
+PRINTS_SCHEMA = "kobracontrol-prints"
+PRINTS_VERSION = 1
+PRINTS_MAX = 200
 HEARTBEAT = 5.0       # seconds between presence refreshes
 FRESH = 20.0          # a presence older than this is a peer that is gone
 FUTURE_SLACK = 5.0    # a timestamp further ahead than this is not trusted
@@ -290,6 +294,7 @@ class SpoolerLink:
         self.lock = threading.Lock()
         self.stock_until = 0.0
         self.stock_request = 0
+        self._prints_lock = threading.Lock()
         self.presence = Presence(root, SELF, version, wants=self._wants, log=log, clock=clock)
 
     def _wants(self):
@@ -314,6 +319,23 @@ class SpoolerLink:
         if printer != self.presence.printer:
             self.presence.printer = printer
             self.presence.poke()
+
+    def note_print(self, record):
+        """Add one finished print to <data folder>/kobracontrol/prints.json (the last PRINTS_MAX), so Spooler notes it
+        in its print history. Spooler never books these: Kobra Control did. A print already listed (same id) is
+        left as it is. Never raises."""
+        path = peer_file(self.root, SELF, PRINTS_FILE)
+        record = {**record, "spoolman": normalize_origin(record.get("spoolman"))}
+        with self._prints_lock:
+            doc, _ = read_json(path)
+            prints = doc.get("prints") if isinstance((doc or {}).get("prints"), list) else []
+            if any(isinstance(p, dict) and p.get("id") == record["id"] for p in prints):
+                return
+            try:
+                write_json(path, {"schema": PRINTS_SCHEMA, "version": PRINTS_VERSION,
+                                  "prints": (prints + [record])[-PRINTS_MAX:]})
+            except OSError as e:
+                self.presence.log("kobracontrol: can't write %s (%s); Spooler's history won't show this print" % (path, e))
 
     def spooler(self):
         """{"state", "text", "detail", "version", "session", "origin", "links", ...} of the Spooler plugin. "links" moves

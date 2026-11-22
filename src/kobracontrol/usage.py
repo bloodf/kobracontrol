@@ -409,6 +409,7 @@ class UsageMixin:
         """One status sample of printer `host` (a `State.view()`): follow its jobs, book the finished ones.
         Call it on every status update, whether the page is open or not."""
         for job, outcome in self.ledger.observe(printer_ident(host), view.get("state"), view.get("filename")):
+            job.model = str(view.get("model") or "")   # for Spooler's print history (_share_print)
             self._settle(job, outcome)
 
     def retry_due(self):
@@ -456,6 +457,7 @@ class UsageMixin:
             self._notice(tr("Spoolman usage for %s waits for a retry: %s") % (job.path, e))
             return
         job.bindings = bindings
+        self._share_print(job, bindings)
         booked, unlinked = [], []
         for slot in sorted(job.per_slot):
             grams, sid = job.per_slot[slot], bindings.get(slot)
@@ -483,6 +485,17 @@ class UsageMixin:
             self._notice(tr("Spoolman updated with this print's filament use"))
         if unlinked:
             self._notice(tr("No Spoolman spool was linked to %s; that filament use was not recorded.") % ", ".join(unlinked))
+
+    def _share_print(self, job, bindings):
+        """Hand the finished print to Spooler's print history (peers.SpoolerLink.note_print). Called on the first
+        booking attempt, while per_slot still holds every slot; a retry finds it listed and changes nothing."""
+        link = getattr(self, "peers", None)
+        if link is None or not hasattr(link, "note_print"):
+            return
+        link.note_print({"id": job.id, "finished_at": time.time(), "file": job.path, "printer": job.printer_name,
+                         "model": getattr(job, "model", ""), "spoolman": job.spoolman_url,
+                         "slots": [{"slot": slot, "grams": round(grams, 2), "spool": bindings.get(slot)}
+                                   for slot, grams in sorted(job.per_slot.items())]})
 
     def cmd_usage(self):
         """What the page shows about filament use: unconfirmed entries (with identity), the last acknowledged
