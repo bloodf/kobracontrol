@@ -374,6 +374,33 @@ test('ACE card: units, slots, loaded slot, empty slot, activity', `
   assert(!/toolhead|\\bT[1-4]\\b/i.test(text(byTest('ace-card'))), 'no U1 wording');
 `);
 
+test('slot cards: the OrcaSlicer preset the Device tab reports, its score and reasons; Change remembers another', `
+  await ready(VIEW());
+  await until(() => last('preset_matches'), 'the cards ask for the presets once the slots are known');
+  const ask = last('preset_matches');
+  const choices = [{name: 'Generic PLA', score: 25, reasons: [['material', 'PLA'], ['generic', '']]},
+                   {name: 'Polymaker PLA', score: 20, reasons: [['material', 'PLA']]}];
+  const row = {slot: 2, name: 'Generic PLA', source: 'generic', score: 25, reasons: choices[0].reasons, confident: false, candidates: choices, remembered_key: ''};
+  await reply(ask, {matches: [row]});
+  await until(() => q('[data-match="2"]'), 'slot 3 shows its preset');
+  const card = q('[data-match="2"]');
+  assert(text(card).includes('Generic PLA') && text(card).includes('material PLA') && text(card).includes('Score 25'), 'name, reasons, score: ' + text(card));
+  assert(q('.oui-status[data-state="warn"]', card), 'a close call is marked');
+  assert(!q('[data-match="1"]'), 'an empty slot has no preset line');
+  await click(q('.oui-match-change', card));
+  await until(() => qa('.oui-match-option', card).length === 2, 'the candidates');
+  await click(qa('.oui-match-option', card)[1]);
+  const pick = last('preset_pick');
+  eq([pick.slot, pick.name], [2, 'Polymaker PLA'], 'remembered for that slot');
+  await reply(pick, {matches: [{...row, name: 'Polymaker PLA', source: 'remembered', score: 20, reasons: choices[1].reasons, confident: true, remembered_key: 'mat:|pla|'}]});
+  await until(() => text(q('[data-match="2"]')).includes('Picked by hand'), 'the new pick, marked as picked by hand');
+  await click(q('.oui-match-change', q('[data-match="2"]')));
+  const auto = () => qa('.oui-match-option', q('[data-match="2"]')).find(b => text(b).includes('Automatic'));
+  await until(auto, 'Automatic offered');
+  await click(auto());
+  eq(last('preset_pick').name, null, 'Automatic forgets the pick');
+`);
+
 test('slot reports: brand, material name, percent and weight from the printer; box humidity when not drying', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 4 ? {...s, brand: 'Acme', material_name: 'ABS Pro', percent: 40, weight: 400} : s)),
     ace_units: [{id: 0, auto_feed: false, humidity: 32, temp: 45, drying: DRY0}]}));

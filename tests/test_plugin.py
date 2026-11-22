@@ -351,6 +351,19 @@ class Agent(Base):
             json.dump({"name": name, "inherits": inherits, "filament_id": filament_id}, f)
         return {"name": name, "compatible": True, "file": path, "inherits": inherits}
 
+    def test_slot_reports_the_preset_picked_by_hand(self):
+        """A preset picked on a slot card (matches.json) wins over Spooler's preset of the slot's spool; the spool's own
+        link in Spoolman still wins over it."""
+        path = os.path.join(self.tmp, "matches.json")
+        plugin.spooler_bridge.filmatch.remember(path, {"spool:5": "My PLA"}, "Anycubic Kobra X")
+        with mock.patch.object(plugin.spooler_bridge, "match_paths", return_value=([path], path)):
+            trays = self.linked_trays([self.user_preset("My PLA", filament_id="P7654321")], {})
+            self.assertEqual(trays[0]["tray_info_idx"], "P7654321")
+            self.assertEqual(trays[1]["tray_info_idx"], "OFYPdQJh")   # nothing picked: Generic PETG
+            trays = self.linked_trays([self.user_preset("My PLA", filament_id="P7654321"), self.user_preset("Linked PLA")],
+                                      {"orca_preset": "Linked PLA"})
+            self.assertEqual(trays[0]["tray_info_idx"], "P1234567")
+
     def test_slot_linked_to_a_standalone_user_preset_reports_its_id(self):
         """orca_filament_preset names a standalone user preset: its own filament_id, so sync from AMS loads it."""
         trays = self.linked_trays([self.user_preset("My PLA")], {"orca_preset": "my pla"})

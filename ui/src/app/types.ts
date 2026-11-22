@@ -79,3 +79,6 @@ export interface UsageEntry { id: string; at: number | null; spool: number | nul
   job?: string; printer: string; printer_name?: string; spoolman?: string; acknowledged_at?: number }
 export interface UsageView { pending: UsagePending[]; unconfirmed: UsageEntry[]; acknowledged: UsageEntry[]; acknowledged_total: number;
   save_error: string; restore_notice: string }
+/** A slot's OrcaSlicer preset as the Device tab reports it (preset_matches): reasons are filmatch [code, value]. */
+export interface PresetMatch { slot: number; name: string; source: 'linked' | 'remembered' | 'spooler' | 'generic' | 'none'; score: number | null;
+  reasons: unknown; confident: boolean; candidates: { name: string; score: number; reasons: unknown }[]; remembered_key: string }

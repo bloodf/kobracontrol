@@ -7,10 +7,12 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 ### Added
 
 - **Kobra prints in Spooler's history.** Each print Kobra Control books in Spoolman is also listed in `kobracontrol/prints.json` in OrcaSlicer's data folder (the last 200: file, finish time, grams and spool per slot, printer name and model). Spooler reads it and shows those prints in its print history and Stats tab, once each. Spooler never books them again: the filament use is still booked by Kobra Control only.
+- **Each slot card shows the OrcaSlicer preset the slot is reported as** in OrcaSlicer's Device tab (the one its sync from AMS loads), with a score and the reasons for it (material, manufacturer, made for this printer), and marks it when another preset fits better. **Change** lists the presets that can be reported for that material (Spooler's, your own standalone presets, the Generic one) and remembers your pick for what the slot holds (its Spoolman spool, else its RFID tag or SKU, else its manufacturer and material); **Automatic** forgets it. A preset linked in Spoolman still comes first, then the one you picked, then Spooler's, then the Generic one. The choices are kept in `matches.json`: Spooler's (shared with Spooler and U1 Control) while Spooler is installed, else Kobra Control's own.
 
 ### Changed
 
 - Internal: the filament matching code (colour distance, material names, generic preset ids and the preset choice) now comes from the shared Orca UI foundation 5.7.0, one copy for Spooler, U1 Control and Kobra Control. Presets are picked exactly as before.
+- Shared Orca UI foundation 5.8.0.
 
 ## [0.11.0] - 2026-11-21
 

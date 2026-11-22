@@ -16,7 +16,7 @@ const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true 
     : /\.(vue|ts)$/.test(e.name) && e.name !== 'messages.ts' ? [join(dir, e.name)] : []));
 const code = files(SRC).map(f => readFileSync(f, 'utf8')).join('\n');
 // Keys built at run time from a value the printer or the page supplies: `t(\`link.${link}\`)` and the like.
-const dynamic = ['link.', 'status.state.', 'phase.', 'speed.mode.', 'ace.mode.', 'conn.source.', 'lang.', 'temps.phase.', 'stock.usage.'];
+const dynamic = ['link.', 'status.state.', 'phase.', 'speed.mode.', 'ace.mode.', 'conn.source.', 'lang.', 'temps.phase.', 'stock.usage.', 'match.r.'];
 const others = { 'pt-BR': ptBR, es, de, 'zh-CN': zhCN, pl } as Record<string, Record<string, string>>;
 const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join(',');
 
