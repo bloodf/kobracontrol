@@ -1339,7 +1339,7 @@ class KobraAgent(pa.PrinterAgentBase):
                 conn.remove_listener(self._on_change)
         return host
 
-    def _refresh_catalog(self, profiles=None):
+    def _refresh_catalog(self):
         """UI thread, no I/O: re-read Spooler's presets (it adds its own at any time), then the slots' links from
         Spoolman on a thread of their own, so sync from AMS knows them without the tab ever opening."""
         try:
@@ -1349,7 +1349,7 @@ class KobraAgent(pa.PrinterAgentBase):
         except Exception as e:
             log("filament presets not readable (%s); trays show generic presets" % e)
             return
-        self._catalog = (presets, label, profiles if profiles is not None else self._catalog[2])
+        self._catalog = (presets, label)
         self._ofd_presets = _own_ofd_presets()
         self._user_presets = users
         threading.Thread(target=self._load_links, args=(target,), name="kobracontrol-links", daemon=True).start()
@@ -1385,9 +1385,10 @@ class KobraAgent(pa.PrinterAgentBase):
             with self._lock:
                 queue = self._cb.get("queue_on_main")
             if queue is not None:
-                queue(lambda: call_safely("filament catalog", self._refresh_catalog, profiles or {}))
+                queue(lambda: call_safely("filament catalog", self._refresh_catalog))
         bound = self._bound_spools()
-        presets, label, profiles = self._catalog
+        presets, label = self._catalog
+        profiles = self._profiles
         # A preset picked by hand on a slot card (matches.json) comes after the spool's own link, before Spooler's.
         stores = spooler_bridge.load_stores(spooler_bridge.match_paths(_storage())[0])
         ctx = spooler_bridge.match_context(presets, label, self._user_presets, profiles, stores, self._file_ids, log, self._ofd_presets) \
