@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { fuzzyFilter, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
 import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy, pickPreset } from '../app/store';
 import { reasonTexts } from '../core/match';
@@ -82,15 +82,31 @@ async function saveEdit() {
 // ---------------------------------------------------------------- the Spoolman spool this slot books on
 const spoolLabel = (sp: Spool) => t('pick.option', { id: sp.id, vendor: sp.vendor, name: sp.name, material: sp.material, grams: fmt.grams(sp.remaining) });
 const find = (id: number | null) => (id == null ? null : s.spools.find(x => x.id === id) ?? null);
+// The picker's search: brand, name and material by fuzzyFilter (foundation: case and accents ignored, letters in order, best
+// first). A query that is only a number is a spool's id and matches that spool exactly ("12" or "#12"), never a neighbour
+// (#120) and never a brand or name with that digit in it ("3D Fuel"). While it is typed the list is only the hits, without
+// "no spool" (Enter on the first hit must never unlink), and nothing is bound until one is chosen.
+// ponytail: Select still runs its own "contains" pass; every option carries the typed text as `q` so it keeps all of ours.
+const query = ref('');
+const hits = computed(() => {
+  const m = /^#?(\d+)$/.exec(query.value.trim());
+  const byId = m ? s.spools.filter(sp => sp.id === Number(m[1])) : [];
+  const fuzzy = m ? [] : fuzzyFilter(s.spools, query.value, sp => [sp.vendor, sp.name, sp.material].filter(Boolean).join(' ')).map(r => r.item);
+  return [...byId, ...fuzzy.filter(sp => !byId.includes(sp))];
+});
 const pickGroups = computed(() => {
   const fam = ready.value && props.slot.type ? family(props.slot.type) : '';
-  const fit = s.spools.filter(sp => !fam || family(sp.material) === fam);
-  const rest = s.spools.filter(sp => !fit.includes(sp));
-  const opt = (sp: Spool) => ({ value: sp.id, label: spoolLabel(sp), sp });
-  return [
-    { label: t('pick.fit'), items: [{ value: 0, label: t('pick.none'), sp: null }, ...fit.map(opt)] },
-    ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : []),
-  ];
+  const searching = !!query.value.trim();
+  const list = searching ? hits.value : s.spools;
+  const fit = list.filter(sp => !fam || family(sp.material) === fam);
+  const rest = list.filter(sp => !fit.includes(sp));
+  const opt = (sp: Spool) => ({ value: sp.id, label: spoolLabel(sp), sp, q: query.value });
+  return searching
+    ? [...(fit.length ? [{ label: t('pick.fit'), items: fit.map(opt) }] : []), ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : [])]
+    : [
+      { label: t('pick.fit'), items: [{ value: 0, label: t('pick.none'), sp: null, q: '' }, ...fit.map(opt)] },
+      ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : []),
+    ];
 });
 async function choose(id: number | null) {
   const slotName = props.label, sl = props.slot;
@@ -146,9 +162,9 @@ async function choose(id: number | null) {
     </form>
 
     <Select v-else-if="s.spools.length" :model-value="slot.spool_id ?? 0" :options="pickGroups" option-group-label="label" option-group-children="items"
-            option-label="label" option-value="value" filter :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
+            option-label="label" option-value="value" filter :filter-fields="['q']" reset-filter-on-hide :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
             :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="pageWhy(false)" class="sl-pick"
-            :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)">
+            :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)" @filter="(e: { value: string }) => (query = e.value)" @hide="query = ''">
       <template #value="{ value }">
         <span class="sl-opt"><OuiSwatch v-if="find(value)" :color="find(value)!.colour ?? null" :colors="find(value)!.colours ?? null" />
           <span class="oui-truncate">{{ value ? (find(value) ? spoolLabel(find(value)!) : t('pick.unknown', { id: value })) : t('pick.choose') }}</span></span>
@@ -199,6 +215,10 @@ async function choose(id: number | null) {
 .sl-pick { width: 100%; min-width: 0; }
 .sl-match { display: grid; gap: 2px; padding-top: 6px; border-top: 1px solid var(--oui-border); }
 .sl-match .oui-match-name { font-size: var(--oui-text-sm); }
+/* Narrow cards (four ACE columns, three holders): the shared side group is flex: none and keeps its one-line width, so the
+   score chip and Change spilled out of the card. Let it shrink and wrap inside the card instead. */
+.sl-match .oui-match-head { min-width: 0; }
+.sl-match .oui-match-side { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .sl-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .sl-form { display: grid; gap: var(--oui-s2); padding: var(--oui-s2); border-radius: var(--oui-radius); background: var(--oui-inset); }
 .sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--oui-s2); align-items: center; }

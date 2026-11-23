@@ -401,6 +401,29 @@ test('slot cards: the OrcaSlicer preset the Device tab reports, its score and re
   eq(last('preset_pick').name, null, 'Automatic forgets the pick');
 `);
 
+test('slot cards: Change stays inside its card at four ACE columns and three holder columns', `
+  await ready(VIEW({slots: SLOTS().map(s => ({...s, status: 5, type: s.type || 'PLA', color: s.type ? s.color : [229, 72, 77]}))}));   // all seven sources filled: the empty ones draw no preset line
+  await until(() => last('preset_matches'), 'the cards ask for the presets');
+  const c = [{name: 'Generic PLA', score: 25, reasons: [['material', 'PLA']]}];
+  await reply(last('preset_matches'), {matches: [0, 1, 2, 3, 4, 5, 6].map(n => ({slot: n, name: 'Polymaker PLA Matte @Anycubic Kobra X', source: 'generic', score: 25, reasons: c[0].reasons, confident: false, candidates: c, remembered_key: ''}))});
+  await until(() => qa('.sl-match').length === 7, 'every slot shows its preset');
+  const cols = {};
+  for (const width of ['', '1400px', '1200px', '1100px', '1000px', '900px']) {
+    q('#app').style.width = width; q('#app').style.maxWidth = width || '';
+    await settle();
+    for (const box of ['0', '-1']) {
+      const all = qa('.kc-group[data-box="' + box + '"] .oui-slot');
+      cols[box] = Math.max(cols[box] || 0, new Set(all.map(t => Math.round(t.getBoundingClientRect().left))).size);
+      for (const tile of all.filter(t => q('.sl-match', t))) {
+        const t = tile.getBoundingClientRect(), chg = q('.oui-match-change', tile).getBoundingClientRect();
+        assert(chg.left >= t.left - 1 && chg.right <= t.right + 1, 'Change inside its card (box ' + box + ', ' + (width || 'wide') + '): ' + [t.left, t.right, chg.left, chg.right]);
+      }
+    }
+  }
+  eq([cols['0'], cols['-1']], [4, 3], 'the widths reached four ACE columns and three holder columns');
+  q('#app').style.width = ''; q('#app').style.maxWidth = '';
+`);
+
 test('slot reports: brand, material name, percent and weight from the printer; box humidity when not drying', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 4 ? {...s, brand: 'Acme', material_name: 'ABS Pro', percent: 40, weight: 400} : s)),
     ace_units: [{id: 0, auto_feed: false, humidity: 32, temp: 45, drying: DRY0}]}));
@@ -516,6 +539,27 @@ test('Spoolman: bind per slot asks first; unbind too', `
   await pick(q('[data-pick="3"]'), 'No spool (unlink)');
   assert(dialogOpen(), 'unbind asks'); await yes();
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
+`);
+
+test('Spoolman: the spool picker search is fuzzy over brand, name and material; an id finds only that spool', `
+  await ready(VIEW());
+  const row = (id, vendor, name, material) => ({...ROWS[0], id, filament_id: id * 10, vendor, name, material});
+  await reply(last('cmd', 'spools'), {spools: [row(1, 'Prusament', 'Rosé Verde', 'PLA'), row(11, 'Acme', 'White', 'PETG'), row(110, 'Polymaker', 'Marine', 'PLA'), row(7, '3D Fuel', 'Wood 1', 'PLA')], bindings: {}, via: 'direct'});
+  const root = q('[data-pick="4"]'); await reveal(root); root.click();
+  await until(() => q('.p-select-overlay .p-select-filter'), 'the search field');
+  const ids = () => qa('.p-select-overlay [role=option]').map(o => (/^#(\\d+)/.exec(text(o)) || [0, 'none'])[1]).join(',');
+  // typed with real key events, like a user: the search field is Vue-controlled, a set value and a fake event would not reach its model
+  const found = async query => { await type(q('.p-select-overlay .p-select-filter'), query); await settle(); return ids(); };
+  eq(await found('prus'), '1', 'a brand');
+  eq(await found('ROSE'), '1', 'a name, any case and without the accent');
+  eq(await found('pmk'), '110', 'the letters in order');
+  eq(await found('PETG'), '11', 'a material');
+  eq(await found('aew'), '11', 'the letters in order across brand and name');
+  eq(await found('1'), '1', 'a plain id is that spool only: not #11, #110 or "3D Fuel Wood 1"');
+  eq(await found('3'), '', 'a plain id no spool has finds nothing, though "3D Fuel" has the digit');
+  eq(await found('#11'), '11', '#id is that spool only, not #110');
+  eq(await found('zzz'), '', 'nothing matches');
+  eq(cmds('bind').length, 0, 'filtering books nothing');
 `);
 
 test('status: a long file name wraps after _ - . first, two lines at most, full name in the tooltip', `
