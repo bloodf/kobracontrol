@@ -1185,7 +1185,8 @@ class KobraAgent(pa.PrinterAgentBase):
         self._lock = threading.Lock()
         self.selected = ""
         self.dev_id, self.host, self.access_code = "", "", ""
-        self._catalog = ([], "", None)       # (Spooler presets, printer label, Spooler's profiles.json) for tray ids
+        self._catalog = ([], "")             # (Spooler presets, printer label) for tray ids; the UI thread owns it
+        self._profiles = {}                  # Spooler's profiles.json; the push thread owns it
         self._ofd_presets = []               # Kobra Control's own OFD presets ({"name", "file"}), for tray ids
         self._catalog_at = 0.0
         self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
@@ -1294,6 +1295,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self.dev_id, self.host, self.access_code = params.dev_id, host, getattr(params, "password", "") or ""
         self._catalog_at = 0.0   # the first push re-reads Spooler's profiles.json
         self._links = ([], {})   # another printer's links never reach this one's trays
+        _storage()               # plugin.storage() answers only inside a callback: cache it for the push thread
         self._refresh_catalog()
         self._was_connected = False
         self._stop = threading.Event()
@@ -1380,8 +1382,9 @@ class KobraAgent(pa.PrinterAgentBase):
         """preferred(slot) for bambu.push_status: the filament_id of the slot's spool's preset, or ""."""
         if time.time() - self._catalog_at >= CATALOG_EVERY:   # this thread may read files, not presets
             self._catalog_at = time.time()
-            folder = spooler_bridge.data_dir(_storage())
-            profiles = spooler_bridge.read_json(folder, spooler_bridge.PROFILES_FILE)
+            # profiles.json is plain file I/O owned by this thread: it never waits for the UI queue. _storage() is
+            # cached by connect_printer (plugin.storage() answers only inside a callback).
+            self._profiles = spooler_bridge.read_json(spooler_bridge.data_dir(_storage()), spooler_bridge.PROFILES_FILE) or {}
             with self._lock:
                 queue = self._cb.get("queue_on_main")
             if queue is not None:

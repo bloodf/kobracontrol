@@ -848,7 +848,9 @@ def _box(raw):
     box = {k: v for k, v in raw.items() if k not in ("feed_status", "drying_status", "drying_settings")
            or isinstance(v, dict)}
     if "slots" in box:
-        box["slots"] = [s if isinstance(s, dict) else {} for s in box["slots"]] if isinstance(box["slots"], list) else []
+        # a bad slot becomes {"index": its position}: in a report that numbers its slots it keeps its own number
+        box["slots"] = [s if isinstance(s, dict) else {"index": n} for n, s in enumerate(box["slots"])] \
+            if isinstance(box["slots"], list) else []
     return box
 
 
@@ -860,8 +862,9 @@ def _merge_slots(old, new):
     if len(new) >= len(old) or not all(isinstance(s.get("index"), int) and 0 <= s["index"] < len(old) for s in new):
         return new
     out = list(old)
-    for s in new:
-        out[s["index"]] = s
+    for s in new:   # the old slot with that index (an old list may be in any order), else the one at that position
+        at = next((n for n, o in enumerate(out) if o.get("index") == s["index"]), s["index"])
+        out[at] = s
     return out
 
 

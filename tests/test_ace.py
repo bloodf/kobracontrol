@@ -69,6 +69,21 @@ class AggregateSlots(unittest.TestCase):
         slots, _ = ace.aggregate_slots([box(1, raw)], "ace_direct")
         self.assertEqual([(s["global_index"], s["index"]) for s in slots], [(4, 0), (5, 1), (6, 2), (7, 3)])
 
+    def test_reported_index_is_the_slot_whatever_the_report_order(self):
+        """Shuffled slot lists, a spool-holder slot listed after a fourth entry: each slot keeps its own number."""
+        head = box(-1, [slot(i, color=(i, 0, 0)) for i in (3, 0, 1, 2)])
+        a0 = box(0, [slot(i, color=(0, i, 0)) for i in (3, 1, 0, 2)])
+        slots, _ = ace.aggregate_slots([head, a0], "ace_hub")
+        by = {(s["box_id"], s["index"]): s for s in slots}
+        self.assertEqual(sorted(by), [(-1, 0), (-1, 1), (-1, 2), (0, 0), (0, 1), (0, 2), (0, 3)])
+        self.assertEqual([by[(-1, i)]["global_index"] for i in range(3)], [4, 5, 6])
+        self.assertEqual([by[(-1, i)]["color"][0] for i in range(3)], [0, 1, 2])
+        self.assertEqual([by[(0, i)]["color"][1] for i in range(4)], [0, 1, 2, 3])
+        self.assertEqual({ace.tray_id(s) for s in slots}, set(range(7)))
+        # a repeated or out-of-range index is skipped, never given a neighbour's number
+        slots, _ = ace.aggregate_slots([box(0, [slot(1), slot(1), slot(9), slot(0)])], "ace_direct")
+        self.assertEqual(sorted(s["index"] for s in slots), [0, 1])
+
     def test_colour_components_become_whole_bytes(self):
         slots, _ = ace.aggregate_slots([box(0, [slot(0, color=(12.6, -3, 300))])], "ace_direct")
         self.assertEqual(slots[0]["color"], [12, 0, 255])

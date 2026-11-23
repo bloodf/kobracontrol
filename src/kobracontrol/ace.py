@@ -117,7 +117,7 @@ def _brand(name):
     return "" if name.strip().lower() == "public" else name
 
 
-def _to_slot(raw, global_index, box_id, box_pos):
+def _to_slot(raw, global_index, box_id, box_pos, index=None):
     c = raw.get("color")
     c = list(c) if isinstance(c, (list, tuple)) and len(c) >= 3 else _WHITE
     rfid, sku = raw.get("rfid"), raw.get("sku")
@@ -125,7 +125,7 @@ def _to_slot(raw, global_index, box_id, box_pos):
         "global_index": global_index,
         "box_id": box_id,
         "box_pos": box_pos,
-        "index": _num(raw.get("index"), global_index % 4),   # else its place in the unit (4 slots a unit)
+        "index": index if index is not None else _num(raw.get("index"), global_index % 4),
         "status": _num(raw.get("status"), 0),
         "type": str(raw.get("type") if raw.get("type") is not None else ""),
         "color": [max(0, min(255, int(_num(v, 0)))) for v in c[:3]],
@@ -139,6 +139,22 @@ def _to_slot(raw, global_index, box_id, box_pos):
     }
 
 
+def _indexed(raw_slots, limit):
+    """[(local slot number, raw slot)]: a report may list a unit's slots in any order, so a slot's reported "index"
+    is its identity (global_index, tray id and print ams_index all derive from it). Only when no slot reports an
+    index is the list position used. A slot with a missing, out-of-range or repeated index is skipped, never
+    given another slot's number."""
+    if not any(s.get("index") is not None for s in raw_slots):
+        return list(enumerate(raw_slots[:limit]))
+    out, seen = [], set()
+    for s in raw_slots:
+        i = s.get("index")
+        if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < limit and i not in seen:
+            seen.add(i)
+            out.append((i, s))
+    return out
+
+
 def aggregate_slots(boxes, mode):
     """Return (slots, loaded_global_index); loaded is -1 when nothing is loaded."""
     head = next((b for b in boxes if _is_head(b)), None)
@@ -148,8 +164,9 @@ def aggregate_slots(boxes, mode):
 
     if mode == "toolhead":
         if head:
-            for i, s in enumerate(head.get("slots") or []):
-                slots.append(_to_slot(s, i, -1, 0))
+            raw = head.get("slots") or []
+            for i, s in _indexed(raw, max(len(raw), 1)):
+                slots.append(_to_slot(s, i, -1, 0, i))
             if _num(head.get("loaded_slot"), -1) >= 0:
                 loaded = _num(head["loaded_slot"])
         return slots, loaded
@@ -158,8 +175,8 @@ def aggregate_slots(boxes, mode):
         for unit in aces:
             bid = _box_id(unit)
             pos = bid
-            for i, s in enumerate((unit.get("slots") or [])[:4]):
-                slots.append(_to_slot(s, bid * 4 + i, bid, pos))
+            for i, s in _indexed(unit.get("slots") or [], 4):
+                slots.append(_to_slot(s, bid * 4 + i, bid, pos, i))
             local = _num(unit.get("loaded_slot"), -1)
             if 0 <= local < 4:
                 loaded = bid * 4 + local
@@ -169,15 +186,15 @@ def aggregate_slots(boxes, mode):
     # as the unit after the last ACE. An ACE's loaded slot wins over the head's.
     for unit in aces:
         bid = _box_id(unit)
-        for i, s in enumerate((unit.get("slots") or [])[:4]):
-            slots.append(_to_slot(s, bid * 4 + i, bid, bid))
+        for i, s in _indexed(unit.get("slots") or [], 4):
+            slots.append(_to_slot(s, bid * 4 + i, bid, bid, i))
         local = _num(unit.get("loaded_slot"), -1)
         if 0 <= local < 4:
             loaded = bid * 4 + local
     if head:
         pos = _head_pos(aces)
-        for i, s in enumerate((head.get("slots") or [])[:3]):
-            slots.append(_to_slot(s, pos * 4 + i, -1, pos))
+        for i, s in _indexed(head.get("slots") or [], 3):
+            slots.append(_to_slot(s, pos * 4 + i, -1, pos, i))
         local = _num(head.get("loaded_slot"), -1)
         if 0 <= local <= 2 and loaded < 0:
             loaded = pos * 4 + local
@@ -230,7 +247,8 @@ def slot_activity_map(boxes, global_loaded, mode, pending_load_slot=-1):
         if status in (-1, 10, 11) or local < 0:
             continue
         box_slots = box.get("slots") or []
-        if local >= len(box_slots) or _num((box_slots[local] or {}).get("status"), 0) != READY_STATUS:
+        fed = next((s for i, s in _indexed(box_slots, max(len(box_slots), 1)) if i == local), None)
+        if fed is None or _num(fed.get("status"), 0) != READY_STATUS:
             continue
         act = {1: "loading", 2: "unloading"}.get(ftype)
         if act is None:

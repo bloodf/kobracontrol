@@ -1426,7 +1426,7 @@ class StateTests(unittest.TestCase):
         boxes = [1, "a", None, {"id": 0, "slots": [None, "x", slot], "feed_status": "x", "drying_status": 5,
                                 "loaded_slot": -1}, {"id": 1, "slots": "x"}]
         v = self.apply("multiColorBox/report", {"multi_color_box": boxes}, state="success")
-        self.assertEqual(v["multi_color_box"], [{"id": 0, "slots": [{}, {}, slot], "loaded_slot": -1},
+        self.assertEqual(v["multi_color_box"], [{"id": 0, "slots": [{"index": 0}, {"index": 1}, slot], "loaded_slot": -1},
                                                 {"id": 1, "slots": []}])
         data, _ = service.status_data(v)
         self.assertEqual([(s["global_index"], s["status"]) for s in data["slots"]], [(0, 0), (1, 0), (2, 5)])
@@ -1697,6 +1697,17 @@ class StateTests(unittest.TestCase):
             self.s.apply("print/report", junk)
         json.dumps(self.s.view())
         self.assertIsInstance(self.s.view()["updated_at"], float)
+
+
+class MergeShuffledSlots(unittest.TestCase):
+    def test_short_report_updates_the_slot_with_that_index(self):
+        mk = lambda i, t: {"index": i, "status": 5, "type": t}   # noqa: E731
+        old = [{"id": 0, "slots": [mk(3, "A"), mk(1, "B"), mk(0, "C"), mk(2, "D")]}]
+        merged = kobra._merge_boxes(old, [{"id": 0, "slots": [mk(0, "X")]}])[0]["slots"]
+        self.assertEqual({s["index"]: s["type"] for s in merged}, {0: "X", 1: "B", 2: "D", 3: "A"})
+        self.assertEqual(len(merged), 4)
+        full = kobra._merge_boxes(old, [{"id": 0, "slots": [mk(i, "N") for i in range(4)]}])[0]["slots"]
+        self.assertEqual([s["type"] for s in full], ["N"] * 4)   # a full list still replaces
 
 
 class ReviewTwoState(unittest.TestCase):

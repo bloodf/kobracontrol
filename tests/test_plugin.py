@@ -27,6 +27,7 @@ orca = fake_orca.install_orca(preset={"name": "Anycubic Kobra X 0.4 nozzle", "pr
                                       "print_host": "http://127.0.0.1:18910"},
                               filament_names=["Generic PLA @System"],
                               filament_meta={"Generic PLA @System": {"filament_id": "OGFL99"}})
+import ace  # noqa: E402
 import certs  # noqa: E402
 import i18n  # noqa: E402
 import kobra  # noqa: E402
@@ -479,8 +480,8 @@ class Agent(Base):
                 mock.patch.object(plugin, "filament_catalog", return_value=([{"name": "x"}], "Anycubic Kobra X")), \
                 mock.patch.object(plugin, "log", side_effect=logged.append), \
                 mock.patch.object(plugin._service, "links_for", return_value=([], {})):
-            self.agent._refresh_catalog({})
-            self.agent._refresh_catalog({})
+            self.agent._refresh_catalog()
+            self.agent._refresh_catalog()
         self.assertEqual(self.agent._catalog[0], [{"name": "x"}])
         self.assertEqual(self.agent._user_presets, [])
         self.assertEqual(len([m for m in logged if "own filament presets" in m]), 1)
@@ -839,6 +840,71 @@ class SevenSources(Base):
         self.assertEqual([(m["paint_index"], m["ams_index"]) for m in start["ams_settings"]["ams_box_mapping"]],
                          [(0, 2), (1, 5)])
 
+    def test_all_seven_sources_keep_their_own_preset_and_print_slot(self):
+        """Holder (3) + ACE (4), all loaded, reported shuffled: every tray is its own source with its own spool's
+        Spooler preset id, and its tray id prints from that source's slot. profiles.json is read by the push thread,
+        so a UI queue that never runs (or runs late) can't leave Generic ids."""
+        def slot(i, color, kind):
+            return {"index": i, "status": 5, "type": kind, "color": list(color), "brand_name": "public"}
+        ace_colors = {0: (250, 0, 0), 1: (0, 250, 0), 2: (0, 0, 250), 3: (250, 250, 0)}
+        holder_colors = {0: (10, 20, 30), 1: (40, 50, 60), 2: (70, 80, 90)}
+        box = dict(ACE0, loaded_slot=-1, slots=[slot(i, ace_colors[i], "PLA") for i in (3, 1, 0, 2)])
+        head = dict(HOLDER_BOX, slots=[slot(i, holder_colors[i], "PETG") for i in (2, 0, 1)])
+        boxes = [box, head]   # ACE first, every slot list reversed or rotated
+        self.fake.reply("multiColorBox", "getInfo", {"head_tools_model": 1, "multi_color_box": boxes})
+        label, spools, bindings, presets, want = "Anycubic Kobra X", [], {}, [], {}
+        profiles = {"version": 1, "filaments": {}, "ids": {}}
+        sources = [(ace_colors[i], i) for i in range(4)] + [(holder_colors[i], 4 + i) for i in range(3)]
+        for n, (color, g) in enumerate(sources):
+            hexcolor = "#%02X%02X%02X" % color
+            name = "_local/spooler/Spool %d @%s" % (n, label)
+            presets.append({"name": name, "bundle_id": "spooler", "vendor": "Acme", "colour": hexcolor})
+            profiles["filaments"][str(100 + n)] = {label: name}
+            profiles["ids"][name] = "SPL%07d" % n
+            spools.append({"id": 50 + n, "filament_id": 100 + n, "vendor": "Acme", "material": "PLA", "colour": hexcolor})
+            bindings[g] = 50 + n
+            want[color] = "SPL%07d" % n
+        with mock.patch.object(plugin, "filament_catalog", return_value=(presets, label)), \
+                mock.patch.object(plugin.spooler_bridge, "read_json", wraps=lambda folder, file: (
+                    profiles if file == plugin.spooler_bridge.PROFILES_FILE else real_read_json(folder, file))), \
+                mock.patch.object(plugin._service, "links_for", return_value=(spools, bindings)):
+            self.connect()
+            wait(lambda: self.agent._links[1])
+            held, real_refresh = [], self.agent._refresh_catalog
+            self.agent._refresh_catalog = lambda: held.append(1)   # queued, but the UI thread has not run the read
+            self.agent._profiles, self.agent._catalog_at = {}, 0.0
+            self.events["message"].clear()
+            self.agent._dirty.set()
+            msg = wait(lambda: next((m for m in self.events["message"] if m.get("print", {}).get("ams", {}).get("ams")), None))
+            self.assertTrue(held)
+            ams = msg["print"]["ams"]
+            self.agent._refresh_catalog = real_refresh
+            real_refresh()   # the UI read runs late: the ids stay (profiles.json is not part of it)
+            self.assertEqual(self.agent._profiles, profiles)
+        self.assertEqual(ams["tray_exist_bits"], "7F")
+        self.assertEqual([(u["id"], u["display_name"]) for u in ams["ams"]], [("0", "ACE 1"), ("1", "Spool holder")])
+        slots = ace.aggregate_slots(boxes, "ace_hub")[0]
+        seen = {}
+        for unit in ams["ams"]:
+            for t in unit["tray"]:
+                if t.get("tray_slot_placeholder"):
+                    continue
+                tray = int(unit["id"]) * 4 + int(t["id"])
+                src = ace.slot_for_tray(tray, slots)
+                color = tuple(int(t["tray_color"][i:i + 2], 16) for i in (0, 2, 4))
+                self.assertEqual(tuple(src["color"]), color)   # the tray shows its own slot, not a neighbour's
+                self.assertEqual(t["tray_info_idx"], want[color])
+                self.assertEqual(bindings[src["global_index"]], 50 + int(want[color][3:]))   # binding follows the source
+                seen[tray] = ace.slot_to_print_ams_index(src, "ace_hub")
+        self.assertEqual(seen, {0: 4, 1: 5, 2: 6, 3: 7, 4: 0, 5: 1, 6: 2})
+        # the consumer side: the trays OrcaSlicer picks (ACE slot 4 = tray 3, holder 2 = tray 5) print from those sources
+        params = pa.PrintParams(project_name="cube", filename=make_3mf(self.tmp), plate_index=1, ams_mapping="[3, 5]",
+                                ams_mapping_info=json.dumps([{"ams": 3, "sourceColor": "#FAFA00", "filamentType": "PLA"},
+                                                             {"ams": 5, "sourceColor": "#28323C", "filamentType": "PETG"}]))
+        self.assertEqual(self.agent.start_local_print(params, None, lambda: False), 0)
+        start = wait(lambda: self.sent("print", "start"))[0]["data"]
+        self.assertEqual([(m["paint_index"], m["ams_index"]) for m in start["ams_settings"]["ams_box_mapping"]],
+                         [(0, 7), (1, 1)])
 
 
 class AgentWhilePrinting(Base):
