@@ -9,6 +9,7 @@ import socket
 import ssl
 import sys
 import tempfile
+import types
 import threading
 import time
 import unittest
@@ -192,6 +193,29 @@ class LateAce(unittest.TestCase):
     connect's getInfo, before its ACE was there. Not a capture from that firmware (none exists yet): this fake
     answers the first getInfo with no boxes and later ones with the ACE and the spool holder, as KX-Bridge and
     Kobralink would see them by asking every poll."""
+
+    def test_held_printers_and_their_slots_are_shared_with_spooler(self):
+        fake = FakeKobra().start()
+        self.addCleanup(fake.stop)
+        fake.reply("info", "query", {"printerName": "KX", "version": "1.1.5.1", "project": None,
+                                     "urls": {"fileUploadurl": fake.upload_url, "rtspUrl": ""}}, state="done")
+        fake.reply("print", "query", {}, state="free")
+        fake.reply("multiColorBox", "getInfo", {"multi_color_box": [HOLDER_BOX, ACE0]}, state="success")
+        svc = service.Service(lambda m: None, lambda m: None, cert_dir=tempfile.mkdtemp(), tls=lambda: None,
+                              http_port=fake.http_port, mqtt_port=fake.mqtt_port, camera_factory=FakeCamera,
+                              relay_factory=FakeCamera, spoolman_factory=FakeSpoolman)
+        self.addCleanup(svc.close)
+        pokes = []
+        svc.peers = types.SimpleNamespace(presence=types.SimpleNamespace(poke=lambda: pokes.append(1)))
+        with mock.patch.object(connection, "POLL_EVERY", 0.2):
+            svc.set_target(service.Target(fake.host))
+            conn = svc.connections[fake.host]
+            wait(lambda: conn.connected and len(conn.view()["multi_color_box"]) == 2)
+            shared = svc.shared_printers()
+        self.assertEqual([(p["host"], p["connected"], len(p["boxes"])) for p in shared], [(fake.host, True, 2)])
+        self.assertTrue(pokes)
+        conn.mismatch = "other"   # a different printer answered there: not one Spooler should leave alone
+        self.assertEqual(svc.shared_printers(), [])
 
     def test_slots_appear_on_a_later_poll(self):
         fake = FakeKobra().start()

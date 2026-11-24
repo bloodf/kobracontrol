@@ -210,6 +210,7 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
             self.log("kobracontrol: " + self.ledger.restore_notice)
         self._units, self._feed_acks, self._capture, self._busy = {}, {}, None, set()
         self._camera_refused = set()
+        self._shared = None   # the printers last published for Spooler (_share_printers)
         self._reset_printer_state()
         self.cloud = None   # cloud.Account when Settings turn Anycubic Cloud on (plugin.py); None = LAN only
         self.camera = camera_factory(self._camera_url, self._on_frame, "", self._on_camera_error, log=log)
@@ -298,6 +299,31 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def _on_change(self, conn):   # a connection's reader or loop thread: no I/O here
         self._changed.set()
         self._note_connection(conn)
+        self._share_printers()
+
+    def shared_printers(self):
+        """The LAN printers this service holds a connection to, for Spooler's presence check (peers.Presence): a
+        Kobra 3/S1 takes one MQTT client, so Spooler reads their slots from here instead of logging in itself.
+        A connection stopped for a certificate mismatch is not this printer and is left out."""
+        out = []
+        for host, conn in list(self.connections.items()):
+            if cloud.printer_id(host) or getattr(conn, "mismatch", ""):
+                continue
+            creds = getattr(getattr(conn, "printer", None), "creds", None)
+            connected = bool(conn.connected)
+            out.append({"host": host, "device": str(getattr(creds, "device_id", "") or ""), "connected": connected,
+                        "boxes": conn.view().get("multi_color_box") or [] if connected else []})
+        return out
+
+    def _share_printers(self):
+        """Publish the presence now when what Spooler reads of the printers changed (a slot report, a login)."""
+        presence = getattr(self.peers, "presence", None)
+        if presence is None:
+            return
+        now = self.shared_printers()
+        if now != self._shared:
+            self._shared = now
+            presence.poke()
 
     def view_for(self, host):
         conn = self.connections.get(host)

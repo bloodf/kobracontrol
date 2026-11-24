@@ -10,6 +10,14 @@ writes a small presence file, refreshed every HEARTBEAT seconds while it is load
      "session": "<random per load>", "pid": <process id>, "started": <unix s>, "ts": <unix s>,
      "state": "active" | "stopped", ...plugin fields}
 
+Kobra Control's presence also lists every LAN printer it holds a connection to, while active:
+
+    "printers": [{"host": "<address>", "device": "<device id or "">", "connected": bool,
+                  "boxes": [<multiColorBox/report "multi_color_box" boxes, merged as kobra.State keeps them>]}]
+
+Kobra 3/S1 printers take one MQTT client only, so Spooler reads such a printer's slots from here and does not
+log in itself while it is listed (connected or still connecting).
+
 A peer counts as running only when its file says "active", was refreshed within FRESH seconds and
 names this process: a file left on disk by an uninstalled, disabled, crashed or other OrcaSlicer
 never does. Spooler also writes <data folder>/spooler/stock.json (parse_stock).
@@ -238,12 +246,20 @@ class Presence:
         self._failed = False
         self.links = 0      # unix ms of this plugin's last spool link change: peers re-read Spoolman when it moves
         self.printer = {}   # {"host", "name"} of the printer the tab shows: Spooler writes and reads links with this name
+        self.printers = lambda: []   # the LAN printers Kobra Control holds (Service.shared_printers), for Spooler
 
     def doc(self, state="active"):
         return {"schema": SCHEMA, "version": VERSION, "plugin": self.plugin, "plugin_version": self.version,
                 "session": self.session, "pid": os.getpid(), "started": int(self.started), "ts": self.clock(),
                 "state": state, "links": self.links, **({"printer": self.printer} if self.printer else {}),
-                **({"wants": self.wants()} if state == "active" else {})}
+                **({"wants": self.wants(), "printers": self._printers()} if state == "active" else {})}
+
+    def _printers(self):
+        try:
+            return self.printers()
+        except Exception as e:   # a broken list must not stop the heartbeat: Spooler then connects itself
+            self.log("kobracontrol: can't list the printers for Spooler (%r)" % e)
+            return []
 
     def write(self, state="active"):
         if not self.path:

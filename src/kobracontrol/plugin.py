@@ -276,6 +276,8 @@ def service(publish=None):
         elif publish is not None:
             _service.publish = publish
         _service.peers = _link
+        if _link is not None:
+            _link.presence.printers = _service.shared_printers
         if _service.cloud is None:
             sync_cloud(_service)
         return _service
@@ -391,6 +393,7 @@ def start_link():
         _link.presence.start()
         if _service is not None:
             _service.peers = _link
+            _link.presence.printers = _service.shared_printers
         return _link
 
 
