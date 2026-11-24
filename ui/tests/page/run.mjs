@@ -1213,7 +1213,7 @@ test('offline: badge, banner, Status card, camera and every control agree, and t
   await connect();
   await post(CONFIG());
   await post({type: 'status', data: VIEW({connected: false, state: 'offline'})});
-  await post({type: 'offline', error: 'Something answers at 10.25.16.41, but it is not a Kobra X in LAN mode', retry_at: Date.now() / 1000 + 32});
+  await post({type: 'offline', error: 'Something answers at 192.0.2.41, but it is not a Kobra X in LAN mode', retry_at: Date.now() / 1000 + 32});
   eq(text(byTest('link')), 'Offline', 'badge');
   const banner = text(byTest('target-banner'));
   assert(banner.includes('unreachable') && banner.includes('not a Kobra X in LAN mode') && !banner.includes('Connecting'), 'banner: ' + banner);
@@ -1333,18 +1333,18 @@ test('first run: several printers found, pick one', `
 
 test('settings: the address in use, how it was found, Search again, and the other printer agent', `
   await until(() => last('hello'));
-  await post(CONFIG({located: {address: '', source: '', preset_host: '10.25.16.41', preset_agent: 'moonraker', spoolman_url: '', spoolman_source: ''}}));
-  await reply(last('hello'), {address: '10.25.7.41', printer: 'Bench Kobra', generation: 1, source: 'discovered',
-    note: 'The printer preset points to 10.25.16.41, which is not a Kobra X in LAN mode; found the Kobra X at 10.25.7.41 and using that.'});
+  await post(CONFIG({located: {address: '', source: '', preset_host: '192.0.2.41', preset_agent: 'moonraker', spoolman_url: '', spoolman_source: ''}}));
+  await reply(last('hello'), {address: '192.0.2.41', printer: 'Bench Kobra', generation: 1, source: 'discovered',
+    note: 'The printer preset points to 192.0.2.41, which is not a Kobra X in LAN mode; found the Kobra X at 192.0.2.41 and using that.'});
   await post({type: 'status', data: VIEW()});
-  assert(toasts().includes('points to 10.25.16.41'), 'one quiet line: ' + toasts());
+  assert(toasts().includes('points to 192.0.2.41'), 'one quiet line: ' + toasts());
   assert(toasts().includes('“moonraker” printer agent'), 'agent note once: ' + toasts());
   await tab('settings');
-  eq(text(byTest('in-use')), 'In use: 10.25.7.41 (found on the network).', 'in use');
+  eq(text(byTest('in-use')), 'In use: 192.0.2.41 (found on the network).', 'in use');
   assert(text(byTest('other-agent')).includes('Printer Agent > kobracontrol'), 'how to switch: ' + text(byTest('other-agent')));
   await click(byTest('search-again-settings'));
   eq(cmds('search_printer').length, 1, 'search again');
-  await type(q('#c-host'), '10.25.7.50');
+  await type(q('#c-host'), '192.0.2.50');
   assert(byTest('search-again-settings').disabled, 'no search while an address is typed here');
 `);
 

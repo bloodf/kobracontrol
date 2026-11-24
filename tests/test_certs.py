@@ -360,7 +360,7 @@ class NoOpensslTests(Tmp):
         self.assertIn(r"C:\Program Files\AnycubicSlicerNext", win)
         self.assertIn(r"C:\Users\u\AppData\Local\Programs\AnycubicSlicerNext",
                       certs.default_locations("win32", {"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}))
-        self.assertIn("/home/u/.local/share/AnycubicSlicerNext", certs.default_locations("linux", {"HOME": "/home/u"}))
+        self.assertIn("/example/user/.local/share/AnycubicSlicerNext", certs.default_locations("linux", {"HOME": "/example/user"}))
 
 
 class PinTests(unittest.TestCase):
