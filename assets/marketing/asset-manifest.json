@@ -3,165 +3,156 @@
   "generated": [
     {
       "file": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "main",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control main banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
-      "earlier_prompt": "Create ONE realistic professional software marketing cover for 'Kobra Control', part of the exact same coordinated six-plugin campaign as reference. Preserve reference16:9 composition, top-left brand and copy area, lower-left studio-photographed physical subject, right-half EMPTY SQUARE with identical position/size/border, graphite workbench, believable material depth, controlled softbox lighting and subtle accent reflections. Accent violet #6240c8, dark violet-tinted graphite backdrop #18152b. Top-left rounded-square violet app tile with white2px ROUND-STROKE mark of two facing angular brackets around a single continuous horizontal line, matching24grid safe margins and round caps, symmetrical, no snake, no animal, no manufacturer logo. Exact product name 'Kobra Control' in Manrope semibold #eef1f6. Exact headline 'Run your printer over the LAN.' in two balanced lines if needed, keep entirely left of square. Exact scope line 'Kobra X status, files, camera and print.' in Manrope regular muted #b4bcc9. Lower-left photo shows a generic unbranded filament spool wound with violet filament on graphite workshop surface next to a few beautiful violet3D-printed functional parts with realistic fine layer texture. Behind them, softly out of focus, a generic minimal gantry3D printer with a simple horizontal motion rail and unbranded small printhead, neutral rectangular build surface, no recognizable real product silhouette, no logo, no product labels, no front display or invented screen. The foreground spool and printed parts are the photographic focus, the printer only quietly establishes workshop context. Serious commercially photographed materials, no toy render, no neon, no illustrated vector object. RIGHT square: completely EMPTY uniform #24203d interior, thin neutral gray border, understated rounded corners, straight-on flat plane, no UI, no screenshot, no numbers, no symbols, no text, no diagram, no object or photograph inside, no monitor or laptop bezel. It is reserved for a real application screenshot later. Same bottom-left six small plain rounded-square color tiles exact workflow order #00628c #00675b #446600 #a3247a #6240c8 #2b55c5. Bottom-right exact signature 'by bloodf'. No pack name, no additional words. Brand coherence with reference, precise negative space, restrained typography, physical plausibility and photographic polish.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: \"Status, files, camera and print for Anycubic printers.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control main banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png"
+        "kobracontrol-workshop-cover-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1758843,
-      "sha256": "3a816c5ac3a9d2f31627e410cecc9d3c67f8a25aa7deefd469a972c96cd37d63",
+      "bytes": 1755241,
+      "sha256": "ce5fb832b94d0267541a0a5b8564b8cf5703aa682682dec702d3180da9439c0a",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "square",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control square banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: \"Status, files, camera and print for Anycubic printers.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-main-square-en.png"
+        "kobracontrol-workshop-main-square-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1254,
       "height": 1254,
-      "bytes": 1874229,
-      "sha256": "94f7e358c15fc85d3c8292ae28db8e0ba288748e4934b440c54c0ceab21568c8",
+      "bytes": 1763964,
+      "sha256": "65a760e7763dc1478714ce3eee9765c59f60d9f60f9f094e46db2d75925a2b4f",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control square banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "feature",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey line under the headline with exactly this text, same font, size, colour and position: \"Prepare and send work to your Anycubic printer.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-feature-01-lan-en.png"
+        "kobracontrol-workshop-feature-01-lan-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1815882,
-      "sha256": "7a1f1d6250ecda40f2dd5d94e6c166e3be1c9c0647dc8aecea14a6d077103c27",
+      "bytes": 1712730,
+      "sha256": "1fcfb299ce7faa03039bdd0fc58260ebb759e789d17d0aeec23f06e490ad78b3",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-feature-02-status-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "feature",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Keep every line of copy exactly as it is; change no text at all.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-feature-02-status-en.png"
+        "kobracontrol-workshop-feature-02-status-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1728715,
-      "sha256": "3f719981425195cb1c9797b076562ba5e500ad1024ef9c7c2fff25bb2a78dbc6",
+      "bytes": 1724903,
+      "sha256": "a624ded777897e15ec84b43a5ad7fafd846af655d8c014586efa3c46f4610eb1",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "feature",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Keep every line of copy exactly as it is; change no text at all.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-feature-03-ace-en.png"
+        "kobracontrol-workshop-feature-03-ace-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1787609,
-      "sha256": "a883251e4401c0d200cc4562c2a5ec0822a6730be8b9a99ce38999380f6d1da9",
+      "bytes": 1739316,
+      "sha256": "547226f9b797a7654b5f96c91f48480d8ab862dc9fbaa48ead320b0a56880d2d",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control feature banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-feature-04-files-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "feature",
-      "exact_prompt": "Edit this Kobra Control banner. Keep the printer photo, background, layout, icon, headline, footer, and completely empty right screenshot square unchanged. Correct the supporting text to this COMPLETE exact sentence: 'Browse files and check the print setup.' Use a slightly smaller font so the whole sentence fits comfortably in the left column on a single line, above and entirely clear of the printer tubes. Do not truncate or omit 'setup.'. No other changes.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Keep every line of copy exactly as it is; change no text at all.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-feature-04-files-en.png"
+        "kobracontrol-workshop-feature-04-files-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1671,
       "height": 941,
-      "bytes": 1721723,
-      "sha256": "72f4c47c68aa3c93fa5e8d3795ceb0922cdb02e8990d6faf42197f02144ca70a",
+      "bytes": 1666689,
+      "sha256": "347ae46bfd5064b82cd913a0260e1edfc9b1e8eba6811b31198c22b78ab6fbd9",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Edit this Kobra Control banner. Keep the printer photo, background, layout, icon, headline, footer, and completely empty right screenshot square unchanged. Correct the supporting text to this COMPLETE exact sentence: 'Browse files and check the print setup.' Use a slightly smaller font so the whole sentence fits comfortably in the left column on a single line, above and entirely clear of the printer tubes. Do not truncate or omit 'setup.'. No other changes."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "social",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control social banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: \"Status, files, camera and print for Anycubic printers.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-social-preview-en.png"
+        "kobracontrol-workshop-social-preview-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1774,
       "height": 887,
-      "bytes": 1769431,
-      "sha256": "48ad0c2a9a6916f5a8a96fc2905d2e8a0bb9137b52dd3117e7ca7239b362bed8",
+      "bytes": 1727741,
+      "sha256": "a5b469ba629edc09231b733e84b0978f27ce2e2aee580ef0b14497c0ec9857e1",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control social banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer prominent and complete in left photographic area, BELOW ALL TEXT with generous gap, no cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-hero-dark-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "hero-dark",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-dark banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: \"Status, files, camera and print for Anycubic printers.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-hero-dark-en.png"
+        "kobracontrol-workshop-hero-dark-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1754909,
-      "sha256": "98be61d57cc436598484f5894e50610a630c7d62d6bb2432bcfdd9280422a7e6",
+      "bytes": 1721613,
+      "sha256": "b5fe2611d107a461391239af95cc99c8ae1129de7c73ccf0faa23703804ff277",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-dark banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-hero-light-en.png",
-      "tool": "ChatGPT built-in image generation / image_gen.imagegen",
+      "tool": "Codex CLI built-in image generation (image_gen), image edit",
       "category": "hero-light",
-      "exact_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-light banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising.",
+      "exact_prompt": "EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect ratio as the attached image, \n\nEdit instructions:\n1. Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: \"Status, files, camera and print for Anycubic printers.\" (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled.\n2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.\nKeep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background, theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text, no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.",
       "referenced_images": [
-        "kobra-x.png",
-        "kobracontrol-workshop-cover-en.png",
-        "kobracontrol-workshop-hero-light-en.png"
+        "kobracontrol-workshop-hero-light-en.png (the 2026-11-16 version, as the edit target)"
       ],
-      "date": "2026-11-16",
+      "date": "2026-11-24",
       "width": 1672,
       "height": 941,
-      "bytes": 1559308,
-      "sha256": "665a0b7ec6504abcf0376c948bd1d1bdf6718f5b3cc3530dcfd890f2ea0e68df",
+      "bytes": 1524558,
+      "sha256": "95012f478b24744826285faaf223db5285bf46bf0818450b86bf9e10e1ac4d44",
       "language": "en",
-      "review_note": "User-supplied product reference; native generated pixels preserved. Screenshot square intentionally empty. Native dimensions differ from intended export size."
+      "review_note": "Regenerated so the artwork covers every Anycubic printer Kobra Control drives, not only the Kobra X: generic unbranded Kobra-family printer and filament box, no Anycubic/Kobra X/ACE markings, scope line names Anycubic. Text checked at full size. Screenshot square intentionally empty. Native dimensions differ from intended export size.",
+      "earlier_prompt": "Use case: compositing. Image 1 is the edit target, an approved Kobra Control hero-light banner in en. Image 2 is the user's real printer photograph. Replace generic printer/hardware/spool photographic props in image 1 with the faithful printer from image 2 (Anycubic Kobra X: tall white gantry, top colored filament spools and tubes, separate black ACE feeder on left, multicolor boat on bed, white base and tilted controller). Preserve actual architecture, parts, proportions and original product colors. Remove source white backdrop; integrate naturally into existing realistic workshop lighting and contact shadows. Printer complete in lower-left photographic area. Scale the ENTIRE product and feeder smaller to fit BELOW ALL TEXT: topmost tube or spool must begin beneath the supporting text baseline, with 30 pixels of clear empty background between text and product. No product part may touch, hide or sit behind a letter. Readability is higher priority than product size. No cropped top or base; clear generic props to make room. Preserve EXACT aspect ratio, ALL copy verbatim in existing language, typography, app icon, accent colors, light/dark theme, footer chips and 'by bloodf'. Keep right EMPTY SQUARE same size and position; blank uniform interior, no UI/text/photo/product overlap. No extra wording or pack name. Change only photographic foreground. Professional product advertising."
     },
     {
       "file": "assets/marketing/source/kobracontrol-workshop-main-pt-BR.png",
@@ -348,7 +339,7 @@
       "source": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-en.png",
       "operation": "screenshot store-lan (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1261088,
+      "bytes": 1243650,
       "date": "2026-11-24"
     },
     {
@@ -362,9 +353,9 @@
     {
       "file": "assets/orca-cloud/kobracontrol-feature-02-status-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-feature-02-status-en.png",
-      "operation": "screenshot store-status (dark, en, 1280x1235 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x689, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "operation": "screenshot store-status (dark, en, 1280x1235 CSS px at 2x) pasted into the empty panel at x=882 y=100 713x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
       "size": "1600x900",
-      "bytes": 1284837,
+      "bytes": 1267051,
       "date": "2026-11-24"
     },
     {
@@ -378,9 +369,9 @@
     {
       "file": "assets/orca-cloud/kobracontrol-feature-03-ace-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-en.png",
-      "operation": "screenshot store-ace (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "operation": "screenshot store-ace (dark, en, 800x772 CSS px at 2x) pasted into the empty panel at x=883 y=100 712x687, corner radius 10; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1265354,
+      "bytes": 1233335,
       "date": "2026-11-24"
     },
     {
@@ -394,9 +385,9 @@
     {
       "file": "assets/orca-cloud/kobracontrol-feature-04-files-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-feature-04-files-en.png",
-      "operation": "screenshot store-files (dark, en, 800x774 CSS px at 2x) pasted into the empty panel at x=883 y=100 711x688, corner radius 14; then 1671x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "operation": "screenshot store-files (dark, en, 800x776 CSS px at 2x) pasted into the empty panel at x=883 y=99 710x689, corner radius 14; then 1671x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1175084,
+      "bytes": 1134758,
       "date": "2026-11-24"
     },
     {
@@ -412,15 +403,15 @@
       "source": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
       "operation": "screenshot store-dash (dark, en, 1100x1060 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1270888,
+      "bytes": 1263308,
       "date": "2026-11-24"
     },
     {
       "file": "assets/orca-cloud/kobracontrol-main-square-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
-      "operation": "screenshot store-dash (dark, en, 520x521 CSS px at 2x) pasted into the empty panel at x=661 y=433 531x532, corner radius 17; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
+      "operation": "screenshot store-dash (dark, en, 520x521 CSS px at 2x) pasted into the empty panel at x=661 y=433 531x532, corner radius 14; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
       "size": "900x900",
-      "bytes": 849321,
+      "bytes": 821407,
       "date": "2026-11-24"
     },
     {
@@ -436,7 +427,7 @@
       "source": "ui/tests/page/shots.mjs",
       "operation": "screenshot store-status (dark, en, 1440x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
       "size": "2880x3200",
-      "bytes": 840349,
+      "bytes": 831105,
       "date": "2026-11-24"
     },
     {
@@ -452,7 +443,7 @@
       "source": "ui/tests/page/shots.mjs",
       "operation": "screenshot store-status (light, en, 1440x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
       "size": "2880x3200",
-      "bytes": 838896,
+      "bytes": 830432,
       "date": "2026-11-24"
     },
     {
@@ -468,7 +459,7 @@
       "source": "ui/tests/page/shots.mjs",
       "operation": "screenshot store-files (dark, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
       "size": "2560x1880",
-      "bytes": 246488,
+      "bytes": 247593,
       "date": "2026-11-24"
     },
     {
@@ -484,7 +475,7 @@
       "source": "ui/tests/page/shots.mjs",
       "operation": "screenshot store-files (light, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
       "size": "2560x1880",
-      "bytes": 249436,
+      "bytes": 250539,
       "date": "2026-11-24"
     },
     {
@@ -500,7 +491,7 @@
       "source": "assets/marketing/source/kobracontrol-workshop-hero-dark-en.png",
       "operation": "screenshot store-dash (dark, en, 1100x1060 CSS px at 2x) pasted into the empty panel at x=882 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1272650,
+      "bytes": 1243273,
       "date": "2026-11-24"
     },
     {
@@ -514,9 +505,9 @@
     {
       "file": "assets/readme/kobracontrol-hero-light-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-hero-light-en.png",
-      "operation": "screenshot store-dash (light, en, 1100x1061 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "operation": "screenshot store-dash (light, en, 1100x1063 CSS px at 2x) pasted into the empty panel at x=883 y=99 713x689, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1192475,
+      "bytes": 1168928,
       "date": "2026-11-24"
     },
     {
@@ -532,7 +523,7 @@
       "source": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
       "operation": "screenshot store-dash (dark, en, 616x613 CSS px at 2x) pasted into the empty panel at x=1048 y=95 648x645, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
       "size": "1280x640",
-      "bytes": 769199,
+      "bytes": 755681,
       "date": "2026-11-24"
     }
   ]

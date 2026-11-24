@@ -23,6 +23,38 @@ Where each asset goes in this repo:
 Deliverables 4, 8, 10 and 11 of the prompt (hero, store frames, social images and store tile) are kept below as
 written, but their files were replaced.
 
+## All Anycubic printers (2026-11-24)
+
+Kobra Control drives more than the Kobra X (the Kobra 3 family, S1, 4 and, through Anycubic Cloud, the Kobra 2
+Pro/Plus/Max), so the nine English pictures in `assets/marketing/source/` were edited again: the printer is a generic,
+unbranded Kobra-family printer with a filament box (no Anycubic, Kobra X or ACE markings), and every line that named
+the Kobra X names Anycubic instead. The Portuguese pictures and the tile were left as they were. Each picture was an
+edit of its previous version, made with this prompt (`<LINE>` per picture below; the exact text of each is the
+`exact_prompt` of its entry in `asset-manifest.json`):
+
+```text
+EDIT the attached image (an approved software marketing banner). Generate exactly one image with the same aspect
+ratio as the attached image.
+
+Edit instructions:
+1. <LINE>
+2. Replace the 3D printer and the filament box with a photorealistic generic Anycubic Kobra-family style desktop FDM
+printer, same position and similar size: white and light-grey open-frame bed-slinger with a single upright gantry, a
+moving build plate carrying the same multicolour printed ship, a small tilted touchscreen on the base, a top spool
+holder with spools, next to a black multi-spool filament dryer box with a smoked lid and four coloured spools. The
+machines carry no visible text, no model names, no badges, no letter marks and no logos at all: clean plain panels.
+Keep unchanged: the app tile and the product name, every other line of copy exactly as it is now, the background,
+theme, lighting, the six colour tiles bottom-left, the signature, and the large rounded EMPTY panel on the right at
+exactly the same size and position with its thin border and perfectly uniform flat interior colour (no UI, no text,
+no objects inside, nothing overlapping it). No extra words, no watermark, no other brand logos, no people.
+```
+
+| Picture | `<LINE>` |
+|---|---|
+| cover, main-square, social-preview, hero-dark, hero-light | Replace the small grey scope line under the headline with exactly this text, same font, size, colour and position: "Status, files, camera and print for Anycubic printers." (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled. |
+| feature-01-lan | Replace the small grey line under the headline with exactly this text, same font, size, colour and position: "Prepare and send work to your Anycubic printer." (EXACT, verbatim, no extra characters). Ensure it appears once, perfectly legible and correctly spelled. |
+| feature-02-status, feature-03-ace, feature-04-files | Keep every line of copy exactly as it is; change no text at all. |
+
 ---
 
 ```text
