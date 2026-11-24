@@ -219,6 +219,17 @@ class Locate(unittest.TestCase):
         found = locate.locate("", BRIDGE, self.A, probe=lambda ip: kx(ip, "SERIAL-A"), search=self.never)
         self.assertEqual((found.host, found.source, found.expect_fp), ("10.0.0.2", "remembered", "aa" * 32))
 
+    def test_a_record_made_for_another_preset_address_is_not_used(self):
+        """GitHub #82: a preset saved as a copy was remembered at the first printer (.73); its print host changed
+        to .74 since. The preset's new address wins; a record without "ph" (older files) is used as before."""
+        record = {**self.A, "ph": "10.0.0.2"}
+        found = locate.locate("", "10.0.0.4", record, probe=lambda ip: kx(ip, "SERIAL-B"), search=self.never)
+        self.assertEqual((found.host, found.source, found.expect_fp), ("10.0.0.4", "preset", ""))
+        found = locate.locate("", "10.0.0.2", record, probe=lambda ip: kx(ip, "SERIAL-A"), search=self.never)
+        self.assertEqual((found.host, found.source), ("10.0.0.2", "remembered"))
+        found = locate.locate("", "10.0.0.4", self.A, probe=lambda ip: kx(ip, "SERIAL-A"), search=self.never)
+        self.assertEqual((found.host, found.source), ("10.0.0.2", "remembered"))
+
     def test_remembered_printer_found_again_at_a_new_address(self):
         def probe(ip):
             return refused(ip) if ip == "10.0.0.2" else kx(ip, "SERIAL-A")
@@ -409,7 +420,7 @@ class ServiceLocates(unittest.TestCase):
         self.assertTrue(svc.connections["127.0.0.1"].connected)
         self.assertNotIn(BRIDGE, svc.connections)   # never a connection loop for the bridge
         wait(lambda: self.book.get("Anycubic Kobra X"))   # recorded at the first connect: address, identity, pin
-        self.assertEqual(self.book.get("Anycubic Kobra X"), {"ip": "127.0.0.1", "id": "SERIAL-A", "fp": ""})
+        self.assertEqual(self.book.get("Anycubic Kobra X"), {"ip": "127.0.0.1", "id": "SERIAL-A", "fp": "", "ph": BRIDGE})
         svc.close()
         searches = len(self.ssdp.searches)
         svc2, published2 = self.service()

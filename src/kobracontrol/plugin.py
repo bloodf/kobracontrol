@@ -539,10 +539,10 @@ def dev_id_from_address(host, port):
     return "%s:%s" % (text.split(":", 1)[0], port) if port else text
 
 
-def agent_address():
-    """UI thread: (dev_id, host) of the printer the agent stands for before OrcaSlicer connects it: the selected
-    preset's print host (under the dev_id select_machine() looks for), else the printer the tab found; ("", "")
-    with neither."""
+def agent_address(connected=("", "")):
+    """UI thread: (dev_id, host) of the printer the agent stands for: the selected preset's print host (under the
+    dev_id select_machine() looks for), else `connected` (the agent's printer), else the printer the tab found;
+    ("", "") with none. The preset comes first: after a switch to another preset its printer is the one to announce."""
     try:
         bundle = orca.host.preset_bundle()
         preset = bundle.current_printer_preset()
@@ -553,6 +553,8 @@ def agent_address():
         print_host = port = ""
     if print_host and host_of(print_host):
         return dev_id_from_address(print_host, port), host_of(print_host)
+    if connected[1]:
+        return connected
     target = _service.target if _service is not None else None
     host = target.host if target is not None else ""
     return host, host
@@ -718,6 +720,40 @@ def job_read_grants():
         if target not in out:
             out.append(target)
     return out
+
+
+def permission_origin(url):
+    """scheme://host of a Spoolman address, the form OrcaSlicer's load-time network grant covers every port and path
+    of (a runtime approval covers only the exact URL it saw); "" for none."""
+    origin = peers.normalize_origin(url)
+    if not origin:
+        return ""
+    scheme, _, rest = origin.partition("://")
+    host = rest.split("/", 1)[0]
+    return "%s://%s" % (scheme, host[:host.index("]") + 1] if host.startswith("[") else host.split(":", 1)[0])
+
+
+def remember_spoolman(url):
+    """Keep the Spoolman origin in use (Settings, or Spooler's), so the next load asks OrcaSlicer for it once: Kobra
+    Control's Spoolman reads run on worker threads, where an address not granted is only refused."""
+    origin = permission_origin(url)
+    try:
+        known = get_store().effective()["spoolman_origins"]
+        if origin and origin not in known:
+            get_store().update({"spoolman_origins": known + [origin]})
+    except Exception as e:   # never fails the page's config
+        log("Spoolman address not remembered (%s)" % e)
+
+
+def spoolman_grants():
+    """The Spoolman origins for the load-time network request: Settings' and the ones used before."""
+    try:
+        cfg = get_store().effective()
+        found = [permission_origin(cfg.get("spoolman_url"))] + cfg["spoolman_origins"]
+    except Exception as e:
+        log("settings not readable at load (%s)" % e)
+        return []
+    return [o for o in dict.fromkeys(found) if o]
 
 
 def known_hosts():
@@ -955,6 +991,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         spooler = spooler_state()
         spooler["dismissed"] = bool(cfg["spooler_hint_dismissed"])
         target = _service.target if _service is not None else None
+        if target is not None and target.spoolman_url:
+            remember_spoolman(target.spoolman_url)
         located = {"address": target.host, "source": target.source, "preset_host": target.preset_host,
                    "preset_agent": target.preset_agent, "spoolman_url": target.spoolman_url,
                    "spoolman_source": target.spoolman_source} if target else None
@@ -1251,7 +1289,7 @@ class KobraAgent(pa.PrinterAgentBase):
         Device tab shows no printer and Print can't find one. Discovery with that dev_id gives the entry to this agent
         or creates it (DeviceManager::on_machine_alive)."""
         if start:
-            dev_id, host = (self.dev_id, self.host) if self.host else agent_address()
+            dev_id, host = agent_address((self.dev_id, self.host))
             if host:
                 self._announce(dev_id, host)
         return True
@@ -1754,7 +1792,7 @@ class KobraControl(orca.base):
         # every printer address known now and the SSDP multicast group the network search sends to (a canonical
         # http://host grant also covers raw sockets to that host); a printer found later is asked for on first
         # contact.
-        network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local
+        network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local + spoolman_grants()
         try:   # Anycubic Cloud's hosts only while it is on (opt-in)
             network += ["https://" + h for h in cloud_hosts()] if get_store().effective()["cloud_enabled"] else []
         except Exception:

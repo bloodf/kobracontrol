@@ -157,6 +157,22 @@ class Registration(unittest.TestCase):
         plugin.KobraControl().register_capabilities()
         self.assertEqual(orca.permissions[-1]["network"], ["http://239.255.255.250", "https://api.openfilamentdatabase.org"])
 
+    def test_spoolman_is_asked_for_at_load(self):
+        """Orca Cloud report 2026-11-24: Spoolman (Spooler's, at localhost:7912) was never in the load-time request,
+        and its reads run on worker threads, where OrcaSlicer only refuses: "audit permission required". The origin in
+        use is remembered and asked for, as scheme://host, at the next load."""
+        plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
+        self.assertEqual(plugin.permission_origin("HTTP://LocalHost:7912/api"), "http://localhost")
+        self.assertEqual(plugin.permission_origin("https://[fd00::5]:7912"), "https://[fd00::5]")
+        self.assertEqual(plugin.permission_origin(""), "")
+        plugin.remember_spoolman("http://localhost:7912")
+        plugin.remember_spoolman("http://localhost:7913")   # same host: one grant
+        plugin.get_store().update({"spoolman_url": "http://192.168.1.9:7912"})
+        orca.permissions.clear()
+        plugin.KobraControl().register_capabilities()
+        self.assertEqual(orca.permissions[-1]["network"],
+                         ["http://239.255.255.250", "http://192.168.1.9", "http://localhost"])
+
     def test_register_capabilities_reads_no_preset(self):
         """Plugins load on a thread of their own while OrcaSlicer's UI thread loads the presets: reading them then
         races it. Only the plugin's own storage folder and files are read."""
@@ -702,6 +718,25 @@ class Agent(Base):
                          [("192.0.2.88:8080", "192.0.2.88"), ("192.0.2.7", "192.0.2.7")])
         self.assertEqual(self.events["queued"], 0)   # not queued: select_machine() must already see it
         self.assertEqual(plugin.dev_id_from_address("https://192.0.2.88:7125/x", ""), "192.0.2.88:7125")
+
+    def test_discovery_after_preset_switch_announces_the_new_presets_printer(self):
+        """GitHub #82: connected to one printer, selecting another preset announces that preset's printer (its
+        print host), not the one connected first, so select_machine() finds it and connects the agent there."""
+        self.connect()
+        bundle = orca.host.preset_bundle()
+        preset = bundle.current_printer_preset()
+        old, old_full = type(preset).config_value, bundle.full_config_value
+        values = {"printer_agent": "kobracontrol", "print_host": "192.0.2.74", "printhost_port": ""}
+        type(preset).config_value = lambda self, key: values.get(key)
+        bundle.full_config_value = lambda key: values.get(key)
+        try:
+            self.agent.start_discovery(True, False)
+            values.update(print_host="")   # a preset without a print host: the printer the agent is connected to
+            self.agent.start_discovery(True, False)
+        finally:
+            type(preset).config_value, bundle.full_config_value = old, old_full
+        self.assertEqual([(m["dev_id"], m["dev_ip"]) for m in self.events["ssdp"][-2:]],
+                         [("192.0.2.74", "192.0.2.74"), (self.agent.dev_id, "127.0.0.1")])
 
     def test_replies_and_codes(self):
         self.connect()

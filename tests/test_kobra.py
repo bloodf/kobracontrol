@@ -1562,6 +1562,16 @@ class StateTests(unittest.TestCase):
         self.assertEqual(steps[-1][3]["last_error"]["code"], 10111)
         self.assertEqual(steps[-1][3]["state"], "busy")
 
+    def test_stoped_with_10601_is_a_cancel(self):
+        """Orca Cloud report 2026-11-24 (firmware 2.0.2.8): a stop that worked was answered with code 10601
+        "用户发起" ("user initiated") and shown as "Stop print failed"."""
+        reply = {"type": "print", "action": "stop", "state": "stoped", "code": 10601, "msg": "用户发起"}
+        self.assertTrue(kobra.succeeded(reply))
+        self.assertIs(kobra.check_reply(reply, "the stop"), reply)
+        self.assertFalse(kobra.succeeded({**reply, "action": "pause"}))   # only a stop's own answer
+        v = self.apply("print/report", {"taskid": "-1"}, action="stop", state="stoped", code=10601, msg="用户发起")
+        self.assertEqual((v["state"], v["last_error"]), ("cancelled", None))
+
     def test_stoped_with_200_is_a_cancel(self):
         v = self.apply("print/report", {"taskid": "-1"}, action="stop", state="stoped", code=200, msg="done")
         self.assertEqual((v["state"], v["last_error"]), ("cancelled", None))
