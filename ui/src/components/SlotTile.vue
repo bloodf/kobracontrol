@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, nextTick, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import { fuzzyFilter, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
@@ -123,6 +123,22 @@ async function choose(id: number | null) {
     okText: t('ok.bind', { slot: slotName, id }), timeoutMs: 60000 });
   if (!r.ok) void loadSpools(true);
 }
+
+// Change's candidate list floats over the card (see .sl-match CSS). Once it opens, give it the room the viewport has: below the
+// preset line when that fits, else above it, and never taller than the side it sits on, so no option is cut off at the edge.
+// ponytail: measured on open only; a scroll or resize while it is open keeps that placement, close and reopen to re-measure.
+const GAP = 8, MAX = 260;
+async function placeList(e: MouseEvent) {
+  const host = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.oui-match');
+  if (!host || !(e.target as HTMLElement).closest('.oui-match-change')) return;
+  await nextTick();
+  const list = host.querySelector<HTMLElement>('.oui-match-list');
+  if (!list) { host.removeAttribute('data-up'); return; }
+  const r = host.getBoundingClientRect(), below = innerHeight - r.bottom - GAP, above = r.top - GAP, want = Math.min(MAX, list.scrollHeight);
+  const up = below < want && above > below;
+  host.toggleAttribute('data-up', up);
+  list.style.maxHeight = `${Math.max(0, Math.min(MAX, up ? above : below))}px`;
+}
 </script>
 
 <template>
@@ -175,7 +191,7 @@ async function choose(id: number | null) {
       </template>
     </Select>
 
-    <div v-if="match && !editing" class="sl-match" :data-match="key">
+    <div v-if="match && !editing" class="sl-match" :data-match="key" @click="placeList">
       <p class="oui-label">{{ t('match.title') }}</p>
       <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
                       :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
@@ -219,6 +235,13 @@ async function choose(id: number | null) {
    score chip and Change spilled out of the card. Let it shrink and wrap inside the card instead. */
 .sl-match .oui-match-head { min-width: 0; }
 .sl-match .oui-match-side { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+/* Change's candidate list is a popup over the card, not a block in it: opening it must not grow the slot, its row or the dashboard.
+   It hangs under the preset line, as wide as the card, scrolls when there are many, and lifts the open card above its neighbours. */
+.kc-slot:has(.oui-match[data-open]), .kc-group:has(.oui-match[data-open]) { position: relative; z-index: 30; }
+.sl-match .oui-match { position: relative; }
+.sl-match .oui-match-list { position: absolute; inset-inline: 0; top: 100%; z-index: 1; max-height: min(260px, 50vh); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--oui-surface); box-shadow: 0 0 0 1px var(--oui-border), 0 8px 24px rgb(0 0 0 / .28); }
+.sl-match .oui-match[data-up] .oui-match-list { top: auto; bottom: 100%; }
 .sl-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .sl-form { display: grid; gap: var(--oui-s2); padding: var(--oui-s2); border-radius: var(--oui-radius); background: var(--oui-inset); }
 .sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--oui-s2); align-items: center; }

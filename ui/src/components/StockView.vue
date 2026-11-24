@@ -5,12 +5,12 @@ import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import { OuiBanner, OuiEmpty, OuiHint, OuiIcon, OuiLevel, OuiPageHeader, OuiPanel, OuiSpool, OuiStatus, OuiToolbar } from '@orca-plugins/ui-foundation/src/components';
-import { boxes, link as linkIcon, refresh, settings } from '@orca-plugins/ui-foundation/src/icons';
+import { boxes, chevronDown, chevronRight, link as linkIcon, refresh, settings } from '@orca-plugins/ui-foundation/src/icons';
 import { levelTone, spoolFraction } from '../core/spool-level';
 import { s, openSettings, run, tracker, loadStock, loadSpools, controlsOff, targetKnown, printerName, stockVisible } from '../app/store';
 import { config, spoolmanSet as configured } from '../app/settings';
 import { ask } from '../core/dialog';
-import { t, tMaybe, fmt } from '../core/i18n';
+import { t, tn, tMaybe, fmt } from '../core/i18n';
 import { family, groupSlots, hexOf } from '../core/logic';
 import type { Slot, Spool } from '../app/types';
 
@@ -63,6 +63,27 @@ const shown = computed(() => {
   return rows.value.filter(r => (!mat.value || r.material === mat.value) && (!fam || family(r.material) === fam)
     && (!needle || [r.name, r.vendor, r.material, r.location, '#' + r.id].join(' ').toLowerCase().includes(needle)));
 });
+// Group the list like Spooler's: by material, manufacturer or location (off by default); a header shows the count and what is left in the group.
+type GroupBy = 'none' | 'material' | 'vendor' | 'location';
+const group = ref<GroupBy>('none');
+const collapsed = ref(new Set<string>());
+const groupOptions = computed(() => [{ value: 'none', label: t('stock.group.none') }, { value: 'material', label: t('stock.group.material') },
+  { value: 'vendor', label: t('stock.group.vendor') }, { value: 'location', label: t('stock.group.location') }]);
+const groupRaw = (r: Spool) => (group.value === 'material' ? r.material : group.value === 'vendor' ? r.vendor : r.location) || '';
+const groupLabel = (r: Spool) => groupRaw(r) || t(group.value === 'material' ? 'stock.group.unknownMaterial' : group.value === 'vendor' ? 'stock.group.unknownVendor' : 'stock.group.noLocation');
+const sum = (xs: (number | null | undefined)[]) => { const n = xs.filter((x): x is number => typeof x === 'number'); return n.length ? n.reduce((a, b) => a + b, 0) : null; };
+/** One block per group (a single headerless block when ungrouped): its rows, count and what is left together. */
+const blocks = computed(() => {
+  if (group.value === 'none') return [{ key: '', label: '', head: false, items: shown.value, left: null as number | null, fraction: null as number | null, open: true }];
+  // Keyed by mode and raw value, never by the translated label: a missing value and a real one named like the label stay apart.
+  const by = new Map<string, { label: string; items: Spool[] }>();
+  for (const r of shown.value) { const k = `${group.value}:${groupRaw(r)}`; const g = by.get(k) ?? { label: groupLabel(r), items: [] }; g.items.push(r); by.set(k, g); }
+  return [...by.entries()].sort(([, a], [, b]) => a.label.toLowerCase().localeCompare(b.label.toLowerCase())).map(([key, { label, items }]) => {
+    const left = sum(items.map(r => r.remaining)), first = sum(items.map(r => r.initial));
+    return { key, label, head: true, items, left, fraction: spoolFraction(left, first), open: !collapsed.value.has(key) };
+  });
+});
+function toggle(key: string) { const next = new Set(collapsed.value); if (!next.delete(key)) next.add(key); collapsed.value = next; }
 /** Why linking is off. A page-wide reason is the page's banner (#kc-why); one about this list is this page's (#stock-why). */
 const why = computed(() => (!targetKnown.value || !s.info ? t('stock.why.connect') : controlsOff.value ? controlsOff.value : chosen.value == null ? t('stock.why.noSlot')
   : !configured.value ? t('sm.notConfigured') : s.stock?.same_spoolman === false ? t('stock.why.spoolman') : ''));
@@ -144,6 +165,7 @@ async function link(r: Spool) {
       <OuiToolbar :summary="t('stock.count', { shown: shown.length, n: rows.length })" :label="t('stock.searchLabel')">
         <InputText v-model="q" type="search" size="small" :placeholder="t('stock.search')" :aria-label="t('stock.searchLabel')" class="sc-q" />
         <Select v-model="mat" :options="materials" option-label="label" option-value="value" show-clear size="small" :placeholder="t('stock.allMaterials')" :aria-label="t('stock.material')" />
+        <Select v-model="group" :options="groupOptions" option-label="label" option-value="value" size="small" :aria-label="t('stock.group')" data-test="stock-group" />
         <label class="kc-inline" for="stock-fit"><Checkbox v-model="fit" input-id="stock-fit" binary />{{ t('stock.sameMaterial') }}</label>
       </OuiToolbar>
       <div class="sc-wrap">
@@ -152,7 +174,15 @@ async function link(r: Spool) {
             <th scope="col" class="sc-in">{{ t('stock.col.loaded') }}</th><th scope="col" class="sc-left oui-num">{{ t('stock.col.left') }}</th>
             <th scope="col" class="sc-act oui-end"><span class="oui-sr">{{ t('stock.col.action') }}</span></th></tr></thead>
           <tbody>
-            <tr v-for="r in shown" :key="r.id" :data-spool="r.id">
+            <template v-for="b in blocks" :key="b.key">
+              <tr v-if="b.head" class="sc-grow" :data-group="b.key"><td colspan="5">
+                <button type="button" class="sc-ghead" :aria-expanded="b.open" @click="toggle(b.key)">
+                  <OuiIcon :icon="b.open ? chevronDown : chevronRight" :size="14" />
+                  <span class="sc-gname"><strong>{{ b.label }}</strong> <span class="oui-meta">{{ tn('stock.groupCount', b.items.length) }}</span></span>
+                  <span class="sc-gbar"><span class="oui-meta oui-num">{{ b.left == null ? t('common.unknown') : fmt.grams(b.left) }}</span><OuiLevel :fraction="b.fraction" :tone="levelTone(b.fraction, false)" /></span>
+                </button></td></tr>
+              <template v-if="b.open">
+            <tr v-for="r in b.items" :key="r.id" :data-spool="r.id">
               <td><div class="sc-nm"><OuiSpool :color="r.colour" :colors="r.colours" :fraction="spoolFraction(r.remaining, r.initial)" :size="36" />
                 <div class="sc-id"><p class="oui-truncate" :title="`${r.vendor} ${r.name}`"><span class="oui-strong">{{ r.name }}</span> <span class="oui-muted oui-num">#{{ r.id }}</span></p>
                   <p class="oui-meta sc-meta"><span v-if="r.use_first" class="oui-chip">{{ t('stock.useFirst') }}</span><span class="oui-truncate">{{ [r.vendor, r.location].filter(Boolean).join(' · ') }}</span></p></div></div></td>
@@ -166,6 +196,8 @@ async function link(r: Spool) {
                         :data-focus-key="`stock:${r.id}`" :data-stock="r.id" :aria-label="t('stock.linkLabel', { id: r.id, name: `${r.vendor} ${r.name}`, slot: chosenLabel })" @click="link(r)">
                   <template #icon><OuiIcon :icon="linkIcon" :size="13" /></template></Button></td>
             </tr>
+              </template>
+            </template>
             <tr v-if="!shown.length"><td colspan="5" class="oui-muted">
               <template v-if="rows.length">{{ t('stock.noMatch') }} <Button text size="small" severity="secondary" :label="t('stock.clearFilters')" @click="clear" /></template>
               <template v-else>{{ t('stock.empty') }}</template></td></tr>
@@ -211,4 +243,7 @@ async function link(r: Spool) {
 .sc-meta { display: flex; align-items: center; gap: var(--oui-s1); min-width: 0; }
 .sc-amount { display: grid; gap: 4px; justify-items: end; }
 .sc-amount > .oui-level { width: 100%; }
+.sc-ghead { display: flex; align-items: center; gap: var(--oui-s2); width: 100%; padding: 2px 0; border: 0; background: none; color: var(--oui-text); font: inherit; text-align: start; cursor: pointer; }
+.sc-gname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sc-gbar { display: grid; gap: 4px; min-width: 90px; white-space: nowrap; text-align: end; }
 </style>
