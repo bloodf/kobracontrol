@@ -105,37 +105,8 @@ if (SCN === 'edit') { document.querySelector('[data-test="dash-edit"]').click();
 if (SCN === 'dialog') { document.querySelector('[data-test="stop"]').focus(); document.querySelector('[data-test="stop"]').click(); await until(() => document.querySelector('.p-dialog')); }
 // the listing pictures show a quiet page: the "printer is printing" banner is closed, as a user would close it
 if (STORE) { document.querySelector('[data-test="busy-banner"] .oui-banner-close')?.click(); await sleep(100); }
-// the main and hero images: the print card without the printer photo, times or buttons, and right under it the ACE's four
-// slots and their spools (full, unknown, half, low) without their spool pickers, buttons or drying controls; hidden by a
-// style sheet, as the page keeps re-rendering them. Four in a row where the page is wide, else two, and only the cards that
-// fit whole; the social preview's short panel leaves the print card out (the app bar still says Printing).
-if (SCENE === 'store-dash') {
-  const job = document.querySelector('[data-test="job-card"]'), ace = document.querySelector('[data-test="ace-card"]');
-  const css = document.createElement('style');
-  // under the print, across the page; the other widgets are not in the picture
-  css.textContent = \`.oui-dash-cell[data-widget="ace"] { grid-column: 1 / -1 !important; grid-row: 4 / span 12 !important; }
-    .oui-dash-cell:not([data-widget="job"]):not([data-widget="ace"]), .oui-dash-bar { display: none !important; }
-    [data-test="job-card"] :is(.oui-job-thumb, .oui-job-stats, .oui-job-actions) { display: none !important; }
-    .kc-job .oui-job-block { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
-    [data-test="ace-card"] :is(.kc-group[data-box="-1"], .kc-group-head, .kc-group-head ~ :not(.oui-cards), .sl-pick, .oui-slot-actions) { display: none !important; }
-    [data-test="ace-card"] .oui-cards { grid-template-columns: repeat(\${innerWidth >= 760 ? 4 : 2}, minmax(0, 1fr)) !important; }
-    \${innerHeight < 450 ? '[data-test="job-card"] { display: none !important; }' : ''}\`;
-  document.head.append(css);
-  await sleep(300);
-  ace.querySelectorAll('.kc-slot').forEach(e => { if (e.getBoundingClientRect().bottom > innerHeight - 8) e.style.setProperty('display', 'none', 'important'); });
-  await sleep(100);   // and no line of text cut by the bottom edge
-  document.querySelectorAll('#app *').forEach(e => { const r = e.getBoundingClientRect();
-    if (!e.children.length && r.height && r.top < innerHeight && r.bottom > innerHeight) e.style.visibility = 'hidden'; });
-}
-// store-status in a listing panel (one column): the camera right under the print, across the page, so the picture is
-// whole. The README screenshot is wide enough for the page's own two columns and keeps them.
-if (SCENE === 'store-status' && innerWidth < 1000) {
-  // the print's times stay, its buttons go (they wrap in Portuguese), and nothing follows the camera
-  const css = document.createElement('style');
-  css.textContent = '[data-test="job-card"] .oui-job-actions, .oui-dash-cell:not([data-widget="job"]):not([data-widget="camera"]), .oui-dash-bar { display: none !important; }'
-    + '.oui-dash-cell[data-widget="camera"] { grid-column: 1 / -1 !important; grid-row: 4 / span 12 !important; }';
-  document.head.append(css);
-}
+// store-dash and store-status show the Dashboard as it comes: the default layout, two columns where the page is wide
+// enough, else one column in reading order. store-status has the camera on.
 if (STORE) { const css = document.createElement('style'); css.textContent = '::-webkit-scrollbar { display: none; }'; document.head.append(css); }
 await sleep(400);
 // A clean bottom edge for the listing pictures. In one column, a panel the edge would cut goes when a whole one is above
@@ -159,6 +130,9 @@ if (SCENE === 'store-ace') { const room = document.createElement('div'); room.st
   - document.querySelector('.oui-appbar').getBoundingClientRect().bottom - 12, behavior: 'instant'}); await sleep(200); }
 // the camera's button took the focus and the page went down with it: back to the top
 if (SCENE === 'store-status') { document.activeElement?.blur(); scrollTo({top: 0, behavior: 'instant'}); await sleep(200); }
+// and down just far enough that the whole camera picture is in view (in a listing panel it sits under the fold)
+if (SCENE === 'store-status') { const pic = document.querySelector('img.oui-camera-picture')?.getBoundingClientRect();
+  if (pic && pic.bottom > innerHeight - 12) { scrollTo({top: Math.round(pic.bottom - innerHeight + 12), behavior: 'instant'}); await sleep(200); } }
 if (STORE) { cleanEnd(); await sleep(100); }
 `;
 // store-*: the same states under their own names. THUMB stands in for the plate picture a sliced file carries.
