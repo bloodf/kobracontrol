@@ -30,34 +30,26 @@ LANDSCAPE, SQUARE, SOCIAL = (0.74, 0.47), (0.74, 0.56), (0.77, 0.47)   # a point
 
 # The picture inside each panel: (scene of shots.mjs, page width in CSS px). The page is rendered at the panel's own
 # aspect ratio, so nothing is cropped away.
-# store-status is one column at this width, with the camera moved up under the print (shots.mjs): the print and the whole
-# camera picture fill the panel.
-DASH, LAN, STATUS, ACE, FILES = ("store-dash", 845), ("store-lan", 800), ("store-status", 860), ("store-ace", 800), ("store-files", 800)
+# store-dash and store-status are the Dashboard in its default layout, two columns at these widths (store-status with
+# the camera on, wide enough for the whole picture). The square and the social preview are narrower: one column.
+DASH, LAN, STATUS, ACE, FILES = ("store-dash", 1100), ("store-lan", 800), ("store-status", 1280), ("store-ace", 800), ("store-files", 800)
 
-# (source in assets/marketing/source, point in panel, (scene, width), theme, language, export, size)
+# (source in assets/marketing/source, point in panel, (scene, width), theme, language, export, size). English only; the
+# Portuguese images README.pt-BR.md shows are the last ones made.
 JOBS = [
     ("cover-en", LANDSCAPE, DASH, "dark", "en", "orca-cloud/kobracontrol-main-en.png", (1600, 900)),
-    ("main-pt-BR", LANDSCAPE, DASH, "dark", "pt_BR", "orca-cloud/kobracontrol-main-pt-BR.png", (1600, 900)),
     ("main-square-en", SQUARE, ("store-dash", 520), "dark", "en", "orca-cloud/kobracontrol-main-square-en.png", (900, 900)),
-    ("main-square-pt-BR", SQUARE, ("store-dash", 520), "dark", "pt_BR", "orca-cloud/kobracontrol-main-square-pt-BR.png", (900, 900)),
     ("feature-01-lan-en", LANDSCAPE, LAN, "dark", "en", "orca-cloud/kobracontrol-feature-01-lan-en.png", (1600, 900)),
-    ("feature-01-lan-pt-BR", LANDSCAPE, LAN, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-01-lan-pt-BR.png", (1600, 900)),
     ("feature-02-status-en", LANDSCAPE, STATUS, "dark", "en", "orca-cloud/kobracontrol-feature-02-status-en.png", (1600, 900)),
-    ("feature-02-status-pt-BR", LANDSCAPE, STATUS, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-02-status-pt-BR.png", (1600, 900)),
     ("feature-03-ace-en", LANDSCAPE, ACE, "dark", "en", "orca-cloud/kobracontrol-feature-03-ace-en.png", (1600, 900)),
-    ("feature-03-ace-pt-BR", LANDSCAPE, ACE, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-03-ace-pt-BR.png", (1600, 900)),
     ("feature-04-files-en", LANDSCAPE, FILES, "dark", "en", "orca-cloud/kobracontrol-feature-04-files-en.png", (1600, 900)),
-    ("feature-04-files-pt-BR", LANDSCAPE, FILES, "dark", "pt_BR", "orca-cloud/kobracontrol-feature-04-files-pt-BR.png", (1600, 900)),
     ("social-preview-en", SOCIAL, ("store-dash", 616), "dark", "en", "social/kobracontrol-social-preview-en.png", (1280, 640)),
-    ("social-preview-pt-BR", SOCIAL, ("store-dash", 648), "dark", "pt_BR", "social/kobracontrol-social-preview-pt-BR.png", (1280, 640)),
     ("hero-dark-en", LANDSCAPE, DASH, "dark", "en", "readme/kobracontrol-hero-dark-en.png", (1600, 900)),
-    ("hero-dark-pt-BR", LANDSCAPE, DASH, "dark", "pt_BR", "readme/kobracontrol-hero-dark-pt-BR.png", (1600, 900)),
     ("hero-light-en", LANDSCAPE, DASH, "light", "en", "readme/kobracontrol-hero-light-en.png", (1600, 900)),
-    ("hero-light-pt-BR", LANDSCAPE, DASH, "light", "pt_BR", "readme/kobracontrol-hero-light-pt-BR.png", (1600, 900)),
 ]
-# Plain screenshots for the README body: (scene, export stem), each in light and dark, English and Portuguese.
+# Plain screenshots for the README body: (scene, export stem), each in light and dark, in English.
 # Tall enough for the whole page: every slot, the controls and the printer panel; the file's details down to its print options.
-PLAIN = [("store-status", "readme/kobracontrol-dashboard", (1280, 1600)), ("store-files", "readme/kobracontrol-files", (1280, 940))]
+PLAIN = [("store-status", "readme/kobracontrol-dashboard", (1440, 1600)), ("store-files", "readme/kobracontrol-files", (1280, 940))]
 TILE = ("tile", "orca-cloud/kobracontrol-tile.png", 512)
 CAMERA_CROP = (120, 378, 880, 805)   # the printer in cover-en, 16:9: the frame the mock camera shows in store-status
 
@@ -139,7 +131,7 @@ def main():
         height = round(width * (box[3] - box[1]) / (box[2] - box[0]))
         panels[name] = (box, radius, (scene, theme, lang, width, height))
         scenes.add((scene, theme, lang, width, height))
-    plain = [(scene, theme, lang, *size) for scene, _stem, size in PLAIN for theme in ("light", "dark") for lang in ("en", "pt_BR")]
+    plain = [(scene, theme, lang, *size) for scene, _stem, size in PLAIN for theme in ("light", "dark") for lang in ("en",)]
     exports = []
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
@@ -157,7 +149,7 @@ def main():
                                      art.width, art.height, size[0], size[1], note), path))
         for scene, stem, size in PLAIN:
             for theme in ("light", "dark"):
-                for lang in ("en", "pt_BR"):
+                for lang in ("en",):
                     rel = "%s-%s-%s.png" % (stem, theme, lang.replace("_", "-"))
                     path, note = save(Image.open(out / shot_name(scene, theme, lang, *size)).convert("RGB"), rel)
                     exports.append(record(rel, "ui/tests/page/shots.mjs", "screenshot %s (%s, %s, %dx%d CSS px at %dx) of the built page with the mock printer%s"
@@ -174,7 +166,9 @@ def main():
                           "rounded square cropped at x=%d y=%d %dx%d (corner radius %d), ground outside it made transparent, scaled to %dx%d (Lanczos)%s"
                           % (x0 + inset, y0 + inset, tile.width, tile.height, radius - inset, side, side, note), path))
     manifest = json.loads(MANIFEST.read_text("utf-8"))
-    manifest["exports"] = exports
+    # records of files not made here (the Portuguese images still in the repo) stay
+    kept = [e for e in manifest["exports"] if e["file"] not in {x["file"] for x in exports} and (ROOT / e["file"]).exists()]
+    manifest["exports"] = sorted(kept + exports, key=lambda e: e["file"])
     MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", "utf-8")
     for e in exports:
         print("%-62s %-9s %8d" % (e["file"], e["size"], e["bytes"]))

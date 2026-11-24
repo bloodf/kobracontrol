@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/kobracontrol-hero-dark-en.png">
-    <img alt="Kobra Control: run the Anycubic Kobra X from OrcaSlicer over your LAN" src="assets/readme/kobracontrol-hero-light-en.png" width="100%">
+    <img alt="Kobra Control: run your Anycubic printer from OrcaSlicer over your LAN" src="assets/readme/kobracontrol-hero-light-en.png" width="100%">
   </picture>
 </p>
 
@@ -109,7 +109,7 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
       <p><b>Send prints over your local network</b><br>Print and Send work from OrcaSlicer's own dialogs. The tab finds the printer by itself and the client certificate is built in.</p>
     </td>
     <td width="50%" valign="top">
-      <img alt="The Dashboard with the print's progress and times and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
+      <img alt="The Dashboard in its default layout: the print, the filament slots, controls, temperatures, the printer panel and the camera picture" src="assets/orca-cloud/kobracontrol-feature-02-status-en.png" width="100%">
       <p><b>Keep an eye on your print</b><br>Progress, layer, time left and the clock time the print should finish, next to temperatures, fan, speed, light and the camera.</p>
     </td>
   </tr>
@@ -131,7 +131,8 @@ Kobra Control is an independent project. It is not made or supported by Anycubic
 | Device tab | Status, temperatures, pause, resume, stop, light, fan, speed and the camera in OrcaSlicer's own Device tab. ACE slots show there as filament slots, with sync and slot mapping in the print dialog. |
 | Dashboard | The print with its progress and actions, the filament slots, one Controls module (temperatures, fan, speed mode, light), the camera, moves and homing, a Printer panel and a Console (what the plugin sent and what came back). |
 | Your dashboard | **Edit layout** on the Dashboard: drag widgets to move them, drag their edges or corners to resize them, remove them, add them from the list (also a Temperatures readout and a Files shortcut), and set the ones that have settings (camera shape, console lines, which readings show). Keep several named layouts and switch between them. Layouts are saved in Kobra Control's settings. |
-| Stock | Spooler's spool stock in its own tab: choose a slot on the left, then **Link** on a spool's row. |
+| Stock | Spooler's spool stock in its own tab: choose a slot on the left, then **Link** on a spool's row. Group the stock by material, manufacturer or location. |
+| Filament presets | Each slot card shows the OrcaSlicer preset the slot reports to OrcaSlicer's Device tab, with a score and the reasons. **Change** picks another and remembers it for that spool, tag or filament (`matches.json`, shared with Spooler and U1 Control). Turn on **Open Filament Database** in Settings > Spoolman to also offer its community presets (off by default; nothing is fetched while it is off). |
 | Printer panel | Firmware, network address, print counters and the **Print Assist** switches. The printer's name and **Rename** are in the page header. |
 | Files | A file browser: search, sort by any column, select one or several files and **Delete** them in one go (the checkboxes, Shift and Ctrl/Cmd, or the keyboard). The Kobra X has no folders and no way to move a file, so there is no folder tree and no **Move to**. Select one file for its picture, details and print options. The print panel warns when a slot holds a different material than the file was sliced with, when a filament has no loaded slot, and when the file was sliced for another printer. The confirmation repeats the warning. |
 | Time-lapses | The printer's time-lapse videos, as a second list in the Files tab (**Print files** | **Time-lapses** over the table), with print, date, length and size, and **Delete** for one or several. The printer offers no way to download a video over the local network yet. |

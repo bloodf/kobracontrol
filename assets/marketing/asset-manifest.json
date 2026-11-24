@@ -344,44 +344,12 @@
   ],
   "exports": [
     {
-      "file": "assets/orca-cloud/kobracontrol-main-en.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
-      "operation": "screenshot store-dash (dark, en, 845x814 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
-      "size": "1600x900",
-      "bytes": 1239338,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/orca-cloud/kobracontrol-main-pt-BR.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-main-pt-BR.png",
-      "operation": "screenshot store-dash (dark, pt-BR, 845x814 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
-      "size": "1600x900",
-      "bytes": 1229027,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/orca-cloud/kobracontrol-main-square-en.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
-      "operation": "screenshot store-dash (dark, en, 520x521 CSS px at 2x) pasted into the empty panel at x=661 y=433 531x532, corner radius 17; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
-      "size": "900x900",
-      "bytes": 855060,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/orca-cloud/kobracontrol-main-square-pt-BR.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-main-square-pt-BR.png",
-      "operation": "screenshot store-dash (dark, pt-BR, 520x519 CSS px at 2x) pasted into the empty panel at x=661 y=430 529x528, corner radius 10; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
-      "size": "900x900",
-      "bytes": 836841,
-      "date": "2026-11-19"
-    },
-    {
       "file": "assets/orca-cloud/kobracontrol-feature-01-lan-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-feature-01-lan-en.png",
       "operation": "screenshot store-lan (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1257837,
-      "date": "2026-11-19"
+      "bytes": 1261088,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/orca-cloud/kobracontrol-feature-01-lan-pt-BR.png",
@@ -394,10 +362,10 @@
     {
       "file": "assets/orca-cloud/kobracontrol-feature-02-status-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-feature-02-status-en.png",
-      "operation": "screenshot store-status (dark, en, 860x830 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x689, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "operation": "screenshot store-status (dark, en, 1280x1235 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x689, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos); the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
       "size": "1600x900",
-      "bytes": 1402988,
-      "date": "2026-11-19"
+      "bytes": 1284837,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/orca-cloud/kobracontrol-feature-02-status-pt-BR.png",
@@ -412,8 +380,8 @@
       "source": "assets/marketing/source/kobracontrol-workshop-feature-03-ace-en.png",
       "operation": "screenshot store-ace (dark, en, 800x771 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1256114,
-      "date": "2026-11-19"
+      "bytes": 1265354,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/orca-cloud/kobracontrol-feature-03-ace-pt-BR.png",
@@ -428,8 +396,8 @@
       "source": "assets/marketing/source/kobracontrol-workshop-feature-04-files-en.png",
       "operation": "screenshot store-files (dark, en, 800x774 CSS px at 2x) pasted into the empty panel at x=883 y=100 711x688, corner radius 14; then 1671x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1174113,
-      "date": "2026-11-19"
+      "bytes": 1175084,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/orca-cloud/kobracontrol-feature-04-files-pt-BR.png",
@@ -440,28 +408,100 @@
       "date": "2026-11-19"
     },
     {
-      "file": "assets/social/kobracontrol-social-preview-en.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
-      "operation": "screenshot store-dash (dark, en, 616x613 CSS px at 2x) pasted into the empty panel at x=1048 y=95 648x645, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
-      "size": "1280x640",
-      "bytes": 761081,
+      "file": "assets/orca-cloud/kobracontrol-main-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-cover-en.png",
+      "operation": "screenshot store-dash (dark, en, 1100x1060 CSS px at 2x) pasted into the empty panel at x=882 y=100 714x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "size": "1600x900",
+      "bytes": 1270888,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-main-square-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-main-square-en.png",
+      "operation": "screenshot store-dash (dark, en, 520x521 CSS px at 2x) pasted into the empty panel at x=661 y=433 531x532, corner radius 17; then 1254x1254 cover-cropped and scaled to 900x900 (Lanczos)",
+      "size": "900x900",
+      "bytes": 849321,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/orca-cloud/kobracontrol-tile.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-tile.png",
+      "operation": "rounded square cropped at x=41 y=42 1172x1170 (corner radius 186), ground outside it made transparent, scaled to 512x512 (Lanczos)",
+      "size": "512x512",
+      "bytes": 212218,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-dark-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (dark, en, 1440x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2880x3200",
+      "bytes": 840349,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-dark-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (dark, pt-BR, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x3200",
+      "bytes": 991664,
       "date": "2026-11-19"
     },
     {
-      "file": "assets/social/kobracontrol-social-preview-pt-BR.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-social-preview-pt-BR.png",
-      "operation": "screenshot store-dash (dark, pt-BR, 648x614 CSS px at 2x) pasted into the empty panel at x=1017 y=91 686x650, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
-      "size": "1280x640",
-      "bytes": 766962,
+      "file": "assets/readme/kobracontrol-dashboard-light-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (light, en, 1440x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2880x3200",
+      "bytes": 838896,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/readme/kobracontrol-dashboard-light-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-status (light, pt-BR, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
+      "size": "2560x3200",
+      "bytes": 986593,
+      "date": "2026-11-19"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-dark-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (dark, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1880",
+      "bytes": 246488,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-dark-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (dark, pt-BR, 1280x940 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1880",
+      "bytes": 271938,
+      "date": "2026-11-19"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-light-en.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (light, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1880",
+      "bytes": 249436,
+      "date": "2026-11-24"
+    },
+    {
+      "file": "assets/readme/kobracontrol-files-light-pt-BR.png",
+      "source": "ui/tests/page/shots.mjs",
+      "operation": "screenshot store-files (light, pt-BR, 1280x940 CSS px at 2x) of the built page with the mock printer",
+      "size": "2560x1880",
+      "bytes": 275510,
       "date": "2026-11-19"
     },
     {
       "file": "assets/readme/kobracontrol-hero-dark-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-hero-dark-en.png",
-      "operation": "screenshot store-dash (dark, en, 845x814 CSS px at 2x) pasted into the empty panel at x=882 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "operation": "screenshot store-dash (dark, en, 1100x1060 CSS px at 2x) pasted into the empty panel at x=882 y=100 713x687, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1241240,
-      "date": "2026-11-19"
+      "bytes": 1272650,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/readme/kobracontrol-hero-dark-pt-BR.png",
@@ -474,10 +514,10 @@
     {
       "file": "assets/readme/kobracontrol-hero-light-en.png",
       "source": "assets/marketing/source/kobracontrol-workshop-hero-light-en.png",
-      "operation": "screenshot store-dash (light, en, 845x815 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
+      "operation": "screenshot store-dash (light, en, 1100x1061 CSS px at 2x) pasted into the empty panel at x=883 y=100 713x688, corner radius 14; then 1672x941 cover-cropped and scaled to 1600x900 (Lanczos)",
       "size": "1600x900",
-      "bytes": 1163746,
-      "date": "2026-11-19"
+      "bytes": 1192475,
+      "date": "2026-11-24"
     },
     {
       "file": "assets/readme/kobracontrol-hero-light-pt-BR.png",
@@ -488,76 +528,12 @@
       "date": "2026-11-19"
     },
     {
-      "file": "assets/readme/kobracontrol-dashboard-light-en.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-status (light, en, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
-      "size": "2560x3200",
-      "bytes": 923898,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-dashboard-light-pt-BR.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-status (light, pt-BR, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
-      "size": "2560x3200",
-      "bytes": 986593,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-dashboard-dark-en.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-status (dark, en, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
-      "size": "2560x3200",
-      "bytes": 929061,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-dashboard-dark-pt-BR.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-status (dark, pt-BR, 1280x1600 CSS px at 2x) of the built page with the mock printer; the camera picture in it is a crop of kobracontrol-workshop-cover-en.png, not a camera capture",
-      "size": "2560x3200",
-      "bytes": 991664,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-files-light-en.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-files (light, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
-      "size": "2560x1880",
-      "bytes": 248799,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-files-light-pt-BR.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-files (light, pt-BR, 1280x940 CSS px at 2x) of the built page with the mock printer",
-      "size": "2560x1880",
-      "bytes": 275510,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-files-dark-en.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-files (dark, en, 1280x940 CSS px at 2x) of the built page with the mock printer",
-      "size": "2560x1880",
-      "bytes": 245887,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/readme/kobracontrol-files-dark-pt-BR.png",
-      "source": "ui/tests/page/shots.mjs",
-      "operation": "screenshot store-files (dark, pt-BR, 1280x940 CSS px at 2x) of the built page with the mock printer",
-      "size": "2560x1880",
-      "bytes": 271938,
-      "date": "2026-11-19"
-    },
-    {
-      "file": "assets/orca-cloud/kobracontrol-tile.png",
-      "source": "assets/marketing/source/kobracontrol-workshop-tile.png",
-      "operation": "rounded square cropped at x=41 y=42 1172x1170 (corner radius 186), ground outside it made transparent, scaled to 512x512 (Lanczos)",
-      "size": "512x512",
-      "bytes": 212218,
-      "date": "2026-11-19"
+      "file": "assets/social/kobracontrol-social-preview-en.png",
+      "source": "assets/marketing/source/kobracontrol-workshop-social-preview-en.png",
+      "operation": "screenshot store-dash (dark, en, 616x613 CSS px at 2x) pasted into the empty panel at x=1048 y=95 648x645, corner radius 14; then 1774x887 cover-cropped and scaled to 1280x640 (Lanczos)",
+      "size": "1280x640",
+      "bytes": 769199,
+      "date": "2026-11-24"
     }
   ]
 }

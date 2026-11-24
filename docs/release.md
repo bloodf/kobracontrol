@@ -44,10 +44,10 @@ python3 scripts/build.py --release-tag vX.Y.Z          # dist/kobracontrol_any.w
 ## The Orca Cloud listing
 
 The listing at <https://cloud.orcaslicer.com/p/59c786285255> is kept by hand; the workflow publishes only the wheel
-and the changelog. The description is [orca-cloud-description.md](orca-cloud-description.md), in English and
-Portuguese. The images are in `assets/`, all PNG and all under 2 MB:
+and the changelog. It is in English only. The description is [orca-cloud-description.md](orca-cloud-description.md),
+which links to the README for the full description. The images are in `assets/`, all PNG and all under 2 MB:
 
-| Listing slot | File (`-en`, and `-pt-BR` for the Portuguese listing) | Size |
+| Listing slot | File | Size |
 |---|---|---|
 | Plugin icon / store tile | `assets/orca-cloud/kobracontrol-tile.png` | 512x512 |
 | Main (cover) image | `assets/orca-cloud/kobracontrol-main-en.png` | 1600x900 |
@@ -58,16 +58,17 @@ Portuguese. The images are in `assets/`, all PNG and all under 2 MB:
 | Gallery 4, "Choose files before you print" | `assets/orca-cloud/kobracontrol-feature-04-files-en.png` | 1600x900 |
 
 The description also embeds the four gallery images from `raw.githubusercontent.com` on `main`, so they show there
-once the commit that adds them is merged.
+once the commit that adds them is merged. The dashboard images show the Dashboard in its default layout.
 
 The GitHub social preview (Settings > General > Social preview) is `assets/social/kobracontrol-social-preview-en.png`
-(1280x640). The README heroes are `assets/readme/kobracontrol-hero-{light,dark}-{en,pt-BR}.png` (1600x900).
+(1280x640). The README heroes are `assets/readme/kobracontrol-hero-{light,dark}-en.png` (1600x900). The Portuguese
+images README.pt-BR.md shows are no longer re-rendered.
 
 ### Rebuilding the images
 
 The generated originals, each with an empty panel, are in `assets/marketing/source/`.
 `scripts/marketing_images.py` renders the built page with the mock printer of `ui/tests/page/shots.mjs`, pastes each
-screenshot into its panel, exports the sizes above and rewrites the `exports` list of
+screenshot into its panel, exports the sizes above (English only) and rewrites the `exports` list of
 `assets/marketing/asset-manifest.json` (source file, operation, size, bytes, date). Run it again when the page
 changes, then look at every image at full size:
 
