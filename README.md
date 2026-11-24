@@ -240,11 +240,19 @@ The address belongs to another device, often a bridge such as Kobralink, or LAN 
 </details>
 
 <details>
+<summary>OrcaSlicer's Print lists no printer, or two Anycubic presets reach the same printer.</summary>
+
+Give each Anycubic printer preset that uses the `kobracontrol` Printer Agent its own printer's address. With **Use printer agents instead of print hosts** on, OrcaSlicer hides the button that sets it, so add it to the preset file: close OrcaSlicer, open the preset's `.json` in OrcaSlicer's data folder (`user/<your id>/machine/`), add `"print_host": "192.168.1.50"` with your printer's IP, save, and start OrcaSlicer again. Without it, Print finds the printer only after the Kobra Control tab has connected. Since 0.12.3, switching presets reconnects the Device tab and Print to that preset's printer without a restart.
+
+Leave **Settings > Printer address** blank when you have more than one Anycubic printer: an address typed there is used for every preset.
+</details>
+
+<details>
 <summary>"Could not connect to OctoPrint" when I print to the printer.</summary>
 
 The printer has no OctoPrint server, so a physical printer of the type OctoPrint pointed at the printer's own address can't reach it. Two ways out:
 
-- **Print through Kobra Control's printer agent** (recommended). Remove that physical printer, tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. The printer's address is optional there: Kobra Control finds the printer on the network.
+- **Print through Kobra Control's printer agent** (recommended). Remove that physical printer, tick **Use printer agents instead of print hosts** under **Preferences > Developer > Experimental Features**, restart OrcaSlicer, then set **Printer Agent** to `kobracontrol` in a copy of your Kobra X printer preset. Give that preset the printer's address too (see the next question).
 - **Keep the OctoPrint physical printer, but point it at Kobra Control.** In the Kobra Control tab open **Settings > Upload bridge**, turn it on, and copy the two values it shows (each has a **Copy** button) into the physical printer: **Hostname, IP or URL** `127.0.0.1:8765` (not the printer's IP) and **API Key / Password** the bridge's key. Press **Test**. Upload and Print then waits in the Kobra Control tab for you to press **Start print**.
 
 The Dashboard says so, with a button to the upload bridge, when the selected Anycubic printer preset sends to OctoPrint.

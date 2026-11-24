@@ -192,16 +192,16 @@ class LocatingMixin:
                     self._recorded.add(key)
             if due:
                 fp = (conn.server_cert or {}).get("fingerprint", "")
-                preset, host, identity = key[0], conn.host, target.identity   # values now, not the target later
-                _background(lambda: self._record(preset, host, identity, fp), "record")
+                preset, host, identity, preset_host = key[0], conn.host, target.identity, target.preset_host or ""
+                _background(lambda: self._record(preset, host, identity, fp, preset_host), "record")
         elif conn.mismatch:
             _background(lambda: self._refuse_impostor(conn), "impostor")
         elif conn.http_failed:
             self._relocate_if_lost(conn)
 
-    def _record(self, key, host, identity, fp):
+    def _record(self, key, host, identity, fp, preset_host=""):
         try:
-            self.addresses.put(key, host, identity, fp)
+            self.addresses.put(key, host, identity, fp, preset_host)
         except (OSError, ValueError) as e:
             self.log("kobracontrol: the printer's address was not remembered (%s)" % e)
 

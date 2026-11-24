@@ -37,7 +37,9 @@ DEFAULTS = {
     "cloud_enabled": False,              # Anycubic Cloud (cloud.py): opt-in; its tokens live in cloud.json, not here
     "cloud_printer": "",                 # the cloud printer id the tab and the printer agent drive; "" = the LAN one
     "ofd_enabled": False,                # Open Filament Database proposals on the slot cards: opt-in; off, never contacted
+    "spoolman_origins": [],              # scheme://host of the Spoolman servers used (Spooler's too), asked for at load
 }
+MAX_ORIGINS = 4
 PORT_RANGE = (1024, 65535)
 REFRESH_RANGE = (10, 300)
 
@@ -101,6 +103,8 @@ def _clean(key, value):
         return printsetup.clean_memory(value)
     if key == "dashboard":
         return clean_dashboard(value)
+    if key == "spoolman_origins":
+        return [o for o in value if isinstance(o, str) and o.startswith(("http://", "https://")) and len(o) <= 200][-MAX_ORIGINS:]
     if key == "cloud_printer":
         return value if value == "" or (value.isdigit() and len(value) <= 20) else None
     return value.strip() if isinstance(value, str) else value

@@ -25,7 +25,8 @@ State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KE
   connected        bool, set by the owner through `State.connected`
   state            "offline|idle|printing|paused|finished|cancelled|error|busy" (normalised: see normalise()).
                    "error" also when the printer ended the task itself (print/report stoped with a code
-                   other than 0/200, e.g. 10111 "abnormal end of task"); stoped with code 200 is "cancelled".
+                   other than 0/200/10601, e.g. 10111 "abnormal end of task"); stoped with code 200, or 10601
+                   "用户发起" (user initiated, firmware 2.0.2.8), is "cancelled".
                    An unknown state during a job (a start report or an info project is active) is "printing".
   preparing        bool, True while a print runs a preparation phase (heating, levelling, wiping, ACE
                    feeding, any unknown phase of a running job); state is then "printing" and progress,
@@ -132,6 +133,10 @@ class NoResult(KobraError):
         super().__init__(message, code="no_result")
 
 
+# stoped codes that mean the user stopped the print, not a fault: 200, and 10601 "用户发起" ("user initiated"), which a
+# Kobra X on firmware 2.0.2.8 answers a stop with (Orca Cloud report, 2026-11-24).
+CANCEL_CODES = (None, 0, 200, 10601)
+
 # Reply action when it is not the request's own (captured: info/query -> info/report action "report").
 REPLY_ACTIONS = {("info", "query"): "report"}
 START_WATCH = 5.0  # seconds start_print watches for the printer ending a fresh task by itself
@@ -162,6 +167,8 @@ def succeeded(reply):
     (Kobralink took only code 0 as success; the real printer answers 200.)"""
     if not isinstance(reply, dict) or is_ack_only(reply):
         return False
+    if reply.get("action") == "stop" and reply.get("code") == 10601:   # "user initiated": the stop did stop it
+        return reply.get("state") != "failed"
     return reply.get("state") != "failed" and reply.get("code") in (None, 0, 200)
 
 
@@ -636,7 +643,7 @@ class Printer:
         end = reply if _start_outcome(reply) is not None else watch.reply
         if isinstance(end, dict) and end.get("state") in ("stoped", "failed"):
             code = end.get("code")
-            if end.get("state") == "stoped" and code in (None, 0, 200):
+            if end.get("state") == "stoped" and code in CANCEL_CODES:
                 raise Cancelled(tr("the print was stopped right after it started"))
             raise KobraError(tr("the printer ended the print at once (code %s): %s") % (code, _str(end.get("msg"))),
                              code=code)
@@ -1036,7 +1043,7 @@ class State:
         v["phase_channel"] = d.get("channel_no") if isinstance(d.get("channel_no"), int) else None
         if st:
             self._set_state(st, p.get("action") == "start" or self._in_job)
-            if st == "stoped" and p.get("code") not in (None, 0, 200):
+            if st == "stoped" and p.get("code") not in CANCEL_CODES:
                 self._error_end = True
                 v["last_error"] = {"report": "print/report", "action": _str(p.get("action")),
                                    "code": p.get("code"), "msg": _str(p.get("msg"))}

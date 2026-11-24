@@ -165,8 +165,9 @@ def probe(ip, port=18910, timeout=PROBE_TIMEOUT):
 
 class Addresses:
     """The Kobra X found for each printer preset, in a JSON file in the plugin's storage folder:
-    {"printers": {preset: {"ip", "id", "fp"}}}: its address, its /info identity and the SHA-256 fingerprint of
-    the TLS certificate it presented. Read defensively: an oversized or malformed file, or an entry that is not
+    {"printers": {preset: {"ip", "id", "fp", "ph"}}}: its address, its /info identity, the SHA-256 fingerprint of
+    the TLS certificate it presented and the preset's own address when it was remembered ("ph"; absent in files
+    written before 0.12.3). Read defensively: an oversized or malformed file, or an entry that is not
     a LAN IPv4 address with text fields of bounded size, reads as nothing."""
     MAX_BYTES, MAX_ENTRIES = 64 * 1024, 64
 
@@ -189,6 +190,8 @@ class Addresses:
             if (isinstance(ip, str) and lan_address(ip) and isinstance(ident, str) and len(ident) <= 200
                     and isinstance(fp, str) and len(fp) <= 64 and all(c in "0123456789abcdef" for c in fp)):
                 out[key] = {"ip": ip, "id": ident, "fp": fp}
+                if isinstance(rec.get("ph"), str) and len(rec["ph"]) <= 255:
+                    out[key]["ph"] = rec["ph"]
         return out
 
     def get(self, key):
@@ -203,7 +206,7 @@ class Addresses:
         with self._lock:
             return sorted({r["ip"] for r in self._read().values()})
 
-    def put(self, key, ip, ident="", fp=""):
+    def put(self, key, ip, ident="", fp="", preset_host=None):
         """Remember ip for preset `key`. ValueError when another preset already has that address for a printer
         with another identity (two presets never end up pointing at one printer by accident)."""
         with self._lock:
@@ -211,7 +214,7 @@ class Addresses:
             for other, rec in known.items():
                 if other != key and rec["ip"] == ip and rec["id"] and ident and rec["id"] != ident:
                     raise ValueError(tr("%s is already remembered for the printer preset %r") % (ip, other))
-            known[key] = {"ip": ip, "id": ident, "fp": fp}
+            known[key] = {"ip": ip, "id": ident, "fp": fp, **({} if preset_host is None else {"ph": preset_host})}
             os.makedirs(os.path.dirname(self.path) or ".", 0o700, exist_ok=True)
             certs._write_private(self.path, json.dumps({"printers": known}, indent=1, sort_keys=True))
 
@@ -251,10 +254,13 @@ def locate(override, preset_host, record=None, probe=probe, search=search, own_a
     never adopted by itself. With nothing remembered, the preset's address is used if a Kobra X answers there;
     a Kobra X the search finds is only offered, never used before the user chooses it. allowed(ip): False for an address OrcaSlicer has not granted yet: it
     is not probed (from this worker thread each refused attempt queues another OrcaSlicer dialog) but offered;
-    skip: addresses already found not to be a Kobra X this session."""
+    skip: addresses already found not to be a Kobra X this session. A record made while the preset had another
+    address of its own is not used: the user changed the preset's address since (GitHub #82)."""
     if override:
         return Found(override, "override")
     record = record or {}
+    if "ph" in record and record["ph"] != (preset_host or ""):
+        record = {}
     tried, errors, different = [], {}, []
 
     def mine(info):

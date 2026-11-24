@@ -3,6 +3,14 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+## [0.12.3] - 2026-11-24
+### Fixed
+- **Switching between two Anycubic printer presets switches printers.** With a printer connected, picking another preset still announced the first printer to OrcaSlicer, so the Device tab and Print stayed on it until OrcaSlicer restarted. The selected preset's own address now comes first. Reported by @antonyoatec (#82).
+- **A preset's new address wins over the one remembered for it.** A preset saved as a copy while connected to one printer kept that printer even after its address was changed to another one. Kobra Control now remembers the preset's address together with the printer and stops using the old printer once the preset's address changes. Addresses remembered by older versions work as before. Reported by @antonyoatec (#82).
+- **Stopping a print no longer shows "Stop print failed".** Some Kobra X firmware answers a stop that worked with code 10601 ("user initiated"); Kobra Control showed that as a refusal and kept the alert. It now counts as a stop, and the print shows as cancelled, not as an error. Reported by Er_Nando_Blando.
+- **Spoolman is asked for once, when OrcaSlicer starts.** Kobra Control never asked OrcaSlicer for access to Spoolman (its own or the one Spooler uses), so booking filament use failed with "audit permission required". The Spoolman address in use is now remembered and requested with the printer's at the next start: restart OrcaSlicer once after updating and allow it. Reported by Er_Nando_Blando.
+### Changed
+- README: how to give a preset its printer's address when OrcaSlicer hides the print host button, and why to leave **Settings > Printer address** blank with more than one printer.
 
 ## [0.12.2] - 2026-11-23
 
