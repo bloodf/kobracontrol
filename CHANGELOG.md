@@ -4,6 +4,8 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-23
+
 ### Fixed
 
 - **All seven filament sources reach OrcaSlicer's sync with their own presets.** The Device tab's filament presets (Spooler's, from `profiles.json`) are read by the status thread itself instead of waiting for OrcaSlicer's UI thread, so a delayed or stale refresh no longer leaves slots on the Generic preset. A unit's slots are numbered by the index the printer reports for them, not by their place in the report, so a shuffled report keeps each spool, tray and print slot together.
