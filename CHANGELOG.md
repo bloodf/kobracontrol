@@ -3,6 +3,10 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+## [0.12.4] - 2026-11-24
+### Changed
+- **Spooler reads the ACE slots from Kobra Control instead of connecting to the printer itself.** Kobra 3 and S1 printers accept one LAN connection at a time, so with both plugins on the same printer one of them kept losing it ("Can't reach the printer" in Spooler during prints). Kobra Control now lists the printers it is connected to, with their ACE and spool holder slots, in the presence file it already shares with Spooler; Spooler 0.33.4 and later shows those slots and leaves the printer to Kobra Control. Reported by @Er_Nando_Blando.
+
 ## [0.12.3] - 2026-11-24
 ### Fixed
 - **Switching between two Anycubic printer presets switches printers.** With a printer connected, picking another preset still announced the first printer to OrcaSlicer, so the Device tab and Print stayed on it until OrcaSlicer restarted. The selected preset's own address now comes first. Reported by @antonyoatec (#82).

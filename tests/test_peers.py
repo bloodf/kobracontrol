@@ -129,6 +129,17 @@ class PresenceFileTests(unittest.TestCase):
         self.assertEqual((last["state"], last["session"]), ("stopped", first["session"]))
         self.assertNotIn("wants", last)
 
+    def test_active_presence_lists_the_printers_kobra_control_holds(self):
+        root, logs = Root(self), []
+        link = peers.SpoolerLink(root.path, "1.2.3", log=logs.append)
+        held = [{"host": "10.0.0.5", "device": "d1", "connected": True, "boxes": [{"id": 0, "slots": []}]}]
+        link.presence.printers = lambda: held
+        self.assertEqual(link.presence.doc()["printers"], held)
+        self.assertNotIn("printers", link.presence.doc("stopped"))
+        link.presence.printers = lambda: 1 / 0   # a broken list says none, so Spooler connects itself
+        self.assertEqual(link.presence.doc()["printers"], [])
+        self.assertTrue(logs)
+
     def test_a_new_load_is_a_new_session(self):
         root = Root(self)
         a = peers.SpoolerLink(root.path, log=lambda m: None)
