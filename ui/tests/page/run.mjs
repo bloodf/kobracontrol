@@ -424,6 +424,42 @@ test('slot cards: Change stays inside its card at four ACE columns and three hol
   q('#app').style.width = ''; q('#app').style.maxWidth = '';
 `);
 
+test('slot cards: opening Change floats over the dashboard without growing it, stays in view above or below, and keyboard picks that preset', `
+  await ready(VIEW({slots: SLOTS().map(s => ({...s, status: 5, type: s.type || 'PLA', color: s.type ? s.color : [229, 72, 77]}))}));
+  await until(() => last('preset_matches'), 'the cards ask for the presets');
+  const many = Array.from({length: 12}, (_, n) => ({name: 'Candidate PLA ' + n + ' @Anycubic Kobra X', score: 25 - n, reasons: [['material', 'PLA']]}));
+  await reply(last('preset_matches'), {matches: [0, 1, 2, 3, 4, 5, 6].map(n => ({slot: n, name: many[0].name, source: 'generic', score: 25, reasons: many[0].reasons, confident: false, candidates: many, remembered_key: ''}))});
+  await until(() => qa('.sl-match').length === 7, 'every slot shows its preset');
+  const tile = q('[data-slot="4"]'), grid = tile.closest('.kc-group');
+  const size = () => { const t = tile.getBoundingClientRect(), g = grid.getBoundingClientRect(); return [t.height, t.width, g.height, document.documentElement.scrollHeight]; };
+  // Both placements: the card at the top of the view (list opens below) and at the bottom of it (list opens above).
+  for (const edge of ['start', 'end']) {
+    tile.scrollIntoView({block: edge}); await settle();
+    const before = size();
+    await click(q('.oui-match-change', tile));
+    await until(() => qa('.oui-match-option', tile).length === 12, 'all twelve candidates are rendered (' + edge + ')');
+    await settle();
+    eq(size(), before, 'the card, its group and the page keep their size while the list is open (' + edge + ')');
+    const list = q('.oui-match-list', tile), r = list.getBoundingClientRect(), opts = qa('.oui-match-option', tile);
+    eq(getComputedStyle(list).position, 'absolute', 'the list floats (' + edge + ')');
+    assert(r.top >= 0 && r.bottom <= innerHeight, 'the list is inside the viewport (' + edge + '): ' + [r.top, r.bottom, innerHeight]);
+    const top = opts[0].getBoundingClientRect(), hit = document.elementFromPoint(top.left + top.width / 2, top.top + top.height / 2);
+    assert(hit && opts[0].contains(hit), 'the first option is not covered or clipped by the dashboard (' + edge + ')');
+    assert(opts.every(o => o.tabIndex >= 0 && !o.disabled), 'every option is a focusable button (' + edge + ')');
+    await click(q('.oui-match-change', tile));
+    await until(() => !q('.oui-match-list', tile), 'Change closes the list (' + edge + ')');
+  }
+  tile.scrollIntoView({block: 'end'}); await settle();
+  await click(q('.oui-match-change', tile));
+  await until(() => qa('.oui-match-option', tile).length === 12, 'the list reopens');
+  const opt = qa('.oui-match-option', tile)[3];
+  opt.focus(); eq(document.activeElement === opt, true, 'an option takes keyboard focus');
+  await press('Enter');
+  const pick = last('preset_pick');
+  eq([pick.slot, pick.name], [4, many[3].name], 'Enter on an option remembers that candidate for that slot');
+  await until(() => !q('.oui-match-list', tile), 'the list closes after a pick');
+`, {size: [1280, 560]});
+
 test('slot reports: brand, material name, percent and weight from the printer; box humidity when not drying', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 4 ? {...s, brand: 'Acme', material_name: 'ABS Pro', percent: 40, weight: 400} : s)),
     ace_units: [{id: 0, auto_feed: false, humidity: 32, temp: 45, drying: DRY0}]}));
@@ -662,6 +698,72 @@ test('stock tab: choose the slot once on the left, then one Link per row; it ask
   eq(cmds('stock_assign'), [], 'cancel links nothing');
   await click(q('[data-stock="11"]')); await yes();
   eq(cmds('stock_assign').map(m => m.args), [{slot: 4, spool_id: 11, key: 's1:3'}], 'stock_assign');
+`);
+
+test('stock tab: inventory grouping by material, manufacturer or location keeps totals, search and linking', `
+  const mk = (id, name, vendor, material, location, remaining, initial) => ({id, filament_id: id * 10, name, vendor, material, colour: '#336699', colours: [], remaining, initial, low: false, use_first: false, location});
+  const GROWS = [mk(1, 'Red', 'Acme', 'PLA', 'Shelf A', 500, 1000), mk(2, 'Blue', 'Acme', 'PLA', 'Shelf A', 250, 1000), mk(3, 'Grey', 'Bolt', 'PETG', '', 100, 1000),
+    mk(4, 'Mystery', '', '', '', null, null), mk(5, 'Odd', 'Acme', 'No material', '', 10, 100)];
+  await ready(VIEW());
+  await reply(last('cmd', 'stock'), STOCK({stock: {...STOCK().stock, rows: GROWS}}));
+  await reply(last('cmd', 'spools'), {spools: GROWS, bindings: {}});
+  await until(() => byTest('stock-card'), 'stock list');
+  await tab('stock');
+  const ids = () => qa('[data-view="stock"] [data-spool]').map(r => r.dataset.spool);
+  const heads = () => qa('[data-view="stock"] .sc-ghead');
+  const head = label => heads().find(h => text(q('strong', h)) === label);
+  // default: the flat list as before, no headers
+  eq(text(q('[data-test="stock-group"]')).includes('No grouping'), true, 'default is no grouping: ' + text(q('[data-test="stock-group"]')));
+  eq(ids(), ['1', '2', '3', '4', '5'], 'flat list');
+  eq(heads().length, 0, 'no group headers by default');
+  // material: a missing material and a material literally named "No material" are two groups
+  await pick(q('[data-test="stock-group"]'), 'Group by material');
+  await until(() => heads().length === 4, 'four material groups');
+  eq(heads().map(h => text(q('strong', h))), ['No material', 'No material', 'PETG', 'PLA'], 'alphabetical, the two No material apart');
+  const pla = head('PLA');
+  assert(text(pla).includes('2 spools') && text(pla).includes('750 g'), 'PLA count and summed grams: ' + text(pla));
+  assert(text(head('PETG')).includes('1 spool') && text(head('PETG')).includes('100 g'), 'PETG: ' + text(head('PETG')));
+  eq(heads().map(h => h.getAttribute('aria-expanded')), ['true', 'true', 'true', 'true'], 'all open');
+  eq(ids().length, 5, 'every spool still listed');
+  // collapse hides only that group's rows; the header stays
+  const before = cmds('stock_assign').length;
+  await click(pla);
+  eq(cmds('stock_assign').length, before, 'a header click links nothing');
+  eq(head('PLA').getAttribute('aria-expanded'), 'false', 'PLA closed');
+  eq(ids().sort(), ['3', '4', '5'], 'PLA rows hidden');
+  assert(q('[data-stock="3"]') && !q('[data-stock="1"]'), 'other rows keep their Link buttons');
+  // the closed group is per mode and value: another mode starts open, back again it is still closed
+  await pick(q('[data-test="stock-group"]'), 'Group by manufacturer');
+  await until(() => head('Acme'), 'manufacturer groups');
+  eq(heads().map(h => text(q('strong', h))), ['Acme', 'Bolt', 'No manufacturer'], 'manufacturer groups');
+  assert(text(head('Acme')).includes('3 spools') && text(head('Acme')).includes('760 g'), 'Acme: ' + text(head('Acme')));
+  eq(ids().length, 5, 'nothing closed in this mode');
+  await pick(q('[data-test="stock-group"]'), 'Group by location');
+  await until(() => head('Shelf A'), 'location groups');
+  eq(heads().map(h => text(q('strong', h))), ['No location', 'Shelf A'], 'location groups');
+  assert(text(head('No location')).includes('3 spools'), 'No location: ' + text(head('No location')));
+  await pick(q('[data-test="stock-group"]'), 'Group by material');
+  await until(() => head('PLA'), 'material again');
+  eq(head('PLA').getAttribute('aria-expanded'), 'false', 'PLA is still closed');
+  await click(head('PLA'));
+  eq(ids().length, 5, 'opened again');
+  // search narrows the groups; their totals follow
+  await type(q('[data-view="stock"] input[type=search]'), 'blue');
+  await until(() => ids().length === 1, 'filtered');
+  eq(heads().map(h => text(q('strong', h))), ['PLA'], 'only the matching group stays');
+  assert(text(head('PLA')).includes('1 spool') && text(head('PLA')).includes('250 g'), 'totals of what is shown: ' + text(head('PLA')));
+  await type(q('[data-view="stock"] input[type=search]'), '');
+  await until(() => ids().length === 5, 'cleared');
+  // linking is unchanged: it asks first, the header does nothing
+  await click(q('[data-stock="3"]'));
+  assert(dialogOpen() && dialogText().includes('#3'), 'asks: ' + dialogText()); await no();
+  eq(cmds('stock_assign'), [], 'cancel links nothing');
+  await click(q('[data-stock="3"]')); await yes();
+  eq(cmds('stock_assign').map(m => m.args), [{slot: 3, spool_id: 3, key: 's1:3'}], 'stock_assign');
+  // back to the flat list
+  await pick(q('[data-test="stock-group"]'), 'No grouping');
+  await until(() => heads().length === 0, 'headers gone');
+  eq(ids(), ['1', '2', '3', '4', '5'], 'flat again');
 `);
 
 test('stock tab: rows say which slot holds them, and the spool in the chosen slot reads Linked', `

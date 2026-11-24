@@ -4,6 +4,16 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-23
+
+### Fixed
+- Opening a slot's preset choices no longer expands its card and dashboard row. The choices float above or below the preset line, stay inside the viewport, and scroll when needed.
+
+### Added
+- Stock inventory can be grouped by material, manufacturer or location, with collapsible groups, spool counts and remaining-weight totals. Search and spool linking work inside each group.
+
+Version 0.12.1 was held before Orca Cloud publication. This release includes its fixes below. Reports of disappearing spools, unavailable printing and texture-plugin conflicts remain unresolved pending affected-session logs.
+
 ## [0.12.1] - 2026-11-23
 
 ### Fixed
