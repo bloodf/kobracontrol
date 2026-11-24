@@ -20,7 +20,7 @@ import service  # noqa: E402
 from fake_kobra import FakeKobra, FakeSsdp  # noqa: E402
 from test_service import FakeCamera, wait  # noqa: E402
 
-BRIDGE = "10.25.16.41"   # the owner's case: the preset points to a Kobralink/Moonraker bridge, not the printer
+BRIDGE = "192.0.2.41"   # the owner's case: the preset points to a Kobralink/Moonraker bridge, not the printer
 
 
 def refused(ip):
@@ -54,7 +54,7 @@ class Search(unittest.TestCase):
 
     def test_an_empty_reply_from_a_public_address_is_ignored(self):
         class Sock:
-            replies = [(b"", ("8.8.8.8", 1900)), (b"", ("10.25.7.41", 1900))]
+            replies = [(b"", ("8.8.8.8", 1900)), (b"", ("192.0.2.41", 1900))]
             sent = []
 
             def sendto(self, data, addr):
@@ -71,8 +71,8 @@ class Search(unittest.TestCase):
                     raise TimeoutError
                 return self.replies.pop(0)
         with mock.patch.object(locate.time, "sleep"):
-            found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), ["10.25.0.5", "10.25.9.9"], 1.0)
-        self.assertEqual(found, [("10.25.7.41", {})])
+            found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), ["192.0.2.5", "192.0.2.9"], 1.0)
+        self.assertEqual(found, [("192.0.2.41", {})])
         self.assertEqual(len(Sock.sent), 4)   # twice on each local address
 
     def test_other_devices_and_floods_are_ignored(self):
@@ -94,7 +94,7 @@ class Search(unittest.TestCase):
     def test_only_answers_from_the_searched_port_count(self):
         """MEDIUM-2: the real printer answered from its port 1900; a datagram from another port is not an answer."""
         class Sock:
-            replies = [(b"", ("10.25.7.41", 5353)), (b"", ("10.25.7.42", 1900))]
+            replies = [(b"", ("192.0.2.41", 5353)), (b"", ("192.0.2.42", 1900))]
 
             def sendto(self, data, addr):
                 pass
@@ -111,13 +111,13 @@ class Search(unittest.TestCase):
                 return self.replies.pop(0)
         with mock.patch.object(locate.time, "sleep"):
             found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
-        self.assertEqual(found, [("10.25.7.42", {})])
+        self.assertEqual(found, [("192.0.2.42", {})])
 
     def test_a_bad_datagram_does_not_end_the_search(self):
         """Windows raises on recvfrom for an oversized datagram (WinError 10040) or an ICMP port unreachable
         (WinError 10054): one bad reply, the search goes on."""
         class Sock:
-            replies = [OSError(10040, "message too long"), ConnectionResetError(10054, "reset"), (b"", ("10.25.7.41", 1900))]
+            replies = [OSError(10040, "message too long"), ConnectionResetError(10054, "reset"), (b"", ("192.0.2.41", 1900))]
 
             def sendto(self, data, addr):
                 pass
@@ -137,7 +137,7 @@ class Search(unittest.TestCase):
                 return item
         with mock.patch.object(locate.time, "sleep"):
             found = locate._search_once(Sock(), "ac:3dprinter:", ("239.255.255.250", 1900), [], 1.0)
-        self.assertEqual(found, [("10.25.7.41", {})])
+        self.assertEqual(found, [("192.0.2.41", {})])
 
     def test_candidates_per_search_are_capped(self):
         class Sock:
@@ -162,7 +162,7 @@ class Search(unittest.TestCase):
         self.assertEqual(locate.MAX_CANDIDATES, 4)
 
     def test_only_lan_addresses(self):
-        for ip in ("10.25.7.41", "192.168.1.5", "172.16.0.9", "169.254.3.4", "127.0.0.1"):
+        for ip in ("192.0.2.41", "192.168.1.5", "172.16.0.9", "169.254.3.4", "127.0.0.1"):
             self.assertTrue(locate.lan_address(ip), ip)
         for ip in ("8.8.8.8", "239.255.255.250", "0.0.0.0", "printer.example", "::1", ""):
             self.assertFalse(locate.lan_address(ip), ip)
@@ -209,7 +209,7 @@ class Locate(unittest.TestCase):
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", BRIDGE, probe=probe, search=lambda: [("10.0.0.41", {})])
         text = str(cm.exception)
-        self.assertIn("The printer preset points to 10.25.16.41, which is not an Anycubic printer", text)
+        self.assertIn("The printer preset points to 192.0.2.41, which is not an Anycubic printer", text)
         self.assertIn("Found Workshop KX (Anycubic Kobra X) at 10.0.0.41 on the network. Use it?", text)
         self.assertEqual([(c["ip"], c["needs_allow"], c["different"]) for c in cm.exception.candidates],
                          [("10.0.0.41", False, False)])
@@ -245,8 +245,8 @@ class Locate(unittest.TestCase):
         self.assertEqual((found.host, found.source), ("10.0.0.2", "remembered"))
 
     def test_preset_used_when_a_kobra_x_answers_there(self):
-        found = locate.locate("", "10.25.7.41", probe=lambda ip: kx(ip, "S"), search=self.never)
-        self.assertEqual((found.host, found.source, found.expect_fp), ("10.25.7.41", "preset", ""))
+        found = locate.locate("", "192.0.2.41", probe=lambda ip: kx(ip, "S"), search=self.never)
+        self.assertEqual((found.host, found.source, found.expect_fp), ("192.0.2.41", "preset", ""))
 
     def test_several_printers_are_offered(self):
         with self.assertRaises(locate.NotFound) as cm:
@@ -257,7 +257,7 @@ class Locate(unittest.TestCase):
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", BRIDGE, probe=refused, search=list)
         text = str(cm.exception)
-        self.assertIn("something answers at 10.25.16.41 but it is not an Anycubic printer in LAN mode", text)
+        self.assertIn("something answers at 192.0.2.41 but it is not an Anycubic printer in LAN mode", text)
         self.assertIn("comes from the printer preset", text)
         self.assertIn("Settings > Printer address", text)
         self.assertIn("LAN mode is on", text)
@@ -267,11 +267,11 @@ class Locate(unittest.TestCase):
         def probe(ip):
             raise kobra.KobraError("%s answers /info without a LAN token" % ip, code="no_token")
         with self.assertRaises(locate.NotFound) as cm:
-            locate.locate("", "", probe=probe, search=lambda: [("10.25.3.3", {})])
-        self.assertEqual((cm.exception.candidates, cm.exception.pending, cm.exception.rejected), ([], [], ["10.25.3.3"]))
+            locate.locate("", "", probe=probe, search=lambda: [("192.0.2.3", {})])
+        self.assertEqual((cm.exception.candidates, cm.exception.pending, cm.exception.rejected), ([], [], ["192.0.2.3"]))
         self.assertIn("No Anycubic printer answered", str(cm.exception))
         with self.assertRaises(locate.NotFound):   # skipped this session: not probed again
-            locate.locate("", "", probe=self.never, search=lambda: [("10.25.3.3", {})], skip={"10.25.3.3"})
+            locate.locate("", "", probe=self.never, search=lambda: [("192.0.2.3", {})], skip={"192.0.2.3"})
 
     def test_one_ungranted_candidate_waits_for_the_users_click(self):
         with self.assertRaises(locate.NotFound) as cm:
@@ -290,7 +290,7 @@ class Locate(unittest.TestCase):
 
     def test_several_ungranted_candidates_are_never_asked_about_by_themselves(self):
         """MEDIUM-2: spoofed empty replies must not each raise an OrcaSlicer dialog: the user picks."""
-        replies = [("10.25.%d.1" % i, {}) for i in range(3)]
+        replies = [("192.0.2.%d.1" % i, {}) for i in range(3)]
         with self.assertRaises(locate.NotFound) as cm:
             locate.locate("", "", probe=self.never, search=lambda: replies, allowed=lambda ip: False)
         self.assertEqual(cm.exception.pending, [])
@@ -396,7 +396,7 @@ class ServiceLocates(unittest.TestCase):
         svc, published = self.service()
         reply = self.hello(svc, published, choose=False)
         self.assertTrue(reply["no_target"])
-        self.assertIn("10.25.16.41, which is not an Anycubic printer", reply["error"])
+        self.assertIn("192.0.2.41, which is not an Anycubic printer", reply["error"])
         self.assertIn("Found Workshop KX (Anycubic Kobra X) at 127.0.0.1 on the network. Use it?", reply["error"])
         self.assertEqual([(c["ip"], c["needs_allow"]) for c in reply["candidates"]], [("127.0.0.1", False)])
         svc.submit("h-again", "connect", {})   # another tab (Settings) says hello: still only offered
@@ -596,7 +596,7 @@ class ServiceLocates(unittest.TestCase):
     def test_searches_with_new_spoofed_addresses_raise_no_dialog_by_themselves(self):
         """M-A: OrcaSlicer's dialog comes only from the user's click: lone candidates are only offered."""
         self.ssdp.reply = None
-        addresses = iter(["10.25.0.11", "10.25.0.12", "10.25.0.13"])
+        addresses = iter(["192.0.2.11", "192.0.2.12", "192.0.2.13"])
         # probe: nothing is ever contacted (these stand for spoofed LAN addresses); dialogs: recorded where the
         # plugin raises them, not by patching the socket module (which the probe's own lookups would also hit).
         svc, published = self.service(granted=set(), search=lambda: [(next(addresses), {})], probe=refused)

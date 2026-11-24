@@ -1219,15 +1219,15 @@ class Page(Base):
         self.assertEqual(page.posted[-1], {"type": "reply", "id": 9, "result": {"allowed": [], "refused": []}})
 
     def test_moonraker_preset_is_a_hint_parsed_to_its_bare_host(self):
-        """The owner's preset: printer_agent moonraker, print_host http://10.25.16.41:7125 (Kobralink)."""
+        """The owner's preset: printer_agent moonraker, print_host http://192.0.2.41:7125 (Kobralink)."""
         preset = orca.host.preset_bundle().current_printer_preset()
         old = type(preset).config_value
-        values = {"printer_model": "Anycubic Kobra X", "printer_agent": "moonraker", "print_host": "http://10.25.16.41:7125"}
+        values = {"printer_model": "Anycubic Kobra X", "printer_agent": "moonraker", "print_host": "http://192.0.2.41:7125"}
         type(preset).config_value = lambda self, key: values.get(key)
         try:
-            self.assertEqual(plugin.preset_hints()[0::2], ("10.25.16.41", "moonraker"))
+            self.assertEqual(plugin.preset_hints()[0::2], ("192.0.2.41", "moonraker"))
             target = plugin._target()
-            self.assertEqual((target.host, target.preset_host, target.preset_agent), ("", "10.25.16.41", "moonraker"))
+            self.assertEqual((target.host, target.preset_host, target.preset_agent), ("", "192.0.2.41", "moonraker"))
         finally:
             type(preset).config_value = old
 
