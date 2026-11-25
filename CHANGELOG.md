@@ -3,6 +3,8 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+
+## [0.13.0] - 2026-11-25
 ### Added
 - **Check everything.** Settings > Requirements has one button that checks every connection and permission Kobra Control depends on: the printer on the network, its login, the Anycubic certificate, OrcaSlicer's printer agents, Spoolman and Anycubic Cloud. Each shows as works, problem or not set up, and each problem says in plain words what to do. Where OrcaSlicer's permission is what is missing (the printer's address or Spoolman's), **Allow** shows OrcaSlicer's dialog right there and checks again, so there is no hunting through menus after an update. The printer is only asked for its status: nothing pauses, moves, heats or feeds. Asked for by Er_Nando_Blando.
 

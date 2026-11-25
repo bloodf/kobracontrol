@@ -23,7 +23,7 @@ Print and Send from OrcaSlicer's own dialogs, with your filament-to-slot mapping
 
 ![Keep an eye on your print](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-02-status-en.png)
 
-A Dashboard you can rearrange: status, temperatures, pause, resume, stop, light, fan, speed, moves and camera. Most of it also works in OrcaSlicer's Device tab.
+A Dashboard you can rearrange: status, temperatures, pause, resume, stop, light, fan, speed, moves and camera. Most of it also works in OrcaSlicer's Device tab. Alerts take one line and close with one click; they come back only for a new problem.
 
 ![Manage the filament in each slot](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-03-ace-en.png)
 
@@ -38,6 +38,7 @@ The printer's files with time, layers and filament, a warning when a slot holds 
 1. Subscribe, open the plugin list (macOS: File > Plugins; Windows/Linux: ▾ next to File > Plugins) and tick Activate on Kobra Control.
 2. Turn on LAN mode on the printer. The Kobra Control tab finds it.
 3. To print from OrcaSlicer's Print dialog: tick Preferences > Developer > Experimental Features > Use printer agents, restart, set the preset's Printer Agent to `kobracontrol`.
+4. Something not working? Settings > Requirements > Check everything tests the printer, its login, Spoolman, Anycubic Cloud and OrcaSlicer's permissions in one go, with Allow for a missing permission.
 
 ## Privacy
 
