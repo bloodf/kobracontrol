@@ -2,7 +2,7 @@
 import { computed, nextTick, reactive, ref } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { fuzzyFilter, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { fuzzyFilter, longList, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
 import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy, pickPreset } from '../app/store';
 import { reasonTexts } from '../core/match';
@@ -44,6 +44,9 @@ const state = computed<{ state: OuiState; text: string } | null>(() => {
 const match = computed(() => (ready.value ? s.matches[String(key.value)] ?? null : null));
 const words = (reasons: unknown) => reasonTexts(reasons, (code, v) => t(`match.r.${code}` as MessageKey, { v }));
 const BADGES: Record<string, MessageKey> = { remembered: 'match.remembered', linked: 'match.linked', spooler: 'match.spooler' };
+const candidates = computed(() => (!match.value || match.value.source === 'linked' ? [] : [
+  ...match.value.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) })),
+  ...(match.value.ofd ?? []).map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons), badge: t('ofd.badge'), note: t('ofd.note') }))]));
 const matchLabels = computed(() => ({ change: t('match.change'), none: t('match.none'), score: t('match.score'), auto: t('match.auto'), autoHint: t('match.autoHint') }));
 const editOff = computed(() => !!controlsOff.value || busy.value.feed);
 const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
@@ -94,12 +97,14 @@ const hits = computed(() => {
   const fuzzy = m ? [] : fuzzyFilter(s.spools, query.value, sp => [sp.vendor, sp.name, sp.material].filter(Boolean).join(' ')).map(r => r.item);
   return [...byId, ...fuzzy.filter(sp => !byId.includes(sp))];
 });
+// The material family on its own: every status refresh gives the slot a new object, and the spool list below (thousands of
+// spools) must not be rebuilt for it, only for a different family, other spools or another search.
+const fam = computed(() => (ready.value && props.slot.type ? family(props.slot.type) : ''));
 const pickGroups = computed(() => {
-  const fam = ready.value && props.slot.type ? family(props.slot.type) : '';
   const searching = !!query.value.trim();
   const list = searching ? hits.value : s.spools;
-  const fit = list.filter(sp => !fam || family(sp.material) === fam);
-  const rest = list.filter(sp => !fit.includes(sp));
+  const fit: Spool[] = [], rest: Spool[] = [];
+  for (const sp of list) (!fam.value || family(sp.material) === fam.value ? fit : rest).push(sp);
   const opt = (sp: Spool) => ({ value: sp.id, label: spoolLabel(sp), sp, q: query.value });
   return searching
     ? [...(fit.length ? [{ label: t('pick.fit'), items: fit.map(opt) }] : []), ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : [])]
@@ -108,6 +113,7 @@ const pickGroups = computed(() => {
       ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : []),
     ];
 });
+const pickRows = computed(() => pickGroups.value.reduce((n, g) => n + 1 + g.items.length, 0));
 async function choose(id: number | null) {
   const slotName = props.label, sl = props.slot;
   if (!id) {
@@ -178,7 +184,8 @@ async function placeList(e: MouseEvent) {
     </form>
 
     <Select v-else-if="s.spools.length" :model-value="slot.spool_id ?? 0" :options="pickGroups" option-group-label="label" option-group-children="items"
-            option-label="label" option-value="value" filter :filter-fields="['q']" reset-filter-on-hide :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
+            option-label="label" option-value="value" :virtual-scroller-options="longList(pickRows, 32)" filter :filter-fields="['q']" reset-filter-on-hide
+            :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
             :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="pageWhy(false)" class="sl-pick"
             :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)" @filter="(e: { value: string }) => (query = e.value)" @hide="query = ''">
       <template #value="{ value }">
@@ -195,8 +202,7 @@ async function placeList(e: MouseEvent) {
       <p class="oui-label">{{ t('match.title') }}</p>
       <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
                       :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
-                      :candidates="match.source === 'linked' ? [] : [...match.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) })),
-                        ...(match.ofd ?? []).map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons), badge: t('ofd.badge'), note: t('ofd.note') }))]"
+                      :candidates="candidates"
                       :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name, match?.ofd?.find(c => c.name === name))" />
     </div>
 

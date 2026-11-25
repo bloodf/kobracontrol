@@ -3,8 +3,8 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
-### Changed
-- Shared Orca UI foundation 5.10.1 (lucide-static 1.79.0); no visible change.
+### Fixed
+- **The spool picker no longer holds the page with a large Spoolman inventory.** With thousands of spools, opening a slot's spool list drew every spool, and every status refresh rebuilt each slot's list even while closed. The list now draws only the spools in view and is rebuilt only when the spools, the search or the slot's material change: 2000 spools open with a few dozen rows drawn instead of 2001. Shared UI foundation 5.12.0.
 
 ## [0.13.1] - 2026-11-25
 ### Fixed
