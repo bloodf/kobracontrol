@@ -3,6 +3,8 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+### Changed
+- Shared Orca UI foundation 5.10.1 (lucide-static 1.79.0); no visible change.
 
 ## [0.13.1] - 2026-11-25
 ### Fixed
