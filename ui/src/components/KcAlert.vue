@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { OuiBanner } from '@orca-plugins/ui-foundation/src/components';
 import type { OuiIconData } from '@orca-plugins/ui-foundation/src/icons';
 import { alerts } from '../core/dismissals';
@@ -18,39 +18,51 @@ const open = ref(props.tone === 'error');
 const long = ref(false);   // the text does not fit on its line: Details is offered
 const root = ref<{ $el?: Element } | null>(null);
 
-watch(() => [props.show, props.dismissKey] as const, ([on, key]) => {
+watch(() => [props.show, props.dismissKey] as const, ([on, key], old) => {
+  if (old && old[0] && old[1] !== key) alerts.gone(old[1]);   // another condition now: the old one went away
   if (on) alerts.back(key, props.keep ? Infinity : undefined); else alerts.gone(key);
   closed.value = alerts.isDismissed(key);
 }, { immediate: true });
+// A banner that becomes an error opens, as an error starts opened.
+watch(() => props.tone, tone => { if (tone === 'error') open.value = true; });
+const bodyId = useId();
 function close(): void {
   alerts.dismiss(props.dismissKey);
   closed.value = true;
 }
 
 let observer: ResizeObserver | undefined;
+let texts: MutationObserver | undefined;
 const measure = () => {
   const text = root.value?.$el instanceof Element ? root.value.$el.querySelector<HTMLElement>('.kc-alert-body') : null;
   long.value = !!text && text.scrollWidth > text.clientWidth + 1;
 };
 watch(() => [props.show && !closed.value, props.title] as const, async () => {
   observer?.disconnect();
+  texts?.disconnect();
   await nextTick();
   const el = root.value?.$el;
   if (!(el instanceof Element) || typeof ResizeObserver === 'undefined') return;
   observer = new ResizeObserver(measure);
   observer.observe(el);
+  texts = new MutationObserver(measure);   // the text grows in place (a countdown, another reason): same box size
+  texts.observe(el, { subtree: true, characterData: true, childList: true });
   measure();
 }, { immediate: true, flush: 'post' });
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  texts?.disconnect();
+  if (props.show) alerts.gone(props.dismissKey);   // unmounted (a finished command's alert): its condition is gone
+});
 </script>
 
 <template>
   <OuiBanner ref="root" :show="show && !closed" :id="id" :tone="tone" :icon="icon" :title="title" class="kc-alert" :data-open="open || undefined"
              dismissible :close-label="t('common.close')" @dismiss="close">
-    <span v-if="$slots.default" class="kc-alert-body oui-truncate"><slot /></span>
+    <span v-if="$slots.default" :id="bodyId" class="kc-alert-body oui-truncate"><slot /></span>
     <template #actions>
       <slot name="actions" />
-      <button v-if="$slots.default && (long || open)" type="button" class="kc-alert-more" :aria-expanded="open" data-test="alert-more"
+      <button v-if="$slots.default && (long || open)" type="button" class="kc-alert-more" :aria-expanded="open" :aria-controls="bodyId" data-test="alert-more"
               @click="open = !open">{{ open ? t('alert.less') : t('alert.more') }}</button>
     </template>
   </OuiBanner>
@@ -73,7 +85,7 @@ onBeforeUnmount(() => observer?.disconnect());
 .kc-alert[data-open] .kc-alert-body li + li::before { content: none; }
 .kc-alert[data-open] { flex-wrap: wrap; }
 .kc-alert .oui-banner-actions { flex-wrap: nowrap; flex: none; }
-.kc-alert-more { border: 0; background: none; padding: 2px 6px; border-radius: var(--oui-radius); color: var(--oui-link, var(--oui-text)); font: inherit; font-size: 12px;
+.kc-alert-more { min-height: 24px; border: 0; background: none; padding: 2px 6px; border-radius: var(--oui-radius); color: var(--oui-link, var(--oui-text)); font: inherit; font-size: 12px;
   cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 /* Narrow: the actions go under the line instead of pushing the page wider. */
 @media (max-width: 640px) { .kc-alert, .kc-alert .oui-banner-actions { flex-wrap: wrap; } }

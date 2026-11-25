@@ -905,6 +905,7 @@ export const pl: Record<PolishKey, string> = {
   'check.fix.printer.not_found': "Żadna drukarka nie odpowiedziała. Sprawdź, czy jest włączona, w trybie LAN i w tej samej sieci co ten komputer, albo wpisz jej adres w Ustawienia > Połączenie.",
   'check.fix.printer.denied': "OrcaSlicer nie pozwala Kobra Control łączyć się z drukarką. Kliknij Zezwól i odpowiedz Tak.",
   'check.fix.printer.unreachable': "Adres drukarki nie odpowiada. Sprawdź, czy drukarka jest włączona i w trybie LAN oraz czy adres w Ustawienia > Połączenie jest poprawny.",
+  'check.fix.printer.needs_certificate': "Sprawdzane, gdy certyfikat się wczyta; zobacz Certyfikat Anycubic niżej.",
   'check.fix.printer.error': "Nie udało się sprawdzić drukarki. Kliknij ponownie Sprawdź wszystko; jeśli dalej się nie udaje, wyślij wiersze dziennika OrcaSlicera zaczynające się od „kobracontrol:”.",
   'check.fix.login.no_printer': "Sprawdzane po wybraniu drukarki.",
   'check.fix.login.cloud': "Logowaniem zajmuje się Anycubic Cloud; zobacz Anycubic Cloud niżej.",

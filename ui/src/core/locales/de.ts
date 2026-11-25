@@ -854,6 +854,7 @@ export const de: Record<MessageKey, string> = {
   'check.fix.printer.not_found': "Kein Drucker hat geantwortet. Prüfen, ob er eingeschaltet, im LAN-Modus und im selben Netzwerk wie dieser Computer ist, oder seine Adresse unter Einstellungen > Verbindung eintragen.",
   'check.fix.printer.denied': "OrcaSlicer lässt Kobra Control den Drucker nicht erreichen. Auf Erlauben klicken und mit Ja antworten.",
   'check.fix.printer.unreachable': "Die Adresse des Druckers antwortet nicht. Prüfen, ob der Drucker eingeschaltet und im LAN-Modus ist und die Adresse unter Einstellungen > Verbindung stimmt.",
+  'check.fix.printer.needs_certificate': "Wird geprüft, sobald das Zertifikat lädt; siehe Anycubic-Zertifikat unten.",
   'check.fix.printer.error': "Der Drucker konnte nicht geprüft werden. Erneut Alles prüfen; schlägt es weiter fehl, die Zeilen des OrcaSlicer-Protokolls senden, die mit „kobracontrol:“ beginnen.",
   'check.fix.login.no_printer': "Wird geprüft, sobald ein Drucker gewählt ist.",
   'check.fix.login.cloud': "Die Anycubic Cloud meldet sich an; siehe Anycubic Cloud unten.",

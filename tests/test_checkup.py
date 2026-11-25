@@ -3,6 +3,7 @@ Run: python3 -m unittest tests/test_checkup.py -v"""
 
 import os
 import sys
+import threading
 import time
 import types
 import unittest
@@ -33,9 +34,12 @@ class Svc:
         self.tls = tls or (lambda: None)
         self._spoolman_fn, self.cloud, self._printers = spoolman, account, printers
         self.agent_seen = agent_seen
+        self.lock = threading.RLock()
+        self.connect_args = []
         self.host_requirements = ({"id": "certificate", "state": "ok", "details": "bundled"},)
 
-    def cmd_connect(self):
+    def cmd_connect(self, retry=False):
+        self.connect_args.append(retry)
         return self._connect()
 
     def _spoolman(self, target):
@@ -102,6 +106,20 @@ class Checks(unittest.TestCase):
         self.assertEqual(got["login"]["reason"], "held")
         got = by_id(checkup.run(Svc(connect=raises(connection.NoCertificate("none")), conn=conn(no_certificate=True))))
         self.assertEqual(got["login"]["reason"], "no_certificate")
+        self.assertEqual((got["printer"]["state"], got["printer"]["reason"]), (checkup.OFF, "needs_certificate"),
+                         "never contacted: not a pass")
+
+    def test_a_check_tries_now_instead_of_answering_the_last_error(self):
+        svc = Svc(connect=lambda: {})
+        checkup.run(svc)
+        self.assertEqual(svc.connect_args, [True])
+
+    def test_printer_checks_that_break_keep_both_rows(self):
+        svc = Svc(connect=lambda: {})
+        svc.connections = None   # anything unexpected inside the check
+        svc._connect = raises(kobra.KobraError("x"))
+        got = by_id(checkup.run(svc, log=lambda m: None))
+        self.assertEqual((got["printer"]["reason"], got["login"]["reason"]), ("error", "needs_printer"))
 
     def test_certificate_that_does_not_load(self):
         got = by_id(checkup.run(Svc(connect=lambda: {}, tls=raises(connection.NoCertificate("does not load")))))
@@ -130,13 +148,19 @@ class Checks(unittest.TestCase):
 
 
 class ConnectionDenied(unittest.TestCase):
-    def test_a_refused_attempt_is_flagged(self):
+    def test_a_refused_attempt_is_flagged_and_a_later_other_failure_clears_it(self):
+        errors = [kobra.KobraError("denied", code="denied"), RuntimeError("broken answer")]
+
         def fetch(host, port):
-            raise kobra.KobraError("denied", code="denied")
+            raise errors[0] if len(errors) == 2 else errors[1]
         c = connection.Connection("10.0.0.5", lambda: None, lambda m: None, fetch=fetch).start()
         self.addCleanup(c.stop)
         wait(lambda: c.failures)
         self.assertTrue(c.denied)
+        errors.pop(0)
+        c.retry()
+        wait(lambda: c.failures >= 2)
+        self.assertFalse(c.denied)
 
 
 class AgainstFakePrinter(Base):

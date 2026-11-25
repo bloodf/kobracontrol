@@ -56,8 +56,8 @@ const failed = computed(() => results.value?.filter(c => c.state === 'fail').len
         <template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
     </div>
     <p v-if="error" class="oui-meta ck-error" role="alert">{{ t('check.failed', { error }) }}</p>
-    <p v-if="results" class="ck-sum" role="status" data-test="check-summary">
-      {{ failed ? t('check.someFail', { n: failed }) : t('check.allPass') }}</p>
+    <!-- always there, filled when a check is in: a live region added already filled is often not read out -->
+    <p class="ck-sum" role="status" data-test="check-summary">{{ !results ? '' : failed ? t('check.someFail', { n: failed }) : t('check.allPass') }}</p>
     <ul v-if="results" class="ck-list">
       <li v-for="c in results" :key="c.id" class="ck-row" :data-check="c.id" :data-state="c.state">
         <OuiStatus :state="STATE[c.state]" variant="plain">{{ t(key(`check.state.${c.state}`)) }}</OuiStatus>
@@ -82,6 +82,7 @@ const failed = computed(() => results.value?.filter(c => c.state === 'fail').len
 .ck-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--oui-s2) var(--oui-s3); }
 .ck-head > p { flex: 1 1 220px; margin: 0; }
 .ck-sum { margin: var(--oui-s3) 0 var(--oui-s1); font-weight: 600; }
+.ck-sum:empty { display: none; }
 .ck-error { color: var(--oui-danger, inherit); }
 .ck-list { list-style: none; margin: 0; padding: 0; }
 .ck-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) auto; align-items: start; gap: var(--oui-s2) var(--oui-s3); padding: var(--oui-s2) 0; }

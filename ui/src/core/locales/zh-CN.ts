@@ -854,6 +854,7 @@ export const zhCN: Record<MessageKey, string> = {
   'check.fix.printer.not_found': "没有打印机响应。请确认它已开机、处于 LAN 模式并与本电脑在同一网络，或在“设置 > 连接”中填写其地址。",
   'check.fix.printer.denied': "OrcaSlicer 不允许 Kobra Control 访问打印机。请点击允许并选择“是”。",
   'check.fix.printer.unreachable': "打印机地址没有响应。请确认打印机已开机并处于 LAN 模式，且“设置 > 连接”中的地址正确。",
+  'check.fix.printer.needs_certificate': "证书加载后检查；见下方 Anycubic 证书。",
   'check.fix.printer.error': "无法检查打印机。请再次点击全部检查；如果仍然失败，请发送 OrcaSlicer 日志中以“kobracontrol:”开头的行。",
   'check.fix.login.no_printer': "选择打印机后检查。",
   'check.fix.login.cloud': "由 Anycubic Cloud 登录；见下方 Anycubic Cloud。",

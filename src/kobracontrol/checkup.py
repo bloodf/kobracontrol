@@ -31,24 +31,34 @@ def denied(error):
     return False
 
 
+def _target(svc):
+    with svc.lock:
+        return svc.target
+
+
 def printer_checks(svc):
-    """The printer on the LAN (located, its HTTP /info answers) and its login (certificate + MQTT session)."""
-    target = svc.target
+    """The printer on the LAN (located, its HTTP /info answers) and its login (certificate + MQTT session). A user's
+    check: one login attempt now (retry, as the tab's Retry), not the last error of a connection waiting out its
+    backoff."""
+    target = _target(svc)
     if target is None or cloud.printer_id(target.host):   # none chosen, or driven through Anycubic Cloud
         reason = "cloud" if target is not None else "no_printer"
         return [result("printer", OFF, reason), result("login", OFF, reason)]
     try:
-        info = svc.cmd_connect()
+        info = svc.cmd_connect(retry=True)
     except locate.NotFound as e:
         return [result("printer", FAIL, "not_found", str(e)), result("login", FAIL, "needs_printer")]
     except Exception as e:
-        conn = svc.connections.get(svc.target.host) if svc.target is not None and svc.target.host else None
+        latest = _target(svc)   # read once: locating may have filled the address in meanwhile
+        host = latest.host if latest is not None else ""
+        conn = svc.connections.get(host) if host else None
         if getattr(conn, "denied", False) or denied(e):
             return [result("printer", FAIL, "denied", str(e), "allow_printer"), result("login", FAIL, "needs_printer")]
+        if conn is not None and conn.no_certificate:   # the certificate failed before the printer was contacted
+            return [result("printer", OFF, "needs_certificate"), result("login", FAIL, "no_certificate", str(e))]
         if conn is None or conn.http_failed:
             return [result("printer", FAIL, "unreachable", str(e)), result("login", FAIL, "needs_printer")]
-        reason = "no_certificate" if conn.no_certificate else "held" if conn.held else "login"
-        return [result("printer", PASS, detail=svc.target.host), result("login", FAIL, reason, str(e))]
+        return [result("printer", PASS, detail=host), result("login", FAIL, "held" if conn.held else "login", str(e))]
     about = " · ".join(x for x in (info.get("model"), info.get("firmware")) if x)
     return [result("printer", PASS, detail=info.get("address", "")), result("login", PASS, detail=about)]
 
@@ -69,7 +79,7 @@ def printer_agents_check(svc):
 
 
 def spoolman_check(svc):
-    target = svc.target
+    target = _target(svc)
     url = target.spoolman_url if target is not None else ""
     if not url:
         return [result("spoolman", OFF, "not_set")]
@@ -106,5 +116,8 @@ def run(svc, checks=CHECKS, log=print):
             out += check(svc)
         except Exception as e:
             log("kobracontrol: check %s failed (%r)" % (check.__name__, e))
-            out.append(result(check.__name__.replace("_checks", "").replace("_check", ""), FAIL, "error", str(e)))
+            if check is printer_checks:   # both of its rows, so the list keeps its shape
+                out += [result("printer", FAIL, "error", str(e)), result("login", FAIL, "needs_printer")]
+            else:
+                out.append(result(check.__name__.replace("_check", ""), FAIL, "error", str(e)))
     return sorted(out, key=lambda r: ORDER.index(r["id"]) if r["id"] in ORDER else len(ORDER))

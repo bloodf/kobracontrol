@@ -220,7 +220,7 @@ class Connection:
         old, self.printer, printer = self.printer, None, None
         if old:
             old.close()
-        self.http_failed = False
+        self.http_failed, self.denied = False, False
         try:
             ssl_context = self.tls()
             self.http_failed = True
