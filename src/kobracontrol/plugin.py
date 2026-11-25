@@ -796,6 +796,46 @@ def grant_on_ui_thread(svc, host, user=False):
     _granted.add(host)
 
 
+def allow_now(svc, what):
+    """UI thread only: Check everything's Allow button. Raises the audited event OrcaSlicer judges, without any
+    network I/O, so its permission dialog shows inline and a Yes is saved: for the printer getaddrinfo of its numeric
+    LAN address (as grant_on_ui_thread, but asked even when declared at load: that grant may have been refused); for
+    Spoolman a urllib.Request event for its bare scheme://host, which OrcaSlicer saves host-wide (every port and path),
+    like the load-time grant. True when allowed; False when refused or there is nothing to allow."""
+    target = svc.target
+    if what == "printer":
+        host = target.host if target is not None else ""
+        if not locate.lan_address(host):
+            return False
+        try:
+            svc._ask_orcaslicer(host)
+        except PermissionError:
+            _refused.add(host)
+            log("network access to %s not allowed" % host)
+            return False
+        except OSError:
+            pass
+        _refused.discard(host)
+        _granted.add(host)
+        conn = svc.connections.get(host)
+        if conn is not None:
+            conn.retry()   # the next attempt uses the new grant now, not after the backoff
+        return True
+    if what == "spoolman":
+        url = target.spoolman_url if target is not None else ""
+        origin = permission_origin(url)
+        if not origin:
+            return False
+        remember_spoolman(url)   # asked for at load from now on too
+        try:
+            sys.audit("urllib.Request", origin, None, {}, "GET")
+        except PermissionError:
+            log("network access to %s not allowed" % origin)
+            return False
+        return True
+    return False
+
+
 # ====================================================================== Kobra Control tab
 
 class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
@@ -864,6 +904,8 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
             elif kind == "allow_hosts":   # UI thread: OrcaSlicer's dialog for a printer the search found
                 result = svc.allow(data.get("hosts"), user=data.get("user") is True)
                 self.post_message({"type": "reply", "id": data.get("id"), "result": result})
+            elif kind == "allow_now":   # UI thread: Check everything's Allow (printer or Spoolman)
+                self.post_message({"type": "reply", "id": data.get("id"), "result": {"allowed": allow_now(svc, data.get("what"))}})
             elif kind == "bridge_new_key":   # the old key stops working at once
                 bridge_key(renew=True)
                 self.post_message(self._config_message())

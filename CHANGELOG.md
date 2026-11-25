@@ -3,6 +3,11 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+### Added
+- **Check everything.** Settings > Requirements has one button that checks every connection and permission Kobra Control depends on: the printer on the network, its login, the Anycubic certificate, OrcaSlicer's printer agents, Spoolman and Anycubic Cloud. Each shows as works, problem or not set up, and each problem says in plain words what to do. Where OrcaSlicer's permission is what is missing (the printer's address or Spoolman's), **Allow** shows OrcaSlicer's dialog right there and checks again, so there is no hunting through menus after an update. The printer is only asked for its status: nothing pauses, moves, heats or feeds. Asked for by Er_Nando_Blando.
+
+### Changed
+- **Smaller Dashboard alerts that stay closed.** Each alert is one line, with **Details** to read the rest, and closes with one click. A closed alert stays closed while its problem lasts, also when a status poll briefly clears it; a new or different problem shows again. "The printer is printing" stays closed for the session once closed, as its reasons change with the print's phases. Errors (printer unreachable, Spoolman bookings that failed) open with their full text and actions. Reported by Er_Nando_Blando.
 ## [0.12.4] - 2026-11-24
 ### Changed
 - **Spooler reads the ACE slots from Kobra Control instead of connecting to the printer itself.** Kobra 3 and S1 printers accept one LAN connection at a time, so with both plugins on the same printer one of them kept losing it ("Can't reach the printer" in Spooler during prints). Kobra Control now lists the printers it is connected to, with their ACE and spool holder slots, in the presence file it already shares with Spooler; Spooler 0.33.4 and later shows those slots and leaves the printer to Kobra Control. Reported by @Er_Nando_Blando.
