@@ -2187,6 +2187,23 @@ test('alerts: one line each, Details opens the rest, Close hides it for good whi
   await until(busy, 'another tab is another condition: Files says what it can not do');
 `);
 
+// #91: WebView2 can deny the document its storage; then even reading window.sessionStorage throws a SecurityError.
+const DENY_STORAGE = `for (const k of ['sessionStorage', 'localStorage']) Object.defineProperty(window, k, { configurable: true,
+  get() { throw new DOMException('Access is denied for this document.', 'SecurityError'); } });`;
+test('storage denied (WebView2): the page still mounts and alerts close', `
+  let denied = false;
+  try { void window.sessionStorage; } catch (e) { denied = e.name === 'SecurityError'; }
+  assert(denied, 'the stub denies sessionStorage');
+  await ready(VIEW({state: 'printing', preparing: true, kobra_state: 'auto_leveling', filename: 'x.gcode', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}}));
+  assert(text(byTest('link')) === 'Connected', 'connected pill');
+  await until(() => byTest('busy-banner'), 'the printing alert');
+  await click(q('.oui-banner-close', byTest('busy-banner')));
+  assert(!byTest('busy-banner'), 'closes: kept in memory');
+  await post({type: 'status', data: VIEW({state: 'printing', preparing: true, kobra_state: 'nozzle_heating', filename: 'x.gcode', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}})});
+  await settle();
+  assert(!byTest('busy-banner'), 'and stays closed on the next poll');
+`, { init: DENY_STORAGE });
+
 test('alerts: an error starts opened and closes with one click; another error shows again', `
   await until(() => last('hello'));
   await fail(last('hello'), 'printer not reachable at 192.0.2.50');
@@ -3157,7 +3174,8 @@ try {
         await p.size(...(sc.size ?? [1280, 900]));
         // seed: the settings page remembered from an earlier visit (OuiSettings' own key: page path and its page ids)
         const seed = sc.lastPage ? `localStorage.setItem('oui-settings:' + location.pathname + ':' + ${JSON.stringify(PAGES.join(','))}, ${JSON.stringify(sc.lastPage)});` : '';
-        await p.init(MOCK_HOST + `try { localStorage.clear(); ${seed} } catch {}`);
+        // sc.init runs in the page before its scripts (a host quirk to reproduce, such as storage that is denied).
+        await p.init(MOCK_HOST + `try { localStorage.clear(); ${seed} } catch {}` + (sc.init ?? ''));
         await p.goto(pathToFileURL(file).href);
         // A scenario may return { carry }; its `after` runs on the same page loaded again (what the plugin stored, CARRY).
         const body = (code, carry) => `(async () => { ${HELPERS} ${PRELUDE}
