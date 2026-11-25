@@ -147,6 +147,7 @@ Page to plugin:
 | `ui_language` | `value` | store the page's language choice |
 | `bridge_new_key` | `id` | replace the upload bridge's API key; answers `{renewed}` and a new `config` |
 | `check_requirements` | | look for ffmpeg and Anycubic Slicer Next again (Settings > Requirements > Check again); answered with `requirements` |
+| `allow_now` | `id`, `what` (`printer`, `spoolman`) | Check everything's **Allow**, on the UI thread: raises the audited event without network I/O so OrcaSlicer's permission dialog shows at once and a Yes is saved (`getaddrinfo` of the printer's numeric LAN address, then a retry of its connection; `urllib.Request` for Spoolman's bare `scheme://host`, which is saved host-wide and remembered for the load-time request). Answers `{allowed}` |
 
 Plugin to page:
 
@@ -212,6 +213,7 @@ is always empty, because it carries the upload token. Plus:
 | `videos` | (the time-lapse videos; also while printing) | |
 | `video_delete` | `name` (one video's file name: a plain name ending `.mp4`, at most 255 characters); also while printing | yes |
 | `find_certificate` | `path` (optional file or folder) | |
+| `checkup` | Settings > Requirements > Check everything, read-only (checkup.py): one login attempt and the read-only status queries, Spoolman's `/health`, Anycubic Cloud's printer list | |
 | `spools` | | |
 | `bind`, `unbind` | `slot`, `spool_id` | |
 | `stock` | `refresh` (optional) | |
@@ -229,6 +231,7 @@ Replies:
 | `video_delete` | `{deleted: name}`; the page then asks for `videos` again |
 | `objects` | `{filename, objects: [name], skipped: [name]}` for the running print; an error when none runs |
 | `find_certificate` | `{found, source}` |
+| `checkup` | `[{id, state, reason, detail, action}]`: `id` `printer`, `login`, `certificate`, `printer_agents`, `spoolman`, `cloud`; `state` `pass`, `fail`, `off` (not configured); `reason` picks the page's fix text; `action` `allow_printer` / `allow_spoolman` when OrcaSlicer's permission is missing |
 | `spools` | `{spools, bindings}` |
 | `stock` | the stock list plus `available` and `reason` (`null`, `absent`, `stale`, `waiting`, `unsupported`); rows carry `bound_slot` |
 
