@@ -87,6 +87,7 @@ class Connection:
         self.error, self.no_certificate = "", False
         self.failures = 0                   # failed attempts so far: lets a waiter return at the next failure
         self.http_failed = False            # the last attempt failed at the HTTP step (/info, /ctrl), before MQTT
+        self.denied = False                 # the last attempt was refused by OrcaSlicer's permission audit
         self.next_try = 0.0                 # time.time() of the next automatic attempt while waiting, else 0
         self.origin = ""                    # where the address came from, for the error text (service sets it)
         # A remembered printer's certificate fingerprint (service sets it): a session that presents another one is
@@ -219,7 +220,7 @@ class Connection:
         old, self.printer, printer = self.printer, None, None
         if old:
             old.close()
-        self.http_failed = False
+        self.http_failed, self.denied = False, False
         try:
             ssl_context = self.tls()
             self.http_failed = True
@@ -235,11 +236,13 @@ class Connection:
                 printer.close()
             if self._one_client_refused(e):
                 return False
+            self.denied = getattr(e, "code", None) == "denied"
             self._fail(_explain(self.host, e, self.origin, self.http_failed), getattr(e, "no_certificate", False))
             return False
         except OSError as e:   # e.g. the plugin sandbox refusing a socket before kobra wraps it
             if printer:
                 printer.close()
+            self.denied = isinstance(e, PermissionError)
             self._fail(_explain(self.host, e, self.origin, self.http_failed), False)
             return False
         except Exception as e:   # anything else a hostile or broken answer can raise (RecursionError, ...)
@@ -269,7 +272,7 @@ class Connection:
         self.state.connected = True
         self._refusals = 0
         self._opened_at = time.monotonic()
-        self.error, self.no_certificate = "", False
+        self.error, self.no_certificate, self.denied = "", False, False
         self._connected.set()
         self.log("kobracontrol: connected to %s" % self.host)
         self._notify()

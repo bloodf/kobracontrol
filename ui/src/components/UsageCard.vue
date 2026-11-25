@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import { OuiBanner, OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import { OuiIcon, OuiPanel } from '@orca-plugins/ui-foundation/src/components';
+import KcAlert from './KcAlert.vue';
 import { check, eye, spoolman, warning } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker } from '../app/store';
 import { ask } from '../core/dialog';
@@ -46,24 +47,24 @@ async function ack(e: UsageEntry) {
   <!-- v-show, not v-if: the banners stay mounted so a closed one is forgotten when its condition clears. -->
   <div v-show="show" class="oui-stack" data-test="usage-card">
     <div role="alert" class="kc-live uc-alerts">
-      <OuiBanner :show="!!s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" dismissible :dismiss-key="`usage-load:${s.usageError}`" :close-label="t('common.close')" />
-      <OuiBanner :show="!!u?.save_error" tone="error" :title="t('usage.saveError', { error: u?.save_error })" dismissible :dismiss-key="`usage-save:${u?.save_error}`" :close-label="t('common.close')" />
-      <OuiBanner :show="!!u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u?.restore_notice })" dismissible :dismiss-key="`usage-restore:${u?.restore_notice}`" :close-label="t('common.close')" />
+      <KcAlert :show="!!s.usageError" tone="error" :title="t('usage.loadError', { error: s.usageError })" :dismiss-key="`usage-load:${s.usageError}`" />
+      <KcAlert :show="!!u?.save_error" tone="error" :title="t('usage.saveError', { error: u?.save_error })" :dismiss-key="`usage-save:${u?.save_error}`" />
+      <KcAlert :show="!!u?.restore_notice" tone="warn" :title="t('usage.notice', { text: u?.restore_notice })" :dismiss-key="`usage-restore:${u?.restore_notice}`" />
     </div>
 
-    <OuiBanner :show="failed.length > 0" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner"
-               dismissible :dismiss-key="`unconfirmed:${failed.map(e => e.id).join(',')}`" :close-label="t('common.close')">
+    <KcAlert :show="failed.length > 0" tone="warn" :title="tn('usage.banner', failed.length)" data-test="usage-banner"
+             :dismiss-key="`unconfirmed:${failed.map(e => e.id).join(',')}`">
       {{ first }}
       <template #actions>
         <Button size="small" severity="secondary" :label="open ? t('usage.hide') : t('usage.review')" :aria-expanded="open" aria-controls="usage-list"
                 data-focus-key="usage-review" data-test="usage-review" @click="open = !open"><template #icon><OuiIcon :icon="eye" :size="14" /></template></Button>
       </template>
-    </OuiBanner>
+    </KcAlert>
 
-    <OuiBanner :show="waiting.length > 0" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending"
-               dismissible :dismiss-key="`usage-pending:${waiting.map(w => w.printer + '|' + w.file).join(',')}`" :close-label="t('common.close')">
+    <KcAlert :show="waiting.length > 0" tone="info" :icon="spoolman" :title="tn('usage.tracking', waiting.length)" data-test="usage-pending"
+             :dismiss-key="`usage-pending:${waiting.map(w => w.printer + '|' + w.file).join(',')}`">
       <template v-for="(w, i) in waiting" :key="w.printer + w.file"><template v-if="i"> · </template><strong>{{ fileName(w.file) }}</strong> ({{ grams(w.grams) }})</template>
-    </OuiBanner>
+    </KcAlert>
 
     <OuiPanel v-if="open && failed.length" id="usage-list" :icon="warning" tone="warn" flush aria-labelledby="usage-h" :hint="t('usage.intro')" :hint-label="t('usage.title')">
       <template #title><span id="usage-h">{{ t('usage.title') }}</span></template>

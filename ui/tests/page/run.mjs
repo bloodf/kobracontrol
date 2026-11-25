@@ -2145,7 +2145,7 @@ test('banners: the unconfirmed filament use banner can be closed and returns for
   assert(text(byTest('usage-banner')).includes('2 filament uses are not confirmed'), 'says both: ' + text(byTest('usage-banner')));
 `);
 
-test('banners: a closed banner shows again when its condition clears and the same entries come back', `
+test('banners: a closed banner stays closed when its condition blinks off for a poll and the same entries come back', `
   await ready(VIEW());
   await until(() => last('cmd', 'usage'));
   await reply(last('cmd', 'usage'), USAGE({unconfirmed: [ENTRY]}));
@@ -2158,7 +2158,92 @@ test('banners: a closed banner shows again when its condition clears and the sam
     await reply(last('cmd', 'usage'), view);
     if (!view.unconfirmed.length) assert(!byTest('usage-banner') && !byTest('usage-card')?.checkVisibility(), 'cleared: nothing shown');
   }
-  await until(() => byTest('usage-banner'), 'the same entry again: the banner is back');
+  await settle();
+  assert(!byTest('usage-banner'), 'the same entry within a minute: still closed (core/dismissals.ts forgets it after a minute gone)');
+`);
+
+test('alerts: one line each, Details opens the rest, Close hides it for good while the print goes through its phases', `
+  const prep = kobra_state => VIEW({state: 'printing', preparing: true, kobra_state, filename: 'x.gcode', can: {pause: false, resume: false, stop: true, move: false, heat: true, feed: false, print: false}});
+  await ready(prep('auto_leveling'));
+  const busy = () => byTest('busy-banner');
+  await until(busy, 'the printing alert');
+  const line = q('.kc-alert-body', busy());
+  eq(getComputedStyle(line).whiteSpace, 'nowrap', 'one line');
+  assert(busy().getBoundingClientRect().height <= 44, 'compact: ' + busy().getBoundingClientRect().height);
+  const more = q('[data-test="alert-more"]', busy());
+  assert(more, 'its text does not fit: Details is offered ' + line.scrollWidth + '/' + line.clientWidth + ' ' + text(busy()));
+  eq(more.getAttribute('aria-expanded'), 'false', 'closed');
+  await click(more);
+  eq(getComputedStyle(q('.kc-alert-body', busy())).whiteSpace, 'normal', 'Details shows all of it');
+  eq(q('[data-test="alert-more"]', busy()).getAttribute('aria-expanded'), 'true', 'and says so');
+  assert(text(busy()).includes('Pause: Available once the print has finished preparing'), 'every reason: ' + text(busy()));
+  await click(q('.oui-banner-close', busy()));
+  assert(!busy(), 'one click closes it');
+  for (const phase of ['nozzle_heating', 'ace_filament_feeding']) await post({type: 'status', data: prep(phase)});
+  await post({type: 'status', data: PRINTING()});   // the reasons change as preparing ends
+  await settle();
+  assert(!busy(), 'stays closed through the phases and polls');
+  await tab('files');
+  await until(busy, 'another tab is another condition: Files says what it can not do');
+`);
+
+test('alerts: an error starts opened and closes with one click; another error shows again', `
+  await until(() => last('hello'));
+  await fail(last('hello'), 'printer not reachable at 192.0.2.50');
+  const why = () => q('#kc-why');
+  await until(why, 'the offline alert');
+  assert('open' in why().dataset, 'an error starts opened: what is wrong is read without a click');
+  await click(q('.oui-banner-close', why()));
+  assert(!why(), 'closed');
+  await post({type: 'offline', error: 'printer not reachable at 192.0.2.50'});
+  await settle();
+  assert(!why(), 'the same error on the next poll: still closed');
+  await post({type: 'offline', error: 'mqtt lost'});
+  await until(why, 'a different error shows again');
+  assert(text(why()).includes('mqtt lost'), text(why()));
+`);
+
+test('check everything: one list of every connection and permission, fixes in plain words, Allow asks OrcaSlicer', `
+  await ready(VIEW());
+  await post(REQS());
+  await tab('settings');
+  await click(q('.oui-settings-link[data-section="needs-h"]'));
+  const before = sent().filter(m => m.type === 'check_requirements').length;
+  await click(byTest('check-all'));
+  eq(sent().filter(m => m.type === 'check_requirements').length, before + 1, 'the requirements are read again first');
+  await until(() => last('cmd', 'checkup'), 'the check runs in the plugin');
+  assert(!byTest('target-banner')?.textContent.includes('Check everything'), 'no waiting banner on the page for it');
+  const R = (id, state, reason, detail, action) => ({id, state, reason: reason || '', detail: detail || '', action: action || ''});
+  await reply(last('cmd', 'checkup'), [R('printer', 'pass', '', '192.168.1.50'), R('login', 'pass', '', 'Kobra X · 2.1.0'),
+    R('certificate', 'pass', '', 'bundled'), R('printer_agents', 'fail', 'not_seen'),
+    R('spoolman', 'fail', 'denied', "can't reach Spoolman at http://box:7912 (audit permission required)", 'allow_spoolman'), R('cloud', 'off', 'off')]);
+  await until(() => qa('[data-check]').length === 6, 'one row each');
+  eq(qa('[data-check]').map(r => r.dataset.check + ':' + r.dataset.state),
+    ['printer:pass', 'login:pass', 'certificate:pass', 'printer_agents:fail', 'spoolman:fail', 'cloud:off'], 'pass, fail, not configured');
+  eq(text(byTest('check-summary')), 'Needs attention: 2', 'a summary');
+  const row = id => q('[data-check="' + id + '"]');
+  eq(text(q('.oui-status', row('cloud'))), 'Not set up', 'not configured is not a failure');
+  assert(!q('[data-test="check-fix"]', row('printer')), 'a pass needs no fix');
+  assert(text(row('spoolman')).includes('Press Allow and answer Yes'), 'plain-English fix: ' + text(row('spoolman')));
+  assert(text(row('printer_agents')).includes('Use printer agents instead of print hosts'), 'how: ' + text(row('printer_agents')));
+  assert(!q('[data-test="check-allow"]', row('printer_agents')), 'no Allow where OrcaSlicer has no permission to give');
+  await click(q('[data-test="check-allow"]', row('spoolman')));
+  await until(() => last('allow_now'), 'OrcaSlicer is asked');
+  eq(last('allow_now').what, 'spoolman', 'for Spoolman');
+  const n = cmds('checkup').length;
+  await reply(last('allow_now'), {allowed: true});
+  await until(() => cmds('checkup').length > n, 'allowed: checked again');
+  await reply(last('cmd', 'checkup'), [R('printer', 'pass'), R('spoolman', 'pass', '', 'http://box:7912')]);
+  await until(() => text(byTest('check-summary')) === 'Everything works.', 'all pass: ' + text(byTest('check-summary')));
+  await click(byTest('check-all'));
+  await until(() => cmds('checkup').length > n + 1);
+  await reply(last('cmd', 'checkup'), [R('printer', 'fail', 'denied', 'not allowed', 'allow_printer')]);
+  await until(() => q('[data-check="printer"] [data-test="check-allow"]'));
+  await click(q('[data-check="printer"] [data-test="check-allow"]'));
+  await until(() => last('allow_now')?.what === 'printer', 'the printer too');
+  await reply(last('allow_now'), {allowed: false});
+  await until(() => q('.oui-toast'), 'refused: says so');
+  assert(text(q('.oui-toast')).includes('OrcaSlicer did not allow it'), text(q('.oui-toast')));
 `);
 
 test('pt-BR: the new file, finish-time and certificate texts are translated', `

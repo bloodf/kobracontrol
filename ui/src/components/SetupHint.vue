@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import { OuiBanner } from '@orca-plugins/ui-foundation/src/components';
+import KcAlert from './KcAlert.vue';
 import { printer } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { config } from '../app/settings';
@@ -21,19 +21,19 @@ const dismiss = () => bridge.post({ type: 'save_settings', settings: { setup_hin
 </script>
 
 <template>
-  <OuiBanner :show="octoprint" :icon="printer" tone="warn" :title="t('setup.octo.title')" data-test="setup-octoprint"
-             dismissible :dismiss-key="`setup-octoprint:${setup?.host}`" :close-label="t('common.close')">
+  <KcAlert :show="octoprint" :icon="printer" tone="warn" :title="t('setup.octo.title')" data-test="setup-octoprint"
+             :dismiss-key="`setup-octoprint:${setup?.host}`">
     {{ t('setup.octo.body', { host: setup?.host ?? '' }) }}
     <ol class="kc-steps"><li>{{ t('req.agents.step1') }}</li><li>{{ t('req.agents.step2') }}</li></ol>
     <p class="kc-steps-alt">{{ t('setup.octo.bridge') }}</p>
     <template #actions><Button size="small" severity="secondary" :label="t('setup.octo.bridgeBtn')" data-test="setup-octo-bridge" @click="openSettings('bridge-h')" /></template>
-  </OuiBanner>
-  <OuiBanner :show="steps" :icon="printer" tone="info" :title="t('setup.title')" data-test="setup-steps"
-             dismissible dismiss-key="setup-steps" :close-label="t('common.close')">
+  </KcAlert>
+  <KcAlert :show="steps" :icon="printer" tone="info" :title="t('setup.title')" data-test="setup-steps"
+             dismiss-key="setup-steps">
     {{ t('setup.body') }}
     <ol class="kc-steps"><li>{{ t('req.agents.step1') }}</li><li>{{ t('req.agents.step2') }}</li></ol>
     <template #actions><Button size="small" severity="secondary" text :label="t('spooler.dismiss')" data-test="setup-dismiss" @click="dismiss" /></template>
-  </OuiBanner>
+  </KcAlert>
 </template>
 
 <style>

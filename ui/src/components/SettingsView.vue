@@ -11,6 +11,7 @@ import BridgeSettings from './BridgeSettings.vue';
 import CloudSettings from './CloudSettings.vue';
 import SettingsPages from './SettingsPages.vue';
 import CertFinder from './CertFinder.vue';
+import Checkup from './Checkup.vue';
 import { s, controlsOff, link, tracker, loadSpools, searchAgain, otherAgent, stockVisible, noFfmpeg, pagePlays, requirement, checkRequirements } from '../app/store';
 import { config, form, changed, dirty, saving, save, discard, spoolmanSet } from '../app/settings';
 import type { Requirement, RequirementId } from '../app/types';
@@ -206,6 +207,7 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
         </OuiFormSection>
 
         <OuiFormSection id="needs-h" :icon="wrench" tone="sky" :title="t('req.title')" :description="t('req.help')">
+          <Checkup />
           <div class="sv-needs" data-test="requirements" aria-live="polite">
             <OuiRequirement v-for="r in items" :key="r.id" :name="isKey(ROWS[r.id].name) ? t(ROWS[r.id].name as MessageKey) : ROWS[r.id].name" :why="t(ROWS[r.id].why)"
                             :status="need(r)" :status-label="needLabel(r)" :detail="detail(r)" :install-text="ROWS[r.id].how.map(k => t(k)).join(' · ')"

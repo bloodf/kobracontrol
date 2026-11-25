@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import { OuiBanner } from '@orca-plugins/ui-foundation/src/components';
+import KcAlert from './KcAlert.vue';
 import { spool } from '@orca-plugins/ui-foundation/src/icons';
 import * as bridge from '../core/bridge';
 import { config } from '../app/settings';
@@ -15,8 +15,8 @@ const dismiss = () => bridge.post({ type: 'save_settings', settings: { spooler_h
 </script>
 
 <template>
-  <OuiBanner :show="show" :icon="spool" tone="info" :title="t('spooler.title')" dismissible :dismiss-key="`spooler-suggest:${sp?.url}`" :close-label="t('common.close')">
+  <KcAlert :show="show" :icon="spool" tone="info" :title="t('spooler.title')" :dismiss-key="`spooler-suggest:${sp?.url}`">
     {{ t('spooler.suggest') }} <a :href="sp?.url">{{ sp?.url }}</a>
     <template #actions><Button size="small" severity="secondary" text :label="t('spooler.dismiss')" @click="dismiss" /></template>
-  </OuiBanner>
+  </KcAlert>
 </template>

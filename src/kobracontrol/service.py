@@ -25,6 +25,7 @@ import traceback
 
 import ace
 import camera
+import checkup
 import cloud
 import certs
 import connection
@@ -808,6 +809,10 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         return {"generation": gen, "address": target.host, "printer": target.name, "model": view["model"],
                 "firmware": view["firmware"], "limits": profiles.limits(view.get("mode_id") or "20030"), "source": target.source,
                 "note": self.locate_note if target.source in ("discovered", "chosen") else ""}
+
+    def cmd_checkup(self):
+        """Settings > Requirements > Check everything: every connection and permission, read-only (checkup.py)."""
+        return checkup.run(self, log=self.log)
 
     def _task_id(self):
         return self._conn().view()["task_id"] or "-1"

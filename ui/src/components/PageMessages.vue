@@ -5,16 +5,18 @@ import { OuiBanner, OuiIcon } from '@orca-plugins/ui-foundation/src/components';
 import { dashboard, refresh, settings, play, shieldCheck, upload } from '@orca-plugins/ui-foundation/src/icons';
 import { s, openSettings, tracker, hello, link, printerName, run, statusAge, busy, STALE_STATUS_S } from '../app/store';
 import { t, fmt } from '../core/i18n';
+import KcAlert from './KcAlert.vue';
 
 // What the whole page has to say, once, under the page header of the open tab: why the printer's controls are off and
 // which commands are still waiting for the printer (what they answered is a toast). Controls that are off for one of
 // these reasons point at it (#kc-why, or #kc-busy for what a connected printer refuses while it works) instead of
 // repeating it. No certificate / no printer: the Dashboard shows the one task
-// itself; the other tabs say what is missing here. Every banner can be closed; its key names the condition, so it
-// stays closed while that lasts and comes back when it changes (another address, another error, another command).
+// itself; the other tabs say what is missing here. Each is one line (KcAlert: Details opens the rest) and closes with
+// one click; its key names the condition, so it stays closed while that lasts and comes back when it changes
+// (another address, another error, another command).
 const retryIn = computed(() => (s.retryAt ? Math.max(0, Math.ceil(s.retryAt - s.now / 1000)) : 0));
 const where = computed(() => s.info?.address ?? '');
-const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools'));
+const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools' && p.key !== 'checkup'));   // Settings shows its own
 /** "Pause failed: timeout" reads as a title and its detail. */
 // An Upload and Print from OrcaSlicer (upload bridge) never starts by itself: it waits here for Start.
 const waitingPrint = computed(() => s.status?.bridge_pending ?? null);
@@ -52,54 +54,56 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
   <div class="kc-top">
     <div class="kc-live" role="status" aria-live="polite" data-test="target-banner">
 
-      <OuiBanner :show="busyWhy.length > 0" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
-                 dismissible :dismiss-key="`busy:${where}:${s.tab}:${busyWhy.join('|')}`" :close-label="t('common.close')">
+      <!-- Keyed on the printer's state, not on its reasons: closed while printing, it stays closed for the session
+           (keep) as the reasons change with the print's phases. -->
+      <KcAlert :show="busyWhy.length > 0" id="kc-busy" tone="info" :title="t(s.status?.state === 'printing' ? 'busy.printing' : 'busy.other')" data-test="busy-banner"
+               keep :dismiss-key="`busy:${where}:${s.tab}:${s.status?.state}`">
         {{ busyWhy.map(text => t('fmt.sentence', { text })).join(' ') }}
-      </OuiBanner>
+      </KcAlert>
 
       <!-- A model never tried with Kobra Control (experimental), or one it has no profile for (read-only). -->
-      <OuiBanner :show="!!model" :tone="model?.known ? 'info' : 'warn'" data-test="model-banner"
+      <KcAlert :show="!!model" :tone="model?.known ? 'info' : 'warn'" data-test="model-banner"
                  :title="t(model?.known ? 'model.experimental.title' : 'model.unknown.title', { name: model?.name || '' })"
-                 dismissible :dismiss-key="`model:${model?.mode_id}:${model?.known}`" :close-label="t('common.close')">
+                 :dismiss-key="`model:${model?.mode_id}:${model?.known}`">
         {{ t(model?.known ? 'model.experimental.body' : 'model.unknown.body', { name: model?.name || '', code: model?.mode_id || '' }) }}
-      </OuiBanner>
+      </KcAlert>
 
       <!-- The Dashboard shows these tasks itself; hidden there, not cleared, so a closed one stays closed. -->
       <div v-show="s.tab !== 'dash'" style="display: contents">
-      <OuiBanner :show="top === 'cert'" id="kc-why" tone="warn" :title="t('fr.cert.title')"
-                 dismissible dismiss-key="no-certificate" :close-label="t('common.close')">
+      <KcAlert :show="top === 'cert'" id="kc-why" tone="warn" :title="t('fr.cert.title')"
+                 dismiss-key="no-certificate">
         {{ t('banner.cert') }}
         <template #actions><Button size="small" severity="secondary" :label="t('banner.toDashboard')" @click="s.tab = 'dash'"><template #icon><OuiIcon :icon="dashboard" :size="14" /></template></Button></template>
-      </OuiBanner>
+      </KcAlert>
 
-      <OuiBanner :show="top === 'target'" id="kc-why" tone="warn" :title="t('fr.target.title')"
-                 dismissible dismiss-key="no-target" :close-label="t('common.close')">
+      <KcAlert :show="top === 'target'" id="kc-why" tone="warn" :title="t('fr.target.title')"
+                 dismiss-key="no-target">
         {{ t('banner.target') }}
         <template v-if="s.tab !== 'settings'" #actions>
           <Button size="small" severity="secondary" :label="t('common.openSettings')" @click="openSettings('conn-h')"><template #icon><OuiIcon :icon="settings" :size="14" /></template></Button>
         </template>
-      </OuiBanner>
+      </KcAlert>
       </div>
 
-      <OuiBanner :show="top === 'offline'" id="kc-why" tone="error" :title="t('target.offline.title')"
-                 dismissible :dismiss-key="`offline:${where}:${s.offline || s.error}`" :close-label="t('common.close')">
+      <KcAlert :show="top === 'offline'" id="kc-why" tone="error" :title="t('target.offline.title')"
+                 :dismiss-key="`offline:${where}:${s.offline || s.error}`">
         {{ t('target.offline.body', { printer: printerName, error: s.offline || s.error }) }}
         <span v-if="retryIn" class="oui-meta" data-test="retry-in">{{ t('target.retryIn', { n: retryIn }) }}</span>
         <template #actions>
           <Button v-if="s.tab !== 'settings'" size="small" severity="secondary" text :label="t('banner.connSettings')" @click="openSettings('conn-h')" />
           <Button size="small" severity="secondary" :label="t('common.retry')" @click="hello(true)"><template #icon><OuiIcon :icon="refresh" :size="14" /></template></Button>
         </template>
-      </OuiBanner>
+      </KcAlert>
 
-      <OuiBanner :show="top === 'connecting'" id="kc-why" tone="neutral" :title="t('target.connecting')"
-                 dismissible :dismiss-key="`connecting:${where}`" :close-label="t('common.close')" />
+      <KcAlert :show="top === 'connecting'" id="kc-why" tone="neutral" :title="t('target.connecting')"
+                 :dismiss-key="`connecting:${where}`" />
 
-      <OuiBanner :show="top === 'noStatus'" id="kc-why" tone="neutral" :title="t('reason.waiting') + '.'"
-                 dismissible :dismiss-key="`no-status:${where}`" :close-label="t('common.close')" />
+      <KcAlert :show="top === 'noStatus'" id="kc-why" tone="neutral" :title="t('reason.waiting') + '.'"
+                 :dismiss-key="`no-status:${where}`" />
 
       <!-- Keyed on the printer, not the status time: closed, it stays closed while the status stays stale. -->
-      <OuiBanner :show="top === 'stale'" tone="warn" :title="top === 'stale' ? t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''"
-                 dismissible :dismiss-key="`stale:${where}`" :close-label="t('common.close')" />
+      <KcAlert :show="top === 'stale'" tone="warn" :title="top === 'stale' ? t('target.stale', { age: fmt.ago(s.statusAt / 1000, s.now / 1000) }) : ''"
+                 :dismiss-key="`stale:${where}`" />
 
       <OuiBanner v-if="waitingPrint" tone="info" :icon="upload" :title="t('bridge.pending.title')" data-test="bridge-pending">
         {{ t('bridge.pending.body', { name: waitingPrint.name }) }}
@@ -112,17 +116,17 @@ const split = (text: string) => { const i = text.indexOf(': '); return i < 0 ? [
       </OuiBanner>
 
       <!-- Not part of the chain above: a changed printer certificate is shown on every tab until closed. -->
-      <OuiBanner :show="!!s.status?.tls?.changed_from" tone="warn" :icon="shieldCheck" :title="t('tls.changed.title')" data-test="tls-changed"
-                 dismissible :dismiss-key="`tls-changed:${s.status?.tls?.fingerprint}`" :close-label="t('common.close')">
+      <KcAlert :show="!!s.status?.tls?.changed_from" tone="warn" :icon="shieldCheck" :title="t('tls.changed.title')" data-test="tls-changed"
+                 :dismiss-key="`tls-changed:${s.status?.tls?.fingerprint}`">
         {{ t('tls.changed.body', { printer: printerName }) }}
-      </OuiBanner>
+      </KcAlert>
 
     </div>
 
     <section class="notices" :aria-label="t('msg.region')">
       <div role="status" aria-live="polite" class="kc-live">
-        <OuiBanner v-for="p in waiting" :key="'p-' + p.key" tone="neutral" :title="split(t('msg.waiting', { action: p.label }))[0]"
-                   dismissible :dismiss-key="`waiting:${p.key}:${p.startedAt}`" :close-label="t('common.close')">{{ split(t('msg.waiting', { action: p.label }))[1] }}</OuiBanner>
+        <KcAlert v-for="p in waiting" :key="'p-' + p.key" tone="neutral" :title="split(t('msg.waiting', { action: p.label }))[0]"
+                   :dismiss-key="`waiting:${p.key}:${p.startedAt}`">{{ split(t('msg.waiting', { action: p.label }))[1] }}</KcAlert>
       </div>
     </section>
   </div>

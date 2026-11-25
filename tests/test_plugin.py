@@ -1248,6 +1248,45 @@ class Page(Base):
         self.assertEqual(items["certificate"], {"id": "certificate", "state": "ok", "details": "bundled"})
         self.assertEqual(items["spooler"]["id"], "spooler")
 
+    def fake_service(self, host="", spoolman_url=""):
+        """A stand-in service: these tests never start a connection or a network search."""
+        conn = types.SimpleNamespace(retried=0)
+        conn.retry = lambda: setattr(conn, "retried", conn.retried + 1)
+        svc = types.SimpleNamespace(target=service.Target(host, spoolman_url=spoolman_url), connections={host: conn},
+                                    _ask_orcaslicer=mock.Mock())
+        return svc, conn
+
+    def test_allow_now_asks_orcaslicer_for_spoolman_host_wide_without_a_request(self):
+        """Check everything's Allow for Spoolman: the audited urllib.Request event for the bare scheme://host, raised on
+        the UI thread (OrcaSlicer shows its dialog inline and saves a Yes host-wide), no network I/O."""
+        page = self.page()
+        svc, _ = self.fake_service(spoolman_url="http://localhost:7912")
+        with mock.patch.object(plugin, "service", return_value=svc), mock.patch("sys.audit") as audit, \
+                mock.patch("urllib.request.urlopen", side_effect=AssertionError("I/O")):
+            page.on_message({"type": "allow_now", "id": 4, "what": "spoolman"})
+        audit.assert_called_once_with("urllib.Request", "http://localhost", None, {}, "GET")
+        self.assertEqual(page.posted[-1], {"type": "reply", "id": 4, "result": {"allowed": True}})
+        self.assertIn("http://localhost", plugin.get_store().effective()["spoolman_origins"])
+        with mock.patch.object(plugin, "service", return_value=svc), \
+                mock.patch("sys.audit", side_effect=PermissionError("audit permission required")):
+            page.on_message({"type": "allow_now", "id": 5, "what": "spoolman"})
+        self.assertEqual(page.posted[-1]["result"], {"allowed": False})
+
+    def test_allow_now_printer_asks_for_the_lan_address_only(self):
+        page = self.page()
+        svc, _ = self.fake_service("8.8.8.8")   # not a LAN address: never asked about
+        with mock.patch.object(plugin, "service", return_value=svc):
+            page.on_message({"type": "allow_now", "id": 6, "what": "printer"})
+        svc._ask_orcaslicer.assert_not_called()
+        self.assertEqual(page.posted[-1]["result"], {"allowed": False})
+        svc, conn = self.fake_service("192.0.2.50")
+        with mock.patch.object(plugin, "service", return_value=svc), mock.patch.object(plugin.locate, "lan_address", return_value=True):
+            page.on_message({"type": "allow_now", "id": 7, "what": "printer"})
+            page.on_message({"type": "allow_now", "id": 8, "what": "anything"})
+        svc._ask_orcaslicer.assert_called_once_with("192.0.2.50")
+        self.assertEqual(conn.retried, 1)   # tried again now with the new grant
+        self.assertEqual([m["result"] for m in page.posted[-2:]], [{"allowed": True}, {"allowed": False}])
+
     def test_allow_hosts_is_answered_on_the_calling_thread(self):
         page = self.page()
         page.on_message({"type": "allow_hosts", "id": 9, "hosts": ["8.8.8.8"]})   # not a pending LAN printer
