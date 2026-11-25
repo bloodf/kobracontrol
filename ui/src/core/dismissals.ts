@@ -3,10 +3,11 @@
  *  does not bring it back: a closed alert is forgotten only once its condition has been gone FORGET_AFTER_MS, so the
  *  same problem coming back later shows again. Kept for the session (sessionStorage: a reload of the tab included),
  *  in memory when the store refuses. */
+import { safeStorage, type KeyStore } from './storage.ts';
+
+export type { KeyStore };
 export const FORGET_AFTER_MS = 60_000;
 const PREFIX = 'kc-alert:';
-
-export interface KeyStore { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void }
 
 export function dismissals(store: KeyStore | null, now: () => number = Date.now) {
   const closed = new Set<string>();             // this page's closes, also when the store refuses
@@ -35,6 +36,5 @@ export function dismissals(store: KeyStore | null, now: () => number = Date.now)
   };
 }
 
-const session = (): KeyStore | null => { try { return sessionStorage; } catch { return null; } };
 /** The page's one list of closed alerts. */
-export const alerts = dismissals(typeof sessionStorage === 'undefined' ? null : session());
+export const alerts = dismissals(safeStorage('sessionStorage'));

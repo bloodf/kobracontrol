@@ -7,8 +7,10 @@ import { pl } from './locales/pl';
 import { interpolate, isLocale, pluralKey, resolveLocale, type LangPref, type Locale } from './i18n-core';
 import { makeFmt } from './format';
 import { boot } from './boot';
+import { safeStorage } from './storage.ts';
 
 const PREF_KEY = 'kobracontrol.lang';
+const local = safeStorage('localStorage');
 const dicts: Record<Locale, Record<MessageKey, string>> = { en, 'pt-BR': ptBR, es, de, 'zh-CN': zhCN, pl };
 
 // The explicit choice lives in the plugin's settings (boot "pref"); localStorage is only a fallback cache.
@@ -17,10 +19,8 @@ export function onLangPref(fn: (value: LangPref) => void): void { persist = fn; 
 function readPref(): LangPref {
   const fromHost = (boot as { pref?: unknown }).pref;
   if (isLocale(fromHost) || fromHost === 'auto') return fromHost;
-  try {
-    const v = localStorage.getItem(PREF_KEY);
-    return isLocale(v) ? v : 'auto';
-  } catch { return 'auto'; }
+  const v = local.getItem(PREF_KEY);
+  return isLocale(v) ? v : 'auto';
 }
 
 export const langPref = ref<LangPref>(readPref());
@@ -32,7 +32,7 @@ export function setHostLanguage(value: unknown): void { hostLang.value = value; 
 export function setLangPref(value: LangPref): void {
   langPref.value = value;
   persist(value);
-  try { if (value === 'auto') localStorage.removeItem(PREF_KEY); else localStorage.setItem(PREF_KEY, value); } catch { /* per-viewer only */ }
+  if (value === 'auto') local.removeItem(PREF_KEY); else local.setItem(PREF_KEY, value);
 }
 
 export function t(key: MessageKey, params?: Record<string, unknown>): string {

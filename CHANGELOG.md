@@ -3,6 +3,8 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+### Fixed
+- **The Kobra Control tab is no longer blank on Windows.** 0.13.0 remembers closed alerts in the tab's session storage, and some WebView2 setups deny the page its storage, so the page failed to start and showed nothing. Every use of the page's storage now goes through one guard: when storage is denied, closed alerts and the language choice are kept in memory for the open tab. Thanks to @jakubd73 for the report and for pinning down the cause (#91).
 
 ## [0.13.0] - 2026-11-25
 ### Added
