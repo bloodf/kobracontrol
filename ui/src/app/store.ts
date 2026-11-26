@@ -5,7 +5,7 @@ import { showToast } from '@orca-plugins/ui-foundation/src/components/toast';
 import { t, tMaybe } from '../core/i18n';
 import { cancelDialog } from '../core/dialog';
 import { autoRefresh, cleanEvery, userBusy, REFRESH_DEFAULT_S } from '../core/autorefresh';
-import { boundSlots } from '../core/logic';
+import { boundSlots, withPendingLinks } from '../core/logic';
 import { playable } from '../core/player';
 import type { Certificate, Config, Info, Limits, Located, PresetMatch, Requirement, RequirementId, Spool, Status, StockView, UsageView } from './types';
 
@@ -79,7 +79,7 @@ export interface LogLine { id: number; text: string; kind: 'in' | 'out' | 'err' 
 export const activity = ref<LogLine[]>([]);
 export const LOG_MAX = 1000;
 let logId = 0;
-const QUIET = new Set(['spools', 'device', 'connect', 'cloud_state']);
+const QUIET = new Set(['spools', 'spools:cache', 'device', 'connect', 'cloud_state']);
 export function note(text: string, kind: LogLine['kind'] = 'out'): void {
   const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   activity.value = [...activity.value, { id: ++logId, text: `${at}  ${text}`, kind }].slice(-LOG_MAX);
@@ -181,6 +181,7 @@ export async function hello(retry = false): Promise<void> {
     s.candidates = [];
     if (r.note && r.note !== lastNote) { lastNote = r.note; tracker.notify('info', r.note); }   // once: how it was found
     if (otherAgent.value && !agentNoted) { agentNoted = true; tracker.notify('info', t('agent.other', { agent: otherAgent.value })); }
+    void loadCachedSpools();   // the last list at once; the live read below replaces it
     void loadSpools(true);
   } catch (e) {
     if (epoch !== s.epoch) return;
@@ -237,6 +238,33 @@ export async function choosePrinter(c: bridge.Candidate): Promise<void> {
   if (r.ok) { s.candidates = []; void hello(); }   // chosen: the offer is answered
 }
 
+/** The last spool list the plugin read (memory, else its file), without Spoolman: the picker is usable at once and
+ *  the live read in loadSpools replaces it. Nothing is shown over a list that is already there. */
+async function loadCachedSpools(): Promise<void> {
+  if (!targetKnown.value || s.spools.length) return;
+  const epoch = s.epoch;
+  const r = await run({ key: 'spools:cache', label: t('act.spools'), cmd: 'spools_cache', quiet: true });
+  if (epoch !== s.epoch || !r.ok || s.spoolsLoaded || s.spools.length) return;
+  s.spools = r.result.spools ?? [];
+}
+
+// Links being written to Spoolman: slot -> spool id (null: unlinked). The slot shows them at once, over the plugin's statuses
+// that predate the write, until the write is answered.
+const pendingLinks = new Map<number, number | null>();
+/** Link a spool to a slot (null: unlink) and show it now; the slot goes back when Spoolman refuses. */
+export async function linkSpool(slot: number, spoolId: number | null, o: Pick<RunOptions, 'label' | 'okText'>) {
+  const was = s.status?.slots.find(sl => sl.global_index === slot)?.spool_id ?? null;
+  pendingLinks.set(slot, spoolId);
+  if (s.status) s.status = withPendingLinks(s.status, pendingLinks);
+  const r = await run({ key: `bind:${slot}`, ...o, cmd: spoolId ? 'bind' : 'unbind', args: spoolId ? { slot, spool_id: spoolId } : { slot }, timeoutMs: 60000 });
+  pendingLinks.delete(slot);
+  if (!r.ok) {
+    if (s.status) s.status = { ...s.status, slots: s.status.slots.map(sl => (sl.global_index === slot ? { ...sl, spool_id: was } : sl)) };
+    void loadSpools(true);
+  }
+  return r;
+}
+
 /** Spools and slot links from Spoolman; false when the read failed. */
 export async function loadSpools(quiet: boolean): Promise<boolean> {
   if (!targetKnown.value) return true;
@@ -287,7 +315,7 @@ function onMessage(m: any): void {
   switch (m.type) {
     case 'status':
       if (s.info && typeof m.gen === 'number' && m.gen !== s.info.generation) break;   // the printer before a switch
-      s.status = m.data; s.statusAt = Date.now();
+      s.status = withPendingLinks(m.data, pendingLinks); s.statusAt = Date.now();
       if (m.data?.limits) s.limits = { ...LIMITS, ...m.data.limits };   // per model: a Kobra 3 bed stops at 110
       if (m.data?.connected === true) keepHistory(m.data);
       if (m.data?.connected === true) s.offline = '';   // a disconnected status is followed by its 'offline' message

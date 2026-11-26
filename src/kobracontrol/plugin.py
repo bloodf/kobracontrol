@@ -41,6 +41,7 @@ AGENT_NAME = "Anycubic (kobracontrol)"   # the id stays "kobracontrol": existing
 MODEL = "Anycubic Kobra X"                # the model shown before a printer answers (the first supported one)
 TLS_DIR = "tls"          # never "cert(s)": the plugin sandbox refuses such path components
 LEDGER_FILE = "usage_ledger.json"
+SPOOLS_FILE = "spools.json"   # the last Spoolman list, shown at once while the live one is read
 ADDRESSES_FILE = "addresses.json"   # printer preset -> the Kobra X found for it (locate.Addresses)
 CHECK_SECONDS = 20.0                # Check Kobra X connection: locating and connecting together
 _granted = set()   # printer addresses declared at load or allowed since: the search probes only these by itself
@@ -271,6 +272,7 @@ def service(publish=None):
             folder = _storage()
             _service = Service(publish or (lambda m: None), log, cert_dir=cert_dir(),
                                ledger_path=os.path.join(folder, LEDGER_FILE) if folder else None,
+                               spools_path=os.path.join(folder, SPOOLS_FILE) if folder else None,
                                addresses_path=os.path.join(folder, ADDRESSES_FILE) if folder else None, granted=_granted,
                                **_service_options)
         elif publish is not None:

@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import Select from 'primevue/select';
 import { fuzzyFilter, longList, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
 import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
-import { s, run, tracker, busy, controlsOff, printerName, loadSpools, stale, whyId as pageWhy, pickPreset } from '../app/store';
+import { s, run, tracker, busy, controlsOff, printerName, linkSpool, stale, whyId as pageWhy, pickPreset } from '../app/store';
 import { reasonTexts } from '../core/match';
 import type { MessageKey } from '../core/messages';
 import { ask } from '../core/dialog';
@@ -120,14 +120,11 @@ async function choose(id: number | null) {
     const was = sl.spool_id;
     if (was == null) return;
     if (!await ask({ title: t('act.unbind', { slot: slotName }), text: t('confirm.unbind.text', { id: was, slot: slotName }), yes: t('confirm.unbind.yes'), no: t('common.goBack') })) return;
-    const r = await run({ key: `bind:${sl.global_index}`, label: t('act.unbind', { slot: slotName }), cmd: 'unbind', args: { slot: sl.global_index }, okText: t('ok.unbind', { slot: slotName }) });
-    if (!r.ok) void loadSpools(true);
+    await linkSpool(sl.global_index, null, { label: t('act.unbind', { slot: slotName }), okText: t('ok.unbind', { slot: slotName }) });
     return;
   }
   if (!await ask({ title: t('act.bind', { slot: slotName }), text: t('confirm.bind.text', { slot: slotName, id }), yes: t('confirm.bind.yes', { slot: slotName }), no: t('common.goBack') })) return;
-  const r = await run({ key: `bind:${sl.global_index}`, label: t('act.bind', { slot: slotName }), cmd: 'bind', args: { slot: sl.global_index, spool_id: id },
-    okText: t('ok.bind', { slot: slotName, id }), timeoutMs: 60000 });
-  if (!r.ok) void loadSpools(true);
+  await linkSpool(sl.global_index, id, { label: t('act.bind', { slot: slotName }), okText: t('ok.bind', { slot: slotName, id }) });
 }
 
 // Change's candidate list floats over the card (see .sl-match CSS). Once it opens, give it the room the viewport has: below the
