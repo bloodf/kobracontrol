@@ -9,7 +9,7 @@ export interface Status {
   camera_url?: string;   // the printer's stream: rtsp:// needs ffmpeg, http:// plays in the page
   connected: boolean; state: string; preparing: boolean; kobra_state: string; printer_name: string; model: string; firmware: string;
   filename: string; progress: number; layer: number; total_layers: number; elapsed_s: number; remaining_s: number; task_id: string;
-  nozzle_temp: number; nozzle_target: number; bed_temp: number; bed_target: number; fan_pct: number; light_on: boolean; speed_mode: number;
+  nozzle_temp: number; nozzle_target: number; bed_temp: number; bed_target: number; chamber_temp?: number | null; chamber_target?: number | null; fan_pct: number; light_on: boolean; speed_mode: number;
   storage: { total?: number; used?: number };
   skipped_objects: string[]; pause_reason: { code?: number; msg?: string } | null; last_error: { msg?: string; code?: number } | null;
   phase_unit?: number | null; phase_channel?: number | null; box_set_failed: boolean; updated_at: number;
