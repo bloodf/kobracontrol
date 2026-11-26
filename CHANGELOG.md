@@ -3,8 +3,13 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+
+## [0.14.0] - 2026-11-26
 ### Added
 - **Chamber temperature on the Kobra S1 Max.** The Controls and Temperatures widgets show the chamber's current temperature (and target, when set) once the printer reports it. Read only for now: setting the chamber target is not confirmed in any public protocol reference. Asked for in #90.
+
+### Fixed
+- **The external spool shows as a slot when no ACE is attached.** Printers without an ACE now list the external spool as a slot (#89).
 
 ## [0.13.2] - 2026-11-25
 ### Fixed
