@@ -165,9 +165,12 @@ class PushStatus(unittest.TestCase):
         self.assertEqual(self.push(view(features={"auto_leveling_support": True}))["support_bed_leveling"], 1)
         self.assertEqual(self.push()["support_bed_leveling"], 1)   # not reported: no guess against it
 
-    def test_no_boxes_no_ams(self):
-        self.assertEqual(self.push()["ams"], {"ams": [], "ams_exist_bits": "0", "tray_exist_bits": "0",
-                                              "calibrate_remain_flag": False})
+    def test_no_boxes_external_spool_only(self):
+        """No ACE, no reported holder slot: the external spool is the one tray OrcaSlicer can pick."""
+        ams = self.push()["ams"]
+        self.assertEqual([(u["id"], u["display_name"], u["tray"][0]["id"]) for u in ams["ams"]],
+                         [("0", "Spool holder", "0")])
+        self.assertEqual((ams["ams_exist_bits"], ams["tray_exist_bits"]), ("1", "1"))
 
     def test_hub_mode_ace_then_spool_holder(self):
         """The 3 spool-holder positions (box -1) and the 4 ACE slots: 7 sources in two 4-tray units, the ACE first."""
