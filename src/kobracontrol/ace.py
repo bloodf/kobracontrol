@@ -14,7 +14,7 @@ holder; ids >= 0 are ACE units. With an ACE connected the head's fourth inlet
 carries the ACE, so the holder has 3 positions: 3 + 4 sources with one ACE.
 
 Filament mode (`detect_filament_mode`):
-    "toolhead"   only the head box (or nothing).
+    "toolhead"   only the head box (or nothing); the external spool is always one slot at least.
     "ace_direct" ACE units only; the printer is fed straight from the ACE.
     "ace_hub"    head box and ACE units together.
 
@@ -169,6 +169,10 @@ def aggregate_slots(boxes, mode):
                 slots.append(_to_slot(s, i, -1, 0, i))
             if _num(head.get("loaded_slot"), -1) >= 0:
                 loaded = _num(head["loaded_slot"])
+        if not slots:
+            # No ACE and the printer lists no holder slot (a Kobra S1 Max reports none): the external spool
+            # is still a filament source. One slot, ready: there is no sensor to say otherwise.
+            slots.append(_to_slot({"status": READY_STATUS}, 0, -1, 0, 0))
         return slots, loaded
 
     if mode == "ace_direct":

@@ -40,8 +40,15 @@ class DetectMode(unittest.TestCase):
 
 
 class AggregateSlots(unittest.TestCase):
-    def test_no_boxes(self):
-        self.assertEqual(ace.aggregate_slots([], "toolhead"), ([], -1))
+    def test_no_boxes_external_spool_is_one_slot(self):
+        for boxes in ([], [box(-1, [])]):   # no report at all, or a holder box without slots (Kobra S1 Max, no ACE)
+            slots, loaded = ace.aggregate_slots(boxes, "toolhead")
+            self.assertEqual(loaded, -1)
+            self.assertEqual([(s["global_index"], s["box_id"], s["index"]) for s in slots], [(0, -1, 0)])
+            self.assertTrue(ace.slot_usable_for_print(slots[0], "toolhead"))
+            self.assertEqual(ace.tray_id(slots[0]), 0)
+            m, problems = ace.mapping_from_trays([0], [{"colour": "#FF0000", "type": "PLA"}], slots, "toolhead")
+            self.assertEqual((problems, [e["ams_index"] for e in m]), ([], [0]))
 
     def test_head_only(self):
         slots, loaded = ace.aggregate_slots([HEAD], "toolhead")
