@@ -297,6 +297,7 @@ export const es: Record<MessageKey, string> = {
 
   'temps.nozzle': "Boquilla",
   'temps.bed': "Cama",
+  'temps.chamber': "Cámara",
   'temps.target': "Temperatura objetivo de {heater}",
   'temps.set': "Fijar",
   'temps.setFor': "Fijar objetivo de {heater}",

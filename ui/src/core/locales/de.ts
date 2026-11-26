@@ -285,6 +285,7 @@ export const de: Record<MessageKey, string> = {
   'phase.ace_filament_unfeeding': "Filament wird zurückgezogen",
   'temps.nozzle': "Düse",
   'temps.bed': "Druckbett",
+  'temps.chamber': "Kammer",
   'temps.target': "{heater}: Zieltemperatur",
   'temps.set': "Setzen",
   'temps.setFor': "{heater}: Ziel setzen",

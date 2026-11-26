@@ -305,6 +305,7 @@ export const pl: Record<PolishKey, string> = {
 
   'temps.nozzle': 'Dysza',
   'temps.bed': 'Stół',
+  'temps.chamber': 'Komora',
   'temps.target': 'Temperatura docelowa: {heater}',
   'temps.set': 'Ustaw',
   'temps.setFor': 'Ustaw temperaturę docelową: {heater}',

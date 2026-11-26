@@ -28,6 +28,12 @@ const speedDraft = ref<number | null>(null);
 const speedOptions = computed(() => SPEED_MODES.map(n => ({ value: n, label: t(`speed.mode.${n}` as 'speed.mode.1') })));
 const speedNow = computed(() => (st.value?.speed_mode ? tMaybe(`speed.mode.${st.value.speed_mode}`, t('speed.modeN', { n: st.value.speed_mode })) : '—'));
 const speedWhy = computed(() => controlsOff.value || (!printing.value ? t('reason.noPrint') : ''));
+const chamberNow = computed(() => {
+  const c = st.value?.chamber_temp;
+  if (!reported.value || c == null) return '—';
+  const target = st.value?.chamber_target;
+  return fmt.number(c, 1) + ' °C' + (target ? ' · ' + t('temps.targetIs', { target: fmt.number(target, 0) }) : '');
+});
 const fanNow = computed(() => (reported.value && st.value ? fmt.percent(st.value.fan_pct) : '—'));
 async function setSpeed() {
   const mode = speedDraft.value;
@@ -55,6 +61,8 @@ const setLight = (on: boolean) => run({ key: 'light', label: t('act.light'), cmd
         <p class="oui-label">{{ t('controls.temperature') }}</p>
         <HeaterControl id="nozzle" :off="heatOff" :why-id="whyId(busy.heat)" />
         <HeaterControl id="bed" :off="heatOff" :why-id="whyId(busy.heat)" />
+        <!-- Read only: the S1 Max's chamber heater; no set command is confirmed. Shown only once the printer reports a chamber. -->
+        <OuiControlRow v-if="st.chamber_temp != null" :label="t('temps.chamber')" :icon="thermometer" tone="orange" :value="chamberNow" data-chamber-row />
       </div>
 
       <div class="oui-controls-group">

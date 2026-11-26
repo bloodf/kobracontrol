@@ -301,6 +301,8 @@ Observed on firmware 2.0.2.8:
   about 23 to 41 s; `info` state is `busy` meanwhile.
 - Jog: `axis` 1 = X, 2 = Y, 3 = Z; `move_type` 1 = plus, 0 = minus.
 - Heating when idle: `tempature/set` with `type` 2 and `target_nozzle_temp` / `target_hotbed_temp`.
+- Chamber (S1 Max): the `temp` object also carries `curr_chamber_temp` and `target_chamber_temp` (field names from the
+  anycubic-cloud-api tests; a Kobra S1 sends zeroes). The plugin shows them read only; no chamber set command is confirmed.
 
 ## Camera
 

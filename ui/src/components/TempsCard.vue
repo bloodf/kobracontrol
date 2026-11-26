@@ -14,6 +14,7 @@ const target = (v?: number) => (!reported.value ? undefined : v ? t('temps.targe
 const items = computed(() => [
   props.config.nozzle !== false && { id: 'nozzle', icon: nozzle, label: t('temps.nozzle'), value: deg(st.value?.nozzle_temp), unit: '°C', sub: target(st.value?.nozzle_target), history: s.history.nozzle },
   props.config.bed !== false && { id: 'bed', icon: bed, label: t('temps.bed'), value: deg(st.value?.bed_temp), unit: '°C', sub: target(st.value?.bed_target), history: s.history.bed },
+  st.value?.chamber_temp != null && { id: 'chamber', icon: thermometer, label: t('temps.chamber'), value: deg(st.value.chamber_temp), unit: '°C', sub: target(st.value.chamber_target ?? undefined), history: undefined },
   props.config.fan !== false && { id: 'fan', icon: fan, label: t('fan.label'), value: reported.value && st.value ? Math.round(st.value.fan_pct) : null, unit: '%', sub: undefined, history: undefined },
 ].filter(x => !!x));
 </script>

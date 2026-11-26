@@ -285,6 +285,7 @@ export const zhCN: Record<MessageKey, string> = {
   'phase.ace_filament_unfeeding': "退料中",
   'temps.nozzle': "喷嘴",
   'temps.bed': "热床",
+  'temps.chamber': "腔体",
   'temps.target': "{heater}目标温度",
   'temps.set': "设置",
   'temps.setFor': "设置{heater}目标温度",
