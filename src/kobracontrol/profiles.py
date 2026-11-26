@@ -33,7 +33,7 @@ PROFILES = {
     "20025": dict(name="Anycubic Kobra S1", nozzle_max=320, bed_max=120, bed=(250, 250, 250), feeder="ace",
                   camera="flv", lan=True, single_client=True, verified=False),
     "20029": dict(name="Anycubic Kobra S1 Max", nozzle_max=350, bed_max=120, bed=(350, 350, 350), feeder="ace",
-                  camera="flv", lan=True, single_client=True, verified=False),
+                  chamber=True, camera="flv", lan=True, single_client=True, verified=False),
     "20028": dict(name="Anycubic Kobra 4", nozzle_max=300, bed_max=100, bed=(260, 260, 260), feeder="ace",
                   camera="flv", lan=True, single_client=True, verified=False),
     "20021": dict(name="Anycubic Kobra 2 Pro", nozzle_max=260, bed_max=110, bed=(220, 220, 250), feeder="",

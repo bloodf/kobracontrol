@@ -298,6 +298,7 @@ export const en = {
 
   'temps.nozzle': 'Nozzle',
   'temps.bed': 'Bed',
+  'temps.chamber': 'Chamber',
   'temps.target': '{heater} target temperature',
   'temps.set': 'Set',
   'temps.setFor': 'Set {heater} target',
@@ -1206,6 +1207,7 @@ export const ptBR: Record<MessageKey, string> = {
 
   'temps.nozzle': 'Bico',
   'temps.bed': 'Mesa',
+  'temps.chamber': 'Câmara',
   'temps.target': 'Temperatura alvo de {heater}',
   'temps.set': 'Definir',
   'temps.setFor': 'Definir alvo de {heater}',

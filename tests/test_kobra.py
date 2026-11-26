@@ -1228,6 +1228,20 @@ class StateTests(unittest.TestCase):
         for bad in ("--3", "-", "", "3.0", "1e2", "+3", "\u0663", "3-", True, None, 1.5, [3]):
             self.assertIsNone(kobra._int(bad), repr(bad))
 
+    def test_chamber_temp_only_for_a_model_with_a_chamber_heater(self):
+        """Field names curr/target_chamber_temp: anycubic-cloud-api tests (LAN tempature report). A Kobra S1 sends zeroes."""
+        temp = {"curr_nozzle_temp": 25, "curr_chamber_temp": 41, "target_chamber_temp": 50}
+        self.assertEqual((self.apply("tempature/report", temp)["chamber_temp"]), None)   # Kobra X: no chamber
+        self.s.set_model("20025", "Anycubic Kobra S1")
+        self.assertIsNone(self.apply("tempature/report", temp)["chamber_temp"])
+        self.s.set_model("20029", "Anycubic Kobra S1 Max")
+        v = self.apply("tempature/report", {"curr_nozzle_temp": 25})   # a partial report is not a chamber report
+        self.assertEqual((v["chamber_temp"], v["chamber_target"]), (None, None))
+        v = self.apply("tempature/report", temp)
+        self.assertEqual((v["chamber_temp"], v["chamber_target"]), (41, 50))
+        v = self.apply("tempature/report", {"curr_chamber_temp": 42})   # the target is kept
+        self.assertEqual((v["chamber_temp"], v["chamber_target"]), (42, 50))
+
     def test_info_report(self):
         v = self.apply("info/report", {
             "printerName": "Kobra", "version": "2.1", "state": "free", "fan_speed_pct": 30, "print_speed_mode": 2,

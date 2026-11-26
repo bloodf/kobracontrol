@@ -41,6 +41,8 @@ State.view() returns one JSON-serialisable dict with exactly these keys (VIEW_KE
   layer, total_layers, elapsed_s, remaining_s         numbers (printer reports minutes; converted to s)
   task_id          str ("" unknown; pass it to pause/resume/stop and print/update helpers)
   nozzle_temp, nozzle_target, bed_temp, bed_target    numbers, deg C
+  chamber_temp, chamber_target  numbers, deg C; None unless the model has a chamber heater (profiles "chamber")
+                   and the printer has reported curr_chamber_temp (read only: no set command is confirmed)
   aux_fan_pct      number 0-100 (info aux_fan_speed_pct)
   phase_unit, phase_channel  ints (1-based ACE unit and slot) from the last job print/report, during the
                    ace_filament_unfeeding/feeding and nozzle_purging slot checks; None when it carried none
@@ -94,6 +96,7 @@ from dataclasses import dataclass
 
 import aes
 import mqtt
+import profiles
 from i18n import tr
 
 log = logging.getLogger(__name__)
@@ -758,7 +761,7 @@ def print_file_payload(filename, size, mapping, task=None):
 # state reducer -------------------------------------------------------------------------------------
 VIEW_KEYS = ("connected", "state", "preparing", "box_set_failed", "camera_url_rev", "kobra_state", "printer_name", "model", "firmware", "filename", "progress",
              "layer", "total_layers", "elapsed_s", "remaining_s", "task_id", "nozzle_temp", "nozzle_target",
-             "bed_temp", "bed_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
+             "bed_temp", "bed_target", "chamber_temp", "chamber_target", "fan_pct", "light_on", "light_brightness", "speed_mode", "multi_color_box",
              "head_tools_model", "files", "file_details", "upload_url", "camera_url", "camera_urls",
              "camera_active", "storage", "skipped_objects", "pause_reason", "last_error", "updated_at", "last_job", "aux_fan_pct",
              "features", "last_project", "phase_unit", "phase_channel", "mac", "stats", "assist", "mode_id")
@@ -943,7 +946,7 @@ class State:
         self._v = {
             "kobra_state": "", "printer_name": "", "model": model, "firmware": "", "filename": "", "progress": 0,
             "layer": 0, "total_layers": 0, "elapsed_s": 0, "remaining_s": 0, "task_id": "", "nozzle_temp": 0,
-            "nozzle_target": 0, "bed_temp": 0, "bed_target": 0, "fan_pct": 0, "light_on": False,
+            "nozzle_target": 0, "bed_temp": 0, "bed_target": 0, "chamber_temp": None, "chamber_target": None, "fan_pct": 0, "light_on": False,
             "light_brightness": 80, "speed_mode": 0, "multi_color_box": [], "head_tools_model": None, "files": [],
             "file_details": {}, "upload_url": "", "camera_url": "", "camera_urls": {}, "camera_active": False,
             "storage": {}, "skipped_objects": [], "pause_reason": None, "last_error": None, "updated_at": 0.0,
@@ -1112,6 +1115,11 @@ class State:
                                ("curr_hotbed_temp", "bed_temp"), ("target_hotbed_temp", "bed_target")):
                 if key in d:   # a partial report keeps the rest: a missing target is not a heater turned off
                     self._v[field] = _num(d[key])
+            # Only a model with a chamber heater: a Kobra S1 sends zeroes for these (no sensor).
+            if "curr_chamber_temp" in d and (profiles.get(self._v["mode_id"]) or {}).get("chamber"):
+                self._v["chamber_temp"] = _num(d["curr_chamber_temp"])
+                if "target_chamber_temp" in d:
+                    self._v["chamber_target"] = _num(d["target_chamber_temp"])
 
     def _on_temp(self, p, d):
         self._temps(d)
