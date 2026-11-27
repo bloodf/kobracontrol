@@ -4,7 +4,7 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
-## [Unreleased]
+## [0.14.1] - 2026-11-27
 ### Changed
 - **Choosing a spool is instant.** The spool list is kept (in memory and in the plugin's storage), so a new tab or a restart shows the picker at once while Spoolman is read in the background, and it stays usable when Spoolman is slow or unreachable. Linking a spool shows on the slot right away and goes back if Spoolman refuses; it no longer re-reads the whole list, probes Spoolman before every write, or waits behind a Spoolman read or a feed on the plugin's command queue. The picker lists Spoolman's spools only (Kobra Control's own Spoolman address, else the one Spooler uses).
 
