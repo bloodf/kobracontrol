@@ -27,7 +27,7 @@ A Dashboard you can rearrange: status, temperatures, pause, resume, stop, light,
 
 ![Manage the filament in each slot](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-03-ace-en.png)
 
-ACE slots with feed, retract and drying, each linked to a Spoolman spool. Each slot shows the OrcaSlicer preset it reports, and you can pick another. Open Filament Database presets are opt-in.
+ACE slots with feed, retract and drying, each linked to a Spoolman spool. Each slot shows the OrcaSlicer preset it reports, and you can pick another.
 
 ![Choose files before you print](https://raw.githubusercontent.com/bloodf/kobracontrol/main/assets/orca-cloud/kobracontrol-feature-04-files-en.png)
 

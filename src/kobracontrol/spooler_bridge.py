@@ -244,7 +244,7 @@ def load_stores(paths):
 def match_context(presets, label, users, profiles, stores, file_ids, log=None, own=()):
     """What slot_match needs, read once: the presets a slot can be reported as, {name: filament_id}. presets: Spooler's
     preset meta compatible with the printer; users: the user's own presets ({"name", "compatible", "file", "inherits"});
-    own: the presets of Kobra Control's own OFD bundle compatible with the printer ({"name", "file"})."""
+    own: the presets already in Kobra Control's own OFD bundle (OFD_BUNDLE) compatible with the printer ({"name", "file"})."""
     spooler_ids = {_bare(str(k)).casefold(): v for k, v in ((profiles or {}).get("ids") or {}).items() if isinstance(v, str) and v}
     ids = {p["name"]: spooler_ids[_bare(p["name"]).casefold()] for p in presets if _bare(p["name"]).casefold() in spooler_ids}
     for user in list(users or ()) + [{**p, "compatible": True, "inherits": ""} for p in own or ()]:
@@ -252,22 +252,6 @@ def match_context(presets, label, users, profiles, stores, file_ids, log=None, o
         if fid:
             ids[user["name"]] = fid
     return {"presets": presets, "label": label, "users": users or [], "profiles": profiles, "stores": stores, "ids": ids}
-
-
-def ofd_folder(storage):
-    """The folder the Open Filament Database's index is kept in: Spooler's (shared) while Spooler is installed, else
-    this plugin's own; "" when there is none."""
-    folder = data_dir(storage)
-    if folder and os.path.isfile(os.path.join(folder, SETTINGS_FILE)):
-        return os.path.join(folder, filmatch.OFD_DIR)
-    return os.path.join(storage, filmatch.OFD_DIR) if storage else ""
-
-
-def slot_ofd(profiles, slot, spool):
-    """OFD presets for what a slot holds: its spool's (or the slot's own) manufacturer and material."""
-    vendor = (spool or {}).get("vendor") or slot.get("brand") or ""
-    name = " ".join(str(x) for x in ((spool or {}).get("name"), slot.get("material_name")) if x)
-    return filmatch.rank_ofd(profiles, vendor, str(slot.get("type") or ""), name, MATCH_CHOICES)
 
 
 def _slot_colour(slot):
@@ -333,37 +317,8 @@ def remember_slot(ctx, slot, spool, name, paths, write):
     filmatch.remember(write, {match["keys"][0]: name}, ctx["label"])
 
 
-# --- Installing an OFD preset (a slot card's Change) -----------------------------------------------------------------
-# With Spooler installed and a Spoolman spool on the slot, Spooler installs it: Kobra Control remembers "ofd:<id>" as
-# the parent of that spool's filament in Spooler's matches.json, and Spooler's preset of the filament then carries OFD's
-# values (and its own filament_id, which the slot reports). Otherwise Kobra Control installs it itself: flattened with a
-# filament_id of its own into its own local bundle OFD_BUNDLE, never a user's preset folder or another plugin's bundle.
+# --- Kobra Control's own Open Filament Database bundle --------------------------------------------------------------
+# Earlier versions installed Open Filament Database presets into this local bundle; nothing installs into it now (OFD
+# lives in Spooler's Add spool), but presets already there are read for their filament_id so a slot remembered on one
+# ("_local/kobracontrol_ofd/<name>") keeps reporting it.
 OFD_BUNDLE = "kobracontrol_ofd"
-OFD_ID_PREFIX = "KOD"   # no OrcaSlicer system id starts with it (theirs: OF..., GF..., ...); Spooler's: SPL; U1 Control's: UOD
-
-
-def install_ofd(storage, slot, spool, ofd_id, parent_config, label, reload, version, user_files=()):
-    """Install the OFD preset ofd_id for what slot holds (see above); returns ("spooler", spool id) when Spooler will,
-    else ("own", preset name as it is written). parent_config: the settings of the OFD preset's parent read on the UI
-    thread ({key: text}; None when OrcaSlicer has no such system preset). Raises ValueError with the reason."""
-    folder = ofd_folder(storage)
-    profiles = filmatch.ofd_index(folder)["profiles"] if folder else []
-    vendor = (spool or {}).get("vendor") or slot.get("brand") or ""
-    if not any(r["id"] == ofd_id for r in filmatch.rank_ofd(profiles, vendor, str(slot.get("type") or ""), "", 0)):
-        raise ValueError("not a proposal for this slot")
-    entry = next(p for p in profiles if p["id"] == ofd_id)
-    preset, problem = filmatch.ofd_preset(folder, entry, parents={entry["inherits"]} if parent_config else set())
-    if problem:
-        raise ValueError(problem)
-    shared = data_dir(storage)
-    if shared and os.path.isfile(os.path.join(shared, SETTINGS_FILE)) and (spool or {}).get("filament_id") is not None:
-        filmatch.remember(os.path.join(shared, filmatch.MATCHES_FILE), {"filament:%s" % spool["filament_id"]: "ofd:" + ofd_id})
-        return "spooler", spool.get("id")
-    root = os.path.dirname(shared) if shared else ""
-    if not root:
-        raise ValueError("no OrcaSlicer data folder")
-    name = filmatch.safe_preset_name(preset["name"])
-    flat = filmatch.flatten_ofd(preset, parent_config, filmatch.own_filament_id(OFD_ID_PREFIX, ofd_id), name)
-    filmatch.install_bundle(root, filmatch.user_folders(root, user_files), OFD_BUNDLE, "Kobra Control (Open Filament Database)",
-                            version, {name + ".json": flat}, reload)
-    return "own", name

@@ -226,86 +226,46 @@ class SlotMatchTests(unittest.TestCase):
         self.assertEqual(sb.match_paths(storage), ([shared, own], shared))
 
 
-class SlotOfdTests(unittest.TestCase):
-    """Open Filament Database proposals for a slot, from the index kept in Spooler's folder (Spooler installed) or this
-    plugin's own."""
-
-    def test_proposals_and_folder(self):
-        with open(os.path.join(os.path.dirname(__file__), "fixtures", "ofd_index.json"), encoding="utf-8") as f:
-            profiles = sb.filmatch.ofd_profiles(json.load(f))
-        slot = {"global_index": 0, "type": "PLA", "color": [0, 0, 0], "brand": "", "material_name": ""}
-        self.assertEqual(sb.slot_ofd(profiles, slot, None), [])   # no manufacturer known: nothing to propose
-        found = sb.slot_ofd(profiles, slot, {"vendor": "Polymaker", "name": "Panchroma Matte Black"})
-        self.assertEqual(found[0]["name"], "Polymaker Dual Panchroma Matte PLA (OFD)")
-        self.assertEqual(sb.slot_ofd(profiles, {**slot, "brand": "eSUN"}, None)[0]["brand"], "eSUN 3D")
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        storage = os.path.join(tmp, "orca_plugins", "plugin_data", "kobracontrol")
-        self.assertEqual(sb.ofd_folder(storage), os.path.join(storage, "ofd"))
-        os.makedirs(os.path.join(tmp, sb.DATA_SUBDIR))
-        with open(os.path.join(tmp, sb.DATA_SUBDIR, sb.SETTINGS_FILE), "w", encoding="utf-8") as f:
-            f.write("{}")
-        self.assertEqual(sb.ofd_folder(storage), os.path.join(tmp, sb.DATA_SUBDIR, "ofd"))
-        self.assertEqual(sb.ofd_folder(""), "")
-
-
-class InstallOfdTests(unittest.TestCase):
-    """An OFD preset picked on a slot card: Spooler installs it for a Spoolman spool while Spooler is installed, else
-    Kobra Control writes it, flattened with a KOD filament_id, into its own bundle; the slot then reports that id."""
-    OFD_ID = "f6670de4-545e-537e-8152-fd09f7e5ff37"   # Polymaker Draft PLA (OFD), inherits Generic PLA @System
+class OldOfdMatchTests(unittest.TestCase):
+    """Kobra Control no longer reads or installs Open Filament Database presets. What an earlier version left keeps
+    working: a preset in its own OFD bundle is an installed preset like any other, and an "ofd:<id>" remembered for a
+    slot (Spooler installs those, Kobra Control has no such preset) falls back to the automatic choice without an error."""
+    LABEL = "Anycubic Kobra X"
 
     def setUp(self):
-        self.root = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.root, True)
-        self.storage = os.path.join(self.root, "orca_plugins", "plugin_data", "kobracontrol")
-        os.makedirs(self.storage)
-        with open(os.path.join(os.path.dirname(__file__), "fixtures", "ofd_index.json"), "rb") as f:
-            index = f.read()
-        profile = next(p for p in json.loads(index)["profiles"] if p["id"] == self.OFD_ID)
-        self.preset = {"name": profile["profile_name"], "inherits": profile["inherits"], "from": "User", "version": "2.0.2.0",
-                       "filament_type": ["PLA"], "nozzle_temperature": ["215"]}
-        original = sb.filmatch._ofd_get
-        sb.filmatch._ofd_get = lambda url, headers=None: (200, index if url.endswith("index.json") else json.dumps(self.preset).encode(), {})
-        self.addCleanup(setattr, sb.filmatch, "_ofd_get", original)
-        self.reloads = []
-        self.slot = {"global_index": 0, "type": "PLA", "color": [255, 255, 255], "brand": "Polymaker", "material_name": ""}
-        self.config = {"nozzle_temperature": "200", "filament_flow_ratio": "0.98", "filament_id": "OFDSrzZ8"}
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, "matches.json")
+        self.slot = {"global_index": 0, "type": "PLA", "color": [255, 0, 0], "sku": "", "rfid": None, "brand": ""}
+        self.preset = os.path.join(self.tmp, "Polymaker Draft PLA (OFD).json")
+        with open(self.preset, "w", encoding="utf-8") as f:
+            json.dump({"name": "Polymaker Draft PLA (OFD)", "inherits": "", "filament_id": "KODf6670de4"}, f)
+        self.own = [{"name": "_local/%s/Polymaker Draft PLA (OFD)" % sb.OFD_BUNDLE, "file": self.preset}]
 
-    def install(self, spool=None, config="default"):
-        return sb.install_ofd(self.storage, self.slot, spool, self.OFD_ID, self.config if config == "default" else config,
-                              "Anycubic Kobra X", self.reloads.append, "1.0")
+    def ctx(self, own=()):
+        return sb.match_context([], self.LABEL, [], {}, sb.load_stores([self.path]), {}, None, own)
 
-    def test_own_bundle(self):
-        self.assertEqual(self.install(), ("own", "Polymaker Draft PLA (OFD)"))
-        self.assertEqual(self.reloads, [sb.OFD_BUNDLE])
-        path = os.path.join(self.root, "user", "default", "_local", sb.OFD_BUNDLE, "filament", "Polymaker Draft PLA (OFD).json")
-        with open(path, encoding="utf-8") as f:
-            written = json.load(f)
-        self.assertEqual((written["inherits"], written["filament_id"][:3], written["nozzle_temperature"]), ("", "KOD", ["215"]))
-        # listed by OrcaSlicer, remembered for the slot: the slot reports its id
-        own = [{"name": "_local/%s/Polymaker Draft PLA (OFD)" % sb.OFD_BUNDLE, "file": path}]
-        store = os.path.join(self.storage, "matches.json")
-        sb.filmatch.remember(store, {"mat:polymaker|pla|": own[0]["name"]}, "Anycubic Kobra X")
-        ctx = sb.match_context([], "Anycubic Kobra X", [], {}, sb.load_stores([store]), {}, own=own)
-        m = sb.slot_match(ctx, self.slot, None)
-        self.assertEqual((m["source"], m["id"]), ("remembered", written["filament_id"]))
+    def test_a_preset_installed_into_the_own_bundle_keeps_reporting(self):
+        sb.filmatch.remember(self.path, {"mat:|pla|": self.own[0]["name"]}, self.LABEL)
+        m = sb.slot_match(self.ctx(self.own), self.slot, None)
+        self.assertEqual((m["name"], m["id"], m["source"]), (self.own[0]["name"], "KODf6670de4", "remembered"))
+        # the bundle gone from OrcaSlicer: the automatic choice, no error
+        self.assertEqual(sb.slot_match(self.ctx(), self.slot, None)["source"], "generic")
 
-    def test_spooler_installs_for_a_spoolman_spool(self):
-        shared = os.path.join(self.root, sb.DATA_SUBDIR)
-        os.makedirs(shared)
-        with open(os.path.join(shared, sb.SETTINGS_FILE), "w", encoding="utf-8") as f:
-            f.write("{}")
-        self.assertEqual(self.install({"id": 7, "filament_id": 9, "vendor": "Polymaker"}), ("spooler", 7))
-        self.assertEqual(self.reloads, [])
-        self.assertEqual(sb.filmatch.load_matches(os.path.join(shared, "matches.json"))["entries"]["filament:9"]["default"], "ofd:" + self.OFD_ID)
+    def test_an_ofd_id_remembered_falls_back_to_automatic(self):
+        sb.filmatch.remember(self.path, {"mat:|pla|": "ofd:f6670de4-545e-537e-8152-fd09f7e5ff37"}, self.LABEL)
+        sb.filmatch.remember(self.path, {"spool:5": "ofd:f6670de4-545e-537e-8152-fd09f7e5ff37"})
+        for spool in (None, {"id": 5, "filament_id": 9, "vendor": "Polymaker", "material": "PLA"}):
+            m = sb.slot_match(self.ctx(), self.slot, spool)
+            self.assertEqual((m["name"], m["source"], m["remembered_key"]), ("Generic PLA", "generic", ""))
+        # and a pick on the card replaces it
+        sb.remember_slot(self.ctx(), self.slot, None, "Generic PLA", [self.path], self.path)
+        self.assertEqual(sb.slot_match(self.ctx(), self.slot, None)["source"], "remembered")
 
-    def test_refused(self):
-        self.preset["post_process"] = ["x"]
-        with self.assertRaises(ValueError):
-            self.install()   # an unknown setting: refused, and not kept
-        del self.preset["post_process"]
-        with self.assertRaises(ValueError):
-            self.install(config=None)   # OrcaSlicer has no such parent
-        with self.assertRaises(ValueError):
-            sb.install_ofd(self.storage, {**self.slot, "type": "PETG"}, None, self.OFD_ID, self.config, "", self.reloads.append, "1.0")
-        self.assertEqual(self.reloads, [])
+    def test_nothing_left_that_reads_or_installs_ofd(self):
+        for gone in ("ofd_folder", "slot_ofd", "install_ofd", "OFD_ID_PREFIX"):
+            self.assertFalse(hasattr(sb, gone), gone)
+
+
+if __name__ == "__main__":
+    unittest.main()

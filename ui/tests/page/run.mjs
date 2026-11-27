@@ -63,6 +63,18 @@ async function pick(root, label) {
   assert(opt, 'option ' + label + ' in ' + qa('.p-select-overlay [role=option]').map(text).join('|'));
   opt.click(); await settle(); await until(() => !q('.p-select-overlay'), 'overlay closed'); await settle();
 }
+// A slot card's colour-first spool picker: open it, set the material chip ('' is All), then choose a colour ('#rrggbb') that
+// one spool has (several open a dialog); colour null is "No spool".
+async function pickSpool(slot, o) {
+  const root = q('[data-pick="' + slot + '"]'); assert(root, 'picker of slot ' + slot); await click(root);
+  const panel = () => q('[data-pick-panel="' + slot + '"]');
+  await until(panel, 'picker open');
+  if (o.material !== undefined) await click(o.material ? q('.oui-spick-mat[data-material="' + o.material + '"]', panel()) : q('.oui-spick-mat:not([data-material])', panel()));
+  if (o.colour === null) { await click(q('[data-spick="none"]', panel())); return; }
+  const sw = q('[data-colour="' + o.colour + '"]', panel());
+  assert(sw, 'colour ' + o.colour + ' in ' + qa('[data-colour]', panel()).map(e => e.dataset.colour).join('|'));
+  await click(sw);
+}
 // Errors: banners in an alert region and error toasts (role=alert). What commands answered is a toast, bottom-left.
 const toastText = el => [text(q('.oui-toast-text > strong', el)), text(q('.oui-toast-body', el))].filter(Boolean).join(' ');
 const alerts = () => [...qa('[role=alert] .oui-banner').map(text), ...qa('.oui-toast[role=alert]').map(toastText)].join(' | ');
@@ -565,14 +577,15 @@ test('Spoolman: bind per slot asks first; unbind too', `
   await ready(VIEW({slots: SLOTS().map(s => (s.global_index === 3 ? {...s, spool_id: 7} : s))}));
   await reply(last('cmd', 'spools'), {spools: ROWS, bindings: {}, via: 'direct'});
   eq(qa('[data-pick]').filter(visible).length, 7, 'one picker per slot, on the Dashboard');
+  eq(qa('[data-pick-panel], .oui-spick').length, 0, 'no picker is drawn until one is opened');
   await tab('stock');
-  assert(visible(byTest('spool-source')) && text(byTest('spool-source')).includes('2 spools'), 'source line in the Stock tab\u2019s header: ' + text(byTest('spool-source')));
+  assert(visible(byTest('spool-source')) && text(byTest('spool-source')).includes('2 spools'), 'source line in the Stock tab’s header: ' + text(byTest('spool-source')));
   await tab('dash');
-  await pick(q('[data-pick="4"]'), '#11 Acme White · PETG · 40 g');
+  await pickSpool(4, {material: '', colour: '#fafafa'});   // one white spool: picked at once, no dialog
   assert(dialogOpen() && dialogText().includes('#11'), 'bind asks: ' + dialogText()); await yes();
   eq(cmds('bind').map(m => m.args), [{slot: 4, spool_id: 11}], 'bind');
   await reply(last('cmd', 'bind'), {});
-  await pick(q('[data-pick="3"]'), 'No spool (unlink)');
+  await pickSpool(3, {colour: null});
   assert(dialogOpen(), 'unbind asks'); await yes();
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
@@ -582,7 +595,7 @@ test('Spoolman: the last list is pickable at once; a link shows before Spoolman 
   await reply(last('cmd', 'spools_cache'), {spools: ROWS, bindings: {}, cached: true});
   eq(qa('[data-pick]').filter(visible).length, 7, 'the cached list is pickable while the live read is still out');
   assert(!qa('[data-view="dash"] .oui-banner').map(text).join().includes('Load Spoolman spools'), 'reading the list is not a banner');
-  await pick(q('[data-pick="4"]'), '#11 Acme White · PETG · 40 g');
+  await pickSpool(4, {material: '', colour: '#fafafa'});
   await yes();
   eq(cmds('bind').length, 1, 'bind sent');
   assert(text(q('[data-pick="4"]')).includes('#11'), 'linked at once: ' + text(q('[data-pick="4"]')));
@@ -592,44 +605,82 @@ test('Spoolman: the last list is pickable at once; a link shows before Spoolman 
   assert(!text(q('[data-pick="4"]')).includes('#11'), 'undone when refused: ' + text(q('[data-pick="4"]')));
 `);
 
-test('Spoolman: the spool picker with 2000 spools opens at once, draws only the rows in view, keeps up with status refreshes and search', `
-  const N = 2000;
+test('Spoolman: colour first; a colour with several spools opens a dialog fullest first; material chips start at the slot’s; unlink', `
+  const row = (id, colour, material, remaining) => ({...ROWS[0], id, filament_id: id * 10, vendor: 'Acme', name: 'Spool ' + id, material, colour, remaining, initial: 1000});
+  const SP = [row(21, '#E5484D', 'PLA', 100), row(22, '#e5484d', 'PLA+', 800), row(23, '#e5484d', 'PLA', null), row(24, '#3e63dd', 'PETG', 500), row(25, '#111111', 'ABS', 900)];
+  await ready(VIEW());
+  await reply(last('cmd', 'spools'), {spools: SP, bindings: {}, via: 'direct'});
+  await click(q('[data-pick="2"]'));   // slot 3 holds red PLA
+  const panel = () => q('[data-pick-panel="2"]');
+  await until(panel, 'picker open');
+  eq(text(q('.oui-spick-mat[aria-pressed="true"]', panel())), 'PLA', 'the material chip starts at the slot’s family (PLA+ counts as PLA)');
+  eq(qa('[data-colour]', panel()).map(e => e.dataset.colour), ['#e5484d'], 'one swatch per colour of that material, not one row per spool');
+  eq(text(q('[data-colour="#e5484d"] .oui-spick-n', panel())), '3', 'with how many spools share it');
+  assert(document.activeElement && panel().contains(document.activeElement), 'focus moves into the picker');
+  await click(q('.oui-spick-mat:not([data-material])', panel()));
+  eq(qa('[data-colour]', panel()).length, 3, 'All: every colour');
+  await click(q('.oui-spick-mat[data-material="PLA"]', panel()));
+  await click(q('[data-colour="#e5484d"]', panel()));
+  await until(() => qa('[data-spick="dialog"] [data-spool]').length === 3, 'the dialog of red');
+  eq(qa('[data-spick="dialog"] [data-spool]').map(e => e.dataset.spool), ['22', '21', '23'], 'fullest first, an unknown weight last');
+  assert(text(q('[data-spick="dialog"] [data-spool="22"]')).includes('800'), 'with the grams: ' + text(q('[data-spick="dialog"] [data-spool="22"]')));
+  eq(cmds('bind').length, 0, 'nothing is linked before a spool is chosen');
+  await click(q('[data-spick="dialog"] [data-spool="21"]'));
+  await until(() => !q('[data-spick="dialog"]') && !panel(), 'dialog and picker closed');
+  assert(dialogOpen() && dialogText().includes('#21'), 'bind asks: ' + dialogText()); await yes();
+  eq(cmds('bind').map(m => m.args), [{slot: 2, spool_id: 21}], 'the spool chosen in the dialog is linked');
+  await reply(last('cmd', 'bind'), {});
+  assert(text(q('[data-pick="2"]')).includes('#21'), 'the card shows it: ' + text(q('[data-pick="2"]')));
+  await click(q('[data-pick="2"]'));
+  await until(panel, 'opened again');
+  eq(q('[data-colour][aria-current="true"]', panel())?.dataset.colour, '#e5484d', 'the linked colour is marked');
+  await press('Escape'); await settle();
+  assert(!panel(), 'Escape closes the picker');
+  await click(q('[data-pick="2"]')); await until(panel, 'opened again');
+  document.body.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true})); await settle();
+  assert(!panel(), 'a press outside closes it');
+  await post({type: 'status', data: VIEW({slots: SLOTS().map(s => (s.global_index === 2 ? {...s, spool_id: 21} : s))})});
+  await pickSpool(2, {colour: null});
+  assert(dialogOpen() && dialogText().includes('#21'), 'unlink asks: ' + dialogText()); await yes();
+  eq(cmds('unbind').map(m => m.args), [{slot: 2}], 'No spool unlinks');
+`);
+
+test('Spoolman: the spool picker with 2000 spools opens at once and draws one swatch per colour; search finds one by id', `
+  const N = 2000, COLOURS = ['#e5484d', '#3e63dd', '#30a46c', '#ffc53d', '#8e4ec6', '#f76b15', '#12a594', '#d6409f', '#111111', '#fafafa', '#8d8d8d', '#a18072', '#0090ff', '#bdee63', '#ff977d'];
   await ready(VIEW());
   await reply(last('cmd', 'spools'), {spools: Array.from({length: N}, (_, k) => ({...ROWS[0], id: k + 1, filament_id: k + 1, vendor: 'Acme', name: 'Spool ' + (k + 1),
-    material: k % 3 ? 'PLA' : 'PETG'})), bindings: {}, via: 'direct'});
+    material: k % 3 ? 'PLA' : 'PETG', colour: COLOURS[k % COLOURS.length]})), bindings: {}, via: 'direct'});
   const root = q('[data-pick="4"]'); await reveal(root);
   const t0 = performance.now();
   root.click();
-  await until(() => qa('.p-select-overlay [role=option]').length, 'the list opens');
+  await until(() => qa('[data-pick-panel="4"] [data-colour]').length, 'the picker opens');
   const opened = performance.now() - t0;
-  const rows = qa('.p-select-overlay [role=option]').length;
-  assert(rows < 60, 'only the rows in view are drawn, not all ' + N + ': ' + rows);
+  eq(qa('[data-pick-panel="4"] [data-colour]').length, COLOURS.length, 'one swatch per colour, not ' + N + ' rows');
   assert(opened < 750, 'opens at once: ' + Math.round(opened) + ' ms');
   for (let k = 0; k < 3; k++) await post({type: 'status', data: VIEW()});
-  assert(q('.p-select-overlay'), 'status refreshes leave the list open');
-  const list = q('.p-select-overlay .p-virtualscroller');
-  list.scrollTop = list.scrollHeight; list.dispatchEvent(new Event('scroll')); await settle(); await settle();
-  const ids = () => qa('.p-select-overlay [role=option]').map(o => (/^#(\\d+)/.exec(text(o)) || [0, 'none'])[1]);
-  assert(ids().includes(String(N)) || ids().includes('1999'), 'the end of the list scrolls into view: ' + ids().slice(-3));
-  await type(q('.p-select-overlay .p-select-filter'), '#1999'); await settle();
-  eq(ids(), ['1999'], 'search finds one spool among ' + N);
-  await press('Escape'); await settle();
+  assert(q('[data-pick-panel="4"]'), 'status refreshes leave the picker open');
+  await type(q('[data-pick-panel="4"] .oui-spick-q'), '#1999'); await settle();
+  eq(qa('[data-pick-panel="4"] [data-colour]').map(e => e.dataset.colour), [COLOURS[1998 % COLOURS.length]], 'search finds one spool among ' + N);
+  await click(q('[data-pick-panel="4"] [data-colour]'));
+  assert(dialogOpen() && dialogText().includes('#1999'), 'the only spool of that search is picked: ' + dialogText()); await no();
+  eq(cmds('bind').length, 0, 'Go back links nothing');
 `);
 
 test('Spoolman: the spool picker search is fuzzy over brand, name and material; an id finds only that spool', `
   await ready(VIEW());
-  const row = (id, vendor, name, material) => ({...ROWS[0], id, filament_id: id * 10, vendor, name, material});
-  await reply(last('cmd', 'spools'), {spools: [row(1, 'Prusament', 'Rosé Verde', 'PLA'), row(11, 'Acme', 'White', 'PETG'), row(110, 'Polymaker', 'Marine', 'PLA'), row(7, '3D Fuel', 'Wood 1', 'PLA')], bindings: {}, via: 'direct'});
-  const root = q('[data-pick="4"]'); await reveal(root); root.click();
-  await until(() => q('.p-select-overlay .p-select-filter'), 'the search field');
-  const ids = () => qa('.p-select-overlay [role=option]').map(o => (/^#(\\d+)/.exec(text(o)) || [0, 'none'])[1]).join(',');
+  const row = (id, vendor, name, material, colour) => ({...ROWS[0], id, filament_id: id * 10, vendor, name, material, colour});
+  const SP = [row(1, 'Prusament', 'Rosé Verde', 'PLA', '#30a46c'), row(11, 'Acme', 'White', 'PETG', '#fafafa'), row(110, 'Polymaker', 'Marine', 'PLA', '#0090ff'), row(7, '3D Fuel', 'Wood 1', 'PLA', '#a18072')];
+  await reply(last('cmd', 'spools'), {spools: SP, bindings: {}, via: 'direct'});
+  await click(q('[data-pick="4"]'));
+  await until(() => q('[data-pick-panel="4"] .oui-spick-q'), 'the search field');
+  const byColour = Object.fromEntries(SP.map(sp => [sp.colour, String(sp.id)]));
+  const ids = () => qa('[data-pick-panel="4"] [data-colour]').map(e => byColour[e.dataset.colour]).join(',');
   // typed with real key events, like a user: the search field is Vue-controlled, a set value and a fake event would not reach its model
-  const found = async query => { await type(q('.p-select-overlay .p-select-filter'), query); await settle(); return ids(); };
+  const found = async query => { await type(q('[data-pick-panel="4"] .oui-spick-q'), query); await settle(); return ids(); };
   eq(await found('prus'), '1', 'a brand');
   eq(await found('ROSE'), '1', 'a name, any case and without the accent');
   eq(await found('pmk'), '110', 'the letters in order');
   eq(await found('PETG'), '11', 'a material');
-  eq(await found('aew'), '11', 'the letters in order across brand and name');
   eq(await found('1'), '1', 'a plain id is that spool only: not #11, #110 or "3D Fuel Wood 1"');
   eq(await found('3'), '', 'a plain id no spool has finds nothing, though "3D Fuel" has the digit');
   eq(await found('#11'), '11', '#id is that spool only, not #110');
@@ -1208,45 +1259,6 @@ test('requirements: without Spoolman, refreshing and linking spools are off', `
   const refresh = qa('button', q('#sm-s-h').closest('section')).find(b => text(b).includes('Refresh spools'));
   assert(refresh && refresh.disabled, 'Refresh spools off in Settings');
   assert(text(q('#sm-s-h').closest('section')).includes('No Spoolman address'), 'says why');
-`);
-
-test('settings: Open Filament Database is off by default; on and saved, its list line and Read again', `
-  await connect();
-  await post(CONFIG());
-  await tab('settings');
-  await until(() => q('.oui-settings-link[data-section="sm-s-h"]'), 'settings shown');
-  await click(q('.oui-settings-link[data-section="sm-s-h"]'));
-  await until(() => q('#ofd-on'), 'the OFD row');
-  assert(!q('#ofd-on').checked && !byTest('ofd-state'), 'off by default, nothing more shown');
-  await click(q('#ofd-on'));
-  await until(() => byTest('ofd-state'), 'turned on');
-  assert(text(byTest('ofd-state')).includes('Save to turn it on') && text(byTest('ofd-state')).includes('MIT'), 'saved first; the licence is named: ' + text(byTest('ofd-state')));
-  assert(!last('ofd'), 'nothing asked before the save');
-  await click(byTest('save-top'));
-  eq(last('save_settings').settings.ofd_enabled, true, 'saved on');
-  await reply(last('save_settings'), {saved: true});
-  await post(CONFIG({settings: {...SETTINGS, ofd_enabled: true}}));
-  await until(() => last('ofd'), 'once saved on, the line asks for the kept list');
-  await reply(last('ofd'), {on: true, fetched: 1795371399, version: '2026.11.22', count: 2133, stale: false, error: ''});
-  await until(() => text(byTest('ofd-state')).includes('2133'), 'the list line: ' + text(byTest('ofd-state')));
-  await click(byTest('ofd-refresh'));
-  eq(last('ofd').refresh, true, 'Read again asks OFD now');
-`);
-test('slot cards: an Open Filament Database proposal is marked untuned; picking it installs it by its id', `
-  await ready(VIEW());
-  await until(() => last('preset_matches'), 'asked');
-  await reply(last('preset_matches'), {matches: [{slot: 2, name: 'Generic PLA', source: 'generic', score: 25, reasons: [['material', 'PLA']], confident: true, remembered_key: '',
-    candidates: [{name: 'Generic PLA', score: 25, reasons: [['material', 'PLA']]}],
-    ofd: [{id: 'f667', inherits: 'Generic PLA @System', name: 'Polymaker Panchroma Matte PLA (OFD)', score: 58, reasons: [['material', 'PLA'], ['vendor', 'Polymaker']]}]}]});
-  await until(() => q('[data-match="2"]'), 'slot 3 line');
-  await click(q('.oui-match-change', q('[data-match="2"]')));
-  await until(() => qa('.oui-match-option', q('[data-match="2"]')).length === 2, 'the candidate and the proposal');
-  const ofdRow = qa('.oui-match-option', q('[data-match="2"]'))[1];
-  assert(text(ofdRow).includes('OFD, untuned') && !ofdRow.disabled, 'marked and pickable: ' + text(ofdRow));
-  await click(ofdRow);
-  eq([last('preset_pick').slot, last('preset_pick').ofd, last('preset_pick').inherits], [2, 'f667', 'Generic PLA @System'], 'installed by its OFD id and parent');
-  await reply(last('preset_pick'), {matches: [], note: 'Installed; the Device tab reports it once OrcaSlicer lists it'});
-  await until(() => document.body.textContent.includes('Device tab reports it'), 'the note is shown');
 `);
 
 // ------------------------------------------------------------------ first-run, offline, stale
@@ -2336,7 +2348,7 @@ test('settings: connection fields save together; unsaved is flagged; Saved only 
   const m = last('save_settings');
   eq(m.settings, {host: '192.168.1.60', printer_name: 'Bench Kobra', ffmpeg_path: '/opt/ffmpeg', camera_enabled: false, auto_leveling: true, vibration_compensation: false,
     flow_calibration: false, timelapse: false, spoolman_url: 'http://box:7912', spoolman_auto: true, spoolman_report_usage: true, print_dialog: true, remember_print_options: true,
-    bridge_enabled: false, bridge_port: 8765, cloud_enabled: false, cloud_printer: '', ofd_enabled: false}, 'every setting, by its name');
+    bridge_enabled: false, bridge_port: 8765, cloud_enabled: false, cloud_printer: ''}, 'every setting, by its name');
   assert(!toasts().includes('Settings saved'), 'not saved before the answer');
   await reply(m, {});
   assert(toasts().includes('Settings saved'), 'saved after the answer');
