@@ -4,6 +4,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [Unreleased]
+### Changed
+- **Choosing a spool is instant.** The spool list is kept (in memory and in the plugin's storage), so a new tab or a restart shows the picker at once while Spoolman is read in the background, and it stays usable when Spoolman is slow or unreachable. Linking a spool shows on the slot right away and goes back if Spoolman refuses; it no longer re-reads the whole list, probes Spoolman before every write, or waits behind a Spoolman read or a feed on the plugin's command queue. The picker lists Spoolman's spools only (Kobra Control's own Spoolman address, else the one Spooler uses).
+
 ## [0.14.0] - 2026-11-26
 ### Added
 - **Chamber temperature on the Kobra S1 Max.** The Controls and Temperatures widgets show the chamber's current temperature (and target, when set) once the printer reports it. Read only for now: setting the chamber target is not confirmed in any public protocol reference. Asked for in #90.

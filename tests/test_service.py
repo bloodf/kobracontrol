@@ -413,6 +413,82 @@ class IdleCommands(Base):
         self.assertEqual(wait(lambda: self.sent("light", "control"))[0]["data"]["status"], 0)
 
 
+class CountingSpoolman(FakeSpoolman):
+    """Counts what reaches Spoolman; `gate` (an Event) holds the list read, `fail` makes writes fail."""
+    calls, gate, fail = [], None, False
+
+    def connect(self):
+        CountingSpoolman.calls.append("health")
+        return {}
+
+    def spools(self):
+        CountingSpoolman.calls.append("list")
+        if CountingSpoolman.gate is not None:
+            CountingSpoolman.gate.wait(5)
+        return super().spools()
+
+    def set_location(self, sid, loc):
+        CountingSpoolman.calls.append("patch")
+        if CountingSpoolman.fail:
+            raise service.sm.SpoolmanError("down")
+        super().set_location(sid, loc)
+
+
+class SpoolCache(Base):
+    """Selecting a spool: the list is kept (memory and file) and served at once; a bind is optimistic and never waits
+    for a list read."""
+
+    def setUp(self):
+        super().setUp()
+        FakeSpoolman.locations = {}
+        CountingSpoolman.calls, CountingSpoolman.gate, CountingSpoolman.fail = [], None, False
+        self.svc.spoolman_factory = CountingSpoolman
+        self.svc.spools_path = os.path.join(self.tmp, "spools.json")
+
+    def test_cache_is_served_without_spoolman_and_survives_a_restart(self):
+        self.assertEqual(self.run_cmd("spools_cache")["result"], {"spools": [], "bindings": {}, "cached": False})
+        self.assertEqual(self.run_cmd("spools")["result"]["spools"][0]["id"], 7)
+        CountingSpoolman.calls.clear()
+        self.assertEqual(self.run_cmd("spools_cache")["result"]["spools"][0]["id"], 7)
+        with self.svc.lock:   # as after a restart: nothing in memory, only the file
+            self.svc.spools, self.svc._spool_cache, self.svc._spool_cache_read = [], None, False
+        self.assertEqual(self.run_cmd("spools_cache")["result"]["spools"][0]["id"], 7)
+        self.assertEqual(CountingSpoolman.calls, [])
+
+    def test_cache_of_another_spoolman_is_not_shown(self):
+        self.run_cmd("spools")
+        with self.svc.lock:
+            self.svc.spools, self.svc._spool_cache = [], {**self.svc._spool_cache, "url": "http://elsewhere"}
+        self.assertEqual(self.run_cmd("spools_cache")["result"]["spools"], [])
+
+    def test_bind_with_a_cached_list_is_one_write_and_no_read(self):
+        self.run_cmd("spools")
+        CountingSpoolman.calls.clear()
+        self.assertEqual(self.run_cmd("bind", slot=0, spool_id=7)["result"]["bindings"], {"0": 7})
+        self.assertEqual(CountingSpoolman.calls, ["patch"])   # the list is not read again, nor Spoolman probed again
+        self.assertEqual(self.run_cmd("spools_cache")["result"]["spools"][0]["location"], "Anycubic Kobra X S1")
+
+    def test_bind_does_not_wait_for_a_slow_list_read(self):
+        self.run_cmd("spools")
+        CountingSpoolman.gate = threading.Event()
+        self.addCleanup(CountingSpoolman.gate.set)
+        self.svc.submit("slow", "spools", {})
+        wait(lambda: CountingSpoolman.calls.count("list") == 2)
+        self.assertEqual(self.run_cmd("bind", slot=1, spool_id=7, timeout=3.0)["result"]["bindings"], {"1": 7})
+        CountingSpoolman.gate.set()
+        wait(lambda: next((m for m in self.published if m.get("id") == "slow"), None))
+        self.assertEqual(self.svc.bindings, {1: 7})   # the read that started before the bind does not undo it
+
+    def test_a_refused_bind_puts_the_links_back(self):
+        self.run_cmd("spools")
+        self.run_cmd("bind", slot=0, spool_id=7)
+        CountingSpoolman.fail = True
+        self.assertIn("down", self.run_cmd("bind", slot=2, spool_id=7)["error"])
+        self.assertEqual(self.svc.bindings, {0: 7})
+        self.assertIn("down", self.run_cmd("unbind", slot=0)["error"])
+        self.assertEqual(self.svc.bindings, {0: 7})
+
+
 class PrintingCommands(Base):
     def setUp(self):
         super().setUp()

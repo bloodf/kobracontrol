@@ -58,6 +58,12 @@ export function boundSlots(live: Record<number, number | null>, fromStock: Recor
   return out;
 }
 
+/** A status with the links being written (slot -> spool id, null: unlinked) shown on its slots; the same object when none. */
+export function withPendingLinks<T extends { slots?: Array<{ global_index: number; spool_id: number | null }> }>(data: T, pending: ReadonlyMap<number, number | null>): T {
+  if (!pending.size || !data?.slots) return data;
+  return { ...data, slots: data.slots.map(sl => (pending.has(sl.global_index) ? { ...sl, spool_id: pending.get(sl.global_index) ?? null } : sl)) };
+}
+
 export type FileSort = 'newest' | 'oldest' | 'name' | 'largest';
 /** The printer's files matching `q` (name, case-insensitive), in the chosen order; the input is not changed. */
 export function listFiles<T extends { name: string; size: number; timestamp: number }>(files: readonly T[], q: string, sort: FileSort): T[] {

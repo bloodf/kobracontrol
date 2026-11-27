@@ -577,6 +577,21 @@ test('Spoolman: bind per slot asks first; unbind too', `
   eq(cmds('unbind').map(m => m.args), [{slot: 3}], 'unbind');
 `);
 
+test('Spoolman: the last list is pickable at once; a link shows before Spoolman answers and is undone when refused', `
+  await ready(VIEW({slots: SLOTS()}));
+  await reply(last('cmd', 'spools_cache'), {spools: ROWS, bindings: {}, cached: true});
+  eq(qa('[data-pick]').filter(visible).length, 7, 'the cached list is pickable while the live read is still out');
+  assert(!qa('[data-view="dash"] .oui-banner').map(text).join().includes('Load Spoolman spools'), 'reading the list is not a banner');
+  await pick(q('[data-pick="4"]'), '#11 Acme White · PETG · 40 g');
+  await yes();
+  eq(cmds('bind').length, 1, 'bind sent');
+  assert(text(q('[data-pick="4"]')).includes('#11'), 'linked at once: ' + text(q('[data-pick="4"]')));
+  await post({type: 'status', data: VIEW({slots: SLOTS()})});   // a status that predates the write
+  assert(text(q('[data-pick="4"]')).includes('#11'), 'kept over an older status: ' + text(q('[data-pick="4"]')));
+  await fail(last('cmd', 'bind'), 'Spoolman said HTTP 500');
+  assert(!text(q('[data-pick="4"]')).includes('#11'), 'undone when refused: ' + text(q('[data-pick="4"]')));
+`);
+
 test('Spoolman: the spool picker with 2000 spools opens at once, draws only the rows in view, keeps up with status refreshes and search', `
   const N = 2000;
   await ready(VIEW());

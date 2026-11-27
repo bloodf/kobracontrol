@@ -16,7 +16,7 @@ import KcAlert from './KcAlert.vue';
 // (another address, another error, another command).
 const retryIn = computed(() => (s.retryAt ? Math.max(0, Math.ceil(s.retryAt - s.now / 1000)) : 0));
 const where = computed(() => s.info?.address ?? '');
-const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools' && p.key !== 'checkup'));   // Settings shows its own
+const waiting = computed(() => [...tracker.pending.values()].filter(p => p.key !== 'spools' && p.key !== 'spools:cache' && p.key !== 'checkup'));   // Settings shows its own
 /** "Pause failed: timeout" reads as a title and its detail. */
 // An Upload and Print from OrcaSlicer (upload bridge) never starts by itself: it waits here for Start.
 const waitingPrint = computed(() => s.status?.bridge_pending ?? null);

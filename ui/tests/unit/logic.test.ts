@@ -1,7 +1,7 @@
 // Pure rules of the page (node --test runs this TypeScript directly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, listFiles, clipLength, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
+import { parseTarget, parseWhole, family, hexOf, groupSlots, skippable, thumbSrc, boundSlots, withPendingLinks, listFiles, clipLength, fingerprintText, finishAt, heaterPhase } from '../../src/core/logic.ts';
 import { normalizeLocale, resolveLocale, interpolate } from '../../src/core/i18n-core.ts';
 
 test('a blank target is never 0; 0 typed is Off; out of range refused', () => {
@@ -124,4 +124,13 @@ test('heater phase: off, heating, at target (within 2 °C), cooling; unknown wit
   assert.equal(heaterPhase(240, 220), 'cooling');
   assert.equal(heaterPhase(25, undefined), null);
   assert.equal(heaterPhase(undefined, 220), null);
+});
+
+test('a link being written shows on its slot over a status that predates it; other slots and a quiet page are untouched', () => {
+  const st = { state: 'idle', slots: [{ global_index: 0, spool_id: null }, { global_index: 1, spool_id: 4 }] };
+  assert.equal(withPendingLinks(st, new Map()), st);
+  const shown = withPendingLinks(st, new Map<number, number | null>([[0, 7], [1, null]]));
+  assert.deepEqual(shown.slots.map(x => x.spool_id), [7, null]);
+  assert.deepEqual(st.slots.map(x => x.spool_id), [null, 4]);   // the input is not changed
+  assert.equal(withPendingLinks({ state: 'x' }, new Map([[0, 1]])).state, 'x');
 });

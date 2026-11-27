@@ -54,7 +54,10 @@ URGENT = ("pause", "stop")      # never wait behind the command worker
 # Own thread, at most one of each in flight. home: up to 90 s; device: three read-only queries, up to 5 s unanswered.
 BOUNDED = ("stock", "usage", "usage_ack", "find_certificate", "home", "search_printer", "device", "cloud_state",
            "cloud_find", "cloud_sign_in", "cloud_sign_out", "cloud_printers")
-DEDICATED = URGENT + BOUNDED                                    # own short-lived thread
+# Spoolman commands never wait behind the command worker (a feed, or a slow Spoolman read, would stall a bind): the
+# list read is one at a time, the cached list and the links are each on a thread of their own.
+BOUNDED += ("spools",)
+DEDICATED = URGENT + BOUNDED + ("spools_cache", "bind", "unbind")   # own short-lived thread
 BUSY = lazy("%s is already running; try again when it ends")
 STALE = lazy("the selected printer changed; nothing was sent to it")
 NO_PRINTER = lazy("no printer selected: choose an Anycubic printer preset (Kobra X, Kobra 3 or Kobra S1 family) with its IP address")
@@ -186,7 +189,7 @@ def _background(fn, name):
 
 class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     def __init__(self, publish, log=print, cert_dir="", tls=None, http_port=18910, mqtt_port=9883,
-                 fetch=kobra.fetch_credentials, ledger_path=None, camera_factory=camera.Camera, relay_factory=camera.Relay,
+                 fetch=kobra.fetch_credentials, ledger_path=None, spools_path=None, camera_factory=camera.Camera, relay_factory=camera.Relay,
                  spoolman_factory=sm.Spoolman, addresses_path=None, search=locate.search, probe=None, granted=None):
         self.publish, self.log = publish, log
         self.cert_dir = cert_dir
@@ -194,6 +197,9 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         self.pins = certs.Pins(os.path.join(cert_dir, certs.PINS_FILE)) if cert_dir else None
         self.http_port, self.mqtt_port, self.fetch = http_port, mqtt_port, fetch
         self.spoolman_factory = spoolman_factory
+        self.spools_path = spools_path   # the last Spoolman list on disk (stale-while-revalidate across restarts)
+        self._spool_cache, self._spool_cache_read = None, False   # {"url", "spools"}: the last list read, any printer
+        self._smc, self._binds = {}, 0   # the connected Spoolman client by address; binds in flight
         self.lock = threading.RLock()
         self._op = threading.local()
         self.connections = {}
@@ -1143,9 +1149,43 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
     # spoolman --------------------------------------------------------------------------------------------
 
     def _spoolman(self, target):
-        smc = self.spoolman_factory(target.spoolman_url)
-        smc.connect()
+        """The Spoolman client for target's address; its health check runs once, not before every call."""
+        url = target.spoolman_url
+        with self.lock:
+            smc = self._smc.get(url)
+        if smc is None:
+            smc = self.spoolman_factory(url)
+            smc.connect()
+            with self.lock:
+                self._smc = {url: smc}
         return smc
+
+    def _remember_spools(self, url, spools):
+        """Keep the list just read (memory and spools_path) for cmd_spools_cache. Never raises."""
+        with self.lock:
+            same = self._spool_cache is not None and self._spool_cache["url"] == url and self._spool_cache["spools"] == spools
+            self._spool_cache, self._spool_cache_read = {"url": url, "spools": spools}, True
+        if not same and self.spools_path:
+            peers.write_json(self.spools_path, {"v": 1, "url": url, "spools": spools})
+
+    def _cached_spools(self, url):
+        """The remembered list for this Spoolman address (the file is read once), or None. Caller holds self.lock."""
+        if not self._spool_cache_read:
+            self._spool_cache_read = True
+            doc, _ = peers.read_json(self.spools_path)
+            if doc and doc.get("v") == 1 and isinstance(doc.get("url"), str) and isinstance(doc.get("spools"), list):
+                self._spool_cache = {"url": doc["url"], "spools": [s for s in doc["spools"] if isinstance(s, dict) and isinstance(s.get("id"), int)]}
+        c = self._spool_cache
+        return c["spools"] if c and c["url"] == url else None
+
+    def _set_locations(self, changes):
+        """{spool id: location} applied to the list held here and the remembered one, so what a bind wrote is not read back
+        as the old links. Caller holds self.lock."""
+        def apply(spools):
+            return [{**s, "location": changes[s["id"]]} if s.get("id") in changes else s for s in spools]
+        self.spools = apply(self.spools)
+        if self._spool_cache:
+            self._spool_cache = {**self._spool_cache, "spools": apply(self._spool_cache["spools"])}
 
     def print_snapshot(self, host):
         """(status data, {global slot: {"name", "fraction"}}) for the print dialog: the printer's state as last reported and the
@@ -1162,10 +1202,25 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         with self.lock:
             if gen is not None and gen != self.generation:
                 raise kobra.KobraError(tr(STALE))
-            self.spools, self.bindings = spools, sm.bindings_from_locations(spools, target.name)
+            self.spools = spools
+            if not self._binds:   # a bind in flight has already set its links here; this read may predate its writes
+                self.bindings = sm.bindings_from_locations(spools, target.name)
             out = {"spools": spools, "bindings": {str(k): v for k, v in self.bindings.items()}}
+        self._remember_spools(target.spoolman_url, spools)
         self.tell_printer(target)
         return out
+
+    def cmd_spools_cache(self):
+        """The last spool list at once, from memory or disk, without asking Spoolman: the page shows it while cmd_spools
+        reads the live one. Empty when none is known for this Spoolman address."""
+        target = self._ctx()[-1]
+        with self.lock:
+            cached = self._cached_spools(target.spoolman_url) if target.spoolman_url else None
+            if cached is None:
+                return {"spools": [], "bindings": {}, "cached": False}
+            if not self.spools:   # a fresh start or another printer: its links come from the list's locations
+                self.spools, self.bindings = list(cached), sm.bindings_from_locations(cached, target.name)
+            return {"spools": list(self.spools), "bindings": {str(k): v for k, v in self.bindings.items()}, "cached": True}
 
     def links_for(self, target):
         """(spools, {slot: spool id}) for target from Spoolman, for the printer agent before (or without) the tab;
@@ -1183,22 +1238,41 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         if not isinstance(spool_id, int) or isinstance(spool_id, bool) or spool_id <= 0:
             raise ValueError(tr("no spool chosen"))
         gen, _, target = self._ctx()
-        if not any(s["id"] == spool_id for s in self.spools):
+        with self.lock:
+            known = any(s["id"] == spool_id for s in self.spools)
+        if not known:   # only a spool the cached list lacks costs a full read
             self.cmd_spools()
-        if not any(s["id"] == spool_id for s in self.spools):
+            with self.lock:
+                known = any(s["id"] == spool_id for s in self.spools)
+        if not known:
             raise ValueError(tr("spool #%d not found in Spoolman") % spool_id)
         smc = self._spoolman(target)
         with self.lock:   # every other spool on this slot, the model-name form Spooler may have written included
             previous = {s["id"] for s in self.spools if not s.get("archived") and sm.location_score(s.get("location"), target.name, slot)}
             previous.add(self.bindings.get(slot))
-        smc.set_location(spool_id, sm.location_for(target.name, slot))
-        for other in sorted(p for p in previous if p and p != spool_id):
-            smc.set_location(other, "")
+            was, current = dict(self.bindings), gen is None or gen == self.generation
+            if current:   # optimistic: the page's next status already shows the link; undone below when Spoolman refuses
+                self.bindings = {**{g: s for g, s in self.bindings.items() if s != spool_id and g != slot}, slot: spool_id}
+            self._binds += 1
+        others = sorted(p for p in previous if p and p != spool_id)
+        try:
+            smc.set_location(spool_id, sm.location_for(target.name, slot))
+            for other in others:
+                smc.set_location(other, "")
+        except BaseException:
+            with self.lock:
+                if current and (gen is None or gen == self.generation):
+                    self.bindings = was
+            raise
+        finally:
+            with self.lock:
+                self._binds -= 1
+        with self.lock:
+            self._set_locations({spool_id: sm.location_for(target.name, slot), **{o: "" for o in others}})
+            spools = self.spools
+        self._remember_spools(target.spoolman_url, spools)
         self.links_changed()
         with self.lock:
-            if gen is None or gen == self.generation:
-                self.bindings = {g: s for g, s in self.bindings.items() if s != spool_id and g != slot}
-                self.bindings[slot] = spool_id
             return {"bindings": {str(k): v for k, v in self.bindings.items()}}
 
     cmd_bind_spool = cmd_bind   # the name stockview.StockMixin calls
@@ -1207,10 +1281,26 @@ class Service(LocatingMixin, FilesMixin, JobsMixin, StockMixin, UsageMixin):
         gen, _, target = self._ctx()
         with self.lock:
             sid = self.bindings.get(slot)
+            current = gen is None or gen == self.generation
+            if sid and current:   # optimistic, as in cmd_bind
+                self.bindings = {g: s for g, s in self.bindings.items() if g != slot}
+            self._binds += 1
+        try:
+            if sid:
+                self._spoolman(target).set_location(sid, "")
+        except BaseException:
+            with self.lock:
+                if sid and current and (gen is None or gen == self.generation):
+                    self.bindings = {**self.bindings, slot: sid}
+            raise
+        finally:
+            with self.lock:
+                self._binds -= 1
         if sid:
-            self._spoolman(target).set_location(sid, "")
+            with self.lock:
+                self._set_locations({sid: ""})
+                spools = self.spools
+            self._remember_spools(target.spoolman_url, spools)
             self.links_changed()
         with self.lock:
-            if (gen is None or gen == self.generation) and self.bindings.get(slot) == sid:
-                self.bindings.pop(slot, None)
             return {"bindings": {str(k): v for k, v in self.bindings.items()}}
