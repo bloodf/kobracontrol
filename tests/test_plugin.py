@@ -610,6 +610,46 @@ class Agent(Base):
                                   "vendor": "SUNLU", "colour": "#112233"}])
         self.assertEqual(label, "Anycubic Kobra X")
 
+    def test_filament_catalog_is_for_the_connected_kobra_not_the_selected_printer(self):
+        """Regression: with a Snapmaker U1 selected in OrcaSlicer, its Spooler presets (compatible with the U1) must not be
+        offered for the Kobra X's slots; the label is the Kobra's model, so nothing reads as "made for this printer"."""
+        presets = {"_local/spooler/3D Procer PLA Marrom terra @Snapmaker U1": dict(compatible_printers='"Snapmaker U1 (0.4 nozzle)"'),
+                   "_local/spooler/eSUN PLA @Snapmaker U1": dict(),
+                   "_local/spooler/eSUN PLA @Anycubic Kobra X": dict(is_compatible=False,
+                                                                     compatible_printers='"Anycubic Kobra X 0.4 nozzle"'),
+                   "_local/spooler/Any PLA": dict(is_compatible=False)}
+
+        class P:
+            def __init__(self, name):
+                self.name, self.bundle_id = name, "spooler"
+                self.is_compatible = presets[name].get("is_compatible", True)
+
+            def config_value(self, key):
+                return presets[self.name].get(key)
+
+        names = list(presets)
+        printer = mock.Mock(config_value=lambda k: {"printer_model": "Snapmaker U1"}.get(k))
+        printer.name = "Snapmaker U1 (0.4 nozzle)"
+        bundle = mock.Mock(current_printer_preset=lambda: printer,
+                           filaments=mock.Mock(size=lambda: len(names), preset=lambda i: P(names[i])))
+        with mock.patch.object(orca.host, "preset_bundle", return_value=bundle), \
+                mock.patch.object(plugin, "_connected_model", return_value="Anycubic Kobra X"):
+            found, label = plugin.filament_catalog()
+        self.assertEqual([p["name"] for p in found], ["_local/spooler/eSUN PLA @Anycubic Kobra X", "_local/spooler/Any PLA"])
+        self.assertEqual(label, "Anycubic Kobra X")
+        ctx = plugin.spooler_bridge.match_context(found, label, [], {}, [], {})
+        match = plugin.spooler_bridge.slot_match(ctx, {"global_index": 0, "type": "PLA", "color": [120, 60, 30]},
+                                                 {"id": 7, "vendor": "3D Procer", "material": "PLA", "colour": "#783C1E"})
+        self.assertEqual((match["name"], match["source"]), ("Generic PLA", "generic"))
+        self.assertNotIn(["printer", ""], [r for c in match["candidates"] for r in c["reasons"]])
+
+    def test_connected_model_names_the_kobra(self):
+        svc = mock.Mock(lock=threading.Lock(), target=mock.Mock(host="10.0.0.2"), view_for=lambda h: {"mode_id": "20030"})
+        with mock.patch.object(plugin, "_service", svc):
+            self.assertEqual(plugin._connected_model(), "Anycubic Kobra X")
+        with mock.patch.object(plugin, "_service", None):
+            self.assertEqual(plugin._connected_model(), "")
+
     def test_status_push_survives_a_failing_sample(self):
         """One status sample that raises must not end the Device tab's pusher thread for the rest of the session."""
         self.connect()

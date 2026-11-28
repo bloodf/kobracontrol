@@ -132,9 +132,6 @@ class TrayIdTests(unittest.TestCase):
         self.assertEqual(sb.tray_filament_id({**self.SPOOL, "id": 1, "filament_id": 1, "material": "ASA"}, presets, ids), "")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class LinkedPresetTests(unittest.TestCase):
     """A spool's orca_filament_preset names one of the user's own presets (spoolman.linked_preset)."""
@@ -265,6 +262,21 @@ class OldOfdMatchTests(unittest.TestCase):
     def test_nothing_left_that_reads_or_installs_ofd(self):
         for gone in ("ofd_folder", "slot_ofd", "install_ofd", "OFD_ID_PREFIX"):
             self.assertFalse(hasattr(sb, gone), gone)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class MadeForTest(unittest.TestCase):
+    def test_a_preset_is_made_for_one_printer(self):
+        made_for = sb.made_for
+        self.assertFalse(made_for("_local/spooler/X PLA @Snapmaker U1", "", "Anycubic Kobra X"))
+        self.assertFalse(made_for("_local/spooler/X PLA", '"Snapmaker U1 (0.4 nozzle)"', "Anycubic Kobra X"))
+        self.assertTrue(made_for("_local/spooler/X PLA @Anycubic Kobra X", "", "Anycubic Kobra X"))
+        self.assertTrue(made_for("_local/spooler/X PLA @Snapmaker U1", '"Anycubic Kobra X 0.4 nozzle";"Snapmaker U1"', "Anycubic Kobra X"))
+        self.assertTrue(made_for("_local/spooler/X PLA", "", "Anycubic Kobra X"))
+        self.assertTrue(made_for("_local/spooler/X PLA @Snapmaker U1", "", ""))
 
 
 if __name__ == "__main__":

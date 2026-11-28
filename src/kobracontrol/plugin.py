@@ -427,22 +427,45 @@ def spooler_state():
     return {**spooler_bridge.detect(ids, meta, has_file), "url": spooler_bridge.URL}
 
 
+def _connected_model():
+    """The connected Kobra's model name ("Anycubic Kobra X"), "" before it answers. UI thread, no I/O."""
+    svc = _service
+    if svc is None:
+        return ""
+    with svc.lock:
+        host = svc.target.host if svc.target else ""
+    view = svc.view_for(host) if host else None
+    profile = profiles.get((view or {}).get("mode_id"))
+    return profile["name"] if profile else ((view or {}).get("model") or "")
+
+
 def filament_catalog():
-    """(Spooler presets, printer label) for the Device tab's tray ids; UI thread, no I/O. Presets: the Spooler
-    presets OrcaSlicer counts as compatible with the selected printer, the only ones its sync from AMS loads, as
+    """(Spooler presets, printer label) for the Device tab's tray ids and the slot cards; UI thread, no I/O.
+    The label is the connected Kobra's model, else the selected printer's. OrcaSlicer's selected printer may be
+    another one (a U1 while the Kobra Control tab is open), so its is_compatible is trusted only when it is the same
+    model, else (or on a host without it) a preset must be made for the label's printer (spooler_bridge.made_for). As
     spooler_bridge.tray_filament_id meta."""
     bundle = orca.host.preset_bundle()
     printer = bundle.current_printer_preset()
+    selected = clean(printer.config_value("printer_model")) or printer.name
+    label = _connected_model() or selected
+    trust = profiles.key(label) == profiles.key(selected)
     collection = bundle.filaments
     presets = []
     for i in range(collection.size()):
         preset = collection.preset(i)
-        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID or not getattr(preset, "is_compatible", COMPATIBLE_DEFAULT):
+        if (getattr(preset, "bundle_id", "") or "") != spooler_bridge.BUNDLE_ID:
+            continue
+        if trust and hasattr(preset, "is_compatible"):
+            usable = preset.is_compatible
+        else:
+            usable = spooler_bridge.made_for(preset.name, preset.config_value("compatible_printers"), label)
+        if not usable:
             continue
         first = lambda key: (spooler_bridge.as_list(preset.config_value(key)) or [""])[0]   # noqa: E731
         presets.append({"name": preset.name, "bundle_id": spooler_bridge.BUNDLE_ID, "vendor": first("filament_vendor"),
                         "colour": first("default_filament_colour") or first("filament_colour")})
-    return presets, clean(printer.config_value("printer_model")) or printer.name
+    return presets, label
 
 
 def _own_ofd_presets():

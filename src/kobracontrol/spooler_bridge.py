@@ -9,6 +9,7 @@ import os
 import re
 
 import filmatch
+import profiles
 import spoolman
 
 BUNDLE_ID = "spooler"
@@ -130,6 +131,19 @@ def spooler_presets(names_meta, printer_names=()):
         if not compatible or not wanted or wanted & set(compatible):
             out.append(m)
     return out
+
+
+def made_for(name, compatible, model):
+    """A Spooler preset can be reported for a slot of printer `model`: its compatible_printers name that model, else
+    (none listed) its "@<printer>" name suffix does, or it has none. model "" judges nothing."""
+    if not model:
+        return True
+    want = profiles.key(model)
+    listed = as_list(compatible)
+    if listed:
+        return any(profiles.key(c) == want for c in listed)
+    _, at, suffix = _bare(name).rpartition("@")
+    return not at or profiles.key(suffix) == want
 
 
 def _norm(text):
