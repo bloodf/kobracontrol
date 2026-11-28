@@ -4,6 +4,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-28
+### Changed
+- Shared UI 5.13.2 with PrimeVue 5.0.6.
+
 ## [0.15.0] - 2026-11-28
 ### Changed
 - **Choosing a slot's spool starts with its colour.** A slot card's spool line opens a swatch per colour on the shelf (with a count when several spools share it) instead of a list of every spool. A colour with one spool picks it; with several, a dialog lists them fullest first, with grams and a fill bar. Material chips (starting at the slot's material) replace the "Same material / Other materials" groups, the search still finds brand, name, material or `#id`, and **No spool** unlinks. Linking and unlinking still ask first, show at once and go back if Spoolman refuses. Nothing is drawn or built for the picker until it is opened: with 2000 spools, loading the spool list costs about 10 ms of page work instead of about 225 ms, and a status refresh about 6 ms instead of 11 ms. Shared UI foundation 5.13.0, PrimeVue 5.0.6.
