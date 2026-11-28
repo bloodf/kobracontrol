@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
-import { fuzzyFilter, longList, OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiStatus, OuiSwatch, type OuiState } from '@orca-plugins/ui-foundation/src/components';
-import { edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
+import { OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiSpoolPick, OuiStatus, OuiSwatch, type OuiSpoolPickLabels, type OuiState } from '@orca-plugins/ui-foundation/src/components';
+import { chevronDown, edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, printerName, linkSpool, stale, whyId as pageWhy, pickPreset } from '../app/store';
 import { reasonTexts } from '../core/match';
 import type { MessageKey } from '../core/messages';
@@ -44,9 +44,8 @@ const state = computed<{ state: OuiState; text: string } | null>(() => {
 const match = computed(() => (ready.value ? s.matches[String(key.value)] ?? null : null));
 const words = (reasons: unknown) => reasonTexts(reasons, (code, v) => t(`match.r.${code}` as MessageKey, { v }));
 const BADGES: Record<string, MessageKey> = { remembered: 'match.remembered', linked: 'match.linked', spooler: 'match.spooler' };
-const candidates = computed(() => (!match.value || match.value.source === 'linked' ? [] : [
-  ...match.value.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) })),
-  ...(match.value.ofd ?? []).map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons), badge: t('ofd.badge'), note: t('ofd.note') }))]));
+const candidates = computed(() => (!match.value || match.value.source === 'linked' ? []
+  : match.value.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) }))));
 const matchLabels = computed(() => ({ change: t('match.change'), none: t('match.none'), score: t('match.score'), auto: t('match.auto'), autoHint: t('match.autoHint') }));
 const editOff = computed(() => !!controlsOff.value || busy.value.feed);
 const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
@@ -83,39 +82,50 @@ async function saveEdit() {
 }
 
 // ---------------------------------------------------------------- the Spoolman spool this slot books on
+// The compact line shows the linked spool; it opens the shared colour-first picker (OuiSpoolPick) under it, over the card
+// like Change's list. The picker draws one swatch per colour, not a row per spool, and only while it is open: a colour
+// with one spool picks it, with several a dialog lists them fullest first. Material chips replace the old "same material /
+// other materials" groups and start at the slot's material family; "No spool" unlinks.
 const spoolLabel = (sp: Spool) => t('pick.option', { id: sp.id, vendor: sp.vendor, name: sp.name, material: sp.material, grams: fmt.grams(sp.remaining) });
-const find = (id: number | null) => (id == null ? null : s.spools.find(x => x.id === id) ?? null);
-// The picker's search: brand, name and material by fuzzyFilter (foundation: case and accents ignored, letters in order, best
-// first). A query that is only a number is a spool's id and matches that spool exactly ("12" or "#12"), never a neighbour
-// (#120) and never a brand or name with that digit in it ("3D Fuel"). While it is typed the list is only the hits, without
-// "no spool" (Enter on the first hit must never unlink), and nothing is bound until one is chosen.
-// ponytail: Select still runs its own "contains" pass; every option carries the typed text as `q` so it keeps all of ours.
-const query = ref('');
-const hits = computed(() => {
-  const m = /^#?(\d+)$/.exec(query.value.trim());
-  const byId = m ? s.spools.filter(sp => sp.id === Number(m[1])) : [];
-  const fuzzy = m ? [] : fuzzyFilter(s.spools, query.value, sp => [sp.vendor, sp.name, sp.material].filter(Boolean).join(' ')).map(r => r.item);
-  return [...byId, ...fuzzy.filter(sp => !byId.includes(sp))];
-});
-// The material family on its own: every status refresh gives the slot a new object, and the spool list below (thousands of
-// spools) must not be rebuilt for it, only for a different family, other spools or another search.
+// The material family on its own: every status refresh gives the slot a new object.
 const fam = computed(() => (ready.value && props.slot.type ? family(props.slot.type) : ''));
-const pickGroups = computed(() => {
-  const searching = !!query.value.trim();
-  const list = searching ? hits.value : s.spools;
-  const fit: Spool[] = [], rest: Spool[] = [];
-  for (const sp of list) (!fam.value || family(sp.material) === fam.value ? fit : rest).push(sp);
-  const opt = (sp: Spool) => ({ value: sp.id, label: spoolLabel(sp), sp, q: query.value });
-  return searching
-    ? [...(fit.length ? [{ label: t('pick.fit'), items: fit.map(opt) }] : []), ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : [])]
-    : [
-      { label: t('pick.fit'), items: [{ value: 0, label: t('pick.none'), sp: null, q: '' }, ...fit.map(opt)] },
-      ...(rest.length ? [{ label: t('pick.other'), items: rest.map(opt) }] : []),
-    ];
-});
-const pickRows = computed(() => pickGroups.value.reduce((n, g) => n + 1 + g.items.length, 0));
+const picking = ref(false);
+const pickFam = ref('');
+const trigger = ref<HTMLButtonElement | null>(null);
+const panel = ref<HTMLElement | null>(null);
+// Spools as the picker groups them: the material is the family, so the chips read PLA, PETG, ... (read only while open).
+const pickSpools = computed(() => s.spools.map(sp => ({ ...sp, material: family(sp.material) })));
+const pickLabels = computed<OuiSpoolPickLabels>(() => ({ label: t('pick.label', { slot: props.label }), spools: t('pick.count'), noColour: t('pick.noColour'),
+  choose: t('pick.dialog'), unknown: t('slot.weightUnknown'), empty: t('pick.empty'), search: t('pick.filter'), noMatch: t('pick.noMatch'),
+  allMaterials: t('pick.allMaterials'), none: t('pick.none') }));
+async function openPick() {
+  if (picking.value) { closePick(); return; }
+  pickFam.value = fam.value;
+  picking.value = true;
+  await nextTick();
+  const box = panel.value, r = trigger.value?.getBoundingClientRect();
+  if (box && r) box.toggleAttribute('data-up', innerHeight - r.bottom < box.offsetHeight + GAP && r.top > innerHeight - r.bottom);
+  box?.querySelector<HTMLElement>('.oui-spick-q, [data-colour][tabindex="0"]')?.focus();
+}
+function closePick() {
+  picking.value = false;
+  trigger.value?.focus();
+}
+// A press outside the open picker closes it; its own dialog of one colour's spools is outside the card but belongs to it.
+function outside(e: Event) {
+  const at = e.target as Element | null;
+  if (!at || panel.value?.contains(at) || trigger.value?.contains(at) || at.closest?.('.p-dialog-mask')) return;
+  picking.value = false;
+}
+watch(picking, on => document[on ? 'addEventListener' : 'removeEventListener']('pointerdown', outside, true));
+onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true));
+function picked(id: number | string | null) {
+  closePick();
+  void choose(id == null ? null : Number(id));
+}
 async function choose(id: number | null) {
   const slotName = props.label, sl = props.slot;
+  if (id === sl.spool_id) return;
   if (!id) {
     const was = sl.spool_id;
     if (was == null) return;
@@ -180,27 +190,25 @@ async function placeList(e: MouseEvent) {
       </div>
     </form>
 
-    <Select v-else-if="s.spools.length" :model-value="slot.spool_id ?? 0" :options="pickGroups" option-group-label="label" option-group-children="items"
-            option-label="label" option-value="value" :virtual-scroller-options="longList(pickRows, 32)" filter :filter-fields="['q']" reset-filter-on-hide
-            :filter-placeholder="t('pick.filter')" :aria-label="t('pick.label', { slot: label })" size="small"
-            :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="pageWhy(false)" class="sl-pick"
-            :data-focus-key="`pick:${key}`" :data-pick="key" @update:model-value="(v: number | null) => choose(v)" @filter="(e: { value: string }) => (query = e.value)" @hide="query = ''">
-      <template #value="{ value }">
-        <span class="sl-opt"><OuiSwatch v-if="find(value)" :color="find(value)!.colour ?? null" :colors="find(value)!.colours ?? null" />
-          <span class="oui-truncate">{{ value ? (find(value) ? spoolLabel(find(value)!) : t('pick.unknown', { id: value })) : t('pick.choose') }}</span></span>
-      </template>
-      <template #option="{ option }">
-        <span class="sl-opt"><OuiSwatch v-if="option.sp" :color="option.sp.colour ?? null" :colors="option.sp.colours ?? null" />
-          <span class="oui-truncate">{{ option.label }}</span></span>
-      </template>
-    </Select>
+    <div v-else-if="s.spools.length" class="sl-pick" :data-open="picking || undefined">
+      <button ref="trigger" type="button" class="sl-pick-btn" :aria-label="t('pick.label', { slot: label })" :aria-expanded="picking" aria-haspopup="true"
+              :disabled="!!controlsOff || tracker.isBusy(`bind:${key}`)" :aria-describedby="pageWhy(false)" :data-focus-key="`pick:${key}`" :data-pick="key" @click="openPick">
+        <OuiSwatch v-if="linked" :color="linked.colour ?? null" :colors="linked.colours ?? null" />
+        <span class="oui-truncate">{{ slot.spool_id == null ? t('pick.choose') : linked ? spoolLabel(linked) : t('pick.unknown', { id: slot.spool_id }) }}</span>
+        <OuiIcon :icon="chevronDown" :size="14" />
+      </button>
+      <div v-if="picking" ref="panel" class="sl-pick-panel" :data-pick-panel="key">
+        <OuiSpoolPick v-model:material="pickFam" :spools="pickSpools" :labels="pickLabels" :selected="slot.spool_id ?? null" :grams="fmt.grams"
+                      @pick="picked" @close="closePick" />
+      </div>
+    </div>
 
     <div v-if="match && !editing" class="sl-match" :data-match="key" @click="placeList">
       <p class="oui-label">{{ t('match.title') }}</p>
       <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
                       :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
                       :candidates="candidates"
-                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name, match?.ofd?.find(c => c.name === name))" />
+                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name)" />
     </div>
 
     <template #actions>
@@ -231,7 +239,16 @@ async function placeList(e: MouseEvent) {
 .kc-slot .oui-slot-state { min-width: 0; }
 .kc-slot .oui-slot-state > .oui-status { max-width: 100%; }
 .kc-slot .oui-slot-state .oui-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sl-pick { width: 100%; min-width: 0; }
+.sl-pick { position: relative; min-width: 0; }
+.orca-ui .sl-pick-btn { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; height: 28px; padding: 0 var(--oui-s2); border: 1px solid var(--oui-control-border);
+  border-radius: var(--oui-radius-sm); background: var(--oui-control); color: var(--oui-text); font: inherit; font-size: var(--oui-text-sm); text-align: start; cursor: pointer; }
+.orca-ui .sl-pick-btn > .oui-truncate { flex: 1; min-width: 0; }
+.orca-ui .sl-pick-btn:disabled { opacity: .6; cursor: default; }
+.orca-ui .sl-pick-btn:focus-visible { outline: 2px solid var(--oui-primary-mark); outline-offset: 1px; }
+/* The picker floats over the card under its line, as wide as the card, like Change's list: opening it never grows the slot. */
+.kc-slot:has(.sl-pick[data-open]), .kc-group:has(.sl-pick[data-open]) { position: relative; z-index: 30; }
+.sl-pick-panel { position: absolute; inset-inline: 0; top: calc(100% + 2px); z-index: 1; padding: var(--oui-s2); border-radius: var(--oui-radius-sm);
+  background: var(--oui-surface); box-shadow: 0 0 0 1px var(--oui-border), 0 8px 24px rgb(0 0 0 / .28); }
 .sl-match { display: grid; gap: 2px; padding-top: 6px; border-top: 1px solid var(--oui-border); }
 .sl-match .oui-match-name { font-size: var(--oui-text-sm); }
 /* Narrow cards (four ACE columns, three holders): the shared side group is flex: none and keeps its one-line width, so the
@@ -244,8 +261,8 @@ async function placeList(e: MouseEvent) {
 .sl-match .oui-match { position: relative; }
 .sl-match .oui-match-list { position: absolute; inset-inline: 0; top: 100%; z-index: 1; max-height: min(260px, 50vh); overflow-y: auto; overscroll-behavior: contain;
   background: var(--oui-surface); box-shadow: 0 0 0 1px var(--oui-border), 0 8px 24px rgb(0 0 0 / .28); }
+.sl-pick-panel[data-up] { top: auto; bottom: calc(100% + 2px); }
 .sl-match .oui-match[data-up] .oui-match-list { top: auto; bottom: 100%; }
-.sl-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .sl-form { display: grid; gap: var(--oui-s2); padding: var(--oui-s2); border-radius: var(--oui-radius); background: var(--oui-inset); }
 .sl-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--oui-s2); align-items: center; }
 .sl-colour-field { display: inline-flex; align-items: center; gap: var(--oui-s2); }

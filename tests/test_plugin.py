@@ -153,9 +153,19 @@ class Registration(unittest.TestCase):
         self.assertEqual(perms["network"], ["http://239.255.255.250"])   # the SSDP group only
         self.assertEqual(perms["fs_read"], plugin.job_read_grants())   # no Anycubic Slicer Next folder by default
         self.assertNotIn("fs_readwrite", perms)   # L7: the plugin writes no downloads
-        plugin.get_store().update({"ofd_enabled": True})   # the Open Filament Database only while it is on
+
+    def test_old_config_with_ofd_enabled_loads_and_asks_for_no_ofd(self):
+        """The Open Filament Database left Kobra Control (Spooler's Add spool has it): a settings.json saved with
+        ofd_enabled on still loads, the key is ignored and its origin is never asked for."""
+        plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
+        with open(os.path.join(plugin._storage_dir, "settings.json"), "w", encoding="utf-8") as f:
+            json.dump({"ofd_enabled": True, "host": "192.168.1.9"}, f)
+        st = plugin.get_store().effective()
+        self.assertEqual(st["host"], "192.168.1.9")
+        self.assertNotIn("ofd_enabled", st)
+        orca.permissions.clear()
         plugin.KobraControl().register_capabilities()
-        self.assertEqual(orca.permissions[-1]["network"], ["http://239.255.255.250", "https://api.openfilamentdatabase.org"])
+        self.assertFalse([o for o in orca.permissions[-1]["network"] if "openfilamentdatabase" in o])
 
     def test_spoolman_is_asked_for_at_load(self):
         """Orca Cloud report 2026-11-24: Spoolman (Spooler's, at localhost:7912) was never in the load-time request,
@@ -212,6 +222,34 @@ class Registration(unittest.TestCase):
         page.post_message = page.posted.append
         self.enterContext(mock.patch.object(plugin, "service", lambda publish=None: svc))
         return page
+
+    def test_slot_presets_never_fetch_the_open_filament_database(self):
+        """preset_matches (sent whenever what a slot holds changes) and a slot card's Change read local presets only: no
+        Open Filament Database index or preset is fetched, also with an old ofd_enabled in settings.json, and an "ofd"
+        an old page might still send is not installed."""
+        plugin._storage_dir, plugin._store = tempfile.mkdtemp(), None
+        with open(os.path.join(plugin._storage_dir, "settings.json"), "w", encoding="utf-8") as f:
+            json.dump({"ofd_enabled": True}, f)
+        slot = {"global_index": 0, "status": 5, "type": "PLA", "color": [255, 0, 0], "sku": "", "rfid": None, "brand": "", "spool_id": None}
+        svc = types.SimpleNamespace(lock=threading.Lock(), target=types.SimpleNamespace(host="10.0.0.5"), spools=[], bindings={},
+                                    view_for=lambda host: object())
+        page = plugin.KobraControlPage()
+        page.posted = []
+        page.post_message = page.posted.append
+        fetch = mock.Mock(side_effect=AssertionError("the Open Filament Database was asked"))
+        fm = plugin.spooler_bridge.filmatch
+        with mock.patch.object(fm, "_ofd_get", fetch), mock.patch.object(fm, "ofd_index", fetch), mock.patch.object(fm, "ofd_preset", fetch), \
+                mock.patch.object(fm, "install_bundle", fetch), mock.patch.object(plugin, "status_data", return_value=({"slots": [slot]}, None)):
+            page._slot_matches(svc, "preset_matches", {"id": 1}, [], "Anycubic Kobra X", [])
+            page._slot_matches(svc, "preset_pick", {"id": 2, "slot": 0, "name": "Generic PLA", "ofd": "f667", "inherits": "Generic PLA @System"},
+                               [], "Anycubic Kobra X", [])
+        fetch.assert_not_called()
+        replies = [m for m in page.posted if m.get("type") == "reply"]
+        self.assertEqual([r.get("error") for r in replies], [None, None])
+        first, picked = (r["result"]["matches"][0] for r in replies)
+        self.assertEqual((first["name"], first["source"]), ("Generic PLA", "generic"))
+        self.assertEqual((picked["name"], picked["source"]), ("Generic PLA", "remembered"))
+        self.assertFalse(any("ofd" in r["result"]["matches"][0] for r in replies))
 
     def test_hello_and_save_ask_before_the_target_is_set(self):
         """The preset's address must be granted before set_target starts locating and connecting on worker threads."""

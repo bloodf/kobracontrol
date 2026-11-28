@@ -111,7 +111,3 @@ of the code.
 ## Affiliation and trademarks
 
 kobracontrol is independent. It is not affiliated with, made by or supported by Anycubic. Anycubic, Kobra, OrcaSlicer, Spoolman and other names are trademarks of their owners.
-
-## Open Filament Database
-
-With the **Open Filament Database** option on (Settings > Spoolman, off by default), Kobra Control reads preset data from the [Open Filament Database](https://openfilamentdatabase.org) at run time. None of it ships with Kobra Control. That data is Copyright © 2025 OpenFilamentCollective, under the MIT licence: <https://github.com/OpenFilamentCollective/open-filament-database/blob/main/LICENSE>.

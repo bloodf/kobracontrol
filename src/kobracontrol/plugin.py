@@ -446,8 +446,9 @@ def filament_catalog():
 
 
 def _own_ofd_presets():
-    """UI thread, no I/O: the presets of Kobra Control's own OFD bundle compatible with the selected printer, as
-    {"name", "file"} (their filament_id is read from the file later); [] when they can't be read."""
+    """UI thread, no I/O: the presets an earlier version installed into Kobra Control's own Open Filament Database
+    bundle, compatible with the selected printer, as {"name", "file"} (their filament_id is read from the file later),
+    so a slot remembered on one keeps reporting it; [] when they can't be read. Nothing installs into it any more."""
     try:
         collection = orca.host.preset_bundle().filaments
         return [{"name": p.name, "file": p.file or ""} for p in (collection.preset(i) for i in range(collection.size()))
@@ -455,18 +456,6 @@ def _own_ofd_presets():
     except Exception as e:
         log("own OFD presets not readable (%r)" % e)
         return []
-
-
-def ofd_parent_config(name):
-    """UI thread, no I/O: the settings of the system preset an OFD preset inherits ({key: text}); None when there is none."""
-    try:
-        preset = orca.host.preset_bundle().filaments.find_preset(name) if isinstance(name, str) and name else None
-        if preset is None or not getattr(preset, "is_system", False):
-            return None
-        return {str(k): str(preset.config_value(k)) for k in preset.config_keys() if preset.config_value(k) is not None}
-    except Exception as e:
-        log("OFD parent %r not readable (%r)" % (name, e))
-        return None
 
 
 def user_presets():
@@ -917,15 +906,11 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 sync_language()
             elif kind == "dashboard":   # the Dashboard's layouts, saved by the page; an invalid value keeps the stored one
                 get_store(self).update({"dashboard": data.get("value")})
-            elif kind == "ofd":   # Settings: the Open Filament Database line; refresh: Read again (only while it is on)
-                threading.Thread(target=self._ofd_state, args=(data,), name="kobracontrol-ofd", daemon=True).start()
             elif kind in ("preset_matches", "preset_pick"):   # slot cards: the preset each slot is reported as, and Change
                 presets, label = filament_catalog()
                 users = _user_presets_safe()
                 own = _own_ofd_presets()
-                # An OFD pick names its parent: its settings are read here, on the UI thread (the worker checks the name).
-                parent = ofd_parent_config(data.get("inherits")) if kind == "preset_pick" and isinstance(data.get("ofd"), str) else None
-                threading.Thread(target=self._slot_matches, args=(svc, kind, data, presets, label, users, own, parent),
+                threading.Thread(target=self._slot_matches, args=(svc, kind, data, presets, label, users, own),
                                  name="kobracontrol-matches", daemon=True).start()
             elif kind == "spoolman_refresh":   # Settings: how often the page re-reads Spoolman; invalid keeps the stored one
                 get_store(self).update({"spoolman_refresh_s": data.get("value")})
@@ -947,58 +932,19 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
-    def _install_ofd(self, storage, slots, spools, data, parent, label, users, ctx, paths, write):
-        """A slot card's Change to an OFD proposal (worker thread): installed by Spooler or into Kobra Control's own
-        bundle, then remembered for the slot. Returns a note for the page ("" when it is in use now)."""
-        slot = next((sl for sl in slots if sl["global_index"] == data.get("slot")), None)
-        if slot is None or not get_store(self).effective().get("ofd_enabled"):
-            raise ValueError(tr("That preset can't be used for this slot."))
-        spool = spools.get(slot.get("spool_id"))
-        folder = spooler_bridge.ofd_folder(storage)
-        entry = next((p for p in spooler_bridge.filmatch.ofd_index(folder, offline=True)["profiles"] if p["id"] == data["ofd"]), None)
-        if entry is None or entry["inherits"] != data.get("inherits"):
-            raise ValueError(tr("That preset can't be used for this slot."))
-        try:
-            how, what = spooler_bridge.install_ofd(storage, slot, spool, data["ofd"], parent, label,
-                                                   orca.host.preset.bundles.reload_local, VERSION, [u["file"] for u in users])
-        except ValueError as e:
-            raise ValueError(tr("The Open Filament Database preset can't be used: %s") % e) from None
-        if how == "spooler":
-            return tr("Spooler puts it into its preset of spool #%s on its next sync") % what
-        keys = spooler_bridge.slot_match(ctx, slot, spool)["keys"]
-        if keys and write:
-            spooler_bridge.filmatch.remember(write, {keys[0]: "%s%s/%s" % ("_local/", spooler_bridge.OFD_BUNDLE, what)}, label)
-        return tr("Installed; the Device tab reports it once OrcaSlicer lists it")
-
-    def _ofd_state(self, data):
-        """Worker thread: Settings' OFD line, {"on"} and, while on, {"fetched", "version", "count", "stale", "error"}."""
-        try:
-            folder = spooler_bridge.ofd_folder(_storage()) if get_store(self).effective().get("ofd_enabled") else ""
-            if folder:
-                found = spooler_bridge.filmatch.ofd_index(folder, force=data.get("refresh") is True)
-                result = {"on": True, "count": len(found["profiles"]), **{k: found[k] for k in ("fetched", "version", "stale", "error")}}
-            else:
-                result = {"on": False}
-            self.post_message({"type": "reply", "id": data.get("id"), "result": result})
-        except Exception as e:
-            self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
-
-    def _slot_matches(self, svc, kind, data, presets, label, users, own=(), parent=None):
+    def _slot_matches(self, svc, kind, data, presets, label, users, own=()):
         """Worker thread (reads files): answer the page with every ready slot's preset match, after a Change."""
         try:
             storage = _storage()
             profiles = spooler_bridge.read_json(spooler_bridge.data_dir(storage), spooler_bridge.PROFILES_FILE) or {}
             paths, write = spooler_bridge.match_paths(storage)
             ctx = spooler_bridge.match_context(presets, label, users, profiles, spooler_bridge.load_stores(paths), _match_file_ids, log, own)
-            note = ""
             with svc.lock:
                 host = svc.target.host if svc.target else ""
                 spools, bindings = {sp["id"]: sp for sp in svc.spools}, dict(svc.bindings)
             view = svc.view_for(host) if host else None
             slots = [sl for sl in (status_data(view, bindings=bindings)[0]["slots"] if view else []) if sl.get("status") == 5]
-            if kind == "preset_pick" and isinstance(data.get("ofd"), str):
-                note = self._install_ofd(storage, slots, spools, data, parent, label, users, ctx, paths, write)
-            elif kind == "preset_pick":
+            if kind == "preset_pick":
                 slot = next((sl for sl in slots if sl["global_index"] == data.get("slot")), None)
                 name = data.get("name")
                 try:
@@ -1008,12 +954,9 @@ class KobraControlPage(orca.pages.PagesPluginCapabilityBase):
                 except ValueError:
                     raise ValueError(tr("That preset can't be used for this slot.")) from None
                 ctx["stores"] = spooler_bridge.load_stores(paths)
-            ofd_dir = spooler_bridge.ofd_folder(storage) if get_store(self).effective().get("ofd_enabled") else ""
-            profiles = spooler_bridge.filmatch.ofd_index(ofd_dir)["profiles"] if ofd_dir else []   # a day old: read again
-            matches = [{**{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")},
-                        "ofd": spooler_bridge.slot_ofd(profiles, sl, spools.get(sl.get("spool_id"))) if profiles else []}
+            matches = [{k: v for k, v in spooler_bridge.slot_match(ctx, sl, spools.get(sl.get("spool_id"))).items() if k not in ("keys", "id")}
                        for sl in slots]
-            self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches, "note": note}})
+            self.post_message({"type": "reply", "id": data.get("id"), "result": {"matches": matches}})
         except Exception as e:
             self.post_message({"type": "reply", "id": data.get("id"), "error": str(e)})
 
@@ -1272,7 +1215,7 @@ class KobraAgent(pa.PrinterAgentBase):
         self.dev_id, self.host, self.access_code = "", "", ""
         self._catalog = ([], "")             # (Spooler presets, printer label) for tray ids; the UI thread owns it
         self._profiles = {}                  # Spooler's profiles.json; the push thread owns it
-        self._ofd_presets = []               # Kobra Control's own OFD presets ({"name", "file"}), for tray ids
+        self._ofd_presets = []               # presets an earlier version installed into its own OFD bundle, for tray ids
         self._catalog_at = 0.0
         self._links = ([], {})               # (spools, {slot: spool id}) the agent read from Spoolman itself
         self._links_busy = threading.Lock()
@@ -1842,10 +1785,6 @@ class KobraControl(orca.base):
         network = ["http://%s" % h for h in hosts] + ["http://" + locate.SSDP_GROUP] + local + spoolman_grants()
         try:   # Anycubic Cloud's hosts only while it is on (opt-in)
             network += ["https://" + h for h in cloud_hosts()] if get_store().effective()["cloud_enabled"] else []
-        except Exception:
-            pass
-        try:   # the Open Filament Database only while it is on (opt-in)
-            network += [spooler_bridge.filmatch.OFD_ORIGIN] if get_store().effective()["ofd_enabled"] else []
         except Exception:
             pass
         orca.request_permissions(threading=True, fs_read=job_read_grants(), network=list(dict.fromkeys(network)))
