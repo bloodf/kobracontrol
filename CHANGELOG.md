@@ -4,6 +4,10 @@ All notable changes are listed here, in the [Keep a Changelog](https://keepachan
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-11-28
+### Changed
+- Shared UI 5.13.3; the PrimeVue override in the UI package is gone.
+
 ## [0.15.1] - 2026-11-28
 ### Changed
 - Shared UI 5.13.2 with PrimeVue 5.0.6.
