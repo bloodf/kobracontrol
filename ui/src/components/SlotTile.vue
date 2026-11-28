@@ -3,9 +3,9 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import { OuiIcon, OuiLevel, OuiPresetMatch, OuiSlot, OuiSpoolPick, OuiStatus, OuiSwatch, type OuiSpoolPickLabels, type OuiState } from '@orca-plugins/ui-foundation/src/components';
-import { chevronDown, edit as editIcon } from '@orca-plugins/ui-foundation/src/icons';
+import { chevronDown, edit as editIcon, warning } from '@orca-plugins/ui-foundation/src/icons';
 import { s, run, tracker, busy, controlsOff, printerName, linkSpool, stale, whyId as pageWhy, pickPreset } from '../app/store';
-import { reasonTexts } from '../core/match';
+import { presetLabels } from '../core/match';
 import type { MessageKey } from '../core/messages';
 import { ask } from '../core/dialog';
 import { t, fmt } from '../core/i18n';
@@ -40,13 +40,18 @@ const state = computed<{ state: OuiState; text: string } | null>(() => {
   return null;
 });
 
-// The OrcaSlicer preset this slot is reported as to the Device tab (its sync from AMS loads it), why, and Change.
+// The OrcaSlicer preset this slot is reported as to the Device tab (its sync from AMS loads it), and Change. The card shows
+// a clean name only (no score, reasons or source); a close call gets one warning icon. Labels map back to full names.
 const match = computed(() => (ready.value ? s.matches[String(key.value)] ?? null : null));
-const words = (reasons: unknown) => reasonTexts(reasons, (code, v) => t(`match.r.${code}` as MessageKey, { v }));
-const BADGES: Record<string, MessageKey> = { remembered: 'match.remembered', linked: 'match.linked', spooler: 'match.spooler' };
+const labels = computed(() => presetLabels([...(match.value?.name ? [match.value.name] : []), ...(match.value?.candidates ?? []).map(c => c.name)]));
+const shown = (name: string | null | undefined) => (name ? labels.value.get(name) ?? name : name);
 const candidates = computed(() => (!match.value || match.value.source === 'linked' ? []
-  : match.value.candidates.map(c => ({ name: c.name, score: c.score, reasons: words(c.reasons) }))));
-const matchLabels = computed(() => ({ change: t('match.change'), none: t('match.none'), score: t('match.score'), auto: t('match.auto'), autoHint: t('match.autoHint') }));
+  : match.value.candidates.map(c => ({ name: shown(c.name)! }))));
+const pickShown = (label: string | null) => {
+  const full = label === null ? null : [...labels.value].find(([, v]) => v === label)?.[0] ?? label;
+  return pickPreset(key.value, full);
+};
+const matchLabels = computed(() => ({ change: t('match.change'), none: t('match.none'), score: '', auto: t('match.auto'), autoHint: t('match.autoHint') }));
 const editOff = computed(() => !!controlsOff.value || busy.value.feed);
 const feedOff = computed(() => editOff.value || !ready.value || tracker.isBusy(`feed:${key.value}`));
 // Disabled controls point at the reason: the page's (#kc-why), the printer's (#kc-busy), or this slot's own (it is empty).
@@ -204,11 +209,11 @@ async function placeList(e: MouseEvent) {
     </div>
 
     <div v-if="match && !editing" class="sl-match" :data-match="key" @click="placeList">
-      <p class="oui-label">{{ t('match.title') }}</p>
-      <OuiPresetMatch :name="match.name" :score="match.score" :confident="match.confident" :reasons="words(match.reasons)"
-                      :badge="BADGES[match.source] ? t(BADGES[match.source]) : undefined" :remembered="match.source === 'remembered' && !!match.remembered_key"
+      <p class="oui-label sl-match-title" :title="match.name || undefined">{{ t('match.title') }}
+        <span v-if="match.name && !match.confident" class="sl-match-warn" role="img" :aria-label="t('match.unsure')" :title="t('match.unsure')"><OuiIcon :icon="warning" :size="13" /></span></p>
+      <OuiPresetMatch :name="shown(match.name)" :remembered="match.source === 'remembered' && !!match.remembered_key"
                       :candidates="candidates"
-                      :labels="matchLabels" :busy="s.matchBusy" @pick="name => pickPreset(key, name)" />
+                      :labels="matchLabels" :busy="s.matchBusy" @pick="pickShown" />
     </div>
 
     <template #actions>
@@ -251,6 +256,8 @@ async function placeList(e: MouseEvent) {
   background: var(--oui-surface); box-shadow: 0 0 0 1px var(--oui-border), 0 8px 24px rgb(0 0 0 / .28); }
 .sl-match { display: grid; gap: 2px; padding-top: 6px; border-top: 1px solid var(--oui-border); }
 .sl-match .oui-match-name { font-size: var(--oui-text-sm); }
+.sl-match-title { display: flex; align-items: center; gap: 4px; }
+.sl-match-warn { display: inline-flex; color: var(--oui-warning); cursor: help; }
 /* Narrow cards (four ACE columns, three holders): the shared side group is flex: none and keeps its one-line width, so the
    score chip and Change spilled out of the card. Let it shrink and wrap inside the card instead. */
 .sl-match .oui-match-head { min-width: 0; }

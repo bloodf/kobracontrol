@@ -1,10 +1,15 @@
-// Preset match reasons: filmatch.py scores a preset and says why as [code, value] pairs; the page words them.
-export const REASON_CODES = ['material', 'variant', 'vendor', 'generic', 'other_vendor', 'word', 'extra_word', 'printer', 'other_printer', 'nozzle'] as const;
-export type ReasonCode = typeof REASON_CODES[number];
+// Preset names as the slot cards show them: OrcaSlicer's internal name without the plugin bundle prefix
+// ("_local/spooler/", "Spooler/") or the "@Printer" suffix. The full name stays in a tooltip.
 
-/** The reasons a page can word, in order; anything of another shape or code is left out. */
-export function reasonTexts(reasons: unknown, word: (code: ReasonCode, value: string) => string): string[] {
-  if (!Array.isArray(reasons)) return [];
-  return reasons.filter((r): r is [ReasonCode, unknown] => Array.isArray(r) && (REASON_CODES as readonly string[]).includes(r[0]))
-    .map(r => word(r[0], String(r[1] ?? '')));
+/** "_local/spooler/3D Procer PLA Marrom terra @Snapmaker U1" -> "3D Procer PLA Marrom terra". */
+export function presetLabel(name: string): string {
+  const shown = name.replace(/^_local\/[^/]+\//, '').replace(/^spooler\//i, '').replace(/\s*@[^@]*$/, '').trim();
+  return shown || name;
+}
+
+/** Each name's label; names whose labels collide keep their full name, so every label picks one preset. */
+export function presetLabels(names: string[]): Map<string, string> {
+  const count = new Map<string, number>();
+  for (const n of new Set(names)) count.set(presetLabel(n), (count.get(presetLabel(n)) ?? 0) + 1);
+  return new Map(names.map(n => [n, count.get(presetLabel(n))! > 1 ? n : presetLabel(n)]));
 }

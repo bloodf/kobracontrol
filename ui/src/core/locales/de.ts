@@ -343,7 +343,7 @@ export const de: Record<MessageKey, string> = {
   'slot.empty': "Leer",
   'slot.noType': "Material nicht gesetzt",
   'slot.edit': "Bearbeiten",
-  'match.title': 'OrcaSlicer-Profil', 'match.none': 'Kein OrcaSlicer-Profil passt', 'match.linked': 'In Spoolman verknüpft', 'match.spooler': 'Spooler-Profil', 'match.change': 'Ändern', 'match.score': 'Punkte {n}', 'match.auto': 'Automatisch', 'match.autoHint': 'Das von Hand gewählte Profil vergessen', 'match.remembered': 'Von Hand gewählt', 'match.r.material': 'Material {v}', 'match.r.variant': 'eine {v}-Variante', 'match.r.vendor': 'Hersteller {v}', 'match.r.generic': 'Generic-Profil', 'match.r.other_vendor': 'anderer Hersteller ({v})', 'match.r.word': '„{v}“ im Namen', 'match.r.extra_word': '„{v}“ nicht auf der Spule', 'match.r.printer': 'für diesen Drucker', 'match.r.other_printer': 'für einen anderen Drucker', 'match.r.nozzle': '{v}-mm-Düse',
+  'match.title': 'OrcaSlicer-Profil', 'match.none': 'Kein OrcaSlicer-Profil passt', 'match.unsure': 'Prüfen Sie dieses Profil: ein anderes passt vielleicht besser.', 'match.change': 'Ändern', 'match.auto': 'Automatisch', 'match.autoHint': 'Das von Hand gewählte Profil vergessen', 
   'slot.editLabel': "{slot} bearbeiten",
   'slot.editTitle': "{slot} bearbeiten",
   'slot.material': "Material",

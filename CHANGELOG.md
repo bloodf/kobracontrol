@@ -3,6 +3,11 @@
 All notable changes are listed here, in the [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+### Fixed
+- **A Kobra slot no longer picks a preset made for another printer.** With another printer selected in OrcaSlicer (a Snapmaker U1, say), the slot cards and the Device tab offered that printer's Spooler presets and called them "made for this printer". Presets are now judged against the connected Kobra's model: one listed for, or named after, another printer is left out, and the slot falls back to Spooler's preset for this printer or the Generic one.
+
+### Changed
+- **Slot cards show the OrcaSlicer preset by a clean name.** "_local/spooler/3D Procer PLA Marrom terra @Anycubic Kobra X" reads "3D Procer PLA Marrom terra" (the full name is in the tooltip). The score, the reasons line and the source chip are gone; a match worth checking gets one small warning icon. **Change** and **Automatic** work as before.
 
 ## [0.15.1] - 2026-11-28
 ### Changed
