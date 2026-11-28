@@ -95,28 +95,10 @@ watch(() => [s.settingsPage, s.tab, !!config.value], () => {
   s.settingsPage = '';
   pages.value?.select(id);
 }, { immediate: true, flush: 'post' });
-// Open Filament Database (off by default): read only once it is on and saved; the line says which index is kept.
-type OfdState = { on: boolean; fetched?: number; version?: string; count?: number; stale?: boolean; error?: string };
-const ofdSaved = computed(() => config.value?.settings?.ofd_enabled === true);
-const ofdState = ref<OfdState | null>(null);
-const ofdBusy = ref(false);
-async function askOfd(refresh: boolean): Promise<void> {
-  ofdBusy.value = refresh;
-  try { ofdState.value = await bridge.request({ type: 'ofd', refresh }); } catch (e) { ofdState.value = { on: true, error: String((e as Error)?.message ?? e) }; }
-  finally { ofdBusy.value = false; }
-}
-const ofdLine = computed(() => {
-  const st = ofdState.value;
-  if (!st?.on) return '';
-  if (!st.count) return st.error ? t('ofd.failed', { error: st.error }) : t('ofd.none');
-  const line = t('ofd.status', { date: fmt.dateTime(st.fetched ?? 0), n: st.count });
-  return st.error ? `${line} · ${t('ofd.kept', { error: st.error })}` : line;
-});
-watch(ofdSaved, on => { if (on) void askOfd(false); else ofdState.value = null; }, { immediate: true });
 // The save bar names what is not saved yet.
 const FIELD: Record<string, string> = { host: 'conn.host', printer_name: 'conn.name', ffmpeg_path: 'camset.ffmpeg', camera_enabled: 'camset.default',
   auto_leveling: 'files.autoLeveling', vibration_compensation: 'files.vibration', flow_calibration: 'files.flow', timelapse: 'files.timelapse', print_dialog: 'printdef.dialog', remember_print_options: 'pd.remember', spoolman_url: 'conn.sm', spoolman_auto: 'sm.auto', spoolman_report_usage: 'sm.usage',
-  bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port', cloud_enabled: 'cloud.enable', cloud_printer: 'cloud.printer', ofd_enabled: 'ofd.title' };
+  bridge_enabled: 'bridge.enable', bridge_port: 'bridge.port', cloud_enabled: 'cloud.enable', cloud_printer: 'cloud.printer' };
 const changedText = computed(() => fmt.list(changed.value.map(k => t(FIELD[k] as 'conn.host'))));
 const about = computed(() => [{ label: t('about.kit'), value: UI_VERSION }]);
 // Enter in a text field saves, as the form's own button did.
@@ -192,13 +174,6 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
             <Select :model-value="s.refreshS" :options="EVERY" option-label="label" option-value="value" :aria-label="t('sm.every')" data-test="sm-every"
                     @update:model-value="bridge.post({ type: 'spoolman_refresh', value: $event })" />
           </OuiFormRow>
-          <OuiFormRow :label="t('ofd.title')" for="ofd-on" :hint="t('ofd.help')"><ToggleSwitch v-model="form.ofd" input-id="ofd-on" data-test="ofd-on" /></OuiFormRow>
-          <div v-if="form.ofd" class="oui-row sv-ofd" data-test="ofd-state">
-            <OuiStatus v-if="!ofdSaved" state="idle" variant="plain">{{ t('ofd.saveFirst') }}</OuiStatus>
-            <OuiStatus v-else-if="ofdLine" :state="ofdState?.error || ofdState?.stale ? 'warn' : ofdState?.count ? 'ok' : 'idle'" variant="plain">{{ ofdLine }}</OuiStatus>
-            <Button v-if="ofdSaved" severity="secondary" size="small" :label="t('ofd.refresh')" :loading="ofdBusy" data-test="ofd-refresh" @click="askOfd(true)" />
-            <p class="oui-meta">{{ t('ofd.credit') }}</p>
-          </div>
           <OuiFormRow :label="t('sm.spools')">
             <span class="oui-muted" role="status">{{ smInfo }}</span>
             <Button severity="secondary" size="small" :label="t('sm.refresh')" :disabled="!!smWhy" :title="smWhy || undefined" :aria-describedby="controlsOff ? 'kc-why' : undefined"
@@ -254,5 +229,4 @@ function onEnter(e: KeyboardEvent) { if (e.target instanceof HTMLInputElement &&
 .sv-fp { overflow-wrap: anywhere; }
 .sv-needs > * + * { border-top: 1px solid var(--oui-border); }
 .sv-adv { padding: var(--oui-s3) var(--oui-s4); border-top: 1px solid var(--oui-border); }
-.sv-ofd { padding: 0 var(--oui-s4) var(--oui-s3); }
 </style>

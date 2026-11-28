@@ -357,13 +357,11 @@ const takeMatches = (r: any) => { s.matches = Object.fromEntries(((r?.matches ??
 export async function loadMatches(): Promise<void> {
   try { takeMatches(await bridge.request({ type: 'preset_matches' })); } catch { /* the cards just show no preset line */ }
 }
-export async function pickPreset(slot: number, name: string | null, ofd?: { id: string; inherits: string }): Promise<void> {
+export async function pickPreset(slot: number, name: string | null): Promise<void> {
   if (s.matchBusy) return;
   s.matchBusy = true;
   try {
-    const r = await bridge.request({ type: 'preset_pick', slot, name, ...(ofd ? { ofd: ofd.id, inherits: ofd.inherits } : {}) });
-    takeMatches(r);
-    if (r?.note) tracker.notify('info', String(r.note));
+    takeMatches(await bridge.request({ type: 'preset_pick', slot, name }));
   }
   catch (e) { tracker.notify('error', t('msg.failed', { action: t('match.change'), error: message(e) })); }
   finally { s.matchBusy = false; }
